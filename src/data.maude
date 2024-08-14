@@ -1,0 +1,127 @@
+--- This module defines the abstracted data sort for data stream objects.
+
+fmod DATA is
+  sort Data .
+endfm
+
+view Data from TRIV to DATA is
+  sort Elt to Data .
+endv
+
+--- This module defines data position sort.
+
+fmod DATA-POSITION is
+  pr NAT .
+
+  sorts DataPosition DataPosition? .
+  subsort DataPosition < DataPosition? .
+
+  var POS : DataPosition .
+
+  op pos : Nat -> DataPosition [ctor] .
+  op noPos : -> DataPosition? [ctor] .
+  op TEE-DATA-MAX-POSITION : -> DataPosition [ctor] .
+
+  op _<=_ : DataPosition DataPosition -> Bool .
+  eq POS <= TEE-DATA-MAX-POSITION = true .
+endfm
+
+view DataPosition from TRIV to DATA-POSITION is
+  sort Elt to DataPosition .
+endv
+
+--- This module defines the abstracted data size.
+
+fmod DATA-SIZE is
+  pr NAT .
+
+  sorts DataSize DataSize? .
+  subsort DataSize < DataSize? .
+
+  op dataSize : Nat -> DataSize [ctor] .
+  op noDataSize : -> DataSize? [ctor] .
+endfm
+
+--- This module defines types that can be stored.
+
+fmod BASIC-DATA is
+  pr DATA .
+  pr TEE-ATTRIBUTE .
+
+  op randomData : -> Data [ctor] .
+  op attrContentData : AttrContent -> Data [ctor] .
+endfm
+
+fmod DATA-STREAM-OPERATOR is
+  pr DATA-SIZE .
+  pr DATA-POSITION .
+  pr LIST{Data} .
+  pr MAP{DataPosition,Data} .
+  pr DATA-STREAM-SEEK-TYPE .
+
+  vars N M P : Nat .
+  vars D DATA : Data .
+  vars DL DATALIST : List{Data} .
+  var DATAPOS : DataPosition .
+  var DM : Map{DataPosition,Data} .
+
+  op noData : -> List{Data} .
+  eq noData = nil .
+
+--- This operator creates a new data stream content.
+  op newContentAux : List{Data} Nat -> Map{DataPosition,Data} .
+  eq newContentAux(D DL , N) = pos(N) |-> D , newContentAux(DL , N + 1) .
+  eq newContentAux(nil , N) = empty .
+  
+  op newContent : List{Data} -> Map{DataPosition,Data} .
+  eq newContent(DL) = newContentAux(DL , 0) .
+
+--- This operator tries to read input size amount of data from the data stream starting from the current data position.
+  op readAt : DataPosition Map{DataPosition,Data} -> List{Data} .
+  eq readAt(DATAPOS , (DATAPOS |-> DATA , DM)) = DATA .
+  eq readAt(DATAPOS , DM) = nil [owise] .
+
+  op readAux : Nat Nat Map{DataPosition,Data} -> List{Data} .
+  eq readAux(N , 0 , DM) = nil .
+  eq readAux(N , s(M) , DM) = readAt(pos(N) , DM) readAux(N + 1 , M , DM) [owise] .
+  
+  op read : DataPosition DataSize Map{DataPosition,Data} -> List{Data} .
+  eq read(pos(N) , dataSize(M) , DM) = readAux(N , M , DM) .
+
+--- This operator writes input data to data stream starting from the current data position.
+  op writeAt : Data DataPosition Map{DataPosition,Data} -> Map{DataPosition,Data} .
+  eq writeAt(D , DATAPOS , (DATAPOS |-> DATA , DM)) = (DATAPOS |-> D , DM) .
+  eq writeAt(D , DATAPOS , DM) = (DATAPOS |-> D , DM) [owise] .
+
+  op writeAux : List{Data} Nat Map{DataPosition,Data} -> Map{DataPosition,Data} .
+  eq writeAux(nil , N , DM) = DM .
+  eq writeAux(D DL , N , DM) = writeAux(DL , N + 1 , writeAt(D , pos(N) , DM)) [owise] .
+
+  op write : List{Data} DataPosition Map{DataPosition,Data} -> Map{DataPosition,Data} .
+  eq write(DATALIST , pos(N) , DM) = writeAux(DATALIST , N , DM) .
+
+--- This operator updates data position indicator by input data size.
+  op updatePos : DataPosition DataSize DataSize -> DataPosition .
+  ceq updatePos(pos(P) , dataSize(N) , dataSize(M)) = pos(M) if P + N > M .
+   eq updatePos(pos(P) , dataSize(N) , dataSize(M)) = pos(P + N) [owise] .
+
+--- This operator updates data size by input data size.
+  op updateSize : DataSize DataPosition DataSize -> DataSize .
+  ceq updateSize(dataSize(N) , pos(P) , dataSize(M)) = dataSize(N) if N > P + M .
+   eq updateSize(dataSize(N) , pos(P) , dataSize(M)) = dataSize(P + M) [owise] .
+
+--- This operator calculates the size of list of data.
+  op sizeOfData : List{Data} -> DataSize .
+  eq sizeOfData(DL) = dataSize(size(DL)) .
+
+--- This operator adds two data sizes.
+  op _+_ : DataSize DataSize -> DataSize .
+  eq dataSize(N) + dataSize(M) = dataSize(N + M) .
+
+--- This operator seeks data position indicator.
+  op seekPos : SeekType DataPosition DataSize DataSize -> DataPosition .
+  eq seekPos(TEE-DATA-SEEK-SET , pos(P) , dataSize(N) , dataSize(M)) = pos(N) .
+  eq seekPos(TEE-DATA-SEEK-SET , pos(P) , dataSize(N) , dataSize(M)) = pos(P + N) .
+  eq seekPos(TEE-DATA-SEEK-SET , pos(P) , dataSize(N) , dataSize(M)) = pos(N + M) .
+
+endfm

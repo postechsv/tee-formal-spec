@@ -1,0 +1,112 @@
+--- This file defines the abstract trusted application (TA) class and the commands it uses
+
+omod TASK is
+  pr INVOKE-MESSAGE .
+
+  sorts Task Task? .
+  subsort Task < Task? .
+
+  op task : InvokeMessage Oid -> Task [ctor] .
+  op noTask : -> Task? [ctor] .
+endom
+
+--- This module defines the abstract TA class.
+
+omod TRUST-APP is
+  pr PROGRAM-APP .
+  pr TA-KERNEL .
+  pr TASK .
+
+--- Version In Paper
+  --- class TA .
+  --- subclass TA < App TAKernel .
+
+--- Model/Implementation Specific Version
+  class TrustApp | task : Task?, task-counter : Nat .
+  subclass TrustApp < TaKernel ProgramApp .
+endom
+
+--- This module defines messages for TAs.
+
+--- omod TRUST-APP-MSG is
+---   pr APP-ID .
+---   pr OBJECT-ID .
+
+--- --- Retreive all TA related resources.
+
+---   msg killTa : AppId AppId -> Msg .
+---   msg killTaContinue : AppId AppId -> Msg .
+---   msg killTaFinish : AppId AppId -> Msg .
+
+---   msg cleanResources : AppId AppId ObjectId -> Msg .
+---   msg cleanFinish : AppId AppId ObjectId -> Msg .
+--- endom
+
+--- This module defines basic behaviors for TAs.
+
+omod TRUST-APP-BEHAVIOR is
+  pr TRUST-APP .
+  pr PROGRAM-APP-BEHAVIOR .
+  pr INVOKE-TA-CALL .
+
+  var RI : Oid .
+  var TI : TaInstId .
+  var MSG : InvokeMessage .
+  var SID : SessionId .
+  var FUNC : FuncId .
+  var P : Program .
+  var KS : KConfig .
+  var VL : ValueList .
+  var N : Nat .
+
+--- Version In Paper
+  --- crl [handle-invoke-ta] :
+  ---   invkTa(TI , RI , ARGS)
+  ---   < TI : TA | proc : none , prog : P > 
+  ---   => 
+  ---   < TI : TA | proc : run(P , F , VL) > 
+  ---   invkTa(TI , RI , ARGS) 
+  --- if F := getFunc(ARGS) /\ VL := getParams(ARGS) 
+  --- .
+
+--- Model/Implementation Specific Version (2 rules)
+--- Receive parameters from RA.
+
+  rl [accept-invoke-ta] :
+    invokeTA(TI , MSG , RI)
+    < TI : TrustApp | task : noTask , running : false >
+    => 
+    < TI : TrustApp | task : task(MSG , RI) > 
+  .
+
+--- Handle REE request by running TA program.
+
+  rl [handle-invoke-ta] :
+    < TI : TrustApp | task : task({SID , FUNC , VL} , RI) , task-counter : N ,
+                      proc : none , prog : P , running : false >
+    => 
+    < TI : TrustApp | task-counter : N + 1 ,
+                      proc : execute(P , FUNC , VL) , running : true > 
+  .
+
+--- Version In Paper
+  --- crl [handle-invoke-ta-finish] :
+  ---   invkTa(TI , RI , ARGS)
+  ---   < TI : TA | proc : KS > 
+  ---   => 
+  ---   < TI : TA | proc : none > 
+  ---   invkTaRet(RI , RV)
+  --- if finished(KS) /\ RV := getRes(KS) /\ RI := getRequestor(ARGS) 
+  --- .
+
+--- Model/Implementation Specific Version
+--- Return REE request results.
+
+  rl [handle-invoke-ta-finish] :
+    < TI : TrustApp | proc : (k(.K) KS) , task : task({SID , FUNC , VL} , RI) , running : true >
+    => 
+    < TI : TrustApp | proc : none , task : noTask , running : false >
+    invokeTAReturn({SID , FUNC , readReturn(FUNC, KS)} , RI) 
+  .
+
+endom

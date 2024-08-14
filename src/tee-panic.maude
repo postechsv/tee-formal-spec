@@ -1,0 +1,304 @@
+omod GENERAL-PANIC is
+  pr TRUST-APP .
+  pr CALL-MSG .
+  pr TRANSIENT-OBJECT-BEHAVIOR .
+  pr UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR .
+  pr GENERIC-OBJECT-BEHAVIOR .  
+  pr ENUMERATOR-OBJECT-BEHAVIOR .
+  pr DATA-STREAM-OBJECT-BEHAVIOR .
+  pr CRYPTO-OPERATION-BEHAVIOR .
+
+  var N : Nat .
+  vars TI TN : AppId .
+  vars OI CI : ObjectId .
+  var STORID : StorageIdentifier .
+  vars PI PI2 : PersistentObjectId .
+  vars HANDLE HANDLE1 HANDLE2 OPTHANDLE : HandleId . 
+  var OBJTYPE : ObjectType .
+  var ATTRID : AttrId .
+  var ATTRS : Set{TeeAttribute} .
+  vars OBJUSAGES OBJUSAGES2 : Set{ObjectUsage} .
+  var DATAFLAGS : Set{DataFlag} .
+  var DATASIZE : DataSize .
+  vars KEYSIZE MAXOBJSIZE : CryptoKeySize .
+  var ALGO : AlgorithmIdentifer .
+  vars IV DL DATALIST : List{Data} .
+  var OC : OperationClass .
+  var OS : OperationState .
+  var ELEM : CryptoElement .
+  var API : TeeApiCall .
+  vars HS CF : Configuration .
+
+--- This rule returns panic when implementation detects any other error associated with  functions.
+
+  op shouldPanic : TeeApiCall -> Bool .
+  eq shouldPanic(IsAlgorithmSupportedCall(ALGO , ELEM)) = false .
+  eq shouldPanic(API) = true [owise] .
+
+  crl [implementation-panic] :
+    apiCall(API , TI)
+    < TI : TrustApp | id : TN >
+    => 
+    < TI : TrustApp | app-status : panic , running : false >
+  if shouldPanic(API)
+  .
+
+  op invalid : TeeApiCall Configuration -> Bool .
+
+------------------------------------------------------------
+--- Transient Object Functions
+------------------------------------------------------------
+--- This rule returns panic when input handle is not a valid opened object handle and is not equal to TEE_HANDLE_NULL.
+  --- eq invalid(FreeTransientObjectCall(NULL) , CF) = true .
+  eq invalid(FreeTransientObjectCall(HANDLE) , 
+              < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS) > CF) = true .
+
+--- This rule returns panic when input handle is not a valid opened object handle and is not equal to TEE_HANDLE_NULL.
+  eq invalid(ResetTransientObjectCall(HANDLE) , 
+              < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS) > CF) = true .
+
+--- This rule panics when input handle is not a valid opened object handle that is transient and uninitialized.
+  eq invalid(PopulateTransientObjectCall(TEE-HANDLE-NULL , ATTRS) , CF) = true .
+  eq invalid(PopulateTransientObjectCall(HANDLE , ATTRS) ,
+              < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | is-initialized : true > > CF) = true .
+  eq invalid(PopulateTransientObjectCall(HANDLE , ATTRS) ,
+              < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS) > CF) = true .
+--- This rule returns panic when some mandatory attribute is missing.
+--- This rule returns panic when an attribute which is not defined for the object's type is given as an input.
+--- This rule returns panic when an attribute value is too big to fit within the maximum object size specified when the object was created.
+  ceq invalid(PopulateTransientObjectCall(HANDLE , ATTRS) , 
+              < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | > ,
+                                       object-type : OBJTYPE , max-object-size : MAXOBJSIZE > CF) = true
+              if not validAttributes(OBJTYPE , ATTRS) .
+
+--- This rule returns panic when the srcObject is not initialized.
+  eq invalid(CopyObjectAttributes1Call(HANDLE1 , HANDLE2) , 
+              < OI : CryptoHolderObject | handle-set : (< HANDLE2 : ObjectHandle | is-initialized : false > HS) > CF) = true .
+--- This rule returns panic when the destObject is initialized.
+  eq invalid(CopyObjectAttributes1Call(HANDLE1 , HANDLE2) , 
+              < OI : CryptoHolderObject | handle-set : (< HANDLE1 : ObjectHandle | is-initialized : true > HS) > CF) = true .
+
+--- This rule returns panic when the input handle is not a valid opened object handle that is transient and uninitialized.
+  eq invalid(GenerateKeyCall(TEE-HANDLE-NULL , KEYSIZE , ATTRS) , CF) = true .
+  eq invalid(GenerateKeyCall(HANDLE , KEYSIZE , ATTRS) , 
+              < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | is-initialized : true > > CF) = true .
+  eq invalid(GenerateKeyCall(HANDLE , KEYSIZE , ATTRS) , 
+              < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS) > CF) = true .
+--- This rule returns panic when the input key size is not supported or is too large.
+--- This rule returns panic when a mandatory parameter is missing.
+  ceq invalid(GenerateKeyCall(HANDLE , KEYSIZE , ATTRS) , 
+              < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | > , 
+                                       object-type : OBJTYPE , max-object-size : MAXOBJSIZE > CF) = true
+              if not mandatoryParamsForKeyGen(OBJTYPE , ATTRS) . 
+
+------------------------------------------------------------
+--- Persistent Object Functions
+------------------------------------------------------------
+--- This rule panics when input object id length is greater than TEE_OBJECT_ID_MAX_LEN.
+  ceq invalid(OpenPersistentObjectCall(STORID , PI , DATAFLAGS) , CF) = true if idLength(PI) > TEE-OBJECT-ID-MAX-LEN .
+
+--- This rule panics if input object id length is greater than TEE_OBJECT_ID_MAX_LEN.
+  ceq invalid(CreatePersistentObjectCall(STORID , PI , DATAFLAGS , HANDLE , DATALIST , DATASIZE , OPTHANDLE) , CF) = true if idLength(PI) > TEE-OBJECT-ID-MAX-LEN .
+--- This rule panics if input handle is not TEE_HANDLE_NULL and is not a valid handle on an initialized object containing the type and attributes of the persistent object to create.
+  eq invalid(CreatePersistentObjectCall(STORID , PI , DATAFLAGS , HANDLE , DATALIST , DATASIZE , OPTHANDLE) , 
+              < OI : CryptoHolderObject | handle-set : (< HANDLE : ObjectHandle | is-initialized : false > HS) > CF) = true .
+--- This rule panics if input handle is not a handle on an initialized tranisent object and output handle is NULL.
+  eq invalid(CreatePersistentObjectCall(STORID , PI , DATAFLAGS , TEE-HANDLE-NULL , DATALIST , DATASIZE , TEE-HANDLE-NULL) , CF) = true .
+  eq invalid(CreatePersistentObjectCall(STORID , PI , DATAFLAGS , HANDLE , DATALIST , DATASIZE , TEE-HANDLE-NULL) , 
+              < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS) > CF) = true .
+
+--- This rule panics if input handle is not a valid handle on a persistent object opened with the write-meta access right.
+  eq invalid(CloseAndDeletePersistentObject1Call(HANDLE) ,
+              < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | > > CF) = true .
+  ceq invalid(CloseAndDeletePersistentObject1Call(HANDLE) ,
+              < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-flag-set : DATAFLAGS > HS) > CF) = true
+              if not (TEE-DATA-FLAG-ACCESS-WRITE-META in DATAFLAGS) .
+
+--- This rule panics if the input handle is not a valid handle on a persistent object that has been opened with the write-meta access right.
+  eq invalid(RenamePersistentObjectCall(TEE-HANDLE-NULL , PI2) , CF) = true .
+  eq invalid(RenamePersistentObjectCall(HANDLE , PI2) , 
+              < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | > > CF) = true .
+  ceq invalid(RenamePersistentObjectCall(HANDLE , PI2) , 
+                < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-flag-set : DATAFLAGS > HS) > CF) = true
+                if not (TEE-DATA-FLAG-ACCESS-WRITE-META in DATAFLAGS) .
+--- This rule panics if the input object id resides in shared memory.
+--- This rule panics if the input object id lenght is more than TEE_OBJECT_ID_MAX_LEN.
+  --- ceq invalid(RenamePersistentObjectCall(HANDLE , PI2) , CF) = true if not validId(PI2) .
+
+------------------------------------------------------------
+--- Generic Object Functions
+------------------------------------------------------------
+--- This rule panics if input handle is not a valid opened object handle.
+  eq invalid(GetObjectInfo1Call(TEE-HANDLE-NULL) , CF) = true .
+
+--- This rule panics if input handle is not a valid opened object handle.
+  eq invalid(RestrictObjectUsage1Call(TEE-HANDLE-NULL , OBJUSAGES2) , CF) = true .
+  --- eq invalid(RestrictObjectUsage1Call(operationHandleId(N , TI) , OBJUSAGES2) , CF) = true .
+
+--- This rule panics if input handle is not a valid opened object handle.
+  eq invalid(GetObjectBufferAttributeCall(TEE-HANDLE-NULL , ATTRID) , CF) = true .
+--- This rule panics if the object is not initialized.
+  eq invalid(GetObjectBufferAttributeCall(HANDLE , ATTRID) ,
+              < OI : CryptoHolderObject | handle-set : (< HANDLE : ObjectHandle | is-initialized : false > HS) > CF) = true .
+--- This rule panics if Bit[29] of attributeID is not set to 0, so the attribute is not a buffer attribute.
+  ceq invalid(GetObjectBufferAttributeCall(HANDLE , ATTRID) , CF) = true if valueType(ATTRID) .
+--- This rule panics if Bit[28] of attributeID is set to 0, denoting a protected attribute, and the object usage does not contain the TEE_USAGE_EXTRACTABLE flag.
+  ceq invalid(GetObjectBufferAttributeCall(HANDLE , ATTRID) , 
+              < OI : CryptoHolderObject | handle-set : (< HANDLE : ObjectHandle | > HS) ,
+                                          object-usage-set : OBJUSAGES > CF) = true
+              if protectedType(ATTRID) /\ not extractable(OBJUSAGES) .
+
+--- This rule panics if input handle is not a valid opened object handle.
+  eq invalid(GetObjectValueAttributeCall(TEE-HANDLE-NULL , ATTRID) , CF) = true .
+--- This rule panics if the object is not initialized.
+  eq invalid(GetObjectValueAttributeCall(HANDLE , ATTRID) ,
+              < OI : CryptoHolderObject | handle-set : (< HANDLE : ObjectHandle | is-initialized : false > HS) > CF) = true .
+--- This rule panics if Bit[29] of attributeID is not set to 1, so the attribute is not a value attribute.
+  ceq invalid(GetObjectValueAttributeCall(HANDLE , ATTRID) , CF) = true if bufferType(ATTRID) .
+--- This rule panics if Bit[28] of attributeID is set to 0, denoting a protected attribute, and the object usage does not contain the TEE_USAGE_EXTRACTABLE flag.
+  ceq invalid(GetObjectValueAttributeCall(HANDLE , ATTRID) , 
+              < OI : CryptoHolderObject | handle-set : (< HANDLE : ObjectHandle | > HS) ,
+                                          object-usage-set : OBJUSAGES > CF) = true
+              if protectedType(ATTRID) /\ not extractable(OBJUSAGES) .
+
+  --- eq invalid(CloseObject(NULL) , CF) = true .
+
+------------------------------------------------------------
+--- Persistent Object Enumerator Functions
+------------------------------------------------------------
+--- This rule panics if the input handle is not a valid handle on an object enumerator.
+  eq invalid(FreePersistentObjectEnumeratorCall(objectHandleId(N , TI)) , CF) = true .
+  eq invalid(FreePersistentObjectEnumeratorCall(operationHandleId(N , TI)) , CF) = true .
+
+--- This rule panics if the input handle is not TEE_HANDLE_NULL and is not a valid handle on an object enumerator.
+  eq invalid(ResetPersistentObjectEnumeratorCall(objectHandleId(N , TI)) , CF) = true .
+  eq invalid(ResetPersistentObjectEnumeratorCall(operationHandleId(N , TI)) , CF) = true .
+
+
+------------------------------------------------------------
+--- Data Stream Access Functions
+------------------------------------------------------------
+--- This rule panics if object is not a valid handle on a persistent object opened with the read access right.
+  eq invalid(ReadObjectDataCall(TEE-HANDLE-NULL , DATASIZE) , CF) = true .
+  eq invalid(ReadObjectDataCall(HANDLE , DATASIZE) ,
+              < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | > > CF) = true .
+  ceq invalid(ReadObjectDataCall(HANDLE , DATASIZE) , 
+              < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-flag-set : DATAFLAGS > HS) > CF) = true
+              if not (TEE-DATA-FLAG-ACCESS-READ in DATAFLAGS) .
+
+--- This rule panics if input handle is not a valid handle on a persistent object opened with the write access right.
+  eq invalid(WriteObjectDataCall(TEE-HANDLE-NULL , DATALIST) , CF) = true .
+  eq invalid(WriteObjectDataCall(HANDLE , DATALIST) ,
+              < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | > > CF) = true .
+  ceq invalid(WriteObjectDataCall(HANDLE , DATALIST) ,
+              < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-flag-set : DATAFLAGS > HS) > CF) = true
+              if not (TEE-DATA-FLAG-ACCESS-WRITE in DATAFLAGS) .
+
+------------------------------------------------------------
+--- Cryptographic Operation Functions
+------------------------------------------------------------
+--- This rule panics if input handle is not a valid handle on an operation and is not equal to TEE_HANDLE_NULL.
+  eq invalid(FreeOperationCall(objectHandleId(N , TI)) , CF) = true .
+
+--- This rule panics if the input handle is not a valid opened operation handle.
+  eq invalid(ResetOperationCall(objectHandleId(N , TI)) , CF) = true .
+--- This rule panics if the key has not been set yet.
+  eq invalid(ResetOperationCall(HANDLE) , 
+              < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-key-set : false > > CF) = true .
+
+--- This rule panics if operation is not a valid opened operation handle.
+  eq invalid(SetOperationKeyCall(TEE-HANDLE-NULL , HANDLE2) , CF) = true .
+--- This rule panics if key is not TEE_HANDLE_NULL and is not a valid handle on a key object.
+  eq invalid(SetOperationKeyCall(HANDLE1 , operationHandleId(N , TI)) , CF) = true .
+--- This rule panics if key is not initialized.
+  eq invalid(SetOperationKeyCall(HANDLE1 , HANDLE2) , 
+              < OI : CryptoHolderObject | handle-set : < HANDLE2 : ObjectHandle | is-initialized : false > > CF) = true .
+--- This rule panics if the flag TEE_HADNLE_FLAG_INITIALIZED is set on the operation.
+  eq invalid(SetOperationKeyCall(HANDLE1 , HANDLE2) , 
+              < CI : CryptoOperation | handle-set : < HANDLE1 : OperationHandle | is-initialized : true > > CF) = true .
+
+--- This rule panics if input handle is not a valid operation handle of class TEE_OPERATION_CIPHER.
+  op classNotCipher : OperationClass -> Bool .
+  eq classNotCipher(TEE-OPERATION-CIPHER) = false .
+  eq classNotCipher(OC) = true [owise] .
+  ceq invalid(CipherInitCall(HANDLE , IV) , 
+              < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | > , operation-class : OC > CF) = true
+              if classNotCipher(OC) .
+--- This rule panics if no key is programmed in the operation.
+  eq invalid(CipherInitCall(HANDLE , IV) , 
+              < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-key-set : false > > CF) = true .
+--- This rule panics if the initialization vector does not have the length required by the algorithm.
+  ceq invalid(CipherInitCall(HANDLE , IV) , 
+              < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | > , algorithm : ALGO > CF) = true
+              if ivRequired(ALGO) . --- /\ ivLengthProblem(ALGO , IV) .
+
+--- This rule panics if input handle is not a valid operation handle of class TEE_OPERATION_CIPHER.
+  ceq invalid(CipherUpdateCall(HANDLE , DL) , 
+               < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | > , operation-class : OC > CF) = true
+               if classNotCipher(OC) .
+--- This rule panics if the operation has not been started yet with the TEE_CipherInit or has already been finalized.
+  eq invalid(CipherUpdateCall(HANDLE , DL) , 
+              < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : false > > CF) = true .  
+--- This rule panics if operation is not in active state.
+  op stateNotActive : OperationState -> Bool .
+  eq stateNotActive(TEE-OPERATION-STATE-ACTIVE) = false .
+  eq stateNotActive(OS) = true [owise] .
+  ceq invalid(CipherUpdateCall(HANDLE , DL) , 
+              < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | > , operation-state : OS > CF) = true
+              if stateNotActive(OS) .
+
+  eq invalid(API , CF) = false [owise] .
+
+--- This rule panics if input handle is not a valid opened object handle.
+
+  crl [invalid-api-panic] :
+    { apiCall(API , TI)
+      < TI : TrustApp | id : TN > CF }
+    => 
+    { < TI : TrustApp | app-status : panic , running : false > CF }
+  if invalid(API , CF)
+  .
+
+--- This rule panics of hardware or cryptographic algorithm failure.
+
+  op canFail : TeeApiCall -> Bool .
+  eq canFail(ResetOperationCall(HANDLE)) = true .
+  eq canFail(SetOperationKeyCall(HANDLE1 , HANDLE2)) = true .
+  eq canFail(CipherInitCall(HANDLE , IV)) = true .
+  eq canFail(CipherUpdateCall(HANDLE , DL)) = true .
+  eq canFail(API) = false [owise] .
+
+  crl [hw-crypto-algo-fail-panic] :
+    apiCall(API , TI)
+    < TI : TrustApp | id : TN >
+    =>
+    < TI : TrustApp | app-status : panic , running : false >
+  if canFail(API)
+  .
+
+endom
+
+omod TRANSIENT-OBJECT-PANIC is
+  pr KERNEL-APP-MSG .
+  pr TRANSIENT-OBJECT-BEHAVIOR .
+  
+  var HANDLE1 : HandleId .
+  vars OBJTYPE1 OBJTYPE2 : ObjectType .
+  vars MAXOBJSIZE1 : CryptoKeySize .
+  vars TI TN : AppId .
+  var OI1 : ObjectId .
+  var ATTRS : Set{TeeAttribute} .
+  var OBJUSAGES2 : Set{ObjectUsage} .
+
+  crl [copy-object-attributes-not-compatible] :
+    copyTransientObject(HANDLE1 , OBJTYPE2 , ATTRS , OBJUSAGES2 , TI)
+    < OI1 : TransientObject | handle-set : < HANDLE1 : ObjectHandle | > ,
+                              object-type : OBJTYPE1 , max-object-size : MAXOBJSIZE1 , trust-app-id : TN > 
+    =>
+    < OI1 : TransientObject | handle-set : < HANDLE1 : ObjectHandle | > >
+    panicOccur(TI)
+  --- if not typeAndSizeCompatiable(OBJTYPE1 , OBJTYPE2 , MAXOBJSIZE1 , keySize(ATTRS))
+  if not typeCompatible(OBJTYPE1 , OBJTYPE2)
+  .
+
+endom

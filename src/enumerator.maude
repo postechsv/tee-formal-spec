@@ -1,0 +1,327 @@
+--- This file defines behaviors of persistent object enumerator APIs.
+
+--- This module defines EnumeratorObject class, modeling the object enumerator of the G.P. documentation.
+
+omod ENUMERATOR-OBJECT is
+  pr TA-OBJECT .
+  pr OPENABLE-OBJECT .
+  pr SET{FileId} .
+
+  class EnumeratorObject | persistent-objects : Set{FileId},
+                           enumerating : Bool .
+  subclass EnumeratorObject < TaObject OpenableObject .
+endom
+
+--- This module defines the persistent object enumeration APIs, defined in chapter 5 section 8 of G.P. documentation.
+
+omod ENUMERATOR-OBJECT-BEHAVIOR is
+  pr ID-GEN .
+  pr TA-KERNEL .
+  pr PERSISTENT-OBJECT .
+  pr DATA-STREAM-OBJECT .
+  pr ENUMERATOR-OBJECT .
+  pr ENUMERATOR-OBJECT-FUNC .
+  pr TRUSTED-STORAGE-FUNC-STATE .
+  pr HANDLE-AUX .
+  pr TEE-OS-BEHAVIOR .
+
+  var B : Bool .
+  var N : Nat .
+  var HANDLE : HandleId .
+  var TK : TaInstId .
+  var TN : AppId .
+  vars OI EI DI : TaObjectId .
+  var FILE : FileId .
+  var FILES : Set{FileId} .
+  var STATUS : StorageStatus .
+  var OBJTYPE : ObjectType .
+  var MAXOBJSIZE : CryptoKeySize .
+  var ATTRS : Set{TeeAttribute} .
+  var OBJUSAGES : Set{ObjectUsage} .
+  var DATASIZE : DataSize .
+  var INFO : TeeObjectInfo .
+  var EXISTENCE : ServiceReturn .
+  var PARAMS : Set{TeeApiParam} .
+
+------------------------------------------------------------
+--- TEE_AllocatePersistentObjectEnumerator
+------------------------------------------------------------
+
+--- The 'TEE_AllocatePersistentObjectEnumerator' function allocates a handle on an object enumerator.
+--- See page 166 of the G.P. documentation for more details.
+
+--- This rule creates an enumerator object.
+
+  rl [alloc-enumerator-success] :
+    < TK : TaKernel | app-status : normal , api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : AllocatePersistentObjectEnumerator ,
+                      id-counter : N , trust-app-id : TN >
+    =>
+    < TK : TaKernel | api-state : finished , id-counter : N + 2 ,
+                      api-return : apiReturn(AllocatePersistentObjectEnumerator , TEE-SUCCESS, handle(handleId(N + 1 , TK))) >
+    < taOid(N , TK) : EnumeratorObject | handle-set : freshEnumeratorHandle(N + 1 , TK) , 
+                                         persistent-objects : empty , enumerating : false ,
+                                         trust-app-id : TN >
+  .
+
+--- This rule returns TEE_ERROR_OUT_OF_MEMORY if there is not enough memory to allocate the enumerator.
+
+  rl [alloc-enumerator-memory-err] :
+    < TK : TaKernel | app-status : outOfMemory , api-call : noCall , api-return : noReturn ,
+                      current-api : AllocatePersistentObjectEnumerator >
+    => 
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(AllocatePersistentObjectEnumerator , TEE-ERROR-OUT-OF-MEMORY , handle(TEE-HANDLE-NULL)) >
+  .
+
+------------------------------------------------------------
+--- TEE_FreePersistentObjectEnumerator
+------------------------------------------------------------
+
+--- The 'TEE_FreePersistentObjectEnumerator' function deallocates all resources associated with an object enumerator handle.
+--- See page 166 of the G.P. documentation for more details.
+
+--- The following three rules delete an enumerator object.
+
+  msg deleteEnumerator : HandleId TaInstId -> Msg .
+  msg finishDeleteEnumerator : TaInstId -> Msg .
+
+  crl [free-enumerator-not-null-subroutine] :
+    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : FreePersistentObjectEnumerator ,
+                      current-params : handle(HANDLE) >
+    => 
+    < TK : TaKernel | api-state : waitDeleteEnumerator >
+    deleteEnumerator(HANDLE , TK)
+  if not nullHandle(HANDLE)
+  .
+
+  rl [free-enumerator-not-null-subroutine] :
+    deleteEnumerator(HANDLE , TK)
+    < EI : EnumeratorObject | handle-set : < HANDLE : ObjectEnumHandle | > >
+    =>
+    finishDeleteEnumerator(TK)
+  .
+
+  rl [free-enumerator-not-null-success] :
+    finishDeleteEnumerator(TK)
+    < TK : TaKernel | api-state : waitDeleteEnumerator ,
+                      current-api : FreePersistentObjectEnumerator >
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(FreePersistentObjectEnumerator) >
+  .
+
+--- This rule does nothing when the input handle is null (TEE_HANDLE_NULL).
+
+  crl [free-enumerator-null-success] :
+    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : FreePersistentObjectEnumerator ,
+                      current-params : handle(HANDLE) >
+    => 
+    < TK : TaKernel | api-state : finished , 
+                      api-return : apiReturn(FreePersistentObjectEnumerator , handle(TEE-HANDLE-NULL)) >
+  if nullHandle(HANDLE)
+  .
+
+------------------------------------------------------------
+--- 'TEE_ResetPersistentObjectEnumerator'
+------------------------------------------------------------
+
+--- The 'TEE_ResetPersistentObjectEnumerator' function resets an object enumerator handle to its initial state after allocation.
+--- See page 167 of the G.P. documentation for more details.
+
+--- The following three rules reset the enumerator object.
+
+  msg reqResetEnumerator : HandleId TaInstId -> Msg .
+  msg retResetEnumerator : TaInstId -> Msg .
+
+  crl [reset-enumerator-not-null-subroutine] :
+    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : ResetPersistentObjectEnumerator ,
+                      current-params : handle(HANDLE) >
+    => 
+    < TK : TaKernel | api-state : waitResetEnumerator >
+    reqResetEnumerator(HANDLE , TK)
+  if not nullHandle(HANDLE)
+  .
+
+  rl [reset-enumerator-not-null-subroutine] :
+    reqResetEnumerator(HANDLE , TK)
+    < EI : EnumeratorObject | handle-set : < HANDLE : ObjectEnumHandle | > >
+    =>
+    < EI : EnumeratorObject | handle-set : < HANDLE : ObjectEnumHandle | > ,
+                              persistent-objects : empty , enumerating : false >
+    retResetEnumerator(TK)
+  .
+
+  rl [reset-enumerator-not-null-success] :
+    retResetEnumerator(TK)
+    < TK : TaKernel | api-state : waitResetEnumerator ,
+                      current-api : ResetPersistentObjectEnumerator >
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(ResetPersistentObjectEnumerator) >
+  .
+
+--- This rule does nothing when the input handle is null (TEE_HANDLE_NULL).
+
+  crl [reset-enumerator-null-success] :
+    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : ResetPersistentObjectEnumerator ,
+                      current-params : handle(HANDLE) >
+    => 
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(ResetPersistentObjectEnumerator) >
+  if nullHandle(HANDLE)
+  .
+
+------------------------------------------------------------
+--- 'TEE_StartPersistentObjectEnumerator'
+------------------------------------------------------------
+
+--- The 'TEE_StartPersistentObjectEnumerator' function starts the enumeration of all the persistent objects in a given Trusted Storage.
+--- See page 168 of the G.P. documentation for more details.
+
+  msg startEnumerator : HandleId Set{FileId} TaInstId -> Msg .
+  msg finishStartEnumerator : TaInstId -> Msg .
+
+  rl [start-enumerator-subroutine] :
+    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : StartPersistentObjectEnumerator ,
+                      trust-app-id : TN >
+    => 
+    < TK : TaKernel | api-state : waitStorageCheck >
+    reqTrustedOS(getStorageStatus getPersistentList(TN) , TK , TN)
+  .
+
+  rl [start-enumerator-subroutine] :
+    retTrustedOS(storageStatus(storageNormal) filesInStorage(FILES) , TK)
+    < TK : TaKernel | api-state : waitStorageCheck , 
+                      current-api : StartPersistentObjectEnumerator ,
+                      current-params : handle(HANDLE) >
+    =>
+    < TK : TaKernel | api-state : waitStartEnumerator >
+    startEnumerator(HANDLE , FILES , TK)
+  .
+
+  rl [start-enumerator-subroutine] :
+    startEnumerator(HANDLE , FILES , TK)
+    < EI : EnumeratorObject | handle-set : < HANDLE : ObjectEnumHandle | > >
+    =>
+    < EI : EnumeratorObject | handle-set : < HANDLE : ObjectEnumHandle | > ,
+                              persistent-objects : FILES , enumerating : true >
+    finishStartEnumerator(TK)
+  .
+
+  rl [start-enumerator-success] : 
+    finishStartEnumerator(TK)
+    < TK : TaKernel | api-state : waitStartEnumerator , 
+                      current-api : StartPersistentObjectEnumerator >
+    =>
+    < TK : TaKernel | api-state : finished , 
+                      api-return : apiReturn(StartPersistentObjectEnumerator , TEE-SUCCESS) >
+  .
+
+  rl [start-enumerator-item-not-found] :
+    retTrustedOS(storageStatus(storageNormal) storageEmpty , TK)
+    < TK : TaKernel | api-state : waitStorageCheck , 
+                      current-api : StartPersistentObjectEnumerator >
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(StartPersistentObjectEnumerator , TEE-ERROR-ITEM-NOT-FOUND) >
+  .
+
+--- This rule returns TEE_ERROR_CORRUPT_OBJECT if the storage is corrupt.
+--- This rule returns TEE_ERROR_STORAGE_NOT_AVAILABLE if the persistent object is stored in a storage area which is currently inaccessible.
+
+  crl [start-enumerator-storage-err] :
+    retTrustedOS(storageStatus(STATUS) EXISTENCE , TK)
+    < TK : TaKernel | api-state : waitStorageCheck , 
+                      current-api : StartPersistentObjectEnumerator >
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(StartPersistentObjectEnumerator , storageErrCode(STATUS)) >
+  if abnormalStorage(STATUS)
+  .
+
+------------------------------------------------------------
+--- 'TEE_GetNextPersistentObject'
+------------------------------------------------------------
+
+--- The 'TEE_GetNextPersistentObject' function gets the next object in an enumeration and returns information about the object: type, size, identifier, etc.
+--- See page 169 of the G.P. documentation for more details.
+
+  rl [get-next-persistent-subroutine] :
+    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : GetNextPersistentObject ,
+                      trust-app-id : TN >
+    => 
+    < TK : TaKernel | api-state : waitStorageCheck >
+    reqTrustedOS(getStorageStatus , TK , TN)
+  .
+
+  rl [get-next-persistent-subroutine] :
+    retTrustedOS(storageStatus(storageNormal) , TK)
+    < TK : TaKernel | api-state : waitStorageCheck , 
+                      current-api : GetNextPersistentObject ,
+                      current-params : handle(HANDLE) >
+    =>
+    < TK : TaKernel | api-state : waitGetNextObjectId >
+    reqNextObjectId(HANDLE , TK)
+  .
+
+  msg reqNextObjectId : HandleId TaInstId -> Msg .
+  msg retNextObjectId : FileId TaInstId -> Msg .
+
+  rl [get-next-persistent-subroutine] :
+    reqNextObjectId(HANDLE , TK)
+    < EI : EnumeratorObject | handle-set : < HANDLE : ObjectEnumHandle | > ,
+                              persistent-objects : (FILE , FILES) , enumerating : true >
+    =>
+    < EI : EnumeratorObject | handle-set : < HANDLE : ObjectEnumHandle | > ,
+                              persistent-objects : FILES >
+    retNextObjectId(FILE , TK)
+  .
+
+  msg reqNextObject : FileId TaInstId AppId -> Msg .
+  msg retNextObject : TeeObjectInfo TaInstId -> Msg .
+
+  rl [get-next-persistent-subroutine] :
+    retNextObjectId(FILE , TK)
+    < TK : TaKernel | api-state : waitGetNextObjectId , 
+                      current-api : GetNextPersistentObject , 
+                      current-params : PARAMS ,
+                      trust-app-id : TN >
+    =>
+    < TK : TaKernel | api-state : waitGetNextObject ,
+                      current-params : PARAMS , fileId(FILE) >
+    reqNextObject(FILE , TK , TN)
+  .
+
+--- TODO: which handle info to use?
+  rl [get-next-persistent-subroutine] :
+    reqNextObject(FILE , TK , TN)
+    < OI : PersistentObject | object-type : OBJTYPE , max-object-size : MAXOBJSIZE , attribute-set : ATTRS , 
+                              object-usage-set : OBJUSAGES , data-stream-id : DI ,
+                              file-id : FILE , trust-app-id : TN >
+    < DI : DataStreamObject | data-size : DATASIZE >
+    =>
+    < OI : PersistentObject | >
+    < DI : DataStreamObject | >
+    retNextObject(teeObjectInfo(OBJTYPE , keySize(ATTRS) , MAXOBJSIZE , OBJUSAGES , DATASIZE , pos(0) , empty) , TK)
+  .
+
+  rl [get-next-persistent-success] :
+    retNextObject(INFO , TK)
+    < TK : TaKernel | api-state : waitGetNextObject , 
+                      current-api : GetNextPersistentObject , 
+                      current-params : fileId(FILE) , PARAMS >
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(GetNextPersistentObject , TEE-SUCCESS , (info(INFO) , fileId(FILE))) >
+  .
+
+  crl [get-next-persistent-storage-err] :
+    retTrustedOS(storageStatus(STATUS) , TK)
+    < TK : TaKernel | api-state : waitStorageCheck , 
+                      current-api : GetNextPersistentObject >
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(GetNextPersistentObject , storageErrCode(STATUS)) >
+  if abnormalStorage(STATUS)
+  .
+
+endom

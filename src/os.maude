@@ -1,0 +1,307 @@
+fmod INVOKE-MESSAGE is
+  pr SESSION-ID .
+  pr IMP-FUNC-ID .
+  pr IMP-EXP-LIST .
+
+  sort InvokeMessage .
+
+  op {_,_,_} : SessionId FuncId ValueList -> InvokeMessage [ctor] .
+endfm
+
+view InvokeMessage from TRIV to INVOKE-MESSAGE is
+  sort Elt to InvokeMessage .
+endv
+
+--- This module defines calls to invoke TA.
+
+omod INVOKE-TA-CALL is
+  pr TA-INSTANCE-ID .
+  pr INVOKE-MESSAGE .
+
+  msg invokeTA : TaInstId InvokeMessage Oid -> Msg .
+  msg invokeTAReturn : InvokeMessage Oid -> Msg .
+endom
+
+--- This module defines SMC arguments.
+
+omod SECURE-MONITOR-CALL-ARG is
+  pr TEE-CLIENT-API .
+  pr INVOKE-MESSAGE .
+
+  sort SmcArgument .
+
+  op invokeMessage : InvokeMessage -> SmcArgument [ctor] .
+  op requestor : Oid -> SmcArgument [ctor] .
+  op {_,_} : TeeClientApi ValueList -> SmcArgument [ctor] .
+endom
+
+view SmcArgument from TRIV to SECURE-MONITOR-CALL-ARG is
+  sort Elt to SmcArgument .
+endv
+
+--- This module defines SMC calls between REE and TEE execution environments.
+
+omod SECURE-MONITOR-CALL is
+  pr LIST{SmcArgument} .
+
+  msg smcRequest : List{SmcArgument} -> Msg .
+  msg smcReturn  : List{SmcArgument} -> Msg .
+endom
+
+--- This module defines execution environments for REE and TEE.
+
+mod EXECUTION-ENV is
+  pr SECURE-MONITOR-CALL .
+  inc CONFIGURATION .
+
+  sort Env .
+
+  var ARGS : List{SmcArgument} .
+  vars REE TEE : Configuration .
+
+  op {_} : Configuration -> Env [ctor] .
+  op _|_ : Env Env -> Env [format (d d n d)] .
+  
+--- Version In Paper
+  --- rl [accept-smc-request] : 
+  ---   { REE smcReq(ARGS) } | { TEE } 
+  ---   => 
+  ---   { REE } | { TEE smcReq(ARGS) } 
+  --- . 
+  
+  --- rl [return-smc-request] : 
+  ---   { REE } | { TEE smcRet(ARGS) } 
+  ---   => 
+  ---   { REE smcRet(ARGS) } | { TEE } 
+  --- .
+
+--- Model/Implementation Specific Version (In Order)
+  crl [accept-smc-request] :
+    { REE smcRequest(ARGS) } | { TEE }
+    =>
+    { REE } | { TEE smcRequest(ARGS) }
+  if TEE =/= none
+  .
+
+  rl [return-smc-request] :
+    { REE } | { TEE smcReturn(ARGS) }
+    =>
+    { REE smcReturn(ARGS) } | { TEE }
+  .
+
+endm
+
+--- This module defines storage status constants.
+
+fmod STORAGE-STATUS is
+  sort StorageStatus .
+
+  op storageNormal : -> StorageStatus [ctor] .
+  op outOfSpace : -> StorageStatus [ctor] .
+  op storageCorrupt : -> StorageStatus [ctor] .
+  op storageInAccessible : -> StorageStatus [ctor] .
+endfm
+
+view StorageStatus from TRIV to STORAGE-STATUS is
+  sort Elt to StorageStatus .
+endv
+
+fmod SERVICE is
+  sorts Service ServiceReturn .
+endfm
+
+view Service from TRIV to SERVICE is
+  sort Elt to Service .
+endv
+
+view ServiceReturn from TRIV to SERVICE is
+  sort Elt to ServiceReturn .
+endv
+
+--- This module defines execution environments for REE and TEE.
+
+omod TEE-OS is
+  pr NAT .
+  pr TA-INSTANCE-ID .
+  pr MAP{SessionId,TaInstId} .
+  pr MAP{AppId,Set{FileId}} .
+  pr MAP{AppId,StorageStatus} .
+  pr MAP{SessionId,List{SmcArgument}} .
+  pr MAP{AppId,Set{TaObjectId}} * (op undefined to noObject) .
+  pr LIST{Service} .
+  pr LIST{ServiceReturn} .
+  
+--- Version In Paper
+  --- class Storage | status : StorageStatus, files : Set{FileName}, counter : Nat .
+  --- class TrustedOS | sess : Map{SessionId,Oid} .
+
+--- Actual Implemenation
+  class TeeOSKernel | opened-session : Map{SessionId,TaInstId}, session-counter : Nat,
+                      storage : Map{AppId,Set{FileId}}, storage-status : Map{AppId,StorageStatus}, 
+                      service-request-ta : AppId?, service-request-ta-inst : TaInstId?,
+                      service-in : List{Service}, service-out : List{ServiceReturn},
+                      temporary-objects : Map{AppId,Set{TaObjectId}},
+                      session-counter : Nat .
+endom
+
+fmod TEE-OS-SERVICE is
+  pr SERVICE .
+  pr STORAGE-STATUS .
+  pr SET{FileId} .
+  pr APP-ID .
+
+  op getStorageStatus : -> Service [ctor] .
+  op storageStatus : StorageStatus -> ServiceReturn [ctor] .
+
+  op checkFileExist : FileId -> Service [ctor] .
+  op fileExist : -> ServiceReturn [ctor] .
+  op noFileExist : -> ServiceReturn [ctor] .
+
+  op notifyFileCreation : FileId -> Service [ctor] .
+  op notifyFileDeletion : FileId -> Service [ctor] .
+  op notifyFileRename : FileId FileId -> Service [ctor] .
+  op acceptNotification : -> ServiceReturn [ctor] .
+
+--- TODO: NEED TO UPDATE OP NAME
+  op getPersistentList : AppId -> Service [ctor] .
+  op filesInStorage : Set{FileId} -> ServiceReturn [ctor] .
+  op storageEmpty : -> ServiceReturn [ctor] .
+endfm
+
+omod TEE-OS-BEHAVIOR is
+  pr TEE-OS .
+  pr TEE-OS-SERVICE .
+  pr RETURN-CODE .
+
+  var KI : Oid .
+  var SIL : List{Service} .
+  var SOL : List{ServiceReturn} .
+  var NESOL : NeList{ServiceReturn} .
+  var TK : TaInstId .
+  var TN : AppId .
+  var STATUS : StorageStatus .
+  var SMAP : Map{AppId,StorageStatus} .
+  vars FILE FILE' : FileId .
+  var FL : Set{FileId} .
+  var STORAGE : Map{AppId,Set{FileId}} .
+  var S : Service .
+
+  msg reqTrustedOS : List{Service} TaInstId AppId -> Msg .
+  msg retTrustedOS : List{ServiceReturn} TaInstId -> Msg .
+
+  rl [service-receive] :
+    reqTrustedOS(SIL , TK , TN)
+    < KI : TeeOSKernel | service-in : nil , service-out : nil , 
+                         service-request-ta : noAppId , service-request-ta-inst : noInstId >
+    =>
+    < KI : TeeOSKernel | service-in : SIL , 
+                         service-request-ta : TN , service-request-ta-inst : TK >
+  .
+
+  rl [service-finish] :
+    < KI : TeeOSKernel | service-in : nil , service-out : NESOL , 
+                         service-request-ta : TN , service-request-ta-inst : TK >
+    =>
+    < KI : TeeOSKernel | service-out : nil , 
+                         service-request-ta : noAppId , service-request-ta-inst : noInstId >
+    retTrustedOS(NESOL , TK)
+  .
+
+  op abnormalStorage : StorageStatus -> Bool .
+  eq abnormalStorage(storageNormal) = false .
+  eq abnormalStorage(STATUS) = true [owise] .
+
+  op storageErrCode : StorageStatus -> ReturnCode .
+  eq storageErrCode(storageCorrupt) = TEE-ERROR-CORRUPT-OBJECT .
+  eq storageErrCode(storageInAccessible) = TEE-ERROR-STORAGE-NOT-AVAILABLE .
+  eq storageErrCode(outOfSpace) = TEE-ERROR-STORAGE-NO-SPACE .
+
+  rl [get-storage-status] :
+    < KI : TeeOSKernel | service-in : (getStorageStatus SIL) , service-out : SOL , 
+                         service-request-ta : TN , storage-status : (TN |-> STATUS , SMAP) >
+    =>
+    < KI : TeeOSKernel | service-in : SIL , service-out : (SOL storageStatus(STATUS)) >
+  .
+
+  op exist : FileId AppId Map{AppId,Set{FileId}} -> ServiceReturn .
+  eq exist(FILE , TN , (TN |-> (FILE , FL) , STORAGE)) = fileExist .
+  eq exist(FILE , TN , STORAGE) = noFileExist [owise] .
+
+  rl [check-file-exist] :
+    < KI : TeeOSKernel | service-in : (checkFileExist(FILE) SIL) , service-out : SOL , 
+                         service-request-ta : TN , storage : STORAGE >
+    =>
+    < KI : TeeOSKernel | service-in : SIL , service-out : (SOL exist(FILE , TN , STORAGE)) >
+  .
+
+  op isNotifyService : Service -> Bool .
+  eq isNotifyService(notifyFileCreation(FILE)) = true .
+  eq isNotifyService(notifyFileDeletion(FILE)) = true .
+  eq isNotifyService(notifyFileRename(FILE' , FILE)) = true .
+  eq isNotifyService(S) = false [owise] .
+
+  op insertToStorage : FileId AppId Map{AppId,Set{FileId}} -> Map{AppId,Set{FileId}} .
+  eq insertToStorage(FILE , TN , (TN |-> FL , STORAGE)) = (TN |-> (FILE , FL) , STORAGE) .
+  eq insertToStorage(FILE , TN , STORAGE) = (TN |-> FILE , STORAGE) [owise] .
+
+  op deleteFromStorage : FileId AppId Map{AppId,Set{FileId}} -> Map{AppId,Set{FileId}} .
+  eq deleteFromStorage(FILE , TN , (TN |-> (FILE , FL) , STORAGE)) = (TN |-> FL , STORAGE) .
+  eq deleteFromStorage(FILE , TN , STORAGE) = STORAGE [owise] .
+
+  op renameInStorage : FileId FileId AppId Map{AppId,Set{FileId}} -> Map{AppId,Set{FileId}} .
+  eq renameInStorage(FILE' , FILE , TN , (TN |-> (FILE' , FL) , STORAGE)) = (TN |-> (FILE , FL) , STORAGE) .
+
+  op updateStorage : Service AppId Map{AppId,Set{FileId}} -> Map{AppId,Set{FileId}} .
+  eq updateStorage(notifyFileCreation(FILE) , TN , STORAGE) = insertToStorage(FILE , TN , STORAGE) .
+  eq updateStorage(notifyFileDeletion(FILE) , TN , STORAGE) = deleteFromStorage(FILE , TN , STORAGE) .
+  eq updateStorage(notifyFileRename(FILE' , FILE) , TN , STORAGE) = renameInStorage(FILE' , FILE , TN , STORAGE) .
+
+  crl [notify-file-manipulation] :
+    < KI : TeeOSKernel | service-in : (S SIL) , service-out : SOL , 
+                         service-request-ta : TN , storage : STORAGE >
+    =>
+    < KI : TeeOSKernel | service-in : SIL , service-out : (SOL acceptNotification) ,
+                         storage : updateStorage(S , TN , STORAGE) >
+  if isNotifyService(S)
+  .
+
+--- TODO: NEED TO UPDATE OP NAME
+  op acquire : AppId Map{AppId,Set{FileId}} -> ServiceReturn .
+  eq acquire(TN , (TN |-> (FILE , FL) , STORAGE)) = filesInStorage((FILE , FL)) .
+  eq acquire(TN , STORAGE) = storageEmpty [owise] .
+
+  rl [get-persistent-list] :
+    < KI : TeeOSKernel | service-in : (getPersistentList(TN) SIL) , service-out : SOL ,
+                         service-request-ta : TN , storage : STORAGE >
+    =>
+    < KI : TeeOSKernel | service-in : SIL , service-out : (SOL acquire(TN , STORAGE)) >
+  .
+
+endom
+
+--- This module defines a device class, modeling storage devices.
+
+omod DEVICE is
+  pr DEVICE-ID .
+  pr EXECUTION-ENV .
+
+  subsort DeviceId < Oid .
+  class Device | execution-envs : Env .
+
+endom
+
+--- This module defines id generators for TEE APIs.
+
+fmod ID-GEN is
+  pr NAT .
+  pr APP-ID .
+  pr TA-INSTANCE-ID .
+  pr TA-OBJECT-ID .
+  pr DEVICE-ID .
+  pr SESSION-ID .
+
+  op taOid : Nat TaInstId -> TaObjectId [ctor] .
+  op richAppId : Nat -> AppId [ctor] .
+  op deviceId : Nat -> DeviceId [ctor] .
+  op sessionId : Nat -> SessionId [ctor] .
+endfm

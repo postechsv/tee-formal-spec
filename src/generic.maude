@@ -1,0 +1,602 @@
+--- This file defines behaviors of generic object APIs,
+
+--- This module defines the generic object APIs, defined in chapter 5 section 5 of G.P. documentation.
+
+omod GENERIC-OBJECT-BEHAVIOR is
+  pr ID-GEN .
+  pr OBJECT-TYPE .
+  pr TA-KERNEL .
+  pr GENERIC-OBJECT-FUNC .
+  pr TRUSTED-STORAGE-FUNC-STATE .
+  pr TRUSTED-STORAGE-MSG .
+  pr TRANSIENT-OBJECT .
+  pr PERSISTENT-OBJECT .
+  pr DATA-STREAM-OBJECT .
+  pr OBJECT-HANDLE .
+  pr HANDLE-AUX .
+  pr TRUSTED-STORAGE-OBJECT-AUX .
+  pr TEE-ATTRIBUTE-AUX .
+  pr TEE-OS-BEHAVIOR .
+
+  var TK : TaInstId .
+  var TN : AppId .
+  var HANDLE : HandleId .
+  vars OI DI : TaObjectId .
+  var OBJTYPE : ObjectType .
+  vars KEYSIZE MAXOBJSIZE : CryptoKeySize .
+  vars OBJUSAGES OBJUSAGES' : Set{ObjectUsage} .
+  var ID : AttrId .
+  var V : AttrContent .
+  var ATTRS : Set{TeeAttribute} .
+  var DATAFLAGS : Set{DataFlag} .
+  var DATAPOS : DataPosition .
+  var DATASIZE : DataSize .
+  var HS : Configuration .
+  var STATUS : StorageStatus .
+  var INFO : TeeObjectInfo .
+  var PARAMS : Set{TeeApiParam} .
+
+------------------------------------------------------------
+--- 'TEE_GetObjectInfo1'
+------------------------------------------------------------
+
+--- The 'TEE_GetObjectInfo1' function returns the characteristics of an object.
+--- See page 132 of the G.P. documentation for more details.
+
+  msg reqObjectInfo : HandleId TaInstId AppId -> Msg .
+  msg retObjectInfoTr : ObjectType CryptoKeySize CryptoKeySize Set{ObjectUsage} TaInstId -> Msg .
+  msg retObjectInfoPr : ObjectType CryptoKeySize CryptoKeySize Set{ObjectUsage} DataSize DataPosition Set{DataFlag} TaInstId -> Msg .
+
+  crl [get-obj-info-subroutine] :
+    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : GetObjectInfo1 ,
+                      current-params : handle(HANDLE) , trust-app-id : TN >
+    =>
+    < TK : TaKernel | api-state : waitObjectInfo >
+    reqObjectInfo(HANDLE , TK , TN)
+  if not nullHandle(HANDLE)
+  .
+
+--- The following two rules acquire transient object data.
+
+  rl [get-obj-info-transient-subroutine] :
+    reqObjectInfo(HANDLE , TK , TN)
+    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | > ,
+                             object-type : OBJTYPE , max-object-size : MAXOBJSIZE ,
+                             attribute-set : ATTRS , object-usage-set : OBJUSAGES , 
+                             trust-app-id : TN >
+    => 
+    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | > >
+    retObjectInfoTr(OBJTYPE , keySize(ATTRS) , MAXOBJSIZE , OBJUSAGES , TK)
+  .
+
+  rl [get-obj-info-transient-success] :
+    retObjectInfoTr(OBJTYPE , KEYSIZE , MAXOBJSIZE , OBJUSAGES , TK)
+    < TK : TaKernel | api-state : waitObjectInfo ,
+                      current-api : GetObjectInfo1 >
+    => 
+    < TK : TaKernel | api-state : finished , 
+                      api-return : apiReturn(GetObjectInfo1 , TEE-SUCCESS , info(teeObjectInfo(OBJTYPE , KEYSIZE , MAXOBJSIZE , OBJUSAGES , dataSize(0) , pos(0) , empty))) >
+  .
+
+--- The following two rules acquire persistent object and its associated data stream data.
+
+  rl [get-obj-info-persistent-subroutine] :
+    reqObjectInfo(HANDLE , TK , TN)
+    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-access-flag-set : DATAFLAGS , data-position : DATAPOS > HS) ,
+                              object-type : OBJTYPE , max-object-size : MAXOBJSIZE , attribute-set : ATTRS , 
+                              object-usage-set : OBJUSAGES , data-stream-id : DI , trust-app-id : TN >
+    < DI : DataStreamObject | data-size : DATASIZE >
+    =>
+    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS) >
+    < DI : DataStreamObject | >
+    retObjectInfoPr(OBJTYPE , keySize(ATTRS) , MAXOBJSIZE , OBJUSAGES , DATASIZE , DATAPOS , DATAFLAGS , TK)
+  .
+
+  rl [get-obj-info-persistent-subroutine] :
+    retObjectInfoPr(OBJTYPE , KEYSIZE , MAXOBJSIZE , OBJUSAGES , DATASIZE , DATAPOS , DATAFLAGS , TK)
+    < TK : TaKernel | api-state : waitObjectInfo ,
+                      current-api : GetObjectInfo1 , current-params : PARAMS , 
+                      trust-app-id : TN >
+    =>
+    < TK : TaKernel | api-state : waitStorageCheck , 
+                      current-params : PARAMS , info(teeObjectInfo(OBJTYPE , KEYSIZE , MAXOBJSIZE , OBJUSAGES , DATASIZE , DATAPOS , DATAFLAGS)) >
+    reqTrustedOS(getStorageStatus , TK , TN)
+  .
+
+  rl [get-obj-info-persistent-success] :
+    retTrustedOS(storageStatus(storageNormal) , TK)
+    < TK : TaKernel | api-state : waitStorageCheck , 
+                      current-api : GetObjectInfo1 ,
+                      current-params : PARAMS , info(INFO) >
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(GetObjectInfo1 , TEE-SUCCESS , info(INFO)) >
+  .
+
+--- This rule returns TEE_ERROR_CORRUPT_OBJECT if the persistent object is corrupt.
+--- This rule returns TEE_ERROR_STORAGE_NOT_AVAILABLE if the persistent object is stored in a storage area which is currently inaccessible.
+
+  crl [get-obj-info-abnormal-storage-err] :
+    retTrustedOS(storageStatus(STATUS) , TK)
+    < TK : TaKernel | api-state : waitStorageCheck , 
+                      current-api : GetObjectInfo1 >
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(GetObjectInfo1 , storageErrCode(STATUS)) >
+  if abnormalStorage(STATUS)
+  .
+
+------------------------------------------------------------
+--- 'TEE_RestrictObjectUsage1'
+------------------------------------------------------------
+
+--- The 'TEE_RestrictObjectUsage1' restricts the object usage flags of an object handle to contain at most the flags passed in the 'objectUsage' parameter.
+--- See page 134 of the G.P. documentation for more details.
+
+--- This rule restricts the usage of the object.
+
+  msg restrictUsage : HandleId Set{ObjectUsage} TaInstId -> Msg .
+  msg finishRestrictUsage : TaInstId -> Msg .
+
+  rl [restrict-object-usage-subroutine] :
+    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : RestrictObjectUsage1 ,
+                      current-params : handle(HANDLE) , PARAMS >
+    =>
+    < TK : TaKernel | api-state : waitReqAttribute >
+    reqAttribute(HANDLE , TK)
+  .
+
+  rl [restrict-object-usage-subroutine] :
+    retAttributeTr(ATTRS , OBJTYPE , OBJUSAGES , TK)
+    < TK : TaKernel | api-state : waitReqAttribute , current-api : RestrictObjectUsage1 , 
+                      current-params : handle(HANDLE) , usages(OBJUSAGES') , PARAMS >
+    =>
+    < TK : TaKernel | api-state : waitRestrictObjectUsage >
+    restrictUsage(HANDLE , updateObjectUsage(OBJUSAGES , OBJUSAGES') , TK)
+  .
+
+  rl [restrict-object-usage-subroutine] :
+    restrictUsage(HANDLE , OBJUSAGES , TK)
+    < OI : TrustedStorageObject | handle-set : (< HANDLE : ObjectHandle | > HS) >
+    =>
+    < OI : TrustedStorageObject | handle-set : (< HANDLE : ObjectHandle | > HS) ,
+                                  object-usage-set : OBJUSAGES >
+    finishRestrictUsage(TK)
+  .
+
+  rl [restrict-object-usage-success] :
+    finishRestrictUsage(TK)
+    < TK : TaKernel | api-state : waitRestrictObjectUsage ,
+                      current-api : RestrictObjectUsage1 >
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(RestrictObjectUsage1) >
+  .
+
+  rl [restrict-object-usage-subroutine] :
+    retAttributePr(ATTRS , OBJTYPE , OBJUSAGES , TK)
+    < TK : TaKernel | api-state : waitReqAttribute , current-api : RestrictObjectUsage1 , 
+                      current-params : PARAMS , 
+                      trust-app-id : TN >
+    =>
+    < TK : TaKernel | api-state : waitStorageCheck ,
+                      current-params : PARAMS , srcUsages(OBJUSAGES) >
+    reqTrustedOS(getStorageStatus , TK , TN) 
+  .
+
+  rl [restrict-object-usage-subroutine] :
+    retTrustedOS(storageStatus(storageNormal) , TK)
+    < TK : TaKernel | api-state : waitStorageCheck , 
+                      current-api : RestrictObjectUsage1 ,
+                      current-params : handle(HANDLE) , usages(OBJUSAGES') , 
+                                       srcUsages(OBJUSAGES) , PARAMS >
+    => 
+    < TK : TaKernel | api-state : waitRestrictObjectUsage >
+    restrictUsage(HANDLE , updateObjectUsage(OBJUSAGES , OBJUSAGES') , TK)
+  .
+
+--- This rule returns TEE_ERROR_CORRUPT_OBJECT if the persistent object is corrupt.
+--- This rule returns TEE_ERROR_STORAGE_NOT_AVAILABLE if the persistent object is stored in a storage area which is currently inaccessible.
+
+  crl [restrict-object-usage-storage-err] :
+    retTrustedOS(storageStatus(STATUS) , TK)
+    < TK : TaKernel | api-state : waitStorageCheck ,
+                      current-api : RestrictObjectUsage1 >
+    => 
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(RestrictObjectUsage1 , storageErrCode(STATUS)) >
+  if abnormalStorage(STATUS) 
+  .
+
+------------------------------------------------------------
+--- 'TEE_GetObjectBufferAttribute'
+------------------------------------------------------------
+
+--- The 'TEE_GetObjectBufferAttribute' function extracts one buffer attribute from an object.
+--- See page 135 of the G.P. documentation for more details.
+
+  op bufferType : AttrId -> Bool .
+  eq bufferType(ID) = ID :: AttrRef .
+
+  op canAcquireAttr : AttrId Set{ObjectUsage} -> Bool .
+  eq canAcquireAttr(ID , OBJUSAGES) = not (not publicType(ID) and not (protectedType(ID) and extractable(OBJUSAGES))) .
+
+  op protectedType : AttrId -> Bool .
+  eq protectedType(ID) = ID :: AttrProtected .
+
+  op publicType : AttrId -> Bool .
+  eq publicType(ID) = ID :: AttrPublic .
+
+  op extractable : Set{ObjectUsage} -> Bool .
+  eq extractable(OBJUSAGES) = (TEE-USAGE-EXTRACTABLE) in OBJUSAGES .
+
+  op getAttrContent : AttrId Set{TeeAttribute} -> AttrContent .
+  eq getAttrContent(ID, (teeAttribute(ID , V) , ATTRS)) = V .
+
+  crl [get-object-buffer-attribute-subroutine] :
+    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : GetObjectBufferAttribute ,
+                      current-params : handle(HANDLE) , constId(ID) >
+    =>
+    < TK : TaKernel | api-state : waitReqAttribute >
+    reqAttribute(HANDLE , TK)
+  if bufferType(ID)
+  .
+
+  rl [get-object-buffer-attribute-subroutine] :
+    retAttributeTr(ATTRS , OBJTYPE , OBJUSAGES , TK)
+    < TK : TaKernel | api-state : waitReqAttribute , current-api : GetObjectBufferAttribute , 
+                      current-params : PARAMS >
+    =>
+    < TK : TaKernel | api-state : waitGetBufferAttribute , 
+                      current-params : PARAMS , attrs(ATTRS) , usages(OBJUSAGES) >
+  .
+
+  crl [get-object-buffer-attribute-success] :
+    < TK : TaKernel | api-state : waitGetBufferAttribute , 
+                      current-api : GetObjectBufferAttribute ,
+                      current-params : constId(ID) , attrs(ATTRS) , 
+                                       usages(OBJUSAGES) , PARAMS >
+    =>
+    < TK : TaKernel | api-state : finished , 
+                      api-return : apiReturn(GetObjectBufferAttribute , TEE-SUCCESS , constVal(getAttrContent(ID , ATTRS))) >
+  if ID in getAttrIds(ATTRS) /\ canAcquireAttr(ID , OBJUSAGES)
+  .
+
+  rl [get-object-buffer-attribute-subroutine] :
+    retAttributePr(ATTRS , OBJTYPE , OBJUSAGES , TK)
+    < TK : TaKernel | api-state : waitReqAttribute , current-api : GetObjectBufferAttribute , 
+                      current-params : PARAMS , 
+                      trust-app-id : TN >
+    =>
+    < TK : TaKernel | api-state : waitStorageCheck ,
+                      current-params : PARAMS , attrs(ATTRS) , usages(OBJUSAGES) >
+    reqTrustedOS(getStorageStatus , TK , TN) 
+  .
+
+  rl [get-object-buffer-attribute-subroutine] :
+    retTrustedOS(storageStatus(storageNormal) , TK)
+    < TK : TaKernel | api-state : waitStorageCheck , 
+                      current-api : GetObjectBufferAttribute >
+    => 
+    < TK : TaKernel | api-state : waitGetBufferAttribute >
+  .
+
+--- This rule returns TEE_ERROR_CORRUPT_OBJECT if the persistent object is corrupt.
+--- This rule returns TEE_ERROR_STORAGE_NOT_AVAILABLE if the persistent object is stored in a storage area which is currently inaccessible.
+
+  crl [get-object-buffer-attribute-storage-err] :
+    retTrustedOS(storageStatus(STATUS) , TK)
+    < TK : TaKernel | api-state : waitStorageCheck ,
+                      current-api : GetObjectBufferAttribute >
+    => 
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(GetObjectBufferAttribute , storageErrCode(STATUS)) >
+  if abnormalStorage(STATUS) 
+  .
+
+--- This rule returns TEE_ERROR_ITEM_NOT_FOUND if the attribute is not found on this object.
+
+  crl [get-object-buffer-attribute-not-found-err] :
+    < TK : TaKernel | api-state : waitGetBufferAttribute , 
+                      current-api : GetObjectBufferAttribute ,
+                      current-params : constId(ID) , attrs(ATTRS) , PARAMS >
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(GetObjectBufferAttribute , TEE-ERROR-ITEM-NOT-FOUND) >
+  if not (ID in getAttrIds(ATTRS))
+  .
+
+--- TODO: NEED TO UPDATE
+--- This rule returns TEE_ERROR_SHORT_BUFFER if buffer is NULL or too small to contain the key part.
+
+  --- op isBufferNull : TeeAttrContent -> Bool .
+  --- eq isBufferNull(BUFFER) = false .
+
+  --- op smallBuffer : TeeAttrContent -> Bool .
+  --- eq smallBuffer(BUFFER) = false .
+
+  --- op sufficientBuffer : TeeAttrContent -> Bool .
+  --- eq sufficientBuffer(BUFFER) = (not isBufferNull(BUFFER)) and (not smallBuffer(BUFFER)) .
+
+------------------------------------------------------------
+--- 'TEE_GetObjectValueAttribute'
+------------------------------------------------------------
+
+--- The 'TEE_GetObjectValueAttribute' function extracts a value attribute from an object.
+--- See page 137 of the G.P. documentation for more details.
+
+  op valueType : AttrId -> Bool .
+  eq valueType(ID) = ID :: AttrVal .
+
+  crl [get-object-value-attribute-subroutine] :
+    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : GetObjectValueAttribute ,
+                      current-params : handle(HANDLE) , constId(ID) >
+    =>
+    < TK : TaKernel | api-state : waitReqAttribute >
+    reqAttribute(HANDLE , TK)
+  if valueType(ID)
+  .
+
+  rl [get-object-value-attribute-subroutine] :
+    retAttributeTr(ATTRS , OBJTYPE , OBJUSAGES , TK)
+    < TK : TaKernel | api-state : waitReqAttribute , current-api : GetObjectValueAttribute , 
+                      current-params : PARAMS >
+    =>
+    < TK : TaKernel | api-state : waitGetValueAttribute , 
+                      current-params : PARAMS , attrs(ATTRS) , usages(OBJUSAGES) >
+  .
+
+  crl [get-object-value-attribute-success] :
+    < TK : TaKernel | api-state : waitGetValueAttribute , 
+                      current-api : GetObjectValueAttribute ,
+                      current-params : constId(ID) , attrs(ATTRS) , 
+                                       usages(OBJUSAGES) , PARAMS >
+    =>
+    < TK : TaKernel | api-state : finished , 
+                      api-return : apiReturn(GetObjectValueAttribute , TEE-SUCCESS , constVal(getAttrContent(ID , ATTRS))) >
+  if ID in getAttrIds(ATTRS) /\ canAcquireAttr(ID , OBJUSAGES)
+  .
+
+  rl [get-object-value-attribute-subroutine] :
+    retAttributePr(ATTRS , OBJTYPE , OBJUSAGES , TK)
+    < TK : TaKernel | api-state : waitReqAttribute , current-api : GetObjectValueAttribute , 
+                      current-params : PARAMS , 
+                      trust-app-id : TN >
+    =>
+    < TK : TaKernel | api-state : waitStorageCheck ,
+                      current-params : PARAMS , attrs(ATTRS) , usages(OBJUSAGES) >
+    reqTrustedOS(getStorageStatus , TK , TN) 
+  .
+
+  rl [get-object-value-attribute-subroutine] :
+    retTrustedOS(storageStatus(storageNormal) , TK)
+    < TK : TaKernel | api-state : waitStorageCheck , 
+                      current-api : GetObjectValueAttribute >
+    => 
+    < TK : TaKernel | api-state : waitGetValueAttribute >
+  .
+
+--- This rule returns TEE_ERROR_CORRUPT_OBJECT if the persistent object is corrupt.
+--- This rule returns TEE_ERROR_STORAGE_NOT_AVAILABLE if the persistent object is stored in a storage area which is currently inaccessible.
+
+  crl [get-object-value-attribute-storage-err] :
+    retTrustedOS(storageStatus(STATUS) , TK)
+    < TK : TaKernel | api-state : waitStorageCheck ,
+                      current-api : GetObjectValueAttribute >
+    => 
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(GetObjectValueAttribute , storageErrCode(STATUS)) >
+  if abnormalStorage(STATUS) 
+  .
+
+--- This rule returns TEE_ERROR_ITEM_NOT_FOUND if the attribute is not found on this object.
+
+  crl [get-object-value-attribute-not-found-err] :
+    < TK : TaKernel | api-state : waitGetValueAttribute , 
+                      current-api : GetObjectValueAttribute ,
+                      current-params : constId(ID) , attrs(ATTRS) , PARAMS >
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(GetObjectValueAttribute , TEE-ERROR-ITEM-NOT-FOUND) >
+  if not (ID in getAttrIds(ATTRS))
+  .
+
+------------------------------------------------------------
+--- 'TEE_CloseObject'
+------------------------------------------------------------
+
+--- The 'TEE_CloseObject' function closes an opened object handle.
+--- See page 138 of the G.P. documentation for more details.
+
+--- The following four rules close an object handle.
+
+  msg closeObject : HandleId TaInstId -> Msg .
+  msg finishCloseObject : TaInstId -> Msg .
+
+  crl [close-object-not-null-subroutine] :
+    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : CloseObject ,
+                      current-params : handle(HANDLE) >
+    => 
+    < TK : TaKernel | api-state : waitCloseObject >
+    closeObject(HANDLE , TK)
+  if not nullHandle(HANDLE)
+  .
+
+  rl [close-object-not-null-subroutine] :
+    closeObject(HANDLE , TK)
+    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | > >
+    =>
+    finishCloseObject(TK)
+  .
+
+  rl [close-object-not-null-subroutine] :
+    closeObject(HANDLE , TK)
+    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS) >
+    =>
+    < OI : PersistentObject | handle-set : HS >
+    finishCloseObject(TK)
+  .
+
+  rl [close-object-not-null-success] :
+    finishCloseObject(TK)
+    < TK : TaKernel | api-state : waitCloseObject ,
+                      current-api : CloseObject , api-return : noReturn >
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(CloseObject) >
+  .
+
+--- This rule does nothing when object handle is null (TEE_HANDLE_NULL).
+
+  crl [close-object-null-success] :
+    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : CloseObject ,
+                      current-params : handle(HANDLE) >
+    => 
+    < TK : TaKernel | api-state : finished , 
+                      api-return : apiReturn(CloseObject , handle(TEE-HANDLE-NULL)) >
+  if nullHandle(HANDLE)
+  .
+
+endom
+
+--- This module provides invisible reduction for generic API.
+
+omod GENERIC-OBJECT-BEHAVIOR-INVISIBLE is
+  pr GENERIC-OBJECT-BEHAVIOR .
+
+  var TK : TaInstId .
+  var TN : AppId .
+  var HANDLE : HandleId .
+  vars OI DI : TaObjectId .
+  var OBJTYPE : ObjectType .
+  vars KEYSIZE MAXOBJSIZE : CryptoKeySize .
+  var OBJUSAGES : Set{ObjectUsage} .
+  var ATTRS : Set{TeeAttribute} .
+  var DATAFLAGS : Set{DataFlag} .
+  var DATAPOS : DataPosition .
+  var DATASIZE : DataSize .
+  var HS : Configuration .
+  var STATUS : StorageStatus .
+  var INFO : TeeObjectInfo .
+  var PARAMS : Set{TeeApiParam} .
+
+------------------------------------------------------------
+--- 'TEE_GetObjectInfo1'
+------------------------------------------------------------
+
+  ceq
+    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : GetObjectInfo1 ,
+                      current-params : handle(HANDLE) , trust-app-id : TN >
+    =
+    < TK : TaKernel | api-state : waitObjectInfo >
+    reqObjectInfo(HANDLE , TK , TN)
+  if not nullHandle(HANDLE)
+  .
+
+  eq
+    reqObjectInfo(HANDLE , TK , TN)
+    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | > ,
+                             object-type : OBJTYPE , max-object-size : MAXOBJSIZE ,
+                             attribute-set : ATTRS , object-usage-set : OBJUSAGES , 
+                             trust-app-id : TN >
+    =
+    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | > >
+    retObjectInfoTr(OBJTYPE , keySize(ATTRS) , MAXOBJSIZE , OBJUSAGES , TK)
+  .
+
+  eq
+    retObjectInfoTr(OBJTYPE , KEYSIZE , MAXOBJSIZE , OBJUSAGES , TK)
+    < TK : TaKernel | api-state : waitObjectInfo ,
+                      current-api : GetObjectInfo1 >
+    = 
+    < TK : TaKernel | api-state : finished , 
+                      api-return : apiReturn(GetObjectInfo1 , TEE-SUCCESS , info(teeObjectInfo(OBJTYPE , KEYSIZE , MAXOBJSIZE , OBJUSAGES , dataSize(0) , pos(0) , empty))) >
+  .
+
+  eq
+    reqObjectInfo(HANDLE , TK , TN)
+    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-access-flag-set : DATAFLAGS , data-position : DATAPOS > HS) ,
+                              object-type : OBJTYPE , max-object-size : MAXOBJSIZE , attribute-set : ATTRS , 
+                              object-usage-set : OBJUSAGES , data-stream-id : DI , trust-app-id : TN >
+    < DI : DataStreamObject | data-size : DATASIZE >
+    =
+    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS) >
+    < DI : DataStreamObject | >
+    retObjectInfoPr(OBJTYPE , keySize(ATTRS) , MAXOBJSIZE , OBJUSAGES , DATASIZE , DATAPOS , DATAFLAGS , TK)
+  .
+
+  eq
+    retObjectInfoPr(OBJTYPE , KEYSIZE , MAXOBJSIZE , OBJUSAGES , DATASIZE , DATAPOS , DATAFLAGS , TK)
+    < TK : TaKernel | api-state : waitObjectInfo ,
+                      current-api : GetObjectInfo1 , current-params : PARAMS , 
+                      trust-app-id : TN >
+    =
+    < TK : TaKernel | api-state : waitStorageCheck , 
+                      current-params : PARAMS , info(teeObjectInfo(OBJTYPE , KEYSIZE , MAXOBJSIZE , OBJUSAGES , DATASIZE , DATAPOS , DATAFLAGS)) >
+    reqTrustedOS(getStorageStatus , TK , TN)
+  .
+
+  eq
+    retTrustedOS(storageStatus(storageNormal) , TK)
+    < TK : TaKernel | api-state : waitStorageCheck , 
+                      current-api : GetObjectInfo1 ,
+                      current-params : PARAMS , info(INFO) >
+    =
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(GetObjectInfo1 , TEE-SUCCESS , info(INFO)) >
+  .
+
+  ceq
+    retTrustedOS(storageStatus(STATUS) , TK)
+    < TK : TaKernel | api-state : waitStorageCheck , 
+                      current-api : GetObjectInfo1 >
+    =
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(GetObjectInfo1 , storageErrCode(STATUS)) >
+  if abnormalStorage(STATUS)
+  .
+
+------------------------------------------------------------
+--- 'TEE_CloseObject'
+------------------------------------------------------------
+
+  ceq
+    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : CloseObject ,
+                      current-params : handle(HANDLE) >
+    =
+    < TK : TaKernel | api-state : waitCloseObject >
+    closeObject(HANDLE , TK)
+  if not nullHandle(HANDLE)
+  .
+
+  eq
+    closeObject(HANDLE , TK)
+    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | > >
+    =
+    finishCloseObject(TK)
+  .
+
+  eq
+    closeObject(HANDLE , TK)
+    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS) >
+    =
+    < OI : PersistentObject | handle-set : HS >
+    finishCloseObject(TK)
+  .
+
+  eq
+    finishCloseObject(TK)
+    < TK : TaKernel | api-state : waitCloseObject ,
+                      current-api : CloseObject , api-return : noReturn >
+    =
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(CloseObject) >
+  .
+
+  ceq
+    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : CloseObject ,
+                      current-params : handle(HANDLE) >
+    =
+    < TK : TaKernel | api-state : finished , 
+                      api-return : apiReturn(CloseObject , handle(TEE-HANDLE-NULL)) >
+  if nullHandle(HANDLE)
+  .
+
+endom

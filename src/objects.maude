@@ -1,0 +1,82 @@
+--- This file defines objects for the TEE storage APIs for the transient, persistent, and data stream objects.
+--- We define TrustedStorageObject and DataStreamObject which are not specified in the G.P. documentation for modeling purposes
+
+--- This module defines an abstracted object class that belongs to TAs.
+
+omod TA-OBJECT is
+  pr TA-OBJECT-ID .
+  pr APP-ID .
+
+  subsort TaObjectId < Oid .
+  class TaObject | trust-app-id : AppId .
+endom
+
+--- This module defines an openable object class.
+
+omod OPENABLE-OBJECT is
+
+  class OpenableObject | handle-set : Configuration .
+endom
+
+--- This module defines a TrustedStorageObject class that is not defined in the G.P. documentation.
+--- This class is a superclass of the TransientObject class (transient.maude) and the PersistentObject class (persistent.maude)
+
+omod TRUSTED-STORAGE-OBJECT is
+  pr OBJECT-TYPE .
+  pr SET{ObjectUsage} .
+  pr CRYPTO-KEY-SIZE .
+
+--- Version In Paper
+  --- class CryptoObj | type : Type, max-size : Nat, usages : Set{Usage}, attributes : Set{CryptoAttribute} .
+
+--- Model/Implementation Specific Version
+  class TrustedStorageObject | object-type : ObjectType, object-usage-set : Set{ObjectUsage},
+                               max-object-size : CryptoKeySize, attribute-set : Set{TeeAttribute} . 
+endom
+
+--- This module defines DataStreamObject class which corresponds to a data stream object.
+
+omod DATA-STREAM-OBJECT is
+  pr TA-OBJECT .
+  pr DEVICE-ID .
+  pr DATA-STREAM-OPERATOR .
+
+  class DataStreamObject | data-size : DataSize?,
+                           content : Map{DataPosition,Data},
+                           persistent-owner-id : TaObjectId,
+                           device-owner-id : DeviceId .
+  subclass DataStreamObject < TaObject .
+endom
+
+fmod TRUSTED-STORAGE-OBJECT-AUX is
+  pr OBJECT-TYPE .
+  pr CRYPTO-KEY-SIZE .
+  pr SET{ObjectUsage} .
+
+  vars OBJUSAGES1 OBJUSAGES2 : Set{ObjectUsage} .
+  vars OBJTYPE OBJTYPE1 OBJTYPE2 : ObjectType .
+  vars MAXOBJSIZE1 MAXOBJSIZE2 : CryptoKeySize .
+
+--- TODO: NEED TO CHECK
+  op updateObjectUsage : Set{ObjectUsage} Set{ObjectUsage} -> Set{ObjectUsage} .
+  eq updateObjectUsage(empty , OBJUSAGES2) = OBJUSAGES2 .
+  eq updateObjectUsage(OBJUSAGES1 , OBJUSAGES2) = intersection(OBJUSAGES1 , OBJUSAGES2) [owise] .
+
+--- The source and destination objects SHALL have compatible types and sizes.
+--- The type of destObject SHALL be a subtype of srcObject, i.e. one of the conditions listed in Table 5-11 SHALL be true.
+--- The size of srcObject SHALL be less than or equal to the maximum size of destObject.
+--- TODO: NEED TO UPDATE TO COVER WHOLE TABLE 5-11.
+  op typeCompatible : ObjectType ObjectType -> Bool .
+  eq typeCompatible(OBJTYPE , OBJTYPE) = true .
+  eq typeCompatible(TEE-TYPE-RSA-KEYPAIR , TEE-TYPE-RSA-PUBLIC-KEY) = true .
+  eq typeCompatible(TEE-TYPE-DSA-KEYPAIR , TEE-TYPE-DSA-PUBLIC-KEY) = true .
+  eq typeCompatible(OBJTYPE1 , OBJTYPE2) = false [owise] .
+
+  --- op sizeCompatible : CryptoKeySize CryptoKeySize -> Bool .
+  --- eq sizeCompatible(MAXOBJSIZE1, MAXOBJSIZE2) = true .
+
+  --- op typeAndSizeCompatiable : ObjectType ObjectType CryptoKeySize CryptoKeySize -> Bool .
+  --- eq typeAndSizeCompatiable(OBJTYPE1 , OBJTYPE2 , MAXOBJSIZE1 , MAXOBJSIZE2) 
+  ---  = typeCompatible(OBJTYPE1 , OBJTYPE2) and sizeCompatible(MAXOBJSIZE1, MAXOBJSIZE2) .
+
+endfm

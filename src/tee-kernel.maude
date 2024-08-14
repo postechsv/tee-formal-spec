@@ -1,0 +1,53 @@
+--- This module defines status of TEE applications.
+
+fmod APP-STATUS is
+  sort AppStatus .
+
+  op normal : -> AppStatus [ctor] .
+  op outOfMemory : -> AppStatus [ctor] .
+  op panic : -> AppStatus [ctor] .
+endfm
+
+view AppStatus from TRIV to APP-STATUS is
+  sort Elt to AppStatus .
+endv
+
+--- This module defines a kernel class, modeling the TA kernel.
+
+omod TA-KERNEL is
+  pr TA-INSTANCE-ID .
+  pr TA-OBJECT .
+  pr APP-STATUS .
+  pr NAT .
+  pr TEE-API-CALL .
+  pr TEE-API-RETURN .
+  pr TEE-API-STATE .
+  pr SET{TeeApiParam} .
+
+--- Version In Paper
+  --- class TAKernel | status : AppStatus, storage : Oid, counter : Nat, api-call : CallStatus .
+
+--- Model/Implementation Specific Version
+  subsort TaInstId < Oid .
+  class TaKernel | app-status : AppStatus, api-call : TeeApiCall?, api-return : TeeApiReturn?,
+                   current-api : TeeApi?, api-state : TeeApiState?,
+                   current-params : Set{TeeApiParam}, id-counter : Nat .
+  subclass TaKernel < TaObject .
+endom
+
+--- This module defines the TA kernel behavior.
+
+omod TA-KERNEL-BEHAVIOR is
+  pr TA-KERNEL .
+
+  var TK : TaInstId .
+
+--- TrustedApp can be in out-of-memory at any time.
+
+  --- rl [out-of-memory] :
+  ---   < TK : TaKernel | app-status : normal > 
+  ---   => 
+  ---   < TK : TaKernel | app-status : outOfMemory >
+  --- .
+
+endom

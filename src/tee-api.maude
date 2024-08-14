@@ -1,0 +1,374 @@
+--- This module defines basic API sort for TEE APIs.
+
+fmod TEE-API is
+  sorts TeeApi TeeApi? .
+  subsort TeeApi < TeeApi? .
+
+  op noApi : -> TeeApi? [ctor] .
+endfm
+
+fmod TEE-API-STATE is
+  sorts TeeApiState TeeApiState? .
+  subsort TeeApiState < TeeApiState? .
+
+  op noState : -> TeeApiState? [ctor] .
+  op started : -> TeeApiState [ctor] .
+  op finished : -> TeeApiState [ctor] .
+endfm
+
+--- This module defines API call parameters.
+
+fmod TEE-API-PARAM is
+  pr OBJECT-TYPE .
+  pr CRYPTO-KEY-SIZE .
+  pr HANDLE-ID .
+  pr SET{TeeAttribute} .
+  pr FILE-ID .
+  pr SET{DataFlag} .
+  pr DATA-STREAM-SEEK-TYPE .
+  pr LIST{Data} .
+  pr DATA-SIZE .
+  pr SET{ObjectUsage} .
+  pr ALGORITHM-IDENTIFIER .
+  pr OPERATION-MODE .
+  pr TEE-DATA-TYPE .
+
+  sort TeeApiParam .
+
+--- generic
+  op info : TeeObjectInfo -> TeeApiParam [ctor] .
+  op srcUsages : Set{ObjectUsage} -> TeeApiParam [ctor] .
+
+--- transient
+  op type : ObjectType -> TeeApiParam [ctor] .
+  op size : CryptoKeySize -> TeeApiParam [ctor] .
+  op handle : HandleId -> TeeApiParam [ctor] .
+  op attrs : Set{TeeAttribute} -> TeeApiParam [ctor] .
+  op constId : AttrId -> TeeApiParam [ctor] .
+  op constVal : AttrContent -> TeeApiParam [ctor] .
+  op srcHandle : HandleId -> TeeApiParam [ctor] .
+  op trgHandle : HandleId -> TeeApiParam [ctor] .
+
+--- persistent
+  op fileId : FileId -> TeeApiParam [ctor] .
+  op flags : Set{DataFlag} -> TeeApiParam [ctor] .
+  op opt : HandleId -> TeeApiParam [ctor] .
+  op data : List{Data} -> TeeApiParam [ctor] .
+  op size : DataSize -> TeeApiParam [ctor] .
+  op openedHandle : HandleId -> TeeApiParam [ctor] .
+  op usages : Set{ObjectUsage} -> TeeApiParam [ctor] .
+
+--- data stream
+  op type : SeekType -> TeeApiParam [ctor] .
+
+--- crypto
+  op alg : AlgorithmIdentifier -> TeeApiParam [ctor] .
+  op mode : OperationMode -> TeeApiParam [ctor] .
+  op teeOpInfo : OpObjectAttr OpHandleAttr -> TeeApiParam [ctor] .
+  op keyHandle : HandleId -> TeeApiParam [ctor] .
+  op iv : List{Data} -> TeeApiParam [ctor] .
+  op mac : List{Data} -> TeeApiParam [ctor] .
+  op digest : List{Data} -> TeeApiParam [ctor] .
+endfm
+
+view TeeApiParam from TRIV to TEE-API-PARAM is
+  sort Elt to TeeApiParam .
+endv
+
+fmod TEE-API-CALL is
+  pr TEE-API .
+  pr SET{TeeApiParam} .
+
+  sorts TeeApiCall TeeApiCall? .
+  subsort TeeApiCall < TeeApiCall? .
+
+  op apiCall : TeeApi Set{TeeApiParam} -> TeeApiCall [ctor] .
+  op noCall : -> TeeApiCall? [ctor] .
+endfm
+
+fmod TEE-API-RETURN is
+  pr TEE-API .
+  pr RETURN-CODE .
+  pr SET{TeeApiParam} .
+
+  sorts TeeApiReturn TeeApiReturn? .
+  subsort TeeApiReturn < TeeApiReturn? .
+
+  var API : TeeApi .
+  var R : ReturnCode .
+  var PARAMS : Set{TeeApiParam} .
+
+  op noReturn : -> TeeApiReturn? [ctor] .
+  op apiReturn : TeeApi ReturnCode? Set{TeeApiParam} -> TeeApiReturn [ctor] .
+
+  op apiReturn : TeeApi ReturnCode -> TeeApiReturn .
+  eq apiReturn(API , R) = apiReturn(API , R , empty) .
+
+  op apiReturn : TeeApi Set{TeeApiParam} -> TeeApiReturn .
+  eq apiReturn(API , PARAMS) = apiReturn(API , noReturnCode , PARAMS) .
+
+  op apiReturn : TeeApi -> TeeApiReturn .
+  eq apiReturn(API) = apiReturn(API , noReturnCode , empty) .
+endfm
+
+--- This module defines basic Client API sort for TEE Client APIs.
+
+fmod TEE-CLIENT-API is
+  pr TEE-API .
+  
+  sort TeeClientApi .
+  subsort TeeClientApi < TeeApi .
+endfm
+
+--- This module defines TEE client API.
+
+fmod TEE-CLIENT-FUNC is
+  pr TEE-CLIENT-API .
+  --- pr TEE-API-CALL .
+  --- pr APP-ID .
+  --- pr RETURN .
+  --- pr SESSION-ID .
+  --- pr SECURE-MONITOR-CALL-ARG .
+
+  op TeecOpenSession : -> TeeClientApi [ctor] .
+  op TeecCloseSession : -> TeeClientApi [ctor] .
+  op TeecInvokeCommand : -> TeeClientApi [ctor] .
+  --- op TeecInvokeCommandCall : SessionId SmcArgument -> TeeApiCall [ctor] .
+  --- op TeecInvokeCommandReturn : Return -> TeeApiReturn [ctor] .
+
+  --- op TeecCloseSession : -> TeeApi [ctor] .
+  --- op TeecCloseSessionCall : SessionId -> TeeApiCall [ctor] .
+  --- op TeecCloseSessionReturn : Return? -> TeeApiReturn [ctor] .
+endfm
+
+fmod TRUSTED-STORAGE-FUNC-STATE is
+  pr TEE-API-STATE .
+
+  op waitStorageCheck : -> TeeApiState [ctor] .
+  op waitReqAttribute : -> TeeApiState [ctor] .
+endfm
+
+--- This module defines Transient APIs.
+
+fmod TRANSIENT-OBJECT-FUNC is
+  pr TEE-API .
+  pr TEE-API-STATE .
+  pr TEE-API-PARAM .
+
+  op AllocateTransientObject : -> TeeApi [ctor] .
+
+  op FreeTransientObject : -> TeeApi [ctor] .
+  op waitDeleteTransient : -> TeeApiState [ctor] .
+
+  op ResetTransientObject : -> TeeApi [ctor] .
+  op waitResetTransient : -> TeeApiState [ctor] .
+
+  op PopulateTransientObject : -> TeeApi [ctor] .
+  op waitPopulateTransient : -> TeeApiState [ctor] .
+
+  op InitRefAttribute : -> TeeApi [ctor] .
+  op InitValueAttribute : -> TeeApi [ctor] .
+
+  op CopyObjectAttributes1 : -> TeeApi [ctor] .
+  op waitCopyAttribute : -> TeeApiState [ctor] .
+
+  op GenerateKey : -> TeeApi [ctor] .
+  op waitReqGenerateKey : -> TeeApiState [ctor] .
+endfm
+
+--- This module defines basic API sort for Persistent APIs
+
+fmod PERSISTENT-OBJECT-FUNC is
+  pr TEE-API .
+  pr TEE-API-STATE .
+  pr TEE-API-PARAM .
+
+  op OpenPersistentObject : -> TeeApi [ctor] .
+  op waitOpenPersistent : -> TeeApiState [ctor] .
+
+  op CreatePersistentObject : -> TeeApi [ctor] .
+  op creationReady : -> TeeApiState [ctor] .
+  op creationNotReady : -> TeeApiState [ctor] .
+  op accessRightConflict : -> TeeApiState [ctor] .
+  op waitDeleteOldPersistent : -> TeeApiState [ctor] .
+  op createPureData : -> TeeApiState [ctor] .
+  op transformTransient : -> TeeApiState [ctor] .
+  op createPersistent : -> TeeApiState [ctor] .
+  op waitReqAttributeAndDelete : -> TeeApiState [ctor] .
+  op createPersistentUsingAttrs : -> TeeApiState [ctor] .
+  op waitNotifyFileCreation : -> TeeApiState [ctor] .
+
+  op CloseAndDeletePersistentObject1 : -> TeeApi [ctor] .
+  op waitDeletePersistent : -> TeeApiState [ctor] .
+  op waitNotifyFileDeletion : -> TeeApiState [ctor] .
+
+  op RenamePersistentObject : -> TeeApi [ctor] .
+  op waitRenamePersistent : -> TeeApiState [ctor] .
+  op waitNotifyFileRename : -> TeeApiState [ctor] .
+endfm
+
+--- This module defines basic API sort for Generic APIs
+
+fmod GENERIC-OBJECT-FUNC is
+  pr TEE-API .
+  pr TEE-API-STATE .
+  pr TEE-API-PARAM .
+
+  op GetObjectInfo1 : -> TeeApi [ctor] .
+  op waitObjectInfo : -> TeeApiState [ctor] .
+
+  op CloseObject : -> TeeApi [ctor] .
+  op waitCloseObject : -> TeeApiState [ctor] .
+
+  op RestrictObjectUsage1 : -> TeeApi [ctor] .
+  op waitRestrictObjectUsage : -> TeeApiState [ctor] .
+
+  op GetObjectBufferAttribute : -> TeeApi [ctor] .
+  op waitGetBufferAttribute : -> TeeApiState [ctor] .
+
+  op GetObjectValueAttribute : -> TeeApi [ctor] .
+  op waitGetValueAttribute : -> TeeApiState [ctor] .
+endfm
+
+--- This module defines basic API sort for Enumerator APIs
+
+fmod ENUMERATOR-OBJECT-FUNC is
+  pr TEE-API .
+  pr TEE-API-STATE .
+  pr TEE-API-PARAM .
+
+  op AllocatePersistentObjectEnumerator : -> TeeApi [ctor] .
+
+  op FreePersistentObjectEnumerator : -> TeeApi [ctor] .
+  op waitDeleteEnumerator : -> TeeApiState [ctor] .  
+
+  op ResetPersistentObjectEnumerator : -> TeeApi [ctor] .
+  op waitResetEnumerator : -> TeeApiState [ctor] .
+
+  op StartPersistentObjectEnumerator : -> TeeApi [ctor] .
+  op waitStartEnumerator : -> TeeApiState [ctor] .
+
+  op GetNextPersistentObject : -> TeeApi [ctor] .
+  op waitGetNextObjectId : -> TeeApiState [ctor] .
+  op waitGetNextObject : -> TeeApiState [ctor] .
+endfm
+
+--- This module defines basic API sort for Data Stream Access APIs
+
+fmod DATA-STREAM-OBJECT-FUNC is
+  pr TEE-API .
+  pr TEE-API-STATE .
+  pr TEE-API-PARAM .
+
+  op ReadObjectData : -> TeeApi [ctor] .
+  op waitReadObjectData : -> TeeApiState [ctor] .
+
+  op WriteObjectData : -> TeeApi [ctor] .
+  op waitWriteObjectData : -> TeeApiState [ctor] .
+
+  op TruncateObjectData : -> TeeApi [ctor] .
+  op waitTruncateObjectData : -> TeeApiState [ctor] .
+
+  op SeekObjectData : -> TeeApi [ctor] .
+  op waitSeekObjectData : -> TeeApiState [ctor] .
+endfm
+
+--- This module defines basic API sort for Cryptographic Operation APIs.
+
+fmod CRYPTO-OPERATION-FUNC is
+  pr TEE-API .
+  pr TEE-API-STATE .
+  pr TEE-API-PARAM .
+
+  op AllocateOperation : -> TeeApi [ctor] .
+
+  op FreeOperation : -> TeeApi [ctor] .
+  op waitDeleteOperationObject : -> TeeApiState [ctor] .
+
+  op GetOperationInfo : -> TeeApi [ctor] .
+  op waitOperationAttr : -> TeeApiState [ctor] .
+
+  op GetOperationInfoMultiple : -> TeeApi [ctor] .
+  --- op GetOperationInfoMultipleCall : HandleId -> TeeApiCall [ctor] .
+  --- op GetOperationInfoMultipleReturn : Return TeeOperationInfoMultiple -> TeeApiReturn [ctor] .
+  --- op GetOperationInfoMultipleReturn : Return -> TeeApiReturn [ctor] .
+
+  op ResetOperation : -> TeeApi [ctor] .
+  op waitResetOperation : -> TeeApiState [ctor] .
+
+  op SetOperationKey : -> TeeApi [ctor] .
+  op waitSetOperationKey : -> TeeApiState [ctor] .
+
+  op SetOperationKey2 : -> TeeApi [ctor] .
+  --- op SetOperationKey2Call : HandleId HandleId HandleId -> TeeApiCall [ctor] .
+  --- op SetOperationKey2Return : Return -> TeeApiReturn [ctor] .
+
+  op CopyOperation : -> TeeApi [ctor] .  
+  op waitReqCopyOperation : -> TeeApiState [ctor] .
+
+  op IsAlgorithmSupported : -> TeeApi [ctor] .
+  --- op IsAlgorithmSupportedCall : AlgorithmIdentifer CryptoElement -> TeeApiCall [ctor] .
+  --- op IsAlgorithmSupportedReturn : Return -> TeeApiReturn [ctor] .
+
+  op DigestUpdate : -> TeeApi [ctor] .
+  op waitDigestUpdate : -> TeeApiState [ctor] .
+
+  op DigestDoFinal : -> TeeApi [ctor] .
+  op waitDigestDoFinal : -> TeeApiState [ctor] .
+
+  op DigestExtract : -> TeeApi [ctor] .
+  op waitDigestExtract : -> TeeApiState [ctor] .
+
+  op CipherInit : -> TeeApi [ctor] .
+  op waitInitOperation : -> TeeApiState [ctor] .
+
+  op CipherUpdate : -> TeeApi [ctor] .
+  op waitCipherUpdate : -> TeeApiState [ctor] .
+
+  op CipherDoFinal : -> TeeApi [ctor] .
+  op waitCipherDoFinal : -> TeeApiState [ctor] .
+
+  op MACInit : -> TeeApi [ctor] .
+
+  op MACUpdate : -> TeeApi [ctor] .
+  op waitMacUpdate : -> TeeApiState [ctor] .
+
+  op MACComputeFinal : -> TeeApi [ctor] .
+  op waitMacComputeFinal : -> TeeApiState [ctor] .
+
+  op MACCompareFinal : -> TeeApi [ctor] .
+
+  op AEInit : -> TeeApi [ctor] .
+
+  op AEUpdateAAD : -> TeeApi [ctor] .
+  op waitAEUpdateAAD : -> TeeApiState [ctor] .
+
+  op AEUpdate : -> TeeApi [ctor] .
+  op waitAEUpdate : -> TeeApiState [ctor] .
+
+  op AEEncryptFinal : -> TeeApi [ctor] .
+  op waitAEEncryptFinal : -> TeeApiState [ctor] .
+
+  op AEDecryptFinal : -> TeeApi [ctor] .
+  --- op AEDecryptFinalCall : HandleId List{Data} List{Data} -> TeeApiCall [ctor] .
+  --- op AEDecryptFinalReturn : Return List{Data} -> TeeApiReturn [ctor] .
+  --- op AEDecryptFinalReturn : Return -> TeeApiReturn [ctor] .
+
+  op AsymmetricEncrypt : -> TeeApi [ctor] .
+  op waitAsymEncrypt : -> TeeApiState [ctor] .
+
+  op AsymmetricDecrypt : -> TeeApi [ctor] .
+  op waitAsymDecrypt : -> TeeApiState [ctor] .
+
+  op AsymmetricSignDigest : -> TeeApi [ctor] .
+  op waitAsymSignDigest : -> TeeApiState [ctor] .
+
+  op AsymmetricVerifyDigest : -> TeeApi [ctor] .
+  op waitAsymVerifDigest : -> TeeApiState [ctor] .
+
+  op DeriveKey : -> TeeApi [ctor] .
+  --- op DeriveKeyCall : HandleId Set{TeeAttribute} HandleId -> TeeApiCall [ctor] .
+  --- op DeriveKeyReturn : Return? -> TeeApiReturn [ctor] .
+
+  op GenerateRandom : -> TeeApi [ctor] .
+endfm

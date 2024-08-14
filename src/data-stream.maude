@@ -1,0 +1,473 @@
+--- This file defines behaviors of data stream APIs.
+
+--- This module defines the data stream access APIs, defined in chapter 5 section 9 of G.P. documentation.
+
+omod DATA-STREAM-OBJECT-BEHAVIOR is
+  pr ID-GEN .
+  pr TA-KERNEL .
+  pr PERSISTENT-OBJECT .
+  pr DATA-STREAM-OBJECT .
+  pr DATA-STREAM-OPERATOR .
+  pr DATA-STREAM-SEEK-TYPE .
+  pr DATA-STREAM-OBJECT-FUNC .
+  pr TRUSTED-STORAGE-FUNC-STATE .
+  pr OBJECT-HANDLE .
+  pr TEE-OS-BEHAVIOR .
+
+  var TK : TaInstId .
+  var TN : AppId .
+  vars OI DI : TaObjectId .
+  var HANDLE : HandleId .
+  var DATAPOS : DataPosition .
+  vars DS DATASIZE OFST : DataSize .
+  var WHENCE : SeekType .
+  var DATA : List{Data} .
+  var DM : Map{DataPosition,Data} .
+  var DATAFLAGS : Set{DataFlag} .
+  var STATUS : StorageStatus .
+  var HS : Configuration .
+
+------------------------------------------------------------
+--- 'TEE_ReadObjectData'
+------------------------------------------------------------
+
+--- The 'TEE_ReadObjectData' function attempts to read size bytes from the data stream associated with the object into the buffer. 
+--- See page 171 of the G.P. documentation for more details.
+
+--- Version In Paper
+  --- rl [read-object-data-get-storage-status] :
+  ---   < TK : TAKernel | api-call : readObjData(HI) , storage : SI >
+  ---   => 
+  ---   < TK : TAKernel | api-call : readObjData(HI) # 1 > 
+  ---   (msg getStatus from TK to SI) 
+  --- .
+
+--- Model/Implementation Specific Version
+  msg readObjectData : HandleId DataSize TaInstId AppId -> Msg .
+  msg finishReadData : List{Data} TaInstId -> Msg .
+
+  rl [read-object-data-subroutine] :
+    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : ReadObjectData ,
+                      trust-app-id : TN >
+    => 
+    < TK : TaKernel | api-state : waitStorageCheck >
+    reqTrustedOS(getStorageStatus , TK , TN)
+  .
+
+--- Version In Paper
+  --- rl [read-object-data-storage-status-check] : 
+  ---   (msg retStatus[STATUS] from SI to TK) 
+  ---   < TK : TAKernel | api-call : readObjData(HI) # 1 >
+  ---   => 
+  ---   if STATUS == normal 
+  ---   then < TK : TAKernel | api-call : readObjData(HI) # 2 > 
+  ---        (msg read from TK to HI)
+  ---   else < TK : TAKernel | api-call : return(readObjData , STATUS) > 
+  ---   fi 
+  --- .
+
+--- Model/Implementation Specific Version (2 rules)
+  rl [read-object-data-subroutine] :
+    retTrustedOS(storageStatus(storageNormal) , TK)
+    < TK : TaKernel | api-state : waitStorageCheck , 
+                      current-api : ReadObjectData ,
+                      current-params : handle(HANDLE) , size(DATASIZE) , 
+                      trust-app-id : TN >
+    =>
+    < TK : TaKernel | api-state : waitReadObjectData >
+    readObjectData(HANDLE , DATASIZE , TK , TN)
+  .
+
+--- This rule returns TEE_ERROR_CORRUPT_OBJECT if the object is corrupt.
+--- This rule returns TEE_ERROR_STORAGE_NOT_AVAILABLE if the persistent object is stored in a storage area which is currently inaccessible.
+
+  crl [read-object-data-storage-err] :
+    retTrustedOS(storageStatus(STATUS) , TK)
+    < TK : TaKernel | api-state : waitStorageCheck , 
+                      current-api : ReadObjectData >
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(ReadObjectData , storageErrCode(STATUS)) >
+  if abnormalStorage(STATUS)
+  .
+
+--- Version In Paper
+  --- rl [read-object-data-from-persist] :
+  ---   (msg read from TK to HI)
+  ---   < HI : ObjHandle | oid : PI , flags : (accessRead , FLAGS) >
+  ---   < PI : PersistObj | data-stream : DATA :: STREAM > 
+  ---   => 
+  ---   < HI : ObjHandle | > 
+  ---   < PI : PersistObj | data-stream : STREAM >
+  ---   (msg retData[DATA] from HI to TK)
+  --- .
+
+--- Model/Implementation Specific Version
+  op isReadable : Set{DataFlag} -> Bool .
+  eq isReadable((TEE-DATA-FLAG-ACCESS-READ , DATAFLAGS)) = true .
+  eq isReadable(DATAFLAGS) = false [owise] .
+
+  crl [read-object-data-subroutine] :
+    readObjectData(HANDLE , DATASIZE , TK , TN)
+    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-access-flag-set : DATAFLAGS , data-position : DATAPOS > HS) , 
+                              data-stream-id : DI , trust-app-id : TN >
+    < DI : DataStreamObject | data-size : DS , content : DM >               
+    =>
+    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-position : updatePos(DATAPOS , DATASIZE , DS) > HS) >
+    < DI : DataStreamObject | >
+    finishReadData(read(DATAPOS , DATASIZE , DM) , TK)
+  if isReadable(DATAFLAGS)
+  .
+
+--- Version In Paper
+  --- rl [read-object-data-success] : 
+  ---   (msg retData[DATA] from HI to TK) 
+  ---   < TK : TAKernel | api-call : readObjData(HI) # 2 >
+  ---   => 
+  ---   < TK : TAKernel | api-call : return(readObjData , DATA) > 
+  --- .
+
+--- Model/Implementation Specific Version
+  rl [read-object-data-success] :
+    finishReadData(DATA , TK)
+    < TK : TaKernel | api-state : waitReadObjectData , 
+                      current-api : ReadObjectData >
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(ReadObjectData , TEE-SUCCESS , data(DATA)) >
+  .
+
+------------------------------------------------------------
+--- 'TEE_WriteObjectData'
+------------------------------------------------------------
+
+--- The 'TEE_WriteObjectData' function reads size bytes of data from the buffer and writes the data to the data stream object.
+--- See page 173 of the G.P. documentation for more details.
+
+  msg writeObjectData : HandleId List{Data} TaInstId AppId -> Msg .
+  msg finishWriteData : TaInstId -> Msg .
+
+  rl [write-object-data-subroutine] :
+    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : WriteObjectData ,
+                      trust-app-id : TN >
+    => 
+    < TK : TaKernel | api-state : waitStorageCheck >
+    reqTrustedOS(getStorageStatus , TK , TN)
+  .
+
+  rl [write-object-data-subroutine] :
+    retTrustedOS(storageStatus(storageNormal) , TK)
+    < TK : TaKernel | api-state : waitStorageCheck , 
+                      current-api : WriteObjectData ,
+                      current-params : handle(HANDLE) , data(DATA) , 
+                      trust-app-id : TN >
+    =>
+    < TK : TaKernel | api-state : waitWriteObjectData >
+    writeObjectData(HANDLE , DATA , TK , TN)
+  .
+
+  op isWritable : Set{DataFlag} -> Bool .
+  eq isWritable((TEE-DATA-FLAG-ACCESS-WRITE , DATAFLAGS)) = true .
+  eq isWritable(DATAFLAGS) = false [owise] .
+
+  crl [write-object-data-subroutine] :
+    writeObjectData(HANDLE , DATA , TK , TN)
+    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-access-flag-set : DATAFLAGS , data-position : DATAPOS > HS) ,
+                              data-stream-id : DI , trust-app-id : TN >
+    < DI : DataStreamObject | data-size : DS , content : DM >
+    =>  
+    none
+    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-position : updatePos(DATAPOS , sizeOfData(DATA) , DS) > HS) >
+    < DI : DataStreamObject | data-size : updateSize(DS , DATAPOS , sizeOfData(DATA)) , 
+                              content : write(DATA , DATAPOS , DM) > 
+    finishWriteData(TK)
+  if isWritable(DATAFLAGS)
+  --- if DATAPOS <= TEE-DATA-MAX-POSITION 
+  .
+
+  rl [write-object-data-success] :
+    finishWriteData(TK)
+    < TK : TaKernel | api-state : waitWriteObjectData , 
+                      current-api : WriteObjectData >
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(WriteObjectData , TEE-SUCCESS) >
+  .
+
+--- TODO: NEED TO UPDATE
+--- This rule returns TEE_ERROR_OVERFLOW if the value of the data position indicator resulting from this operation would be greater than TEE_DATA_MAX_POSITION.
+
+--- This rule returns TEE_ERROR_STORAGE_NO_SPACE if insufficient storage space is available.
+--- This rule returns TEE_ERROR_CORRUPT_OBJECT if the object is corrupt.
+--- This rule returns TEE_ERROR_STORAGE_NOT_AVAILABLE if the persistent object is stored in a storage area which is currently inaccessible.
+
+  crl [write-object-data-storage-err] :
+    retTrustedOS(storageStatus(STATUS) , TK)
+    < TK : TaKernel | api-state : waitStorageCheck , 
+                      current-api : WriteObjectData >
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(WriteObjectData , storageErrCode(STATUS)) >
+  if abnormalStorage(STATUS)
+  .
+
+------------------------------------------------------------
+--- 'TEE_TruncateObjectData'
+------------------------------------------------------------
+
+--- The 'TEE_TruncateObjectData' function changes the size of a data stream.
+--- See page 175 of the G.P. documentation for more details.
+
+  msg truncateObjectData : HandleId DataSize TaInstId AppId -> Msg .
+  msg finishTruncateData : TaInstId -> Msg .
+
+  rl [truncate-object-data-subroutine] :
+    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : TruncateObjectData ,
+                      trust-app-id : TN >
+    => 
+    < TK : TaKernel | api-state : waitStorageCheck >
+    reqTrustedOS(getStorageStatus , TK , TN)
+  .
+
+  rl [truncate-object-data-subroutine] :
+    retTrustedOS(storageStatus(storageNormal) , TK)
+    < TK : TaKernel | api-state : waitStorageCheck , 
+                      current-api : TruncateObjectData ,
+                      current-params : handle(HANDLE) , size(DATASIZE) , 
+                      trust-app-id : TN >
+    =>
+    < TK : TaKernel | api-state : waitTruncateObjectData >
+    truncateObjectData(HANDLE , DATASIZE , TK , TN)
+  .
+
+--- This rule finds the persistent object pointed to by the input handle and its associated data stream, and
+--- changes the size of the found data stream when input size is greater then the current size of the data stream.
+
+  crl [truncate-object-data-subroutine] :
+    truncateObjectData(HANDLE , DATASIZE , TK , TN)
+    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-access-flag-set : DATAFLAGS > HS) ,
+                              data-stream-id : DI , trust-app-id : TN >
+    < DI : DataStreamObject | data-size : DS >
+    =>  
+    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS) >
+    < DI : DataStreamObject | data-size : DATASIZE >
+    finishTruncateData(TK)
+  if isWritable(DATAFLAGS)
+  .
+
+  rl [truncate-object-data-success] :
+    finishTruncateData(TK)
+    < TK : TaKernel | api-state : waitTruncateObjectData , 
+                      current-api : TruncateObjectData >
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(TruncateObjectData , TEE-SUCCESS) >
+  .
+
+--- This rule returns TEE_ERROR_STORAGE_NO_SPACE if insufficient storage space is available to perform the operation.
+--- This rule returns TEE_ERROR_CORRUPT_OBJECT if the object is corrupt.
+--- This rule returns TEE_ERROR_STORAGE_NOT_AVAILABLE if the persistent object is stored in a storage area which is currently inaccessible.
+
+  crl [truncate-object-data-storage-err] :
+    retTrustedOS(storageStatus(STATUS) , TK)
+    < TK : TaKernel | api-state : waitStorageCheck , 
+                      current-api : TruncateObjectData >
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(TruncateObjectData , storageErrCode(STATUS)) >
+  if abnormalStorage(STATUS)
+  .
+
+------------------------------------------------------------
+--- 'TEE_SeekObjectData'
+------------------------------------------------------------
+
+--- The 'TEE_SeekObjectData' function sets the data position indicator associated with the object handle.
+--- See page 176 of the G.P. documentation for more details.
+
+  msg seekObjectData : HandleId DataSize SeekType TaInstId AppId -> Msg .
+  msg finishSeekData : TaInstId -> Msg .
+
+  rl [seek-object-data-subroutine] :
+    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : SeekObjectData ,
+                      trust-app-id : TN >
+    => 
+    < TK : TaKernel | api-state : waitStorageCheck >
+    reqTrustedOS(getStorageStatus , TK , TN)
+  .
+
+  rl [seek-object-data-subroutine] :
+    retTrustedOS(storageStatus(storageNormal) , TK)
+    < TK : TaKernel | api-state : waitStorageCheck , 
+                      current-api : SeekObjectData ,
+                      current-params : handle(HANDLE) , size(OFST) , type(WHENCE) ,
+                      trust-app-id : TN >
+    =>
+    < TK : TaKernel | api-state : waitSeekObjectData >
+    seekObjectData(HANDLE , OFST , WHENCE , TK , TN)
+  .
+
+--- This rule sets the data position to input offset (OFST) when 'whence' is TEE_DATA_SEEK_SET.
+--- This rule sets the data position to its current position plus input offset when 'whence' is TEE_DATA_SEEK_CUR.
+--- The following three rules define 'TEE_SeekObjectData' when 'whence' in TEE_DATA_SEEK_END.
+
+  rl [seek-object-data-subroutine] :
+    seekObjectData(HANDLE , OFST , WHENCE , TK , TN)
+    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-position : DATAPOS > HS) ,
+                              data-stream-id : DI , trust-app-id : TN >
+    < DI : DataStreamObject | data-size : DATASIZE >
+    =>  
+    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-position : seekPos(WHENCE , DATAPOS , OFST , DATASIZE) > HS) >
+    < DI : DataStreamObject | >
+    finishSeekData(TK)
+  --- if seekDataPosition(WHENCE , DATAPOS , OFST , DATASIZE) <= TEE-DATA-MAX-POSITION
+  .
+
+  rl [seek-object-data-success] :
+    finishSeekData(TK)
+    < TK : TaKernel | api-state : waitSeekObjectData , 
+                      current-api : SeekObjectData >
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(SeekObjectData , TEE-SUCCESS) >
+  .
+
+--- TODO: NEED TO UPDATE
+--- This rule returns TEE_ERROR_OVERFLOW if the value of the data position indicator resulting from this operation would be greater than TEE_DATA_MAX_POSITION.
+
+--- This rule returns TEE_ERROR_CORRUPT_OBJECT if the object is corrupt.
+--- This rule returns TEE_ERROR_STORAGE_NOT_AVAILABLE if the persistent object is stored in a storage area which is currently inaccessible.
+
+  crl [seek-object-data-storage-err] :
+    retTrustedOS(storageStatus(STATUS) , TK)
+    < TK : TaKernel | api-state : waitStorageCheck , 
+                      current-api : SeekObjectData >
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(SeekObjectData , storageErrCode(STATUS)) >
+  if abnormalStorage(STATUS)
+  .
+
+endom
+
+--- This module provides invisible reduction for data stream API.
+
+omod DATA-STREAM-OBJECT-BEHAVIOR-INVISIBLE is
+  pr DATA-STREAM-OBJECT-BEHAVIOR .
+
+  var TK : TaInstId .
+  var TN : AppId .
+  vars OI DI : TaObjectId .
+  var HANDLE : HandleId .
+  var DATAPOS : DataPosition .
+  vars DS DATASIZE : DataSize .
+  var DATA : List{Data} .
+  var DM : Map{DataPosition,Data} .
+  var DATAFLAGS : Set{DataFlag} .
+  var STATUS : StorageStatus .
+  var HS : Configuration .
+
+------------------------------------------------------------
+--- 'TEE_ReadObjectData'
+------------------------------------------------------------
+
+  eq
+    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : ReadObjectData ,
+                      trust-app-id : TN >
+    =
+    < TK : TaKernel | api-state : waitStorageCheck >
+    reqTrustedOS(getStorageStatus , TK , TN)
+  .
+
+  eq
+    retTrustedOS(storageStatus(storageNormal) , TK)
+    < TK : TaKernel | api-state : waitStorageCheck , 
+                      current-api : ReadObjectData ,
+                      current-params : handle(HANDLE) , size(DATASIZE) , 
+                      trust-app-id : TN >
+    =
+    < TK : TaKernel | api-state : waitReadObjectData >
+    readObjectData(HANDLE , DATASIZE , TK , TN)
+  .
+
+  ceq
+    readObjectData(HANDLE , DATASIZE , TK , TN)
+    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-access-flag-set : DATAFLAGS , data-position : DATAPOS > HS) , 
+                              data-stream-id : DI , trust-app-id : TN >
+    < DI : DataStreamObject | data-size : DS , content : DM >               
+    =
+    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-position : updatePos(DATAPOS , DATASIZE , DS) > HS) >
+    < DI : DataStreamObject | >
+    finishReadData(read(DATAPOS , DATASIZE , DM) , TK)
+  if isReadable(DATAFLAGS)
+  .
+
+  eq
+    finishReadData(DATA , TK)
+    < TK : TaKernel | api-state : waitReadObjectData , 
+                      current-api : ReadObjectData >
+    =
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(ReadObjectData , TEE-SUCCESS , data(DATA)) >
+  .
+
+  ceq
+    retTrustedOS(storageStatus(STATUS) , TK)
+    < TK : TaKernel | api-state : waitStorageCheck , 
+                      current-api : ReadObjectData >
+    =
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(ReadObjectData , storageErrCode(STATUS)) >
+  if abnormalStorage(STATUS)
+  .
+
+------------------------------------------------------------
+--- 'TEE_WriteObjectData'
+------------------------------------------------------------
+
+  eq
+    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : WriteObjectData ,
+                      trust-app-id : TN >
+    =
+    < TK : TaKernel | api-state : waitStorageCheck >
+    reqTrustedOS(getStorageStatus , TK , TN)
+  .
+
+  eq
+    retTrustedOS(storageStatus(storageNormal) , TK)
+    < TK : TaKernel | api-state : waitStorageCheck , 
+                      current-api : WriteObjectData ,
+                      current-params : handle(HANDLE) , data(DATA) , 
+                      trust-app-id : TN >
+    =
+    < TK : TaKernel | api-state : waitWriteObjectData >
+    writeObjectData(HANDLE , DATA , TK , TN)
+  .
+
+  ceq
+    writeObjectData(HANDLE , DATA , TK , TN)
+    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-access-flag-set : DATAFLAGS , data-position : DATAPOS > HS) ,
+                              data-stream-id : DI , trust-app-id : TN >
+    < DI : DataStreamObject | data-size : DS , content : DM >
+    =
+    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-position : updatePos(DATAPOS , sizeOfData(DATA) , DS) > HS) >
+    < DI : DataStreamObject | data-size : updateSize(DS , DATAPOS , sizeOfData(DATA)) , 
+                              content : write(DATA , DATAPOS , DM) > 
+    finishWriteData(TK)
+  if isWritable(DATAFLAGS)
+  .
+
+  eq
+    finishWriteData(TK)
+    < TK : TaKernel | api-state : waitWriteObjectData , 
+                      current-api : WriteObjectData >
+    =
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(WriteObjectData , TEE-SUCCESS) >
+  .
+
+  ceq
+    retTrustedOS(storageStatus(STATUS) , TK)
+    < TK : TaKernel | api-state : waitStorageCheck , 
+                      current-api : WriteObjectData >
+    =
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(WriteObjectData , storageErrCode(STATUS)) >
+  if abnormalStorage(STATUS)
+  .
+
+endom

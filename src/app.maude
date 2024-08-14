@@ -1,0 +1,64 @@
+--- This module defines an user App class.
+
+omod PROGRAM-APP is
+  pr APP-ID .
+  pr IMP-PROGRAM .
+  pr K-CONFIG .
+
+--- Version In Paper
+  --- class App | prog : Program, proc : KConfig .
+
+--- Model/Implementation Specific Version
+  class ProgramApp | proc : KConfig, prog : Program, running : Bool .
+endom
+
+--- This module defines ree request data structure.
+
+omod PROGRAM-APP-BEHAVIOR is
+  pr PROGRAM-APP .
+  pr SECURE-MONITOR-CALL .
+  pr IMP-SEMANTICS .
+
+  var X : Var .
+  var XL : VarList .
+  var V : Value .
+  var L : Nat .
+  var P : Program .
+  var VL : ValueList .
+  var KS : KConfig .
+  var ENV : Map{Var,Nat} .
+  var MEM : Map{Nat,Value?} .
+  var FUNC : FuncId .
+  vars S S1 S2 S' : Stmt .
+  vars FDCLS FDCLS1 FDCLS2 : FuncDeclList .
+
+  op execute : Program FuncId ValueList -> KConfig .
+  op readReturn : FuncId KConfig -> ValueList .
+
+  op mRet : -> Var [ctor] .
+
+  op prepVars : VarList ValueList -> Stmt .
+  eq prepVars((X,XL),(V,VL)) = var X ; X := V ; prepVars(XL, VL) .
+  eq prepVars(nil, nil) = skip .
+
+  op getFuncDecls : Program -> FuncDeclList .
+  ceq getFuncDecls(S ; S') = S ;; getFuncDecls(S') if S :: FuncDecl .
+  ceq getFuncDecls(S ; S') = getFuncDecls(S') if not S :: FuncDecl .
+  ceq getFuncDecls(S) = S if S :: FuncDecl .
+  ceq getFuncDecls(S) = nilDecl if not S :: FuncDecl .
+
+  op getVars : FuncId FuncDeclList -> VarList .
+  eq getVars(FUNC, FDCLS1 ;; (FUNC(XL){S}) ;; FDCLS2) = XL .
+  eq getVars(FUNC, FDCLS) = nil [owise] .
+
+  ceq execute(P , FUNC , VL) = run(var mRet ; P ; prepVars(XL, VL) ; mRet := FUNC (XL)) if XL := getVars(FUNC, getFuncDecls(P)) .
+  eq readReturn(FUNC, KS env(ENV) store(MEM) fdecl(FDCLS1 ;; (FUNC(XL){S}) ;; FDCLS2)) = findAllValues((mRet,XL), ENV, MEM) . 
+
+  op findValue : Var Map{Var,Nat} Map{Nat,Value?} -> Value .
+  eq findValue(X, (X |-> L) ; ENV, (L |-> V) ; MEM) = V .
+
+  op findAllValues : VarList Map{Var,Nat} Map{Nat,Value?} -> ValueList .
+  eq findAllValues((X,XL), ENV, MEM) = findValue(X, ENV, MEM) , findAllValues(XL, ENV, MEM) .
+  eq findAllValues(nil, ENV, MEM) = nil .
+
+endom

@@ -1,0 +1,129 @@
+omod TEE-CLIENT-API-BEHAVIOR is
+  pr PROGRAM-APP .
+  pr SECURE-MONITOR-CALL . 
+  pr INVOKE-TA-CALL .
+  pr TEE-OS-BEHAVIOR .
+  pr TRUST-APP .
+  pr RETURN-IMP-VALUE .
+
+  vars KI RI : Oid .
+  var TI : TaInstId .
+  var TK : TaInstId .
+  var SID : SessionId .
+  var SMAP : Map{SessionId,TaInstId} .
+  var FUNC : FuncId .
+  var VL : ValueList .
+
+------------------------------------------------------------
+--- Auxilary Functions
+------------------------------------------------------------
+
+  --- op insertToSmcQueue : SessionId SmcArgument Map{SessionId,List{SmcArgument}} -> Map{SessionId,List{SmcArgument}} .
+  --- eq insertToSmcQueue(SI , SMCARG , (SI |-> QUEUE , SMAP)) = (SI |-> (QUEUE SMCARG) , SMAP) .
+  --- eq insertToSmcQueue(SI , SMCARG , SMAP) = (SI |-> SMCARG , SMAP) [owise] .
+
+  --- op makeCleanMsgs : AppId AppId Set{ObjectId} -> Configuration .
+  --- eq makeCleanMsgs(TI , TN , (OI , OBJS)) = cleanResources(TI , TN , OI) makeCleanMsgs(TI , TN , OBJS) .
+  --- eq makeCleanMsgs(TI , TN , empty) = none .
+
+  --- op getObjects : AppId Configuration -> Set{ObjectId} .
+  --- eq getObjects(TN , < OI : CryptoOperation | trust-app-id : TN > TEE) = (OI , getObjects(TN , TEE)) .
+  --- eq getObjects(TN , < OI : TransientObject | trust-app-id : TN > TEE) = (OI , getObjects(TN , TEE)) .
+  --- eq getObjects(TN , TEE) = empty [owise] .
+
+------------------------------------------------------------
+--- Session Behaviours
+------------------------------------------------------------
+
+--- TODO : assume TA instance already exist
+
+  --- rl [open-session] :
+  ---   smcRequest(requestor(RI) {TeecOpenSession , # TI})
+  ---   < KI : TeeOSKernel | opened-session : SMAP , session-counter : N >
+  ---   =>
+  ---   < KI : TeeOSKernel | opened-session : (sessionId(N) |-> TI , SMAP) , session-counter : N + 1 > 
+  ---   smcReturn(requestor(RI) {TeecOpenSession , (# TEE-SUCCESS , # sessionId(N))})
+  --- .
+
+  --- rl [close-session-subroutine] :
+  ---   smcRequest(RI , {TeecCloseSession , # SI})
+  ---   < OSI : TeeOS | opened-session : (SI |-> TI , RMAP) >
+  ---   =>
+  ---   < OSI : TeeOS | opened-session : RMAP > 
+  ---   killTa(RI , TI)
+  --- .
+
+  --- rl [close-session-success] :
+  ---   killTaFinish(RI , TI)
+  ---   < OSI : TeeOS | >
+  ---   =>
+  ---   < OSI : TeeOS | > 
+  ---   smcReturn(RI , {TeecCloseSession , # TEE-SUCCESS })
+  --- .
+
+  --- rl [kill-ta-req] :
+  ---   < DEVID : Device | objects : {REE} | {killTa(RI , TI) < TI : TrustApp | id : TN > < OSI : TeeOS | clean-objects : MOBJ > TEE} >
+  ---   =>
+  ---   < DEVID : Device | objects : {REE} | {killTaContinue(RI , TI) makeCleanMsgs(TI , TN , getObjects(TN , TEE)) < TI : TrustApp | > 
+  ---                                         < OSI : TeeOS | clean-objects : (TI |-> getObjects(TN , TEE) , MOBJ) > TEE} >
+  --- .
+
+  --- rl [kill-ta-subroutine] :
+  ---   < DEVID : Device | objects : {REE} | {cleanFinish(TI , TN , OI) < OSI : TeeOS | clean-objects : (TI |-> (OI , OBJS) , MOBJ) > TEE} >
+  ---   =>
+  ---   < DEVID : Device | objects : {REE} | {< OSI : TeeOS | clean-objects : (TI |-> OBJS , MOBJ) > TEE} >
+  --- .
+
+  --- rl [kill-ta-ret] :
+  ---   < DEVID : Device | objects : {REE} | {< OSI : TeeOS | clean-objects : (TI |-> empty , MOBJ) > < TI : TrustApp | > killTaContinue(RI , TI) TEE} >
+  ---   =>
+  ---   < DEVID : Device | objects : {REE} | {< OSI : TeeOS | clean-objects : MOBJ > < TI : TrustApp | app-status : normal > killTaFinish(RI , TI) TEE} >
+  --- .
+
+--- Version In Paper
+  --- crl [accept-smc-request] :
+  ---   smcReq(ARGS)
+  ---   < OS : TrustedOS | sess : SM > 
+  ---   => 
+  ---   < OS : TrustedOS | > 
+  ---   invkTa(TI , RI , ARGS)
+  --- if RI := getRequestor(ARGS) /\ TI := getTargetTa(ARGS , SM) 
+  --- .
+
+--- Model/Implementation Specific Version
+  rl [accept-smc-request-subroutine] :
+    smcRequest(requestor(RI) invokeMessage({SID , FUNC , VL}))
+    < KI : TeeOSKernel | opened-session : (SID |-> TK , SMAP) >
+    => 
+    < KI : TeeOSKernel | >
+    invokeTA(TK , {SID , FUNC , VL} , RI)
+  .
+
+--- Version In Paper
+  --- crl [return-smc-request] :
+  ---   invkTaRet(RI , RES)
+  ---   < OS : TrustedOS | > 
+  ---   => 
+  ---   < OS : TrustedOS | >
+  ---   smcRet(ARGS)
+  --- if ARGS := makeSmcArgs(RI , RES) 
+  --- .
+
+--- Model/Implementation Specific Version (2 rules)
+  rl [return-smc-request-subroutine] :
+    invokeTAReturn({SID , FUNC , VL} , RI)
+    < KI : TeeOSKernel | >
+    => 
+    < KI : TeeOSKernel | >
+    smcReturn(requestor(RI) invokeMessage({SID , FUNC , VL})) 
+  .
+
+  rl [return-smc-request-subroutine] :
+    < TI : TrustApp | app-status : panic, task : task({SID , FUNC , VL} , RI) >
+    < KI : TeeOSKernel | >
+    => 
+    < KI : TeeOSKernel | >
+    < TI : TrustApp | app-status : panic, task : noTask >
+    smcReturn(requestor(RI) invokeMessage({SID , FUNC , (# TEE-ERROR-TARGET-DEAD, VL)})) 
+  .
+endom

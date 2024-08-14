@@ -1,0 +1,148 @@
+--- This file defines various opaque handles defined in Table 2-1 
+--- of the G.P. documentation (page 37).
+
+------------------------------------------------------------
+--- Handle Base Class
+------------------------------------------------------------
+
+--- This module defines base class for handle object.
+
+omod HANDLE is
+  pr HANDLE-ID .
+  pr TA-OBJECT .
+
+--- Version In Paper
+  --- class Handle | oid : Oid .
+
+--- Model/Implementation Specific Version
+  subsort HandleId < TaObjectId .
+  class Handle | is-initialized : Bool .
+endom
+
+view Handle from TRIV to HANDLE is
+  sort Elt to Handle .
+endv
+
+------------------------------------------------------------
+--- Handle Subclass
+------------------------------------------------------------
+
+--- The following five classes are subclasses of handle base class.
+--- 1) TaSessionHandle, 2) PropSetHandle, 3) ObjectHandle
+--- 4) ObjectEnumHandle, 5) OperationHandle
+
+--- This module defines TA session handle, a subclass of handle.
+--- TODO: Add new attributes.
+
+omod TA-SESSION-HANDLE is
+  pr HANDLE .
+
+  class TaSessionHandle .
+  subclass TaSessionHandle < Handle .
+endom
+
+--- This module defines prop set handle, a subclass of handle.
+--- TODO: Add new attributes.
+
+omod PROP-SET-HANDLE is
+  pr HANDLE .
+
+  class PropSetHandle .
+  subclass PropSetHandle < Handle .
+endom
+
+--- This module defines object handle, a subclass of handle.
+
+omod OBJECT-HANDLE is
+  pr HANDLE .
+  pr SET{DataFlag} .
+  pr DATA-POSITION .
+
+--- Version In Paper
+  --- class ObjHandle | flags : Set{DataAccessFlag} .
+  --- subclass ObjHandle < Handle .
+
+--- Model/Implementation Specific Version
+  class ObjectHandle | data-access-flag-set : Set{DataFlag},
+                       data-position : DataPosition? .
+  subclass ObjectHandle < Handle .
+endom
+
+--- This module defines object enumerator handle, a subclass of handle.
+
+omod OBJECT-ENUM-HANDLE is
+  pr HANDLE .
+
+  class ObjectEnumHandle .
+  subclass ObjectEnumHandle < Handle .
+endom
+
+--- This module defines operation handle, a subclass of handle.
+
+omod OPERATION-HANDLE is
+  pr HANDLE .
+
+--- Version In Paper
+  --- class OpHandle | state : HandleState, key-material-set : Bool . 
+  --- subclass OpHandle < Handle .
+
+--- Model/Implementation Specific Version
+  class OperationHandle | is-key-set : Bool,
+                          is-extracting : Bool .
+  subclass OperationHandle < Handle .
+endom
+
+------------------------------------------------------------
+--- Handle Class ID Generator
+------------------------------------------------------------
+
+--- This module defines handle id generator.
+
+fmod HANDLE-ID-GEN is
+  pr NAT .
+  pr TA-INSTANCE-ID .
+  pr HANDLE-ID .
+
+  op handleId : Nat TaInstId -> HandleId [ctor] .
+  op TEE-HANDLE-NULL : -> HandleId [ctor] .
+endfm
+
+
+omod HANDLE-AUX is
+  pr OBJECT-HANDLE .
+  pr OBJECT-ENUM-HANDLE .
+  pr OPERATION-HANDLE .
+  pr HANDLE-ID-GEN .
+  pr DATA-POSITION .
+  pr OPERATION-CLASS .
+
+  var N : Nat .
+  var TK : TaInstId .
+  var DATAFLAGS : Set{DataFlag} .
+  var HANDLE : HandleId .
+
+  op freshTransientHandle : Nat TaInstId -> Configuration .
+  op freshPersistentHandle : Nat TaInstId Set{DataFlag} -> Configuration .
+  op freshEnumeratorHandle : Nat TaInstId -> Configuration .
+  op freshOperationHandle : Nat TaInstId -> Configuration .
+  
+  op nullHandle : HandleId -> Bool .
+  eq nullHandle(TEE-HANDLE-NULL) = true .
+  eq nullHandle(HANDLE) = false [owise] .
+
+  eq freshTransientHandle(N , TK) 
+   = < handleId(N , TK) : ObjectHandle | is-initialized : false , 
+                                         data-access-flag-set : empty , data-position : noPos > .
+
+  eq freshPersistentHandle(N , TK , DATAFLAGS) 
+   = < handleId(N , TK) : ObjectHandle | is-initialized : true , 
+                                         data-access-flag-set : DATAFLAGS , data-position : pos(0) > .
+  
+  eq freshEnumeratorHandle(N , TK) 
+   = < handleId(N , TK) : ObjectEnumHandle | is-initialized : false > .
+
+  eq freshOperationHandle(N , TK) 
+   = < handleId(N , TK) : OperationHandle | is-initialized : false ,
+                                            is-key-set : false , is-extracting : false > .
+
+endom

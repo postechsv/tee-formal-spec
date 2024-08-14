@@ -1,0 +1,741 @@
+
+--- This file defines the syntax of imperative language and its semantics.
+
+fmod IMP-FUNC-ID is
+  pr QID .
+  sort FuncId .
+  subsort Qid < FuncId .
+endfm
+
+fmod IMP-FUNC-DECL is
+  sort FuncDecl .
+endfm
+
+fmod IMP-STRUCT-DECL is
+  sort StructDecl .
+endfm
+
+fmod IMP-VAR-DECL is
+  sort VarDecl .
+endfm
+
+fmod IMP-DECL is
+  pr IMP-FUNC-DECL .
+  pr IMP-STRUCT-DECL .
+
+  sort Decl .
+  subsort FuncDecl StructDecl < Decl .
+endfm
+
+fmod IMP-DECL-LIST is
+  pr IMP-DECL .
+
+  sort EmptyDeclList .
+  op nilDecl : -> EmptyDeclList [ctor] .
+  op _;;_ : EmptyDeclList EmptyDeclList -> EmptyDeclList [ctor assoc id: nilDecl prec 70] .
+
+  sort DeclList .
+  subsort Decl EmptyDeclList < DeclList .
+  op _;;_ : DeclList DeclList -> DeclList [ctor ditto] .
+
+  sort FuncDeclList .
+  subsorts FuncDecl EmptyDeclList < FuncDeclList < DeclList .
+  op _;;_ : FuncDeclList FuncDeclList -> FuncDeclList [ctor ditto] .
+
+  sort StructDeclList .
+  subsorts StructDecl EmptyDeclList < StructDeclList < DeclList .
+  op _;;_ : StructDeclList StructDeclList -> StructDeclList [ctor ditto] .
+
+endfm
+
+--- This module defines label for goto statement.
+
+fmod IMP-LABEL is
+  sorts Label .
+endfm
+
+view Label from TRIV to IMP-LABEL is
+  sort Elt to Label .
+endv
+
+--- Values in IMP. Namely, Bool and Int.
+
+fmod IMP-VALUE is
+  pr INT .
+  sorts Value Value? .
+  subsort Value < Value? .
+
+  op undef : -> Value? [ctor] .
+  op #_ : Bool -> Value [ctor] .
+  op #_ : Int -> Value [ctor] .
+endfm
+
+view Value? from TRIV to IMP-VALUE is
+  sort Elt to Value? .
+endv
+
+--- Variable identifiers in IMP. We use quoted identifiers of sort Qid in Maude.
+
+fmod IMP-VAR is
+  pr QID .
+  sort Var .
+  --- subsort Qid < Var .
+endfm
+
+view Var from TRIV to IMP-VAR is
+  sort Elt to Var .
+endv
+
+--- Base expressions in IMP
+
+fmod IMP-BASE-EXP is
+  pr IMP-VALUE .
+  pr IMP-VAR .
+
+  sorts LExp Exp .
+  subsort Value < Exp .
+  subsort Var < LExp < Exp .
+endfm
+
+--- Lists of expressions, variable ids, and values.
+
+fmod IMP-EXP-LIST is
+  inc IMP-BASE-EXP .
+
+  sort EmptyList .
+  op nil : -> EmptyList [ctor] .
+  op _,_ : EmptyList EmptyList -> EmptyList [ctor assoc id: nil prec 70] .
+
+  sort ExpList .
+  subsort Exp EmptyList < ExpList .
+  op _,_ : ExpList ExpList -> ExpList [ctor ditto] .
+
+  sort VarList .
+  subsorts Var EmptyList < VarList < ExpList .
+  op _,_ : VarList VarList -> VarList [ctor ditto] .
+
+  sort ValueList .
+  subsorts Value EmptyList < ValueList < ExpList .
+  op _,_ : ValueList ValueList -> ValueList [ctor ditto] .
+endfm
+
+--- LValues for IMP
+
+fmod IMP-LVALUE is
+  pr IMP-BASE-EXP .
+  pr MAP{Var,Nat} * (op _,_ to _;_) .
+
+  sort StructValue LocValue LValue .
+  subsort StructValue LocValue < LValue < Value .
+
+  op struct : Map{Var,Nat} -> StructValue [ctor] .
+  op loc : Nat -> LocValue [ctor] .
+endfm
+
+--- Expressions in IMP
+
+fmod IMP-EXP is
+  pr IMP-FUNC-ID .
+  inc IMP-EXP-LIST .
+
+  var F : FuncId .
+
+  op _+_ : Exp Exp -> Exp [ctor gather(E e) prec 33] .
+  op _*_ : Exp Exp -> Exp [ctor gather(E e) prec 31] .
+  op _/_ : Exp Exp -> Exp [ctor gather(E e) prec 31] .
+  op _<=_ : Exp Exp -> Exp [ctor gather(E e) prec 37] .
+  op _===_ : Exp Exp -> Exp [ctor gather(E e) prec 37] .
+  op _&&_ : Exp Exp -> Exp [ctor gather(E e) prec 55] .
+  op _||_ : Exp Exp -> Exp [ctor gather(E e) prec 55] .
+  op !_ : Exp -> Exp [ctor prec 53] .
+  op _._ : LExp Var -> LExp [ctor gather(E e) prec 30] .
+
+  op _(_) : FuncId ExpList -> Exp [ctor prec 30] .
+  op _() : FuncId -> Exp [ctor prec 30] .
+
+  eq F () = F (nil) .
+
+endfm
+
+--- Statements in IMP
+
+fmod IMP-STMT is
+  pr TEE-API .
+  pr TEE-CLIENT-API .
+  pr IMP-EXP .
+  pr IMP-LABEL .
+  inc IMP-DECL .
+  inc IMP-VAR-DECL .
+
+  sort Stmt .
+  subsort VarDecl Decl < Stmt .
+
+  sort StructMemDeclStmt .
+  subsort VarDecl StructDecl < StructMemDeclStmt < Stmt .
+
+  var F : FuncId .
+  var S : Stmt .
+  var E : Exp .
+  var EL : ExpList .
+  var TEEAPI : TeeApi .
+
+  op skip : -> Stmt [ctor] .
+  op _:=_ : Exp Exp -> Stmt [ctor] .
+  op _;_ : Stmt Stmt -> Stmt [ctor gather(e E) prec 68] .
+  op if(_){_}else{_} : Exp Stmt Stmt -> Stmt [ctor] .
+  op if(_){_} : Exp Stmt -> Stmt [ctor] .
+
+  eq if(E){S} = if(E){S}else{skip} .
+
+  op while(_){_} : Exp Stmt -> Stmt [ctor] .
+  op goto_ : Label -> Stmt [ctor] .
+  op _:_ : Label Stmt -> Stmt [ctor prec 68] .
+
+  op var_ : Var -> VarDecl [ctor prec 49] .
+  op struct__ : Var Var -> Stmt [ctor] .
+
+--- Structure declaration
+
+  op _;_ : StructMemDeclStmt StructMemDeclStmt -> StructMemDeclStmt [ctor ditto] .
+  op struct{_}_ : StructMemDeclStmt Var -> StructDecl [ctor prec 49] .
+
+--- Function declaration
+
+  op _(_){_} : FuncId VarList Stmt -> FuncDecl [ctor prec 49] . 
+  op _(){_} : FuncId Stmt -> FuncDecl [ctor prec 49]. 
+
+  eq F(){S} = F(nil){S} .
+
+--- Function call
+
+  op call_ : Exp -> Stmt [ctor prec 60] .
+  op return_ : Exp -> Stmt [ctor prec 60] .
+
+  op _(_;_) : TeeApi ExpList ExpList -> Stmt [ctor prec 60] .
+  op _(_;) : TeeApi ExpList -> Stmt [ctor prec 60] .
+  op _() : TeeApi -> Stmt [ctor prec 60] .
+
+  eq TEEAPI(EL ;) = TEEAPI(EL ; nil) . 
+  eq TEEAPI() = TEEAPI(nil ; nil) .
+
+------------------------------------------------------------
+--- Internal Stmt
+------------------------------------------------------------
+
+  op $funcCall : Stmt VarList ExpList -> Stmt [ctor] .
+  op $callByRefInst : Exp Var -> Stmt [ctor] .
+  op $callByValInst : Exp -> Stmt [ctor] .
+  op $callByRefArg : ExpList -> Stmt [ctor] .
+  op $callByValArg : ExpList -> Stmt [ctor] .
+  op $ignore : -> Stmt [ctor] .
+  op $clearMem : Exp -> Stmt [ctor] .
+  op $waitSysCall : TeeApi -> Stmt [ctor] .
+  op $assign : ExpList ExpList -> Stmt [ctor] .
+  op $callByRefAssign : ValueList VarList -> Stmt [ctor] .
+  op $in(_) : ValueList -> Stmt [ctor] .
+  op $out(_) : ExpList -> Stmt [ctor] .
+  op $out(_|_) : ExpList ExpList -> Stmt [ctor] .
+  op $structNameDecl : Var -> Stmt [ctor] .
+  op $structMemDecl : StructMemDeclStmt Nat -> Stmt [ctor] .
+endfm
+
+view Stmt from TRIV to IMP-STMT is
+  sort Elt to Stmt .
+endv
+
+--- IMP programs
+
+fmod IMP-PROGRAM is
+  pr IMP-STMT .
+
+  sort Program .
+  subsort Stmt < Program .
+endfm
+
+--- Evaluation contexts
+
+fmod IMP-EVAL-CONTEXT is
+  pr IMP-PROGRAM .
+  pr IMP-LVALUE .
+  inc K-COMPUTATION .
+  ops `[`]+_ `[`]*_ `[`]/_ `[`]<=_ `[`]&&_ `[`]||_ `[`]===_ : Exp -> KLabel [ctor] .
+  ops _+`[`] _*`[`] _/`[`] _<=`[`] _&&`[`] _||`[`] _===`[`] : Value -> KLabel [ctor] .
+  op !`[`] : -> KLabel [ctor] .
+
+  op lvalue : Exp -> KLabel [ctor] .
+  op lvalue(`[`]._) : Exp -> KLabel [ctor] .
+
+  op leval : Exp -> KLabel [ctor] .
+  op leval(`[`]) : -> KLabel [ctor] .
+
+  op `[`]:=_ : Value -> KLabel [ctor] .
+  op _:=`[`] : Exp -> KLabel [ctor] .
+
+  op if(`[`]){_}else{_} : Stmt Stmt -> KLabel [ctor] .
+
+  op return`[`] : -> KLabel [ctor] .
+
+  op $callByRefInst(`[`]`,_) : Var -> KLabel [ctor] .
+  op $callByValInst(`[`]) : -> KLabel [ctor] .
+  op $clearMem`[`] : -> KLabel [ctor] .
+endfm
+
+--- Heating/cooling rules for IMP
+
+fmod IMP-STRICTNESS is
+  pr IMP-EVAL-CONTEXT .
+  inc K-CONFIG .
+
+  subsort Exp Stmt Program < KLabel .
+
+  vars E E1 E2 : Exp .
+  vars V V1 V2 : Value .
+  vars LV LV1 : LocValue .
+  var SV1 : StructValue .
+  vars S1 S2 : Stmt .
+  var X : Var .
+  var K : K .
+  var F : FuncId .
+  var STRT : Map{Var,Nat} .
+
+  ceq k(E1 + E2 ~> K)       = k(E1 ~> [] + E2 ~> K) if not (E1 :: Value or E1 :: LExp) .
+  ceq k(E1 + E2 ~> K)       = k(leval(E1) ~> [] + E2 ~> K) if E1 :: LExp .
+  ceq k(V1 ~> [] + E2 ~> K) = k(V1 + E2 ~> K) if not V1 :: LValue .
+
+  ceq k(V1 + E2 ~> K)       = k(E2 ~> V1 + [] ~> K) if not (E2 :: Value or E2 :: LExp) .
+  ceq k(V1 + E2 ~> K)       = k(leval(E2) ~> V1 + [] ~> K) if E2 :: LExp .
+  ceq k(V2 ~> V1 + [] ~> K) = k(V1 + V2 ~> K) if not V2 :: LValue .
+
+  ceq k(E1 * E2 ~> K)       = k(E1 ~> [] * E2 ~> K) if not (E1 :: Value or E1 :: LExp) .
+  ceq k(E1 * E2 ~> K)       = k(leval(E1) ~> [] * E2 ~> K) if E1 :: LExp .
+  ceq k(V1 ~> [] * E2 ~> K) = k(V1 * E2 ~> K) if not V1 :: LValue .
+
+  ceq k(V1 * E2 ~> K)       = k(E2 ~> V1 * [] ~> K) if not (E2 :: Value or E2 :: LExp) .
+  ceq k(V1 * E2 ~> K)       = k(leval(E2) ~> V1 * [] ~> K) if E2 :: LExp .
+  ceq k(V2 ~> V1 * [] ~> K) = k(V1 * V2 ~> K) if not V2 :: LValue .
+
+  ceq k(E1 / E2 ~> K)       = k(E1 ~> [] / E2 ~> K) if not (E1 :: Value or E1 :: LExp) .
+  ceq k(E1 / E2 ~> K)       = k(leval(E1) ~> [] / E2 ~> K) if E1 :: LExp .
+  ceq k(V1 ~> [] / E2 ~> K) = k(V1 / E2 ~> K) if not V1 :: LValue .
+
+  ceq k(V1 / E2 ~> K)       = k(E2 ~> V1 / [] ~> K) if not (E2 :: Value or E2 :: LExp) .
+  ceq k(V1 / E2 ~> K)       = k(leval(E2) ~> V1 / [] ~> K) if E2 :: LExp .
+  ceq k(V2 ~> V1 / [] ~> K) = k(V1 / V2 ~> K) if not V2 :: LValue .
+
+  ceq k(E1 <= E2 ~> K)       = k(E1 ~> [] <= E2 ~> K) if not (E1 :: Value or E1 :: LExp) .
+  ceq k(E1 <= E2 ~> K)       = k(leval(E1) ~> [] <= E2 ~> K) if E1 :: LExp .
+  ceq k(V1 ~> [] <= E2 ~> K) = k(V1 <= E2 ~> K) if not V1 :: LValue .
+
+  ceq k(V1 <= E2 ~> K)       = k(E2 ~> V1 <= [] ~> K) if not (E2 :: Value or E2 :: LExp) .
+  ceq k(V1 <= E2 ~> K)       = k(leval(E2) ~> V1 <= [] ~> K) if E2 :: LExp .
+  ceq k(V2 ~> V1 <= [] ~> K) = k(V1 <= V2 ~> K) if not V2 :: LValue .
+
+  ceq k(E1 === E2 ~> K)       = k(E1 ~> [] === E2 ~> K) if not (E1 :: Value or E1 :: LExp) .
+  ceq k(E1 === E2 ~> K)       = k(leval(E1) ~> [] === E2 ~> K) if E1 :: LExp .
+  ceq k(V1 ~> [] === E2 ~> K) = k(V1 === E2 ~> K) if not V1 :: LValue .
+
+  ceq k(V1 === E2 ~> K)       = k(E2 ~> V1 === [] ~> K) if not (E2 :: Value or E2 :: LExp) .
+  ceq k(V1 === E2 ~> K)       = k(leval(E2) ~> V1 === [] ~> K) if E2 :: LExp .
+  ceq k(V2 ~> V1 === [] ~> K) = k(V1 === V2 ~> K) if not V2 :: LValue .
+
+  ceq k(E1 && E2 ~> K)       = k(E1 ~> [] && E2 ~> K) if not (E1 :: Value or E1 :: LExp) .
+  ceq k(E1 && E2 ~> K)       = k(leval(E1) ~> [] && E2 ~> K) if E1 :: LExp .
+  ceq k(V1 ~> [] && E2 ~> K) = k(V1 && E2 ~> K) if not V1 :: LValue .
+
+  ceq k(V1 && E2 ~> K)       = k(E2 ~> V1 && [] ~> K) if not (E2 :: Value or E2 :: LExp) .
+  ceq k(V1 && E2 ~> K)       = k(leval(E2) ~> V1 && [] ~> K) if E2 :: LExp .
+  ceq k(V2 ~> V1 && [] ~> K) = k(V1 && V2 ~> K) if not V2 :: LValue .
+
+  ceq k(E1 || E2 ~> K)       = k(E1 ~> [] || E2 ~> K) if not (E1 :: Value or E1 :: LExp) .
+  ceq k(E1 || E2 ~> K)       = k(leval(E1) ~> [] || E2 ~> K) if E1 :: LExp .
+  ceq k(V1 ~> [] || E2 ~> K) = k(V1 || E2 ~> K) if not V1 :: LValue .
+
+  ceq k(V1 || E2 ~> K)       = k(E2 ~> V1 || [] ~> K) if not (E2 :: Value or E2 :: LExp) .
+  ceq k(V1 || E2 ~> K)       = k(leval(E2) ~> V1 || [] ~> K) if E2 :: LExp .
+  ceq k(V2 ~> V1 || [] ~> K) = k(V1 || V2 ~> K) if not V2 :: LValue .
+
+  ceq k(! E ~> K)       = k(E ~> ! [] ~> K) if not (E :: Value or E :: LExp) .
+  ceq k(! E ~> K)       = k(leval(E) ~> ! [] ~> K) if E :: LExp .
+  ceq k(V ~> ! [] ~> K) = k(! V ~> K) if not V :: LValue .
+
+  ceq k(E1 := E2 ~> K)       = k(E2 ~> E1 := [] ~> K) if not (E2 :: Value or E2 :: LExp) .
+  ceq k(E1 := E2 ~> K)       = k(leval(E2) ~> E1 := [] ~> K) if E2 :: LExp and not E2 :: LValue .
+  ceq k(V2 ~> E1 := [] ~> K) = k(E1 := V2 ~> K) if not V2 :: LocValue .
+
+  ceq k(E1 := V2 ~> K)        = k(E1 ~> [] := V2 ~> K) if not (E1 :: Value or E1 :: LExp) .
+  ceq k(E1 := V2 ~> K)        = k(lvalue(E1) ~> [] := V2 ~> K) if E1 :: LExp and not E1 :: LocValue .
+   eq k(LV1 ~> [] := V2 ~> K) = k(LV1 := V2 ~> K) .
+
+  ceq k(lvalue(E1 . E2) ~> K)        = k(leval(E1) ~> lvalue([] . E2) ~> K) if not E1 :: StructValue .
+   eq k(SV1 ~> lvalue([] . E2) ~> K) = k(SV1 . E2 ~> K) .
+
+  ceq k(leval(E) ~> K)        = k(lvalue(E) ~> leval([]) ~> K) if not E :: Value .
+   eq k(LV ~> leval([]) ~> K) = k(leval(LV) ~> K) .
+
+  ceq k(if (E) {S1} else {S2} ~> K)       
+    = k(E ~> if ([]) {S1} else {S2} ~> K) if not (E :: Value or E :: LExp) .
+  ceq k(if (E) {S1} else {S2} ~> K)       
+    = k(leval(E) ~> if ([]) {S1} else {S2} ~> K) if E :: LExp .
+  ceq k(V ~> if ([]) {S1} else {S2} ~> K) 
+    = k(if (V) {S1} else {S2} ~> K) if not V :: LValue .
+
+  ceq k(return E ~> K)
+    = k(E ~> return [] ~> K) if not (E :: Value or E :: LExp) .
+  ceq k(return E ~> K)
+    = k(leval(E) ~> return [] ~> K) if E :: LExp .
+  ceq k(V ~> return [] ~> K)
+    = k(return V ~> K) if not V :: LValue .
+
+--- TODO
+
+  ceq k($callByRefInst(E , X) ~> K)
+    = k(lvalue(E) ~> $callByRefInst([] , X) ~> K) if not E :: Value .
+   eq k(V ~> $callByRefInst([] , X) ~> K) 
+    = k($callByRefInst(V , X) ~> K) .
+
+  ceq k($callByValInst(E) ~> K)
+    = k(leval(E) ~> $callByValInst([]) ~> K) if not E :: Value .
+
+  ceq k(V ~> $callByValInst([]) ~> K) 
+    = k($callByValInst(V) ~> K) if not V :: LValue .
+
+  ceq k($clearMem(E) ~> K)
+    = k(lvalue(E) ~> $clearMem [] ~> K) if not E :: LocValue .
+   eq k(LV ~> $clearMem [] ~> K)
+    = k($clearMem(LV) ~> K) .
+endfm
+
+--- Call stacks for IMP
+
+fmod IMP-CALL-STACK is
+  pr MAP{Var,Nat} * (op _,_ to _;_) .
+  pr MAP{Label,Stmt} * (op undefined to nolabel) .
+  inc K-COMPUTATION .
+
+  sort StackItem .
+  op item : Map{Var,Nat} Map{Label,Stmt} K Nat -> StackItem [ctor] .
+
+  sort CallStack .
+  op nilStack : -> CallStack [ctor] .
+  op _::_ : StackItem CallStack -> CallStack [ctor] .
+endfm
+
+--- K configurations for IMP
+
+fmod IMP-CONFIG is
+  pr IMP-PROGRAM .
+  pr IMP-CALL-STACK .
+  pr MAP{Label,Stmt} * (op undefined to nolabel) .
+  pr MAP{Nat,Value?} * (op _,_ to _;_) .
+  pr IMP-DECL-LIST .
+  inc K-CONFIG .
+
+  op env : Map{Var,Nat} -> KConfigItem [ctor] .
+  op store : Map{Nat,Value?} -> KConfigItem [ctor] .
+  op sdecl : StructDeclList -> KConfigItem [ctor] .
+  op fdecl : FuncDeclList -> KConfigItem [ctor] .
+  op fstack : CallStack -> KConfigItem [ctor] .
+  op nextLoc : Nat -> KConfigItem [ctor] .
+  op labels : Map{Label,Stmt} -> KConfigItem [ctor] .
+
+endfm
+
+mod IMP-AUX is
+  pr IMP-CONFIG .
+  pr IMP-STRICTNESS .
+
+  vars S S' : Stmt .
+  var LB : Label .
+  var LM : Map{Label,Stmt} .
+  var P : Program .
+------------------------------------------------------------
+--- Auxiliary Functions
+------------------------------------------------------------
+
+  op run : Program -> KConfig .
+  op getLabels : Program Map{Label,Stmt} -> Map{Label,Stmt} .
+
+  eq run(P) = k(P) env(empty) store(empty) fdecl(nilDecl) sdecl(nilDecl) fstack(nilStack) nextLoc(0) labels(getLabels(P , empty)) .
+
+  eq getLabels(LB : S , LM) = insert(LB , S , getLabels(S , LM)) .
+  eq getLabels(S ; S' , LM) = getLabels(S , LM) , getLabels(S', LM) .
+  eq getLabels(S , LM) = empty [owise] .
+endm
+
+--- IMP Semantics
+
+mod IMP-SEMANTICS is
+  pr IMP-AUX .
+
+  vars X X' : Var .
+  var XL : VarList .
+  vars K K' : K .
+  vars V V' : Value? .
+  vars LV : LocValue .
+  vars ENV ENV' : Map{Var,Nat} .
+  var STRT : Map{Var,Nat} .
+  var MEM : Map{Nat,Value?} .
+  var B : Bool .
+  vars L L' I I' : Int .
+  vars E E' E1 E2 : Exp .
+  vars S S' : Stmt .
+  var F : FuncId .
+  var TEEAPI : TeeApi .
+  vars SMST SMST' : StructMemDeclStmt .
+  var SDCL : StructDecl .
+  vars SDCLS SDCLS1 SDCLS2 : StructDeclList .
+  var FDCL : FuncDecl .
+  vars FDCLS FDCLS1 FDCLS2 : FuncDeclList .
+  var STIT : StackItem .
+  var ST : CallStack .
+  var VL : ValueList .
+  vars EL EL' : ExpList .
+  var LB : Label .
+  vars LM LM' : Map{Label,Stmt} .
+  var P : Program .
+
+------------------------------------------------------------
+--- IMP Semantics
+------------------------------------------------------------
+
+  rl k(lvalue(X) ~> K) env((X |-> L) ; ENV)
+  => k(loc(L)    ~> K) env((X |-> L) ; ENV) .
+
+  rl k(struct(STRT) . E ~> K) => k(loc(STRT[E]) ~> K) .
+
+  rl k(leval(loc(L)) ~> K) store((L |-> V) ; MEM)
+  => k(V             ~> K) store((L |-> V) ; MEM) .
+
+--- Assign
+
+  rl k(loc(L) := V ~> K) store(MEM)
+  => k(               K) store(insert(L, V, MEM)) .
+
+
+  rl  k(# I + # I' ~> K)   => k(# (I + I') ~> K) .
+  rl  k(# I * # I' ~> K)   => k(# (I * I') ~> K) .
+  crl k(# I / # I' ~> K)   => k(# (I quo I') ~> K) if I' =/= 0 .
+  rl  k(# I <= # I' ~> K)  => k(# (I <= I') ~> K) .
+  rl  k(V === V' ~> K)     => k(# (V == V') ~> K) .
+  rl  k(# true  && E ~> K) => k(E ~> K) .
+  rl  k(# false && E ~> K) => k(# false ~> K) .
+  rl  k(# true  || E ~> K) => k(# true ~> K) .
+  rl  k(# false || E ~> K) => k(E ~> K) .
+  rl  k(! (# B) ~> K)      => k(# (not B) ~> K) .
+
+  rl k(skip ~> K) 
+  => k(K) .
+
+  rl k(S ; S' ~> K) => k(S ~> S' ~> K) .
+
+  eq k(goto LB ~> K) labels(((LB |-> S) , LM)) = k(S) labels(((LB |-> S) , LM)) .
+  eq k(goto LB ~> K) labels(LM) = k(K) labels(LM) [owise] .
+  eq k(LB : S) = k(S) .
+
+  rl k(if (# true)  {S} else {S'} ~> K) => k(S  ~> K) .
+  rl k(if (# false) {S} else {S'} ~> K) => k(S' ~> K) .
+
+  rl k(while (E) {S} ~> K) 
+  => k(if (E) {(S ; while (E) {S})} else {skip} ~> K) .
+
+  rl k(var X ~> K) env(ENV) store(MEM) nextLoc(L)
+  => k(         K) env(insert(X , L , ENV)) store(insert(L , undef , MEM)) nextLoc(L + 1) .
+
+  rl k(struct X X' ~> K) sdecl(SDCLS1 ;; struct {SMST} X ;; SDCLS2) nextLoc(L)
+  => k($structNameDecl(X') ~> $structMemDecl(SMST, L) ~> K) sdecl(SDCLS1 ;; struct {SMST} X ;; SDCLS2) nextLoc(L) .
+ 
+  eq k($structNameDecl(X) ~> K) env(ENV) store(MEM) nextLoc(L)
+   = k(K) env(insert(X, L, ENV)) store(insert(L, struct(empty), MEM)) nextLoc(L + 1) .
+ 
+  eq k($structMemDecl(var X ; SMST, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
+   = k($structMemDecl(SMST, L') ~> K) store((L' |-> struct(insert(X, L, ENV))) ; (L |-> undef) ; MEM) nextLoc(L + 1) .
+
+  eq k($structMemDecl(var X, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
+   = k(K) store((L' |-> struct(insert(X, L, ENV))) ; (L |-> undef) ; MEM) nextLoc(L + 1) .
+
+  eq k($structMemDecl(struct {SMST'} X ; SMST, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
+   = k($structMemDecl(SMST', L) ~> $structMemDecl(SMST, L') ~> K) store((L' |-> struct(insert(X, L, ENV))) ; (L |-> struct(empty)) ; MEM)  nextLoc(L + 1) .
+
+  eq k($structMemDecl(struct {SMST} X, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
+   = k($structMemDecl(SMST, L) ~> K) store((L' |-> struct(insert(X, L, ENV))) ; (L |-> struct(empty)) ; MEM)  nextLoc(L + 1) .
+  
+  eq k(SDCL ~> K) sdecl(SDCLS) = k(K) sdecl(SDCLS ;; SDCL) .
+
+  eq k(FDCL ~> K) fdecl(FDCLS) = k(K) fdecl(FDCLS ;; FDCL) .
+
+  rl k(F(EL) ~> K) fdecl(FDCLS1 ;; (F(XL){S}) ;; FDCLS2)
+  => k($funcCall(S , XL , EL) ~> K) fdecl(FDCLS1 ;; (F(XL){S}) ;; FDCLS2) .
+
+  rl k($funcCall(S , XL , EL) ~> K) env(ENV) fstack(ST) nextLoc(L) labels(LM)
+  => k($callByRefArg(EL) ~> $funcCall(S , XL , nil)) env(ENV) fstack(item(ENV,LM,K,L) :: ST) nextLoc(L) labels(getLabels(S, empty)) .
+
+  rl k($callByRefArg(E , EL) ~> $funcCall(S , (X , XL) , nil))
+  => k($callByRefInst(E , X) ~> $callByRefArg(EL) ~> $funcCall(S , XL , nil)) .
+
+  rl k($callByRefArg(EL) ~> $funcCall(S , nil , nil)) => k(S) .
+
+  rl k($callByRefInst(loc(L) , X) ~> K) env(ENV)
+  => k(K) env(insert(X , L , ENV)) .
+
+  crl k($callByRefInst(V , X) ~> K) env(ENV) store(MEM) nextLoc(L)
+   => k(K) env(insert(X , L , ENV)) store(insert(L , V , MEM)) nextLoc(L + 1) if not V :: LocValue .
+  
+  crl k(TEEAPI(EL ; EL') ~> K) => k($callByValArg(EL) ~> $in(nil) ~> $waitSysCall(TEEAPI) ~> $out(EL') ~> K) if not TEEAPI :: TeeClientApi .
+  crl k(TEEAPI(EL ; EL') ~> K) => k($callByValArg(EL) ~> $in(nil) ~> $waitSysCall(TEEAPI) ~> $out(EL' | EL) ~> K) if TEEAPI :: TeeClientApi .
+  rl k($callByValArg(nil) ~> $in(VL) ~> K) => k($in(VL) ~> K) .
+  rl k($callByValArg(E , EL) ~> K) => k($callByValInst(E) ~> $callByValArg(EL) ~> K) .
+  rl k($callByValInst(V) ~> $callByValArg(EL) ~> $in(VL) ~> K)  => k($callByValArg(EL) ~> $in(VL , V) ~> K) .
+
+  rl k(return V ~> K) env(ENV) fstack(item(ENV',LM',K',L') :: ST) nextLoc(L) labels(LM)
+  => k(V ~> K') env(ENV') fstack(ST) nextLoc(L') labels(LM') .
+
+--- TODO: Clean
+
+  rl k($assign((E,EL), (E',EL')) ~> K) => k(E' := E ~> $assign(EL, EL') ~> K) .
+  rl k($assign(EL, nil) ~> K) => k(K) .
+
+
+  rl k($ignore ~> K) => k(K) .
+
+--- TODO : use lvalue instead of var
+  rl k($clearMem(loc(L)) ~> K) store((L |-> V) ; MEM) => k(K) store((L |-> undef) ; MEM) .
+
+endm
+
+--- This module provides invisible reduction for IMP semantics.
+
+mod IMP-SEMANTICS-INVISIBLE is
+  pr IMP-AUX .
+
+  vars X X' : Var .
+  var XL : VarList .
+  vars K K' : K .
+  vars V V' : Value? .
+  vars LV : LocValue .
+  vars ENV ENV' : Map{Var,Nat} .
+  var STRT : Map{Var,Nat} .
+  var MEM : Map{Nat,Value?} .
+  var B : Bool .
+  vars L L' I I' : Int .
+  vars E E' E1 E2 : Exp .
+  vars S S' : Stmt .
+  var F : FuncId .
+  var TEEAPI : TeeApi .
+  vars SMST SMST' : StructMemDeclStmt .
+  var SDCL : StructDecl .
+  vars SDCLS SDCLS1 SDCLS2 : StructDeclList .
+  var FDCL : FuncDecl .
+  vars FDCLS FDCLS1 FDCLS2 : FuncDeclList .
+  var STIT : StackItem .
+  var ST : CallStack .
+  var VL : ValueList .
+  vars EL EL' : ExpList .
+  var LB : Label .
+  vars LM LM' : Map{Label,Stmt} .
+  var P : Program .
+
+------------------------------------------------------------
+--- IMP Semantics
+------------------------------------------------------------
+
+  eq k(lvalue(X) ~> K) env((X |-> L) ; ENV)
+  = k(loc(L)    ~> K) env((X |-> L) ; ENV) .
+
+  eq k(struct(STRT) . E ~> K) = k(loc(STRT[E]) ~> K) .
+
+  eq k(leval(loc(L)) ~> K) store((L |-> V) ; MEM)
+  = k(V             ~> K) store((L |-> V) ; MEM) .
+
+--- Assign
+
+  eq k(loc(L) := V ~> K) store(MEM)
+  = k(               K) store(insert(L, V, MEM)) .
+
+
+  eq  k(# I + # I' ~> K)   = k(# (I + I') ~> K) .
+  eq  k(# I * # I' ~> K)   = k(# (I * I') ~> K) .
+  ceq k(# I / # I' ~> K)   = k(# (I quo I') ~> K) if I' =/= 0 .
+  eq  k(# I <= # I' ~> K)  = k(# (I <= I') ~> K) .
+  eq  k(V === V' ~> K)     = k(# (V == V') ~> K) .
+  eq  k(# true  && E ~> K) = k(E ~> K) .
+  eq  k(# false && E ~> K) = k(# false ~> K) .
+  eq  k(! (# B) ~> K)      = k(# (not B) ~> K) .
+
+  eq k(skip ~> K) 
+  = k(K) .
+
+  eq k(S ; S' ~> K) = k(S ~> S' ~> K) .
+
+  eq k(goto LB ~> K) labels(((LB |-> S) , LM)) = k(S) labels(((LB |-> S) , LM)) .
+  eq k(goto LB ~> K) labels(LM) = k(K) labels(LM) [owise] .
+  eq k(LB : S) = k(S) .
+
+  eq k(if (# true)  {S} else {S'} ~> K) = k(S  ~> K) .
+  eq k(if (# false) {S} else {S'} ~> K) = k(S' ~> K) .
+
+  eq k(while (E) {S} ~> K) 
+  = k(if (E) {(S ; while (E) {S})} else {skip} ~> K) .
+
+  eq k(var X ~> K) env(ENV) store(MEM) nextLoc(L)
+  = k(         K) env(insert(X , L , ENV)) store(insert(L , undef , MEM)) nextLoc(L + 1) .
+
+  eq k(struct X X' ~> K) sdecl(SDCLS1 ;; struct {SMST} X ;; SDCLS2) nextLoc(L)
+  = k($structNameDecl(X') ~> $structMemDecl(SMST, L) ~> K) sdecl(SDCLS1 ;; struct {SMST} X ;; SDCLS2) nextLoc(L) .
+ 
+  eq k($structNameDecl(X) ~> K) env(ENV) store(MEM) nextLoc(L)
+   = k(K) env(insert(X, L, ENV)) store(insert(L, struct(empty), MEM)) nextLoc(L + 1) .
+ 
+  eq k($structMemDecl(var X ; SMST, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
+   = k($structMemDecl(SMST, L') ~> K) store((L' |-> struct(insert(X, L, ENV))) ; (L |-> undef) ; MEM) nextLoc(L + 1) .
+
+  eq k($structMemDecl(var X, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
+   = k(K) store((L' |-> struct(insert(X, L, ENV))) ; (L |-> undef) ; MEM) nextLoc(L + 1) .
+
+  eq k($structMemDecl(struct {SMST'} X ; SMST, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
+   = k($structMemDecl(SMST', L) ~> $structMemDecl(SMST, L') ~> K) store((L' |-> struct(insert(X, L, ENV))) ; (L |-> struct(empty)) ; MEM)  nextLoc(L + 1) .
+
+  eq k($structMemDecl(struct {SMST} X, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
+   = k($structMemDecl(SMST, L) ~> K) store((L' |-> struct(insert(X, L, ENV))) ; (L |-> struct(empty)) ; MEM)  nextLoc(L + 1) .
+  
+  eq k(SDCL ~> K) sdecl(SDCLS) = k(K) sdecl(SDCLS ;; SDCL) .
+
+  eq k(FDCL ~> K) fdecl(FDCLS) = k(K) fdecl(FDCLS ;; FDCL) .
+
+  eq k(F(EL) ~> K) fdecl(FDCLS1 ;; (F(XL){S}) ;; FDCLS2)
+  = k($funcCall(S , XL , EL) ~> K) fdecl(FDCLS1 ;; (F(XL){S}) ;; FDCLS2) .
+
+  eq k($funcCall(S , XL , EL) ~> K) env(ENV) fstack(ST) nextLoc(L) labels(LM)
+  = k($callByRefArg(EL) ~> $funcCall(S , XL , nil)) env(ENV) fstack(item(ENV,LM,K,L) :: ST) nextLoc(L) labels(getLabels(S, empty)) .
+
+  eq k($callByRefArg(E , EL) ~> $funcCall(S , (X , XL) , nil))
+  = k($callByRefInst(E , X) ~> $callByRefArg(EL) ~> $funcCall(S , XL , nil)) .
+
+  eq k($callByRefArg(EL) ~> $funcCall(S , nil , nil)) = k(S) .
+
+  eq k($callByRefInst(loc(L) , X) ~> K) env(ENV)
+  = k(K) env(insert(X , L , ENV)) .
+
+  ceq k($callByRefInst(V , X) ~> K) env(ENV) store(MEM) nextLoc(L)
+   = k(K) env(insert(X , L , ENV)) store(insert(L , V , MEM)) nextLoc(L + 1) if not V :: LocValue .
+  
+  ceq k(TEEAPI(EL ; EL') ~> K) = k($callByValArg(EL) ~> $in(nil) ~> $waitSysCall(TEEAPI) ~> $out(EL') ~> K) if not TEEAPI :: TeeClientApi .
+  ceq k(TEEAPI(EL ; EL') ~> K) = k($callByValArg(EL) ~> $in(nil) ~> $waitSysCall(TEEAPI) ~> $out(EL' | EL) ~> K) if TEEAPI :: TeeClientApi .
+  eq k($callByValArg(nil) ~> $in(VL) ~> K) = k($in(VL) ~> K) .
+  eq k($callByValArg(E , EL) ~> K) = k($callByValInst(E) ~> $callByValArg(EL) ~> K) .
+  eq k($callByValInst(V) ~> $callByValArg(EL) ~> $in(VL) ~> K)  = k($callByValArg(EL) ~> $in(VL , V) ~> K) .
+
+  eq k(return V ~> K) env(ENV) fstack(item(ENV',LM',K',L') :: ST) nextLoc(L) labels(LM)
+  = k(V ~> K') env(ENV') fstack(ST) nextLoc(L') labels(LM') .
+
+--- TODO: Clean
+
+  eq k($assign((E,EL), (E',EL')) ~> K) = k(E' := E ~> $assign(EL, EL') ~> K) .
+  eq k($assign(EL, nil) ~> K) = k(K) .
+
+
+  eq k($ignore ~> K) = k(K) .
+
+--- TODO : use lvalue instead of var
+  eq k($clearMem(loc(L)) ~> K) store((L |-> V) ; MEM) = k(K) store((L |-> undef) ; MEM) .
+
+endm

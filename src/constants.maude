@@ -1,0 +1,465 @@
+--- This file defines basic constants for the TEE storage/cryptographic operation APIs, such as object type, object usage, 
+--- handle flags, and etc., specified in page 46 ~ 47, 127 ~ 131, and 238 ~ 249 of the G.P. documentation.
+
+--- This module defines object storage constants defined in Table 5-2 of the G.P. documentation.
+
+fmod STORAGE-IDENTIFER is
+  sort StorageIdentifier .
+
+  op TEE-STORAGE-PRIVATE : -> StorageIdentifier [ctor] .
+  op TEE-STORAGE-PERSO : -> StorageIdentifier [ctor] .
+  op TEE-STORAGE-PROTECTED : -> StorageIdentifier [ctor] .
+endfm
+
+view StorageIdentifier from TRIV to STORAGE-IDENTIFER is
+  sort Elt to StorageIdentifier .
+endv
+
+--- This module defines type of trusted applications.
+
+fmod TRUST-APP-TYPE is
+  sort  TrustAppType .
+
+  op TA-SINGLE-INSTANCE : -> TrustAppType .
+  op TA-MULTI-SESSION : -> TrustAppType .
+  op TA-SINGLE-SESSION : -> TrustAppType .
+endfm
+
+view TrustAppType from TRIV to TRUST-APP-TYPE is
+  sort Elt to TrustAppType .
+endv
+
+--- This module defines return codes for the results of API operations.
+--- See page 46 ~ 47 of the G.P. documentation for more details.
+
+fmod RETURN-CODE is
+  sort ReturnCode ReturnCode? .
+  subsort ReturnCode < ReturnCode? .
+
+  op noReturnCode : -> ReturnCode? [ctor] .
+  op TEE-SUCCESS : -> ReturnCode [ctor] .
+  op TEE-ERROR-CORRUPT-OBJECT : -> ReturnCode [ctor] .
+  op TEE-ERROR-STORAGE-NOT-AVAILABLE : -> ReturnCode [ctor] .
+  op TEE-ERROR-GENERIC : -> ReturnCode [ctor] .
+  op TEE-ERROR-ACCESS-CONFLICT : -> ReturnCode [ctor] .
+  op TEE-ERROR-BAD-PARAMETERS : -> ReturnCode [ctor] .
+  op TEE-ERROR-BAD-STATE : -> ReturnCode [ctor] .
+  op TEE-ERROR-ITEM-NOT-FOUND : -> ReturnCode [ctor] .
+  op TEE-ERROR-NOT-SUPPORTED : -> ReturnCode [ctor] .
+  op TEE-ERROR-OUT-OF-MEMORY : -> ReturnCode [ctor] .
+  op TEE-ERROR-SECURITY : -> ReturnCode [ctor] .
+  op TEE-ERROR-SHORT-BUFFER : -> ReturnCode [ctor] .
+  op TEE-ERROR-OVERFLOW : -> ReturnCode [ctor] .
+  op TEE-ERROR-STORAGE-NO-SPACE : -> ReturnCode [ctor] .
+  op TEE-ERROR-MAC-INVALID : -> ReturnCode [ctor] .
+  op TEE-ERROR-SIGNATURE-INVALID : -> ReturnCode [ctor] .
+  op TEE-ERROR-TARGET-DEAD : -> ReturnCode [ctor] .
+endfm
+
+view ReturnCode from TRIV to RETURN-CODE is
+  sort Elt to ReturnCode .
+endv
+
+--- This module defines handle data flag constants defined in Table 5-3 of the G.P. documentation (page 129).
+
+fmod DATA-FLAG is
+  sort DataFlag .
+
+  op TEE-DATA-FLAG-ACCESS-READ : -> DataFlag .
+  op TEE-DATA-FLAG-ACCESS-WRITE : -> DataFlag .
+  op TEE-DATA-FLAG-ACCESS-WRITE-META : -> DataFlag .
+  op TEE-DATA-FLAG-SHARE-READ : -> DataFlag .
+  op TEE-DATA-FLAG-SHARE-WRITE : -> DataFlag .
+  op TEE-DATA-FLAG-OVERWRITE : -> DataFlag .
+  op TEE-DATA-FLAG-EXCLUSIVE : -> DataFlag . --- deprecated
+endfm
+
+view DataFlag from TRIV to DATA-FLAG is
+  sort Elt to DataFlag .
+endv
+
+--- This module defines 'TEE_Whence' values defined in the Table 5-1b of the G.P. documentation (page 127).
+--- The 'TEE_Whence' structure indicates the possible start offset when moving a data position in the data stream associated 
+--- with a persistent object. The following table lists the legal values for 'TEE_Whence'. All other values are reserved.
+
+fmod DATA-STREAM-SEEK-TYPE is
+  sort SeekType .
+
+  op TEE-DATA-SEEK-SET : -> SeekType [ctor] .
+  op TEE-DATA-SEEK-CUR : -> SeekType [ctor] .
+  op TEE-DATA-SEEK-END : -> SeekType [ctor] .
+endfm
+
+--- This module defines four types of TEE attributes, explained in the Table 6-15 of the G.P. documentation (page 246).
+
+fmod TEE-ATTRIBUTE is
+  sorts AttrId AttrContent TeeAttribute .
+  sorts AttrPublicRef AttrProtectedRef AttrPublicVal AttrProtectedVal .
+  sorts AttrPublic AttrProtected AttrVal AttrRef .
+  subsort AttrPublic AttrProtected AttrVal AttrRef < AttrId .
+  subsort AttrPublicRef AttrPublicVal < AttrPublic .
+  subsort AttrProtectedRef AttrProtectedVal < AttrProtected .
+  subsort AttrPublicRef AttrProtectedRef < AttrRef .
+  subsort AttrPublicVal AttrProtectedVal < AttrVal .
+
+  op teeAttribute : AttrId AttrContent -> TeeAttribute [ctor] .
+  op randomAttrVal : -> AttrContent [ctor] .
+  op attrValue : AttrId -> AttrContent [ctor] .
+
+--- Table 6-15
+
+  op TEE-ATTR-SECRET-VALUE : -> AttrProtectedRef .
+  
+  op TEE-ATTR-RSA-MODULUS : -> AttrPublicRef .
+  op TEE-ATTR-RSA-PUBLIC-EXPONENT : -> AttrPublicRef .
+  op TEE-ATTR-RSA-PRIVATE-EXPONENT : -> AttrProtectedRef .
+  op TEE-ATTR-RSA-PRIME1 : -> AttrProtectedRef .
+  op TEE-ATTR-RSA-PRIME2 : -> AttrProtectedRef .
+  op TEE-ATTR-RSA-EXPONENT1 : -> AttrProtectedRef .
+  op TEE-ATTR-RSA-EXPONENT2 : -> AttrProtectedRef .
+  op TEE-ATTR-RSA-COEFFICIENT : -> AttrProtectedRef .
+  
+  op TEE-ATTR-DSA-PRIME : -> AttrPublicRef .
+  op TEE-ATTR-DSA-SUBPRIME : -> AttrPublicRef .
+  op TEE-ATTR-DSA-BASE : -> AttrPublicRef .
+  op TEE-ATTR-DSA-PUBLIC-VALUE : -> AttrPublicRef .
+  op TEE-ATTR-DSA-PRIVATE-VALUE : -> AttrProtectedRef .
+
+  op TEE-ATTR-DH-PRIME : -> AttrPublicRef .
+  op TEE-ATTR-DH-SUBPRIME : -> AttrPublicRef .
+  op TEE-ATTR-DH-BASE : -> AttrPublicRef .
+  op TEE-ATTR-DH-X-BITS : -> AttrPublicVal .
+  op TEE-ATTR-DH-PUBLIC-VALUE : -> AttrPublicRef .
+  op TEE-ATTR-DH-PRIVATE-VALUE : -> AttrProtectedRef .
+
+  op TEE-ATTR-RSA-OAEP-LABEL : -> AttrPublicRef .
+  op TEE-ATTR-RSA-PSS-SALT-LENGTH : -> AttrPublicVal .
+
+  op TEE-ATTR-ECC-PUBLIC-VALUE-X : -> AttrPublicRef .
+  op TEE-ATTR-ECC-PUBLIC-VALUE-Y : -> AttrPublicRef .
+  op TEE-ATTR-ECC-PRIVATE-VALUE : -> AttrProtectedRef .
+  op TEE-ATTR-ECC-CURVE : -> AttrPublicVal .
+
+  op TEE-ATTR-ED25519-CTX : -> AttrPublicRef .
+  op TEE-ATTR-ED25519-PUBLIC-VALUE : -> AttrPublicRef .
+  op TEE-ATTR-ED25519-PRIVATE-VALUE : -> AttrProtectedRef .
+  op TEE-ATTR-ED25519-PH : -> AttrPublicVal .
+
+  op TEE-ATTR-X25519-PUBLIC-VALUE : -> AttrPublicRef .
+  op TEE-ATTR-X25519-PRIVATE-VALUE : -> AttrProtectedRef .
+
+  op TEE-ATTR-SM2-ID-INITIATOR : -> AttrPublicRef .
+  op TEE-ATTR-SM2-ID-RESPONDER : -> AttrPublicRef .
+  op TEE-ATTR-SM2-KEP-USER : -> AttrPublicVal .
+  op TEE-ATTR-SM2-KEP-CONFIRMATION-IN : -> AttrPublicRef .
+  op TEE-ATTR-SM2-KEP-CONFIRMATION-OUT : -> AttrPublicRef .
+
+endfm
+
+view AttrId from TRIV to TEE-ATTRIBUTE is
+  sort Elt to AttrId .
+endv
+
+view TeeAttribute from TRIV to TEE-ATTRIBUTE is
+  sort Elt to TeeAttribute .
+endv
+
+--- This module defines auxiliary function for TEE attributes.
+
+fmod TEE-ATTRIBUTE-AUX is
+  pr SET{TeeAttribute} .
+  pr SET{AttrId} .
+
+  var ATTRID : AttrId .
+  var C : AttrContent .
+  var ATTRS : Set{TeeAttribute} .
+
+  op getAttrIds : Set{TeeAttribute} -> Set{AttrId} .
+  eq getAttrIds((teeAttribute(ATTRID , C) , ATTRS)) = (ATTRID , getAttrIds(ATTRS)) .
+  eq getAttrIds(empty) = empty .
+endfm
+
+--- This module defines the data structure for key material.
+
+fmod CRYPTO-KEY is
+  pr SET{TeeAttribute} .
+
+  sort CryptoKey .
+  op key : Set{TeeAttribute} -> CryptoKey [ctor] .
+endfm
+
+view CryptoKey from TRIV to CRYPTO-KEY is
+  sort Elt to CryptoKey .
+endv
+
+--- This module defines a basic sort for cryptographic key size.
+
+fmod CRYPTO-KEY-SIZE is
+  pr NAT .
+  pr SET{TeeAttribute} .
+
+  sort CryptoKeySize .
+
+  vars N N' : Nat .
+
+  op keySize : Set{TeeAttribute} -> CryptoKeySize [ctor] .
+  op _Bits : Nat -> CryptoKeySize [ctor] .
+
+  op _<=_ : CryptoKeySize CryptoKeySize -> Bool .
+  eq N Bits <= N' Bits = N <= N' .
+
+endfm
+
+--- This module defines object types for transient/persistent objects, explained in the Table 5-9 of the G.P. documentation (page 139).
+
+fmod OBJECT-TYPE is
+  sort ObjectType .
+
+  op TEE-TYPE-AES : -> ObjectType [ctor] .
+  op TEE-TYPE-DES : -> ObjectType [ctor] .
+  op TEE-TYPE-DES3 : -> ObjectType [ctor] .
+
+  op TEE-TYPE-HMAC-MD5 : -> ObjectType [ctor] .
+  op TEE-TYPE-HMAC-SHA1 : -> ObjectType [ctor] .
+  op TEE-TYPE-HMAC-SHA224 : -> ObjectType [ctor] .
+  op TEE-TYPE-HMAC-SHA256 : -> ObjectType [ctor] .
+  op TEE-TYPE-HMAC-SHA384 : -> ObjectType [ctor] .
+  op TEE-TYPE-HMAC-SHA512 : -> ObjectType [ctor] .
+
+  op TEE-TYPE-RSA-PUBLIC-KEY : -> ObjectType [ctor] .
+  op TEE-TYPE-RSA-KEYPAIR : -> ObjectType [ctor] .
+
+  op TEE-TYPE-DSA-PUBLIC-KEY : -> ObjectType [ctor] .
+  op TEE-TYPE-DSA-KEYPAIR : -> ObjectType [ctor] .
+
+  op TEE-TYPE-DH-KEYPAIR : -> ObjectType [ctor] .
+
+  op TEE-TYPE-ECDSA-PUBLIC-KEY : -> ObjectType [ctor] .
+  op TEE-TYPE-ECDSA-KEYPAIR : -> ObjectType [ctor] .
+
+  op TEE-TYPE-ECDH-PUBLIC-KEY : -> ObjectType [ctor] .
+  op TEE-TYPE-ECDH-KEYPAIR : -> ObjectType [ctor] .
+
+  op TEE-TYPE-ED25519-PUBLIC-KEY : -> ObjectType [ctor] .
+  op TEE-TYPE-ED25519-KEYPAIR : -> ObjectType [ctor] .
+
+  op TEE-TYPE-X25519-PUBLIC-KEY : -> ObjectType [ctor] .
+  op TEE-TYPE-X25519-KEYPAIR : -> ObjectType [ctor] .
+
+  op TEE-TYPE-SM2-DSA-PUBLIC-KEY : -> ObjectType [ctor] .
+  op TEE-TYPE-SM2-DSA-KEYPAIR : -> ObjectType [ctor] .
+
+  op TEE-TYPE-SM2-KEP-PUBLIC-KEY : -> ObjectType [ctor] .
+  op TEE-TYPE-SM2-KEP-KEYPAIR : -> ObjectType [ctor] .
+
+  op TEE-TYPE-SM2-PKE-PUBLIC-KEY : -> ObjectType [ctor] .
+  op TEE-TYPE-SM2-PKE-KEYPAIR : -> ObjectType [ctor] .
+
+  op TEE-TYPE-SM4 : -> ObjectType [ctor] .
+  op TEE-TYPE-HMAC-SM3 : -> ObjectType [ctor] .
+  op TEE-TYPE-GENERIC-SECRET : -> ObjectType [ctor] .
+  op TEE-TYPE-DATA : -> ObjectType [ctor] .
+endfm
+
+
+fmod POSSIBLE-CRYPTO-KEY-SIZE is
+  pr OBJECT-TYPE .
+  pr CRYPTO-KEY-SIZE .
+
+  var N : Nat .
+  var OBJTYPE : ObjectType .
+  var KEYSIZE : CryptoKeySize .
+
+  op supported : ObjectType CryptoKeySize -> Bool .
+
+  eq supported(TEE-TYPE-AES , 128 Bits) = true .
+  eq supported(TEE-TYPE-AES , 192 Bits) = true .
+  eq supported(TEE-TYPE-AES , 256 Bits) = true .
+  eq supported(TEE-TYPE-DES , 64 Bits) = true .
+  ceq supported(TEE-TYPE-HMAC-MD5 , N Bits) = true if 64 <= N and N <= 512 .
+  ceq supported(TEE-TYPE-HMAC-SHA256 ,  N Bits) = true if 192 <= N and N <= 1024 .
+  eq supported(OBJTYPE , KEYSIZE) = false [owise] .
+
+endfm
+
+--- This module defines object usage flags, explained in the Table 5-4 of the G.P. documentation (page 130).
+
+fmod OBJECT-USAGE is
+  sort ObjectUsage .
+
+  op TEE-USAGE-EXTRACTABLE : -> ObjectUsage [ctor] .
+  op TEE-USAGE-ENCRYPT : -> ObjectUsage [ctor] .
+  op TEE-USAGE-DECRYPT : -> ObjectUsage [ctor] .
+  op TEE-USAGE-MAC : -> ObjectUsage [ctor] .
+  op TEE-USAGE-SIGN : -> ObjectUsage [ctor] .
+  op TEE-USAGE-VERIFY : -> ObjectUsage [ctor] .
+  op TEE-USAGE-DERIVE : -> ObjectUsage [ctor] .
+endfm
+
+view ObjectUsage from TRIV to OBJECT-USAGE is
+  sort Elt to ObjectUsage .
+endv
+
+--- This module defines algorithm identifer constants defined in Table 6-11 of G.P. documentation (page 238).
+
+fmod ALGORITHM-IDENTIFIER is
+  sort AlgorithmIdentifier .
+
+  op TEE-ALG-AES-CBC-NOPAD : -> AlgorithmIdentifier [ctor] .
+  op TEE-ALG-AES-CCM : -> AlgorithmIdentifier [ctor] .
+  op TEE-ALG-AES-CTR : -> AlgorithmIdentifier [ctor] .
+  op TEE-ALG-AES-CTS : -> AlgorithmIdentifier [ctor] .
+  op TEE-ALG-AES-ECB-NOPAD : -> AlgorithmIdentifier [ctor] .
+  op TEE-ALG-AES-GCM : -> AlgorithmIdentifier [ctor] .
+  op TEE-ALG-AES-XTS : -> AlgorithmIdentifier [ctor] .
+
+  op TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA1 : -> AlgorithmIdentifier [ctor] .
+  op TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA224 : -> AlgorithmIdentifier [ctor] .
+
+  op TEE-ALG-HMAC-SHA256 : -> AlgorithmIdentifier [ctor] .
+
+  op TEE-ALG-DH-DERIVE-SHARED-SECRET : -> AlgorithmIdentifier [ctor] .
+  op TEE-ALG-SM2-KEP : -> AlgorithmIdentifier [ctor] .
+endfm
+
+--- This module defines optional cryptographic element constants defined in Table 6-14 of the G.P. documentation (page 244).
+
+fmod CRYPTO-ELEMENT is
+  sort CryptoElement .
+
+  op TEE-CRYPTO-ELEMENT-NONE : -> CryptoElement [ctor] .
+  op TEE-ECC-CURVE-NIST-P192 : -> CryptoElement [ctor] .
+endfm
+
+--- This module defines operation mode constants defined in Table 6-3 of G.P. documentation (page 181).
+
+fmod OPERATION-MODE is
+  sort OperationMode .
+
+  op TEE-MODE-ENCRYPT : -> OperationMode [ctor] .
+  op TEE-MODE-DECRYPT : -> OperationMode [ctor] .
+  op TEE-MODE-SIGN : -> OperationMode [ctor] .
+  op TEE-MODE-VERIFY : -> OperationMode [ctor] .
+  op TEE-MODE-MAC : -> OperationMode [ctor] .
+  op TEE-MODE-DERIVE : -> OperationMode [ctor] .
+endfm
+
+--- This module defines operation class constants defined in the Table 5-6 of the G.P. documentation (page 131).
+
+fmod OPERATION-CLASS is
+  sort OperationClass .
+
+  op TEE-OPERATION-CIPHER : -> OperationClass [ctor] .
+  op TEE-OPERATION-MAC : -> OperationClass [ctor] .
+  op TEE-OPERATION-AE : -> OperationClass [ctor] .
+  op TEE-OPERATION-DIGEST : -> OperationClass [ctor] .
+  op TEE-OPERATION-ASYMMETRIC-CIPHER : -> OperationClass [ctor] .
+  op TEE-OPERATION-ASYMMETRIC-SIGNATURE : -> OperationClass [ctor] .
+  op TEE-OPERATION-KEY-DERIVATION : -> OperationClass [ctor] .
+endfm
+
+--- This module defines possible state of the operation defined in the Table 5-7 of the G.P. documentation (page 131).
+
+fmod OPERATION-STATE is
+  sort OperationState .
+
+  op TEE-OPERATION-STATE-INITIAL : -> OperationState [ctor] .
+  op TEE-OPERATION-STATE-ACTIVE : -> OperationState [ctor] .
+  op TEE-OPERATION-STATE-EXTRACTING : -> OperationState [ctor] .
+endfm
+
+--- This module defines object identifier, DeviceId for APIs.
+
+fmod DEVICE-ID is
+  sort DeviceId .
+endfm
+
+view DeviceId from TRIV to DEVICE-ID is
+  sort Elt to DeviceId .
+endv
+
+--- This module defines object identifier, TaObjectId, for TaObject class.
+
+fmod TA-OBJECT-ID is
+  sort TaObjectId .
+endfm
+
+view TaObjectId from TRIV to TA-OBJECT-ID is
+  sort Elt to TaObjectId .
+endv
+
+--- This module defines TA instance identifier, TaInstId.
+
+fmod TA-INSTANCE-ID is
+  sorts TaInstId TaInstId? .
+  subsort TaInstId < TaInstId? .
+
+  op noInstId : -> TaInstId? [ctor] .
+endfm
+
+view TaInstId from TRIV to TA-INSTANCE-ID is
+  sort Elt to TaInstId .
+endv
+
+--- This module defines object identifier for PersistentObject.
+
+fmod FILE-ID is
+  sort FileId .
+endfm
+
+view FileId from TRIV to FILE-ID is
+  sort Elt to FileId .
+endv
+
+fmod NAME-LENGTH is
+  pr FILE-ID .
+
+  sort FileIdLength .
+
+  var FI : FileId .
+  vars L1 L2 : FileIdLength .
+
+  op idLength : FileId -> FileIdLength [ctor] .
+  op TEE-OBJECT-ID-MAX-LEN : -> FileIdLength [ctor] .
+
+  op _<=_ : FileIdLength FileIdLength -> Bool .
+  eq L1 <= L2 = true .
+
+  op _>_ : FileIdLength FileIdLength -> Bool .
+  eq L1 > L2 = false .  
+endfm
+
+--- This module defines app identifer, AppId, for App class.
+
+fmod APP-ID is
+  sorts AppId AppId? .
+  subsort AppId < AppId? .
+
+  op noAppId : -> AppId? [ctor] .
+endfm
+
+view AppId from TRIV to APP-ID is
+  sort Elt to AppId .
+endv
+
+--- This module defines session identifer.
+
+fmod SESSION-ID is
+  sort SessionId .
+endfm
+
+view SessionId from TRIV to SESSION-ID is
+  sort Elt to SessionId .
+endv
+
+--- This module defines object identifier, EnumObjectId, for EnumeratorObject class.
+
+fmod ENUM-OBJECT-ID is
+  sort EnumObjectId .
+endfm
+
+--- This module defines handle identifier, HandleId, for Handle class.
+
+fmod HANDLE-ID is
+  sort HandleId .
+endfm

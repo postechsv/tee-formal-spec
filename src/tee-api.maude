@@ -32,6 +32,10 @@ fmod TEE-API-PARAM is
   pr ALGORITHM-IDENTIFIER .
   pr OPERATION-MODE .
   pr TEE-DATA-TYPE .
+  pr TEE-UUID .
+  pr RETURN-ORIGIN .
+  pr TEE-PARAM-TYPE .
+  pr TEE-CANCEL-REQ-TIME .
 
   sort TeeApiParam .
 
@@ -69,6 +73,12 @@ fmod TEE-API-PARAM is
   op iv : List{Data} -> TeeApiParam [ctor] .
   op mac : List{Data} -> TeeApiParam [ctor] .
   op digest : List{Data} -> TeeApiParam [ctor] .
+
+--- TEE client API
+  op uuid : TeeUUID -> TeeApiParam [ctor] .
+  op returnOrig : ReturnOrigin -> TeeApiParam [ctor] .
+  op paramType : TeeParamType -> TeeApiParam [ctor] .
+  op teeCancelReqTime : CancelTimeOut -> TeeApiParam [ctor] .
 endfm
 
 view TeeApiParam from TRIV to TEE-API-PARAM is
@@ -139,6 +149,26 @@ fmod TEE-CLIENT-FUNC is
   --- op TeecCloseSession : -> TeeApi [ctor] .
   --- op TeecCloseSessionCall : SessionId -> TeeApiCall [ctor] .
   --- op TeecCloseSessionReturn : Return? -> TeeApiReturn [ctor] .
+endfm
+
+--- This module defines basic Client API sort for TEE internal Client APIs.
+
+fmod TEE-INTERNAL-CLIENT-API is
+  pr TEE-API .
+  
+  sort TeeIntlClientApi .
+  subsort TeeIntlClientApi < TeeApi .
+endfm
+
+--- This module defines TEE client API.
+
+fmod TEE-INTERNAL-CLIENT-FUNC is
+  pr TEE-INTERNAL-CLIENT-API .
+  pr TEE-API-PARAM .
+
+  op TeeOpenTASession : -> TeeIntlClientApi [ctor] .
+  op TeeCloseTASession : -> TeeIntlClientApi [ctor] .
+  op TeeInvokeTACommand : -> TeeIntlClientApi [ctor] .
 endfm
 
 fmod TRUSTED-STORAGE-FUNC-STATE is

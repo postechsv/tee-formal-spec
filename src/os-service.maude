@@ -1,0 +1,130 @@
+omod TEE-OS-BEHAVIOR is
+  pr TEE-OS .
+  pr ID-GEN .
+  pr TRUST-APP .
+  pr TEE-OS-SERVICE .
+  pr RETURN-CODE .
+
+  var KI : Oid .
+  var SIL : List{Service} .
+  var SOL : List{ServiceReturn} .
+  var NESOL : NeList{ServiceReturn} .
+  var TK : TaInstId .
+  var TN : AppId .
+  var STATUS : StorageStatus .
+  var SMAP : Map{AppId,StorageStatus} .
+  var SESS : Map{SessionId,TaInstId} .
+  vars FILE FILE' : FileId .
+  var FL : Set{FileId} .
+  var STORAGE : Map{AppId,Set{FileId}} .
+  var PROGC : Map{AppId,ProgramCell} .
+  var S : Service .
+  var P : Program .
+  var N : Nat .
+
+  msg reqTrustedOS : List{Service} TaInstId AppId -> Msg .
+  msg retTrustedOS : List{ServiceReturn} TaInstId -> Msg .
+
+  rl [service-receive] :
+    reqTrustedOS(SIL , TK , TN)
+    < KI : TeeOSKernel | service-in : nil , service-out : nil , 
+                         service-request-ta : noAppId , service-request-ta-inst : noInstId >
+    =>
+    < KI : TeeOSKernel | service-in : SIL , 
+                         service-request-ta : TN , service-request-ta-inst : TK >
+  .
+
+  rl [service-finish] :
+    < KI : TeeOSKernel | service-in : nil , service-out : NESOL , 
+                         service-request-ta : TN , service-request-ta-inst : TK >
+    =>
+    < KI : TeeOSKernel | service-out : nil , 
+                         service-request-ta : noAppId , service-request-ta-inst : noInstId >
+    retTrustedOS(NESOL , TK)
+  .
+
+  op abnormalStorage : StorageStatus -> Bool .
+  eq abnormalStorage(storageNormal) = false .
+  eq abnormalStorage(STATUS) = true [owise] .
+
+  op storageErrCode : StorageStatus -> ReturnCode .
+  eq storageErrCode(storageCorrupt) = TEE-ERROR-CORRUPT-OBJECT .
+  eq storageErrCode(storageInAccessible) = TEE-ERROR-STORAGE-NOT-AVAILABLE .
+  eq storageErrCode(outOfSpace) = TEE-ERROR-STORAGE-NO-SPACE .
+
+  rl [get-storage-status] :
+    < KI : TeeOSKernel | service-in : (getStorageStatus SIL) , service-out : SOL , 
+                         service-request-ta : TN , storage-status : (TN |-> STATUS , SMAP) >
+    =>
+    < KI : TeeOSKernel | service-in : SIL , service-out : (SOL storageStatus(STATUS)) >
+  .
+
+  op exist : FileId AppId Map{AppId,Set{FileId}} -> ServiceReturn .
+  eq exist(FILE , TN , (TN |-> (FILE , FL) , STORAGE)) = fileExist .
+  eq exist(FILE , TN , STORAGE) = noFileExist [owise] .
+
+  rl [check-file-exist] :
+    < KI : TeeOSKernel | service-in : (checkFileExist(FILE) SIL) , service-out : SOL , 
+                         service-request-ta : TN , storage : STORAGE >
+    =>
+    < KI : TeeOSKernel | service-in : SIL , service-out : (SOL exist(FILE , TN , STORAGE)) >
+  .
+
+  op isNotifyService : Service -> Bool .
+  eq isNotifyService(notifyFileCreation(FILE)) = true .
+  eq isNotifyService(notifyFileDeletion(FILE)) = true .
+  eq isNotifyService(notifyFileRename(FILE' , FILE)) = true .
+  eq isNotifyService(S) = false [owise] .
+
+  op insertToStorage : FileId AppId Map{AppId,Set{FileId}} -> Map{AppId,Set{FileId}} .
+  eq insertToStorage(FILE , TN , (TN |-> FL , STORAGE)) = (TN |-> (FILE , FL) , STORAGE) .
+  eq insertToStorage(FILE , TN , STORAGE) = (TN |-> FILE , STORAGE) [owise] .
+
+  op deleteFromStorage : FileId AppId Map{AppId,Set{FileId}} -> Map{AppId,Set{FileId}} .
+  eq deleteFromStorage(FILE , TN , (TN |-> (FILE , FL) , STORAGE)) = (TN |-> FL , STORAGE) .
+  eq deleteFromStorage(FILE , TN , STORAGE) = STORAGE [owise] .
+
+  op renameInStorage : FileId FileId AppId Map{AppId,Set{FileId}} -> Map{AppId,Set{FileId}} .
+  eq renameInStorage(FILE' , FILE , TN , (TN |-> (FILE' , FL) , STORAGE)) = (TN |-> (FILE , FL) , STORAGE) .
+
+  op updateStorage : Service AppId Map{AppId,Set{FileId}} -> Map{AppId,Set{FileId}} .
+  eq updateStorage(notifyFileCreation(FILE) , TN , STORAGE) = insertToStorage(FILE , TN , STORAGE) .
+  eq updateStorage(notifyFileDeletion(FILE) , TN , STORAGE) = deleteFromStorage(FILE , TN , STORAGE) .
+  eq updateStorage(notifyFileRename(FILE' , FILE) , TN , STORAGE) = renameInStorage(FILE' , FILE , TN , STORAGE) .
+
+  crl [notify-file-manipulation] :
+    < KI : TeeOSKernel | service-in : (S SIL) , service-out : SOL , 
+                         service-request-ta : TN , storage : STORAGE >
+    =>
+    < KI : TeeOSKernel | service-in : SIL , service-out : (SOL acceptNotification) ,
+                         storage : updateStorage(S , TN , STORAGE) >
+  if isNotifyService(S)
+  .
+
+--- TODO: NEED TO UPDATE OP NAME
+  op acquire : AppId Map{AppId,Set{FileId}} -> ServiceReturn .
+  eq acquire(TN , (TN |-> (FILE , FL) , STORAGE)) = filesInStorage((FILE , FL)) .
+  eq acquire(TN , STORAGE) = storageEmpty [owise] .
+
+  rl [get-persistent-list] :
+    < KI : TeeOSKernel | service-in : (getPersistentList(TN) SIL) , service-out : SOL ,
+                         service-request-ta : TN , storage : STORAGE >
+    =>
+    < KI : TeeOSKernel | service-in : SIL , service-out : (SOL acquire(TN , STORAGE)) >
+  .
+
+  rl [open-ta-session] :
+    < KI : TeeOSKernel | service-in : (openTASession(TN) SIL) , service-out : SOL , ta-prog-map : (TN |-> [P] , PROGC) ,
+                         storage : STORAGE , storage-status : SMAP ,
+                         opened-session : SESS , session-counter : N >
+    =>
+    < KI : TeeOSKernel | service-in : SIL , service-out : (SOL openSuccess) ,
+                         storage : (TN |-> empty , STORAGE) , storage-status : (TN |-> storageNormal , SMAP) ,
+                         opened-session : (sessionId(N) |-> trustAppId(N) , SESS) , session-counter : N + 1 >
+    < trustAppId(N) : TrustApp | proc : none , prog : P , running : false ,
+                                 app-status : normal , api-call : noCall , api-return : noReturn ,
+                                 current-api : noApi , api-state : noState , current-params : empty , id-counter : 0 ,
+                                 trust-app-id : TN ,
+                                 task : noTask , task-counter : 0 >
+  .
+endom

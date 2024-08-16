@@ -118,11 +118,24 @@ view ServiceReturn from TRIV to SERVICE is
   sort Elt to ServiceReturn .
 endv
 
+fmod PROGRAM-CELL is
+  pr IMP-PROGRAM .
+
+  sort ProgramCell .
+  
+  op [_] : Program -> ProgramCell [ctor] .
+endfm
+
+view ProgramCell from TRIV to PROGRAM-CELL is
+  sort Elt to ProgramCell .
+endv
+
 --- This module defines execution environments for REE and TEE.
 
 omod TEE-OS is
   pr NAT .
   pr TA-INSTANCE-ID .
+  pr MAP{AppId,ProgramCell} .
   pr MAP{SessionId,TaInstId} .
   pr MAP{AppId,Set{FileId}} .
   pr MAP{AppId,StorageStatus} .
@@ -141,7 +154,7 @@ omod TEE-OS is
                       service-request-ta : AppId?, service-request-ta-inst : TaInstId?,
                       service-in : List{Service}, service-out : List{ServiceReturn},
                       temporary-objects : Map{AppId,Set{TaObjectId}},
-                      session-counter : Nat .
+                      ta-prog-map : Map{AppId,ProgramCell} .
 endom
 
 fmod TEE-OS-SERVICE is
@@ -166,118 +179,11 @@ fmod TEE-OS-SERVICE is
   op getPersistentList : AppId -> Service [ctor] .
   op filesInStorage : Set{FileId} -> ServiceReturn [ctor] .
   op storageEmpty : -> ServiceReturn [ctor] .
+
+--- Session
+  op openTASession : AppId -> Service [ctor] .
+  op openSuccess : -> ServiceReturn [ctor] .
 endfm
-
-omod TEE-OS-BEHAVIOR is
-  pr TEE-OS .
-  pr TEE-OS-SERVICE .
-  pr RETURN-CODE .
-
-  var KI : Oid .
-  var SIL : List{Service} .
-  var SOL : List{ServiceReturn} .
-  var NESOL : NeList{ServiceReturn} .
-  var TK : TaInstId .
-  var TN : AppId .
-  var STATUS : StorageStatus .
-  var SMAP : Map{AppId,StorageStatus} .
-  vars FILE FILE' : FileId .
-  var FL : Set{FileId} .
-  var STORAGE : Map{AppId,Set{FileId}} .
-  var S : Service .
-
-  msg reqTrustedOS : List{Service} TaInstId AppId -> Msg .
-  msg retTrustedOS : List{ServiceReturn} TaInstId -> Msg .
-
-  rl [service-receive] :
-    reqTrustedOS(SIL , TK , TN)
-    < KI : TeeOSKernel | service-in : nil , service-out : nil , 
-                         service-request-ta : noAppId , service-request-ta-inst : noInstId >
-    =>
-    < KI : TeeOSKernel | service-in : SIL , 
-                         service-request-ta : TN , service-request-ta-inst : TK >
-  .
-
-  rl [service-finish] :
-    < KI : TeeOSKernel | service-in : nil , service-out : NESOL , 
-                         service-request-ta : TN , service-request-ta-inst : TK >
-    =>
-    < KI : TeeOSKernel | service-out : nil , 
-                         service-request-ta : noAppId , service-request-ta-inst : noInstId >
-    retTrustedOS(NESOL , TK)
-  .
-
-  op abnormalStorage : StorageStatus -> Bool .
-  eq abnormalStorage(storageNormal) = false .
-  eq abnormalStorage(STATUS) = true [owise] .
-
-  op storageErrCode : StorageStatus -> ReturnCode .
-  eq storageErrCode(storageCorrupt) = TEE-ERROR-CORRUPT-OBJECT .
-  eq storageErrCode(storageInAccessible) = TEE-ERROR-STORAGE-NOT-AVAILABLE .
-  eq storageErrCode(outOfSpace) = TEE-ERROR-STORAGE-NO-SPACE .
-
-  rl [get-storage-status] :
-    < KI : TeeOSKernel | service-in : (getStorageStatus SIL) , service-out : SOL , 
-                         service-request-ta : TN , storage-status : (TN |-> STATUS , SMAP) >
-    =>
-    < KI : TeeOSKernel | service-in : SIL , service-out : (SOL storageStatus(STATUS)) >
-  .
-
-  op exist : FileId AppId Map{AppId,Set{FileId}} -> ServiceReturn .
-  eq exist(FILE , TN , (TN |-> (FILE , FL) , STORAGE)) = fileExist .
-  eq exist(FILE , TN , STORAGE) = noFileExist [owise] .
-
-  rl [check-file-exist] :
-    < KI : TeeOSKernel | service-in : (checkFileExist(FILE) SIL) , service-out : SOL , 
-                         service-request-ta : TN , storage : STORAGE >
-    =>
-    < KI : TeeOSKernel | service-in : SIL , service-out : (SOL exist(FILE , TN , STORAGE)) >
-  .
-
-  op isNotifyService : Service -> Bool .
-  eq isNotifyService(notifyFileCreation(FILE)) = true .
-  eq isNotifyService(notifyFileDeletion(FILE)) = true .
-  eq isNotifyService(notifyFileRename(FILE' , FILE)) = true .
-  eq isNotifyService(S) = false [owise] .
-
-  op insertToStorage : FileId AppId Map{AppId,Set{FileId}} -> Map{AppId,Set{FileId}} .
-  eq insertToStorage(FILE , TN , (TN |-> FL , STORAGE)) = (TN |-> (FILE , FL) , STORAGE) .
-  eq insertToStorage(FILE , TN , STORAGE) = (TN |-> FILE , STORAGE) [owise] .
-
-  op deleteFromStorage : FileId AppId Map{AppId,Set{FileId}} -> Map{AppId,Set{FileId}} .
-  eq deleteFromStorage(FILE , TN , (TN |-> (FILE , FL) , STORAGE)) = (TN |-> FL , STORAGE) .
-  eq deleteFromStorage(FILE , TN , STORAGE) = STORAGE [owise] .
-
-  op renameInStorage : FileId FileId AppId Map{AppId,Set{FileId}} -> Map{AppId,Set{FileId}} .
-  eq renameInStorage(FILE' , FILE , TN , (TN |-> (FILE' , FL) , STORAGE)) = (TN |-> (FILE , FL) , STORAGE) .
-
-  op updateStorage : Service AppId Map{AppId,Set{FileId}} -> Map{AppId,Set{FileId}} .
-  eq updateStorage(notifyFileCreation(FILE) , TN , STORAGE) = insertToStorage(FILE , TN , STORAGE) .
-  eq updateStorage(notifyFileDeletion(FILE) , TN , STORAGE) = deleteFromStorage(FILE , TN , STORAGE) .
-  eq updateStorage(notifyFileRename(FILE' , FILE) , TN , STORAGE) = renameInStorage(FILE' , FILE , TN , STORAGE) .
-
-  crl [notify-file-manipulation] :
-    < KI : TeeOSKernel | service-in : (S SIL) , service-out : SOL , 
-                         service-request-ta : TN , storage : STORAGE >
-    =>
-    < KI : TeeOSKernel | service-in : SIL , service-out : (SOL acceptNotification) ,
-                         storage : updateStorage(S , TN , STORAGE) >
-  if isNotifyService(S)
-  .
-
---- TODO: NEED TO UPDATE OP NAME
-  op acquire : AppId Map{AppId,Set{FileId}} -> ServiceReturn .
-  eq acquire(TN , (TN |-> (FILE , FL) , STORAGE)) = filesInStorage((FILE , FL)) .
-  eq acquire(TN , STORAGE) = storageEmpty [owise] .
-
-  rl [get-persistent-list] :
-    < KI : TeeOSKernel | service-in : (getPersistentList(TN) SIL) , service-out : SOL ,
-                         service-request-ta : TN , storage : STORAGE >
-    =>
-    < KI : TeeOSKernel | service-in : SIL , service-out : (SOL acquire(TN , STORAGE)) >
-  .
-
-endom
 
 --- This module defines a device class, modeling storage devices.
 
@@ -302,6 +208,7 @@ fmod ID-GEN is
 
   op taOid : Nat TaInstId -> TaObjectId [ctor] .
   op richAppId : Nat -> AppId [ctor] .
+  op trustAppId : Nat -> TaInstId [ctor] .
   op deviceId : Nat -> DeviceId [ctor] .
   op sessionId : Nat -> SessionId [ctor] .
 endfm

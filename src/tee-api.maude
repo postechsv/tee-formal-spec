@@ -7,15 +7,6 @@ fmod TEE-API is
   op noApi : -> TeeApi? [ctor] .
 endfm
 
-fmod TEE-API-STATE is
-  sorts TeeApiState TeeApiState? .
-  subsort TeeApiState < TeeApiState? .
-
-  op noState : -> TeeApiState? [ctor] .
-  op started : -> TeeApiState [ctor] .
-  op finished : -> TeeApiState [ctor] .
-endfm
-
 --- This module defines API call parameters.
 
 fmod TEE-API-PARAM is
@@ -32,7 +23,8 @@ fmod TEE-API-PARAM is
   pr ALGORITHM-IDENTIFIER .
   pr OPERATION-MODE .
   pr TEE-DATA-TYPE .
-  pr TEE-UUID .
+  --- pr TEE-UUID .
+  pr APP-ID .
   pr RETURN-ORIGIN .
   pr TEE-PARAM-TYPE .
   pr TEE-CANCEL-REQ-TIME .
@@ -75,10 +67,10 @@ fmod TEE-API-PARAM is
   op digest : List{Data} -> TeeApiParam [ctor] .
 
 --- TEE client API
-  op uuid : TeeUUID -> TeeApiParam [ctor] .
+  op uuid : AppId -> TeeApiParam [ctor] .
   op returnOrig : ReturnOrigin -> TeeApiParam [ctor] .
   op paramType : TeeParamType -> TeeApiParam [ctor] .
-  op teeCancelReqTime : CancelTimeOut -> TeeApiParam [ctor] .
+  op taCancelReqTime : TaCancelTimeOut -> TeeApiParam [ctor] .
 endfm
 
 view TeeApiParam from TRIV to TEE-API-PARAM is
@@ -94,6 +86,8 @@ fmod TEE-API-CALL is
 
   op apiCall : TeeApi Set{TeeApiParam} -> TeeApiCall [ctor] .
   op noCall : -> TeeApiCall? [ctor] .
+
+  op _(_) : TeeApi Set{TeeApiParam} -> TeeApiCall [ctor] .
 endfm
 
 fmod TEE-API-RETURN is
@@ -119,6 +113,22 @@ fmod TEE-API-RETURN is
 
   op apiReturn : TeeApi -> TeeApiReturn .
   eq apiReturn(API) = apiReturn(API , noReturnCode , empty) .
+endfm
+
+fmod TEE-API-STATE is
+  pr NAT .
+  pr TEE-API-CALL .
+
+  sorts TeeApiState TeeApiState? .
+  subsort TeeApiState < TeeApiState? .
+
+--- TODO: will be outdated later
+  op noState : -> TeeApiState? [ctor] .
+  op started : -> TeeApiState [ctor] .
+  op finished : -> TeeApiState [ctor] .
+
+--- with step
+  op _#_ : TeeApiCall Nat -> TeeApiState [ctor] .
 endfm
 
 --- This module defines basic Client API sort for TEE Client APIs.

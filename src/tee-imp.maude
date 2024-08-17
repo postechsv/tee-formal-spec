@@ -124,13 +124,16 @@ endfm
 
 fmod TEE-INTERNAL-CLIENT-IMP-VALUE is
   pr IMP-VALUE .
-  pr TEE-UUID .
+  --- pr TEE-UUID .
+  pr RETURN-ORIGIN .
+  pr APP-ID .
   pr TEE-PARAM-TYPE .
   pr TEE-CANCEL-REQ-TIME .
 
   op #_ : TeeParamType -> Value [ctor] .
-  op #_ : TeeUUID -> Value [ctor] .
-  op #_ : CancelTimeOut -> Value [ctor] .
+  op #_ : AppId -> Value [ctor] .
+  op #_ : ReturnOrigin -> Value [ctor] .
+  op #_ : TaCancelTimeOut -> Value [ctor] .
 endfm
 
 --- This module defines IMP call and return for TEE API.
@@ -516,20 +519,22 @@ mod TEE-INTERNAL-CLIENT-CALL is
   pr TEE-INTERNAL-CLIENT-FUNC .
   pr TEE-INTERNAL-CLIENT-IMP-VALUE .
   --- pr TA-OBJECT .
-  --- pr HANDLE .
+  pr HANDLE .
   --- pr HANDLE-ID-GEN .
-  --- pr ID-IMP-VALUE .
+  pr ID-IMP-VALUE .
   pr RETURN-IMP-VALUE .
   --- pr GENERIC-OBJECT-IMP-VALUE .
   --- pr PERSISTENT-OBJECT-IMP-VALUE .
   --- pr BASIC-DATA .
 
   var EL : ExpList .
-  var TEEID : TeeUUID .
-  var TO : CancelTimeOut .
+  var HANDLE : HandleId .
+  var TA : AppId .
+  var TO : TaCancelTimeOut .
+  var OR : ReturnOrigin .
 
-  eq makeCall(TeeOpenTASession , (# TEEID , # TO )) = apiCall(TeeOpenTASession , empty) .
-  eq makeReturnStmt(TeeOpenTASession , TEE-SUCCESS , empty , EL) = $assign((# TEE-SUCCESS) , EL) .
+  eq makeCall(TeeOpenTASession , (# TA , # TO )) = apiCall(TeeOpenTASession , (uuid(TA) , taCancelReqTime(TO))) .
+  eq makeReturnStmt(TeeOpenTASession , TEE-SUCCESS , (handle(HANDLE) , returnOrig(OR)) , EL) = $assign((# TEE-SUCCESS , # HANDLE , # OR) , EL) .
 endm
 
 --- This module defines IMP call and return for trust applications.

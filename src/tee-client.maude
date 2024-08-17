@@ -129,14 +129,16 @@ omod TEE-CLIENT-API-BEHAVIOR is
 endom
 
 omod TEE-INTERNAL-CLIENT-API-BEHAVIOR is
-  pr PROGRAM-APP .
+  pr SESSION .
   pr TEE-OS-BEHAVIOR .
   pr TRUST-APP .
+  pr HANDLE-AUX .
   pr TEE-INTERNAL-CLIENT-FUNC .
 
+  var N : Nat .
   var TK : TaInstId .
-  var TN : AppId .
-  var TEEID : TeeUUID .
+  var TN TA : AppId .
+  --- var TEEID : TeeUUID .
   var PARAMS : Set{TeeApiParam} .
 
 ------------------------------------------------------------
@@ -150,13 +152,22 @@ omod TEE-INTERNAL-CLIENT-API-BEHAVIOR is
   --- op paramType : TeeParamType -> TeeApiParam [ctor] .
   --- op teeCancelReqTime : CancelTimeOut -> TeeApiParam [ctor] .
 
-  --- rl [open-session-subroutine] : 
-  ---   < TK : TaKernel | app-status : normal , api-call : noCall , api-return : noReturn ,
-  ---                     api-state : started , current-api : TeeOpenTASession ,
-  ---                     current-params : (uuid(TEEID) , PARAMS) ,
-  ---                     trust-app-id : TN >
-  ---   =>
-  ---   < TK : TaKernel | >
-  ---   reqTrustedOS(openTASession(TN) , TK , TN)
-  --- .
+  rl [open-session-subroutine] : 
+    < TK : TaKernel | app-status : normal , api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : TeeOpenTASession ,
+                      current-params : (uuid(TA) , PARAMS) ,
+                      trust-app-id : TN >
+    =>
+    < TK : TaKernel | api-state : TeeOpenTASession(uuid(TA) , PARAMS) # 1 >
+    reqTrustedOS(openTASession(TA) , TK , TN)
+  .
+
+  rl [open-session-subroutine] : 
+    retTrustedOS(openSessionSuccess, TK)
+    < TK : TaKernel | app-status : normal , api-state : TeeOpenTASession(PARAMS) # 1 , id-counter : N >
+    =>
+    < TK : TaKernel | api-return : apiReturn(TeeOpenTASession , TEE-SUCCESS , (handle(handleId(N + 1, TK)) , returnOrig(TEE-ORIGIN-TRUSTED-APP))) ,
+                      api-state : finished , id-counter : N + 2 >
+    < taOid(N , TK) : Session | handle-set : < handleId(N + 1, TK) : TaSessionHandle | is-initialized : true > >
+  .
 endom

@@ -152,6 +152,7 @@ endfm
 fmod TEE-IMP-STRUCT-DECL is
   pr IMP-PROGRAM .
 
+--- object info
   op objectType : -> Var [ctor] .
   op objectSize : -> Var [ctor] .
   op maxObjectSize : -> Var [ctor] . 
@@ -160,6 +161,12 @@ fmod TEE-IMP-STRUCT-DECL is
   op dataPosition : -> Var [ctor] .
   op handleFlags : -> Var [ctor] .
   op TeeObjectInfo : -> Var [ctor] .
+
+--- TODO : change this to a list
+  op param1 : -> Var [ctor] .
+  op param2 : -> Var [ctor] .
+  op param3 : -> Var [ctor] .
+  op param4 : -> Var [ctor] .
 endfm
 
 --- This module defines IMP call and return for transient object functions.
@@ -520,6 +527,7 @@ mod TEE-INTERNAL-CLIENT-CALL is
   pr TEE-INTERNAL-CLIENT-IMP-VALUE .
   pr HANDLE .
   pr ID-IMP-VALUE .
+  pr TEE-IMP-STRUCT-DECL .
   pr RETURN-IMP-VALUE .
 
   var EL : ExpList .
@@ -528,12 +536,17 @@ mod TEE-INTERNAL-CLIENT-CALL is
   var TO : TaCancelTimeOut .
   var RO : ReturnOrigin .
   var FUNC : FuncId .
+  var VL : ValueList .
+  vars E1 E2 E3 : Exp .
+  vars V V1 V2 V3 V4 : Value .
 
   eq makeCall(TeeOpenTASession , (# TA , # TO )) = apiCall(TeeOpenTASession , (uuid(TA) , taCancelReqTime(TO))) .
   eq makeReturnStmt(TeeOpenTASession , TEE-SUCCESS , (handle(HANDLE) , returnOrig(RO)) , EL) = $assign((# TEE-SUCCESS , # HANDLE , # RO) , EL) .
 
-  eq makeCall(TeeInvokeTACommand , (# HANDLE , # FUNC , # RO)) = apiCall(TeeInvokeTACommand , (handle(HANDLE) , funcId(FUNC) , returnOrig(RO))) .
-  --- eq makeReturnStmt(TeeInvokeTACommand , TEE-SUCCESS , (handle(HANDLE) , returnOrig(OR)) , EL) = $assign((# TEE-SUCCESS , # HANDLE , # OR) , EL) .
+  eq makeCall(TeeInvokeTACommand , (# HANDLE , # FUNC , VL)) = apiCall(TeeInvokeTACommand , (handle(HANDLE) , funcId(FUNC) , values(VL))) .
+  eq makeReturnStmt(TeeInvokeTACommand , TEE-SUCCESS , values((V1, V2, V3, V4)) , (E1 , E2 , E3)) = 
+    $assign((# TEE-SUCCESS , # TEE-ORIGIN-TRUSTED-APP), (E1, E3)) ;
+    E2 . param1 := V1 ; E2 . param2 := V2 ; E2 . param3 := V3 ; E2 . param4 := V4 .
 endm
 
 --- This module defines IMP call and return for trust applications.

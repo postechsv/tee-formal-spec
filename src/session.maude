@@ -1,9 +1,59 @@
 --- This file defines objects for the TEE internal client API, related to session.
 
+fmod SESSION-REQ is
+  pr HANDLE-ID .
+  pr IMP-FUNC-ID .
+  pr TA-INSTANCE-ID .
+  pr IMP-EXP-LIST .
+
+  sorts SessionReq SessionRet .
+
+  op {_,_,_,_} : HandleId FuncId ValueList TaInstId -> SessionReq [ctor] .
+  op {_,_,_,_} : HandleId FuncId TaInstId ValueList -> SessionRet [ctor] .
+
+  op noReq : -> SessionReq [ctor] .
+  op noRet : -> SessionRet [ctor] .
+endfm
+
 --- This module defines an abstracted object class for session.
 
 omod SESSION is
+  pr SESSION-REQ .
   pr OPENABLE-OBJECT .
-  class Session .
+
+  class Session | req : SessionReq , ret : SessionRet , ta-id : TaInstId .
   subclass Session < OpenableObject .
+endom
+
+
+omod SESSION-BEHAVIOR is
+  pr SESSION .
+  pr TRUST-APP .
+  pr PROGRAM-APP-AUX .
+
+  var OI : TaObjectId .
+  var TI : TaInstId .
+  var P : Program .
+  var HANDLE : HandleId .
+  var FUNC : FuncId .
+  vars TK RK : TaInstId .
+  var KS : KConfig .
+  var VL : ValueList .
+
+
+  rl [handle-session-req] :
+    < OI : Session | req : {HANDLE, FUNC, VL, TK} , ta-id : RK >
+    < RK : TrustApp | task : noTask , prog : P , proc : none , running : false >
+    =>
+    < OI : Session | >
+    < RK : TrustApp | proc : execute(P, FUNC, VL) , running : true >
+  .
+
+  rl [handle-session-req] :
+    < OI : Session | req : {HANDLE, FUNC, VL, TK} , ret : noRet , ta-id : RK >
+    < RK : TrustApp | task : noTask , proc : (k(.K) KS) , running : true >
+    =>
+    < OI : Session | req : noReq , ret : {HANDLE, FUNC, TK, readReturn(FUNC, KS)}  >
+    < RK : TrustApp | proc : none , running : false >
+  .
 endom

@@ -138,19 +138,14 @@ omod TEE-INTERNAL-CLIENT-API-BEHAVIOR is
   var N : Nat .
   var TK : TaInstId .
   var TN TA : AppId .
+  var HANDLE : HandleId .
+  var FUNC : FuncId .
   --- var TEEID : TeeUUID .
   var PARAMS : Set{TeeApiParam} .
 
 ------------------------------------------------------------
---- Session Behaviours
+--- 'TEE_OpenTASession'
 ------------------------------------------------------------
-
---- TODO : assume TA instance already exist
-
-  --- op uuid : TeeUUID -> TeeApiParam [ctor] .
-  --- op returnOrig : ReturnOrigin -> TeeApiParam [ctor] .
-  --- op paramType : TeeParamType -> TeeApiParam [ctor] .
-  --- op teeCancelReqTime : CancelTimeOut -> TeeApiParam [ctor] .
 
   rl [open-session-subroutine] : 
     < TK : TaKernel | app-status : normal , api-call : noCall , api-return : noReturn ,
@@ -162,7 +157,7 @@ omod TEE-INTERNAL-CLIENT-API-BEHAVIOR is
     reqTrustedOS(openTASession(TA) , TK , TN)
   .
 
-  rl [open-session-subroutine] : 
+  rl [open-session-success] : 
     retTrustedOS(openSessionSuccess, TK)
     < TK : TaKernel | app-status : normal , api-state : TeeOpenTASession(PARAMS) # 1 , id-counter : N >
     =>
@@ -170,4 +165,30 @@ omod TEE-INTERNAL-CLIENT-API-BEHAVIOR is
                       api-state : finished , id-counter : N + 2 >
     < taOid(N , TK) : Session | handle-set : < handleId(N + 1, TK) : TaSessionHandle | is-initialized : true > >
   .
+
+------------------------------------------------------------
+--- 'TEE_InvokeTACommand'
+------------------------------------------------------------
+
+  msg reqInvoke : HandleId FuncId TaInstId -> Msg .
+  msg finishReqInvoke : HandleId FuncId TaInstId -> Msg .
+
+  rl [invoke-ta-command-subroutine] : 
+    < TK : TaKernel | app-status : normal , api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : TeeInvokeTACommand ,
+                      current-params : (handle(HANDLE) , PARAMS) >
+    =>
+    < TK : TaKernel | api-state : TeeInvokeTACommand(handleId(HANDLE) , PARAMS) # 1 >
+    reqInvoke(HANDLE ,  , TK)
+  .
+
+  --- rl [open-session-success] : 
+  ---   retTrustedOS(openSessionSuccess, TK)
+  ---   < TK : TaKernel | app-status : normal , api-state : TeeOpenTASession(PARAMS) # 1 , id-counter : N >
+  ---   =>
+  ---   < TK : TaKernel | api-return : apiReturn(TeeOpenTASession , TEE-SUCCESS , (handle(handleId(N + 1, TK)) , returnOrig(TEE-ORIGIN-TRUSTED-APP))) ,
+  ---                     api-state : finished , id-counter : N + 2 >
+  ---   < taOid(N , TK) : Session | handle-set : < handleId(N + 1, TK) : TaSessionHandle | is-initialized : true > >
+  --- .
+
 endom

@@ -19,7 +19,7 @@ endm
 
 mod ID-IMP-VALUE is
   pr IMP-VALUE .
-  pr IMP-FUNC-ID .
+  pr IMP-FUNC-SIG .
   pr CONFIGURATION .
 
   op #_ : Oid -> Value [ctor] .
@@ -146,7 +146,7 @@ fmod TEE-API-IMP-CALL is
   pr IMP-STMT .
 
   op makeCall : TeeApi ValueList -> TeeApiCall .
-  op makeReturnStmt : TeeApi ReturnCode? Set{TeeApiParam} ExpList -> Stmt .
+  op makeReturnStmt : TeeApi ReturnCode? Set{TeeApiParam} ExpList -> CStmt .
 endfm
 
 fmod TEE-IMP-STRUCT-DECL is
@@ -255,7 +255,7 @@ mod PERSISTENT-OBJECT-TEE-CALL is
   eq makeReturnStmt(CreatePersistentObject , RET , handle(HANDLE) , EL) = $assign((# RET , # HANDLE) , EL) .
 
   eq makeCall(CloseAndDeletePersistentObject1 , (# HANDLE)) = apiCall(CloseAndDeletePersistentObject1 , handle(HANDLE)) .
-  eq makeReturnStmt(CloseAndDeletePersistentObject1 , RET , empty , (R , H)) = $clearMem(H) ; $assign(# RET , R) .
+  eq makeReturnStmt(CloseAndDeletePersistentObject1 , RET , empty , (R , H)) = $clearMem(H) $assign(# RET , R) .
   eq makeReturnStmt(CloseAndDeletePersistentObject1 , RET , handle(TEE-HANDLE-NULL) , (R , H)) = $assign(# RET , R) .
 
   eq makeCall(RenamePersistentObject , (# HANDLE , # FILE)) = apiCall(RenamePersistentObject , (handle(HANDLE) , fileId(FILE))) .
@@ -291,9 +291,9 @@ mod GENERIC-OBJECT-TEE-CALL is
 
   eq makeCall(GetObjectInfo1 , (# HANDLE)) = apiCall(GetObjectInfo1 , handle(HANDLE)) .
   eq makeReturnStmt(GetObjectInfo1 , TEE-SUCCESS , info(teeObjectInfo(OBJTYPE , OBJSIZE , MAXOBJSIZE , OBJUSAGES , DATASIZE , DATAPOS , DATAFLAGS)) , (E , E')) 
-  = $assign(# TEE-SUCCESS , E) ;
+  = $assign(# TEE-SUCCESS , E) 
     E' . objectType = # OBJTYPE ; E' . objectSize = # OBJSIZE ; E' . maxObjectSize = # MAXOBJSIZE ;
-    E' . objectUsage = # OBJUSAGES ; E' . dataSize = # DATASIZE ; E' . dataPosition = # DATAPOS ; E' . handleFlags = # DATAFLAGS .  
+    E' . objectUsage = # OBJUSAGES ; E' . dataSize = # DATASIZE ; E' . dataPosition = # DATAPOS ; E' . handleFlags = # DATAFLAGS ; .  
   eq makeReturnStmt(GetObjectInfo1 , RET , empty , (E , E')) = $assign(# RET , E) .
 
   eq makeCall(RestrictObjectUsage1 , (# HANDLE , # OBJUSAGES)) = apiCall(RestrictObjectUsage1 , (handle(HANDLE) , usages(OBJUSAGES))) .
@@ -352,7 +352,7 @@ mod ENUMERATOR-OBJECT-TEE-CALL is
 
   eq makeCall(GetNextPersistentObject , (# HANDLE)) = apiCall(GetNextPersistentObject , handle(HANDLE)) .
   eq makeReturnStmt(GetNextPersistentObject , TEE-SUCCESS , (info(teeObjectInfo(OBJTYPE , OBJSIZE , MAXOBJSIZE , OBJUSAGES , DATASIZE , DATAPOS , DATAFLAGS)) , fileId(FILE)) , (R , E , E'))
-    = $assign(# TEE-SUCCESS , R) ;
+    = $assign(# TEE-SUCCESS , R)
       E . objectType = # OBJTYPE ; E . objectSize = # OBJSIZE ; E . maxObjectSize = # MAXOBJSIZE ;
       E . objectUsage = # OBJUSAGES ; E . dataSize = # DATASIZE ; E . dataPosition = # DATAPOS ; E . handleFlags = # DATAFLAGS ;
       $assign(# FILE , E') .
@@ -545,8 +545,8 @@ mod TEE-INTERNAL-CLIENT-CALL is
 
   eq makeCall(TeeInvokeTACommand , (# HANDLE , # FUNC , VL)) = apiCall(TeeInvokeTACommand , (handle(HANDLE) , funcId(FUNC) , values(VL))) .
   eq makeReturnStmt(TeeInvokeTACommand , TEE-SUCCESS , values((V1, V2, V3, V4)) , (E1 , E2 , E3)) = 
-    $assign((# TEE-SUCCESS , # TEE-ORIGIN-TRUSTED-APP), (E1, E3)) ;
-    E2 . param1 = V1 ; E2 . param2 = V2 ; E2 . param3 = V3 ; E2 . param4 = V4 .
+    $assign((# TEE-SUCCESS , # TEE-ORIGIN-TRUSTED-APP), (E1, E3))
+    E2 . param1 = V1 ; E2 . param2 = V2 ; E2 . param3 = V3 ; E2 . param4 = V4 ; .
 endm
 
 --- This module defines IMP call and return for trust applications.

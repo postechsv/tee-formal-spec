@@ -20,6 +20,7 @@ omod PROGRAM-APP-AUX is
   pr IMP-SEMANTICS .
 
   var X : Var .
+  var T : Type .
   var XL : VarList .
   var V : Value .
   var L : Nat .
@@ -29,36 +30,49 @@ omod PROGRAM-APP-AUX is
   var ENV : Map{Var,Nat} .
   var MEM : Map{Nat,Value?} .
   var FUNC : FuncId .
-  vars S S1 S2 S' : Stmt .
-  vars FDCLS FDCLS1 FDCLS2 : FuncDeclList .
+  var FSIG : FuncSig .
+  vars S S' : CStmt .
+  var FMAP : Map{FuncSig,CStmt} .
+  var PARAMS : ParamList .
 
   op execute : Program FuncId ValueList -> KConfig .
   op readReturn : FuncId KConfig -> ValueList .
 
   op mRet : -> Var [ctor] .
 
-  op prepVars : VarList ValueList -> Stmt .
-  eq prepVars((X,XL),(V,VL)) = var X ; X = V ; prepVars(XL, VL) .
-  eq prepVars(nil, nil) = skip .
+  op mkPreStmt : ParamList ValueList -> CStmt .
+  eq mkPreStmt((T X, PARAMS), (V,VL)) = T X ; (X = V) ; mkPreStmt(PARAMS, VL) .
+  eq mkPreStmt(nil, nil) = skip ; .
 
-  op getFuncDecls : Program -> FuncDeclList .
-  ceq getFuncDecls(S ; S') = S ;; getFuncDecls(S') if S :: FuncDecl .
-  ceq getFuncDecls(S ; S') = getFuncDecls(S') if not S :: FuncDecl .
-  ceq getFuncDecls(S) = S if S :: FuncDecl .
-  ceq getFuncDecls(S) = nilDecl if not S :: FuncDecl .
+  op getVars : ParamList -> VarList .
+  eq getVars((T X, PARAMS)) = X , getVars(PARAMS) .
+  eq getVars(nil) = nil .
 
-  op getVars : FuncId FuncDeclList -> VarList .
-  eq getVars(FUNC, FDCLS1 ;; (FUNC(XL){S}) ;; FDCLS2) = XL .
-  eq getVars(FUNC, FDCLS) = nil [owise] .
+  op mkFunMap : Program Map{FuncSig,CStmt} -> Map{FuncSig,CStmt} .
+  eq mkFunMap(FSIG {S} S', FMAP) = mkFunMap(S', insert(FSIG, S, FMAP)) .
+  eq mkFunMap(S S', FMAP) = mkFunMap(S', FMAP) [owise] .
 
-  ceq execute(P , FUNC , VL) = run(var mRet ; P ; prepVars(XL, VL) ; mRet = FUNC (XL)) if XL := getVars(FUNC, getFuncDecls(P)) .
-  eq readReturn(FUNC, KS env(ENV) store(MEM) fdecl(FDCLS1 ;; (FUNC(XL){S}) ;; FDCLS2)) = findAllValues((mRet,XL), ENV, MEM) . 
+  op getParams : FuncId Map{FuncSig,CStmt} -> ParamList .
+  eq getParams(FUNC, (T FUNC(PARAMS) |-> S , FMAP)) = PARAMS .
+  eq getParams(FUNC, FMAP) = nil [owise] .
 
-  op findValue : Var Map{Var,Nat} Map{Nat,Value?} -> Value .
-  eq findValue(X, (X |-> L) ; ENV, (L |-> V) ; MEM) = V .
+  ceq execute(P , FUNC , VL) 
+    = run(
+        int mRet ; 
+        P S 
+        (mRet = FUNC (XL)) ;
+      ) 
+  if PARAMS := getParams(FUNC, mkFunMap(P, empty)) 
+  /\ XL := getVars(PARAMS) /\ S := mkPreStmt(PARAMS, VL) .
+  
+  ceq readReturn(FUNC, KS env(ENV) store(MEM) fdecl(((T FUNC(PARAMS) |-> S) , FMAP))) 
+    = findAllValues((mRet,XL), ENV, MEM) 
+  if XL := getVars(PARAMS) . 
 
   op findAllValues : VarList Map{Var,Nat} Map{Nat,Value?} -> ValueList .
   eq findAllValues((X,XL), ENV, MEM) = findValue(X, ENV, MEM) , findAllValues(XL, ENV, MEM) .
   eq findAllValues(nil, ENV, MEM) = nil .
 
+  op findValue : Var Map{Var,Nat} Map{Nat,Value?} -> Value .
+  eq findValue(X, (X |-> L) ; ENV, (L |-> V) ; MEM) = V .
 endom

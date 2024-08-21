@@ -180,7 +180,7 @@ fmod IMP-STMT is
   var TEEAPI : TeeApi .
 
   op skip : -> Stmt [ctor] .
-  op _:=_ : Exp Exp -> Stmt [ctor] .
+  op _=_ : Exp Exp -> Stmt [ctor] .
   op _;_ : Stmt Stmt -> Stmt [ctor gather(e E) prec 68] .
   op if(_){_}else{_} : Exp Stmt Stmt -> Stmt [ctor] .
   op if(_){_} : Exp Stmt -> Stmt [ctor] .
@@ -197,7 +197,7 @@ fmod IMP-STMT is
 --- Structure declaration
 
   op _;_ : StructMemDeclStmt StructMemDeclStmt -> StructMemDeclStmt [ctor ditto] .
-  op struct{_}_ : StructMemDeclStmt Var -> StructDecl [ctor prec 49] .
+  op struct_{_} : Var StructMemDeclStmt -> StructDecl [ctor prec 49] .
 
 --- Function declaration
 
@@ -268,8 +268,8 @@ fmod IMP-EVAL-CONTEXT is
   op leval : Exp -> KLabel [ctor] .
   op leval(`[`]) : -> KLabel [ctor] .
 
-  op `[`]:=_ : Value -> KLabel [ctor] .
-  op _:=`[`] : Exp -> KLabel [ctor] .
+  op `[`]=_ : Value -> KLabel [ctor] .
+  op _=`[`] : Exp -> KLabel [ctor] .
 
   op if(`[`]){_}else{_} : Stmt Stmt -> KLabel [ctor] .
 
@@ -358,13 +358,13 @@ fmod IMP-STRICTNESS is
   ceq k(! E ~> K)       = k(leval(E) ~> ! [] ~> K) if E :: LExp .
   ceq k(V ~> ! [] ~> K) = k(! V ~> K) if not V :: LValue .
 
-  ceq k(E1 := E2 ~> K)       = k(E2 ~> E1 := [] ~> K) if not (E2 :: Value or E2 :: LExp) .
-  ceq k(E1 := E2 ~> K)       = k(leval(E2) ~> E1 := [] ~> K) if E2 :: LExp and not E2 :: LValue .
-  ceq k(V2 ~> E1 := [] ~> K) = k(E1 := V2 ~> K) if not V2 :: LocValue .
+  ceq k(E1 = E2 ~> K)       = k(E2 ~> E1 = [] ~> K) if not (E2 :: Value or E2 :: LExp) .
+  ceq k(E1 = E2 ~> K)       = k(leval(E2) ~> E1 = [] ~> K) if E2 :: LExp and not E2 :: LValue .
+  ceq k(V2 ~> E1 = [] ~> K) = k(E1 = V2 ~> K) if not V2 :: LocValue .
 
-  ceq k(E1 := V2 ~> K)        = k(E1 ~> [] := V2 ~> K) if not (E1 :: Value or E1 :: LExp) .
-  ceq k(E1 := V2 ~> K)        = k(lvalue(E1) ~> [] := V2 ~> K) if E1 :: LExp and not E1 :: LocValue .
-   eq k(LV1 ~> [] := V2 ~> K) = k(LV1 := V2 ~> K) .
+  ceq k(E1 = V2 ~> K)        = k(E1 ~> [] = V2 ~> K) if not (E1 :: Value or E1 :: LExp) .
+  ceq k(E1 = V2 ~> K)        = k(lvalue(E1) ~> [] = V2 ~> K) if E1 :: LExp and not E1 :: LocValue .
+   eq k(LV1 ~> [] = V2 ~> K) = k(LV1 = V2 ~> K) .
 
   ceq k(lvalue(E1 . E2) ~> K)        = k(leval(E1) ~> lvalue([] . E2) ~> K) if not E1 :: StructValue .
    eq k(SV1 ~> lvalue([] . E2) ~> K) = k(SV1 . E2 ~> K) .
@@ -508,7 +508,7 @@ mod IMP-SEMANTICS is
 
 --- Assign
 
-  rl k(loc(L) := V ~> K) store(MEM)
+  rl k(loc(L) = V ~> K) store(MEM)
   => k(               K) store(insert(L, V, MEM)) .
 
 
@@ -541,8 +541,8 @@ mod IMP-SEMANTICS is
   rl k(var X ~> K) env(ENV) store(MEM) nextLoc(L)
   => k(         K) env(insert(X , L , ENV)) store(insert(L , undef , MEM)) nextLoc(L + 1) .
 
-  rl k(struct X X' ~> K) sdecl(SDCLS1 ;; struct {SMST} X ;; SDCLS2) nextLoc(L)
-  => k($structNameDecl(X') ~> $structMemDecl(SMST, L) ~> K) sdecl(SDCLS1 ;; struct {SMST} X ;; SDCLS2) nextLoc(L) .
+  rl k(struct X X' ~> K) sdecl(SDCLS1 ;; struct X {SMST} ;; SDCLS2) nextLoc(L)
+  => k($structNameDecl(X') ~> $structMemDecl(SMST, L) ~> K) sdecl(SDCLS1 ;; struct X {SMST} ;; SDCLS2) nextLoc(L) .
  
   eq k($structNameDecl(X) ~> K) env(ENV) store(MEM) nextLoc(L)
    = k(K) env(insert(X, L, ENV)) store(insert(L, struct(empty), MEM)) nextLoc(L + 1) .
@@ -553,10 +553,10 @@ mod IMP-SEMANTICS is
   eq k($structMemDecl(var X, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
    = k(K) store((L' |-> struct(insert(X, L, ENV))) ; (L |-> undef) ; MEM) nextLoc(L + 1) .
 
-  eq k($structMemDecl(struct {SMST'} X ; SMST, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
+  eq k($structMemDecl(struct X {SMST'} ; SMST, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
    = k($structMemDecl(SMST', L) ~> $structMemDecl(SMST, L') ~> K) store((L' |-> struct(insert(X, L, ENV))) ; (L |-> struct(empty)) ; MEM)  nextLoc(L + 1) .
 
-  eq k($structMemDecl(struct {SMST} X, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
+  eq k($structMemDecl(struct X {SMST}, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
    = k($structMemDecl(SMST, L) ~> K) store((L' |-> struct(insert(X, L, ENV))) ; (L |-> struct(empty)) ; MEM)  nextLoc(L + 1) .
   
   eq k(SDCL ~> K) sdecl(SDCLS) = k(K) sdecl(SDCLS ;; SDCL) .
@@ -591,7 +591,7 @@ mod IMP-SEMANTICS is
 
 --- TODO: Clean
 
-  rl k($assign((E,EL), (E',EL')) ~> K) => k(E' := E ~> $assign(EL, EL') ~> K) .
+  rl k($assign((E,EL), (E',EL')) ~> K) => k(E' = E ~> $assign(EL, EL') ~> K) .
   rl k($assign(EL, nil) ~> K) => k(K) .
 
 
@@ -648,7 +648,7 @@ mod IMP-SEMANTICS-INVISIBLE is
 
 --- Assign
 
-  eq k(loc(L) := V ~> K) store(MEM)
+  eq k(loc(L) = V ~> K) store(MEM)
   = k(               K) store(insert(L, V, MEM)) .
 
 
@@ -679,8 +679,8 @@ mod IMP-SEMANTICS-INVISIBLE is
   eq k(var X ~> K) env(ENV) store(MEM) nextLoc(L)
   = k(         K) env(insert(X , L , ENV)) store(insert(L , undef , MEM)) nextLoc(L + 1) .
 
-  eq k(struct X X' ~> K) sdecl(SDCLS1 ;; struct {SMST} X ;; SDCLS2) nextLoc(L)
-  = k($structNameDecl(X') ~> $structMemDecl(SMST, L) ~> K) sdecl(SDCLS1 ;; struct {SMST} X ;; SDCLS2) nextLoc(L) .
+  eq k(struct X X' ~> K) sdecl(SDCLS1 ;; struct X {SMST} ;; SDCLS2) nextLoc(L)
+  = k($structNameDecl(X') ~> $structMemDecl(SMST, L) ~> K) sdecl(SDCLS1 ;; struct X {SMST} ;; SDCLS2) nextLoc(L) .
  
   eq k($structNameDecl(X) ~> K) env(ENV) store(MEM) nextLoc(L)
    = k(K) env(insert(X, L, ENV)) store(insert(L, struct(empty), MEM)) nextLoc(L + 1) .
@@ -691,10 +691,10 @@ mod IMP-SEMANTICS-INVISIBLE is
   eq k($structMemDecl(var X, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
    = k(K) store((L' |-> struct(insert(X, L, ENV))) ; (L |-> undef) ; MEM) nextLoc(L + 1) .
 
-  eq k($structMemDecl(struct {SMST'} X ; SMST, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
+  eq k($structMemDecl(struct X {SMST'} ; SMST, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
    = k($structMemDecl(SMST', L) ~> $structMemDecl(SMST, L') ~> K) store((L' |-> struct(insert(X, L, ENV))) ; (L |-> struct(empty)) ; MEM)  nextLoc(L + 1) .
 
-  eq k($structMemDecl(struct {SMST} X, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
+  eq k($structMemDecl(struct X {SMST}, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
    = k($structMemDecl(SMST, L) ~> K) store((L' |-> struct(insert(X, L, ENV))) ; (L |-> struct(empty)) ; MEM)  nextLoc(L + 1) .
   
   eq k(SDCL ~> K) sdecl(SDCLS) = k(K) sdecl(SDCLS ;; SDCL) .
@@ -729,7 +729,7 @@ mod IMP-SEMANTICS-INVISIBLE is
 
 --- TODO: Clean
 
-  eq k($assign((E,EL), (E',EL')) ~> K) = k(E' := E ~> $assign(EL, EL') ~> K) .
+  eq k($assign((E,EL), (E',EL')) ~> K) = k(E' = E ~> $assign(EL, EL') ~> K) .
   eq k($assign(EL, nil) ~> K) = k(K) .
 
 

@@ -19,6 +19,7 @@ fmod IMP-BTYPE is
   op float : -> BType [ctor] .
   op bool : -> BType [ctor] .
   op void : -> BType [ctor] .
+  op auto : -> BType [ctor] .
 endfm
 
 fmod IMP-STYPE is
@@ -155,12 +156,13 @@ endv
 
 fmod IMP-LVALUE is
   pr IMP-BASE-EXP .
+  pr IMP-TYPE .
   pr MAP{Var,Nat} * (op _,_ to _;_) .
 
   sort StructValue LocValue .
   subsort StructValue LocValue < LValue .
 
-  op struct : Map{Var,Nat} -> StructValue [ctor] .
+  op struct : Type -> StructValue [ctor] .
   op loc : Nat -> LocValue [ctor] .
 endfm
 
@@ -229,7 +231,7 @@ fmod IMP-STMT is
   vars CS CS' : CStmt .
   var E : Exp .
   var EL : ExpList .
-  var TEEAPI : TeeApi .
+  --- var TEEAPI : TeeApi .
 
   op _; : Stmt -> CStmt [ctor prec 67] .
   op _; : Exp -> CStmt [ctor prec 67] .
@@ -256,12 +258,12 @@ fmod IMP-STMT is
   --- op call_ : Exp -> Stmt [ctor prec 60] .
   op return_ : Exp -> Stmt [ctor prec 60] .
 
-  op _(_;_) : TeeApi ExpList ExpList -> Exp [ctor] .
-  op _(_;) : TeeApi ExpList -> Exp [ctor] .
-  op _() : TeeApi -> Exp [ctor] .
+  --- op _(_;_) : TeeApi ExpList ExpList -> Exp [ctor] .
+  --- op _(_;) : TeeApi ExpList -> Exp [ctor] .
+  --- op _() : TeeApi -> Exp [ctor] .
 
-  eq TEEAPI(EL ;) = TEEAPI(EL ; nil) . 
-  eq TEEAPI() = TEEAPI(nil ; nil) .
+  --- eq TEEAPI(EL ;) = TEEAPI(EL ; nil) . 
+  --- eq TEEAPI() = TEEAPI(nil ; nil) .
 
 ------------------------------------------------------------
 --- Internal Stmt
@@ -280,10 +282,12 @@ fmod IMP-STMT is
   op $waitSysCall : TeeApi -> CStmt [ctor] .
   op $assign : ExpList ExpList -> CStmt [ctor] .
   op $callByRefAssign : ValueList VarList -> CStmt [ctor] .
+  op $prep(_) : ExpList -> CStmt [ctor] .
   op $in(_) : ValueList -> CStmt [ctor] .
   op $out(_) : ExpList -> CStmt [ctor] .
   op $out(_|_) : ExpList ExpList -> CStmt [ctor] .
-  op $decl : CStmt Var -> CStmt [ctor] .
+  op $alloc : CStmt -> CStmt [ctor] .
+  op $allocType : Type -> CStmt [ctor] .
   op $update : Var Var -> CStmt [ctor] .
 endfm
 
@@ -315,6 +319,7 @@ fmod IMP-EVAL-CONTEXT is
   ops _+`[`] _-`[`] _*`[`] _/`[`] _<=`[`] _&&`[`] _||`[`] _==`[`] : Value -> KLabel [ctor] .
   op !`[`] : -> KLabel [ctor] .
   ops `[`]._ _.`[`] : Exp -> KLabel [ctor] .
+  op $prep(`[`],_) : ExpList -> KLabel [ctor] .
 
   --- op lvalue : Exp -> KLabel [ctor] .
   op lvalue(`[`]._) : Exp -> KLabel [ctor] .
@@ -350,10 +355,12 @@ fmod IMP-STRICTNESS is
   vars V V1 V2 : Value .
   vars LV LV1 : LocValue .
   var SV1 : StructValue .
-  vars S1 S2 : CStmt .
+  vars S S1 S2 : CStmt .
   var X : Var .
   var K : K .
   var F : FuncId .
+  var EL : ExpList .
+  var VL : ValueList .
   var STRT : Map{Var,Nat} .
 
   ceq k(E ; ~> K) = k(E ~> []; ~> K) if not E :: Value .
@@ -427,8 +434,10 @@ fmod IMP-STRICTNESS is
 
 --- struct member access
 
-  --- ceq k(E1 . E2 ~> K)        = k(E1 ~> [] . E2 ~> K) if not E1 :: Value .
-  ceq k(E1 . E2 ~> K)        = k(eval(E1) ~> [] . E2 ~> K) if not E1 :: Value .
+  --- eq k(E1 . E2 ~> K)        = k(eval(E1) ~> [] . E2 ~> K) .
+  --- eq k(V1 ~> [] . E2 ~> K)  = k(V1 . E2 ~> K) .
+  ceq k(E1 . E2 ~> K)        = k(E1 ~> [] . E2 ~> K) if not E1 :: Value .
+  --- ceq k(E1 . E2 ~> K)        = k(eval(E1) ~> [] . E2 ~> K) if not E1 :: Value .
    eq k(V1 ~> [] . E2 ~> K)  = k(V1 . E2 ~> K) .
 
   ceq k(if (E) {S1} else {S2} ~> K)       
@@ -441,6 +450,9 @@ fmod IMP-STRICTNESS is
    eq k(V ~> return []; ~> K) = k(return V ; ~> K) .
 
 --- TODO
+  ceq k($prep(E , EL) ~> K) = k(E ~> $prep([], EL) ~> K) if not E :: Value .
+   eq k(V ~> $prep([], EL) ~> $in(VL) S ~> K) = k($prep(EL) ~> $in(VL, V) S ~> K) .
+
 
   --- ceq k($callByRefInst(E , X) ~> K)
   ---   = k(lvalue(E) ~> $callByRefInst([] , X) ~> K) if not E :: Value .
@@ -503,6 +515,9 @@ mod IMP-AUX is
   var LB : Label .
   var LM : Map{Label,CStmt} .
   var P : Program .
+  var N : Nat .
+  vars X Y : Var .
+  var T : Type .
 ------------------------------------------------------------
 --- Auxiliary Functions
 ------------------------------------------------------------
@@ -515,6 +530,14 @@ mod IMP-AUX is
   eq getLabels(LB : S , LM) = insert(LB , S , getLabels(S , LM)) .
   eq getLabels(S S' , LM) = getLabels(S , LM) , getLabels(S', LM) .
   eq getLabels(S , LM) = empty [owise] .
+
+  op getOffSet : CStmt Var -> Nat .
+  eq getOffSet(S, X) = getOffSet(S, X, 1) .
+
+  op getOffSet : CStmt Var Nat -> Nat .
+  eq getOffSet(T X ; S, X, N) = N .
+  eq getOffSet(T X ;, X, N) = N .
+  eq getOffSet(T Y ; S, X, N) = getOffSet(S, X, N + 1) [owise] .
 endm
 
 --- IMP Semantics
@@ -522,7 +545,8 @@ endm
 mod IMP-SEMANTICS is
   pr IMP-AUX .
 
-  var T : Type .
+  var N : Nat .
+  vars T T' : Type .
   var ST : SType .
   vars X X' Y : Var .
   var XL : VarList .
@@ -559,7 +583,12 @@ mod IMP-SEMANTICS is
   rl k(X      ~> K) env((X |-> L) ; ENV)
   => k(loc(L) ~> K) env((X |-> L) ; ENV) .
 
-  rl k(struct(STRT) . E ~> K) => k(loc(STRT[E]) ~> K) .
+  --- rl k(struct(T) . X ~> K) sdecl((struct T |-> ((X |--> N $ T') ; SMAP) , SDCL)) 
+  --- => k(loc(N) ~> K) sdecl((struct T |-> ((X |--> N $ T') ; SMAP) , SDCL)) .
+
+  crl k(loc(L) . X ~> K) store((L |-> struct(T)) ; MEM) sdecl(((struct T |-> S) , SDCL))
+   => k(loc(L + N) ~> K) store((L |-> struct(T)) ; MEM) sdecl(((struct T |-> S) , SDCL)) 
+   if N := getOffSet(S, X) .
 
   rl k(read(loc(L)) ~> K) store((L |-> V) ; MEM)
   => k(V            ~> K) store((L |-> V) ; MEM) .
@@ -590,7 +619,7 @@ mod IMP-SEMANTICS is
   rl k(skip ; ~> K) 
   => k(K) .
 
-  rl k(S S' ~> K) => k(S ~> S' ~> K) .
+  rl k(K ~> S S' ~> K') => k(K ~> S ~> S' ~> K') .
 
   eq k(goto LB ; ~> K) labels(((LB |-> S) , LM)) = k(S) labels(((LB |-> S) , LM)) .
   eq k(goto LB ; ~> K) labels(LM) = k(K) labels(LM) [owise] .
@@ -608,14 +637,17 @@ mod IMP-SEMANTICS is
   crl k(T X ~> K) env(ENV) store(MEM) nextLoc(L)
    => k(       K) env(insert(X , L , ENV)) store(insert(L , undef , MEM)) nextLoc(L + 1) if not T :: SType .
 
-  rl k(struct T X ~> K) sdecl((struct T |-> S , SDCL)) 
-  => k(T X ; ~> X = struct(empty) ; ~> $decl(S, X) ~> K) sdecl((struct T |-> S , SDCL)) .
+  rl k(struct T X ~> K) sdecl((struct T |-> S , SDCL))
+  => k(T X ; X = struct(T) ; ~> $alloc(S) ~> K) sdecl((struct T |-> S , SDCL)) .
 
-  rl k($decl((T Y ; S), X) ~> K) env(((X |-> L) ; ENV)) store((L |-> struct(STRT)) ; MEM) nextLoc(L')
-  => k($decl(S, X) ~> K) env(((X |-> L) ; ENV)) store(((L |-> struct(insert(Y, L', STRT))) ; L' |-> undef) ; MEM) nextLoc(L' + 1) .
+--- alloc
+
+   rl k($alloc(T X ; S) ~> K) => k($allocType(T) ~> $alloc(S) ~> K) .
+   rl k($alloc(T X ;  ) ~> K) => k($allocType(T) ~> K) .
   
-  rl k($decl((T Y ;), X) ~> K) env(((X |-> L) ; ENV)) store((L |-> struct(STRT)) ; MEM) nextLoc(L')
-  => k(K) env(((X |-> L) ; ENV)) store(((L |-> struct(insert(Y, L', STRT))) ; L' |-> undef) ; MEM) nextLoc(L' + 1) .
+  crl k($allocType(T) ~> K) store(MEM) nextLoc(L) => k(K) store((L |-> undef) ; MEM) nextLoc(L + 1) if not T :: SType .
+   rl k($allocType(struct T) ~> K) nextLoc(L) sdecl((struct T |-> S , SDCL))
+   => k(loc(L) = struct(T) ; ~> $alloc(S) ~> K) nextLoc(L + 1) sdecl((struct T |-> S , SDCL)) .
 
 --- function & structure declaration
 
@@ -644,12 +676,6 @@ mod IMP-SEMANTICS is
 
   crl k($prepArgs((E, EL), (T X, PARAMS)) ~> K)
    => k(T X = E ; ~> $prepArgs(EL, PARAMS) ~> K) if not T :: RType .
-  
-  crl k(TEEAPI(EL ; EL') ~> K) => k($callByValArg(EL) ~> $in(nil) ~> $waitSysCall(TEEAPI) ~> $out(EL') ~> K) if not TEEAPI :: TeeClientApi .
-  crl k(TEEAPI(EL ; EL') ~> K) => k($callByValArg(EL) ~> $in(nil) ~> $waitSysCall(TEEAPI) ~> $out(EL' | EL) ~> K) if TEEAPI :: TeeClientApi .
-  rl k($callByValArg(nil) ~> $in(VL) ~> K) => k($in(VL) ~> K) .
-  rl k($callByValArg(E , EL) ~> K) => k($callByValInst(E) ~> $callByValArg(EL) ~> K) .
-  rl k($callByValInst(V) ~> $callByValArg(EL) ~> $in(VL) ~> K)  => k($callByValArg(EL) ~> $in(VL , V) ~> K) .
 
 --- Return statement
 
@@ -660,6 +686,8 @@ mod IMP-SEMANTICS is
   => k(K') env(ENV') fstack(STACK) nextLoc(L') labels(LM') . --- for void return
 
 --- TODO: Clean
+
+  rl k($prep(nil) ~> K) => k(K) .
 
   rl k($assign((E,EL), (E',EL')) ~> K) => k(E' = E ; ~> $assign(EL, EL') ~> K) .
   rl k($assign(EL, nil) ~> K) => k(K) .
@@ -677,7 +705,8 @@ endm
 mod IMP-SEMANTICS-INVISIBLE is
   pr IMP-AUX .
 
-  var T : Type .
+  var N : Nat .
+  vars T T' : Type .
   var ST : SType .
   vars X X' Y : Var .
   var XL : VarList .
@@ -693,7 +722,7 @@ mod IMP-SEMANTICS-INVISIBLE is
   vars E E' E1 E2 : Exp .
   vars S S' : CStmt .
   var F : FuncId .
-  var TEEAPI : TeeApi .
+  --- var TEEAPI : TeeApi .
   var SDCL : Map{SType,CStmt} .
   var FDCL : Map{FuncSig,CStmt} .
   var STIT : StackItem .
@@ -750,22 +779,21 @@ mod IMP-SEMANTICS-INVISIBLE is
 --- declaration
 --- for simplicity we don't allow nested structure.
 
-  ceq k(T X ~> K) env(ENV) store(MEM) nextLoc(L)
-    = k(       K) env(insert(X , L , ENV)) store(insert(L , undef , MEM)) nextLoc(L + 1) if not T :: SType .
+  --- ceq k(T X ~> K) env(ENV) store(MEM) nextLoc(L)
+  ---   = k(       K) env(insert(X , L , ENV)) store(insert(L , undef , MEM)) nextLoc(L + 1) if not T :: SType .
 
-  eq k(struct T X ~> K) sdecl((struct T |-> S , SDCL)) 
-   = k(T X ; ~> X = struct(empty) ; ~> $decl(S, X) ~> K) sdecl((struct T |-> S , SDCL)) .
+  --- eq k(struct T X ~> K) sdecl((struct T |-> SMAP , SDCL))
+  ---  = k(T X ; X = struct(T) ; ~> $alloc(SMAP) ~> K) sdecl((struct T |-> SMAP , SDCL)) .
 
-  eq k($decl((T Y ; S), X) ~> K) env(((X |-> L) ; ENV)) store((L |-> struct(STRT)) ; MEM) nextLoc(L')
-   = k($decl(S, X) ~> K) env(((X |-> L) ; ENV)) store(((L |-> struct(insert(Y, L', STRT))) ; L' |-> undef) ; MEM) nextLoc(L' + 1) .
-  
-  eq k($decl((T Y ;), X) ~> K) env(((X |-> L) ; ENV)) store((L |-> struct(STRT)) ; MEM) nextLoc(L')
-   = k(K) env(((X |-> L) ; ENV)) store(((L |-> struct(insert(Y, L', STRT))) ; L' |-> undef) ; MEM) nextLoc(L' + 1) .
+--- alloc
+
+  --- eq k($alloc(s N) ~> K) store(MEM) nextLoc(L) = k($alloc(N) ~> K) store((L |-> undef) ; MEM) nextLoc(L + 1) .
+  --- eq k($alloc(0) ~> K) store(MEM) nextLoc(L) = k(K) store((L |-> undef) ; MEM) nextLoc(L + 1) .
 
 --- function & structure declaration
 
   eq k(FSIG {S} ~> K) fdecl(FDCL) = k(K) fdecl(insert(FSIG, S, FDCL)) .
-  eq k(struct T {S} ; ~> K) sdecl(SDCL) = k(K) sdecl(insert(struct T, S, SDCL)) .
+  --- eq k(struct T {S} ; ~> K) sdecl(SDCL) = k(K) sdecl(insert(struct T, mkStOffsetMap(S, 1), SDCL)) .
 
 --- function call
 
@@ -790,12 +818,7 @@ mod IMP-SEMANTICS-INVISIBLE is
   ceq k($prepArgs((E, EL), (T X, PARAMS)) ~> K)
     = k(T X = E ; ~> $prepArgs(EL, PARAMS) ~> K) if not T :: RType .
 
-  
-  ceq k(TEEAPI(EL ; EL') ~> K) = k($callByValArg(EL) ~> $in(nil) ~> $waitSysCall(TEEAPI) ~> $out(EL') ~> K) if not TEEAPI :: TeeClientApi .
-  ceq k(TEEAPI(EL ; EL') ~> K) = k($callByValArg(EL) ~> $in(nil) ~> $waitSysCall(TEEAPI) ~> $out(EL' | EL) ~> K) if TEEAPI :: TeeClientApi .
-  eq k($callByValArg(nil) ~> $in(VL) ~> K) = k($in(VL) ~> K) .
-  eq k($callByValArg(E , EL) ~> K) = k($callByValInst(E) ~> $callByValArg(EL) ~> K) .
-  eq k($callByValInst(V) ~> $callByValArg(EL) ~> $in(VL) ~> K)  = k($callByValArg(EL) ~> $in(VL , V) ~> K) .
+--- return
 
   eq k(return V ; ~> K) env(ENV) fstack(item(ENV',LM',K',L') :: STACK) nextLoc(L) labels(LM)
    = k(V ~> K') env(ENV') fstack(STACK) nextLoc(L') labels(LM') .

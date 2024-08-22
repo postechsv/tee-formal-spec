@@ -31,28 +31,35 @@ omod PROGRAM-APP-AUX is
   var MEM : Map{Nat,Value?} .
   var FUNC : FuncId .
   var FSIG : FuncSig .
-  vars S S' : CStmt .
-  var FMAP : Map{FuncSig,CStmt} .
+  vars S S' : Stmt .
+  var SL : SList .
+  var SE : SElem .
+  var FMAP : Map{FuncSig,Stmt} .
   var PARAMS : ExpList .
+  var CS : Stmt .
 
   op execute : Program FuncId ValueList -> KConfig .
   op readReturn : FuncId KConfig -> ValueList .
 
   op mRet : -> Var [ctor] .
 
-  op mkPreStmt : ExpList ValueList -> CStmt .
-  eq mkPreStmt((T X, PARAMS), (V,VL)) = T X ; (X = V) ; mkPreStmt(PARAMS, VL) .
-  eq mkPreStmt(nil, nil) = skip ; .
+  op mkPreStmt : ExpList ValueList -> Stmt .
+  eq mkPreStmt((T X, PARAMS), (V,VL)) = T X ; X := V ; mkPreStmt(PARAMS, VL) .
+  eq mkPreStmt(nil, nil) = skip .
 
   op getVars : ExpList -> VarList .
   eq getVars((T X, PARAMS)) = X , getVars(PARAMS) .
   eq getVars(nil) = nil .
 
-  op mkFunMap : Program Map{FuncSig,CStmt} -> Map{FuncSig,CStmt} .
-  eq mkFunMap(FSIG {S} S', FMAP) = mkFunMap(S', insert(FSIG, S, FMAP)) .
-  eq mkFunMap(S S', FMAP) = mkFunMap(S', FMAP) [owise] .
+  op mkFunMap : Program -> Map{FuncSig,Stmt} .
+  eq mkFunMap(P) = mkFunMap(getSList(P)) .
 
-  op getParams : FuncId Map{FuncSig,CStmt} -> ExpList .
+  op mkFunMap : SList -> Map{FuncSig,Stmt} .
+  eq mkFunMap(< FSIG {S} > SL) = FSIG |-> S , mkFunMap(SL) .
+  eq mkFunMap(< S > SL) = mkFunMap(SL) [owise] .
+  eq mkFunMap(nilElem) = empty . --- should be matched with the last statement
+
+  op getParams : FuncId Map{FuncSig,Stmt} -> ExpList .
   eq getParams(FUNC, (T FUNC(PARAMS) |-> S , FMAP)) = PARAMS .
   eq getParams(FUNC, FMAP) = nil [owise] .
 
@@ -60,9 +67,9 @@ omod PROGRAM-APP-AUX is
     = run(
         int mRet ; 
         P S 
-        (mRet = FUNC (XL)) ;
+        mRet := FUNC (XL) ;
       ) 
-  if PARAMS := getParams(FUNC, mkFunMap(P, empty)) 
+  if PARAMS := getParams(FUNC, mkFunMap(P)) 
   /\ XL := getVars(PARAMS) /\ S := mkPreStmt(PARAMS, VL) .
   
   ceq readReturn(FUNC, KS env(ENV) store(MEM) fdecl(((T FUNC(PARAMS) |-> S) , FMAP))) 

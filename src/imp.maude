@@ -88,10 +88,15 @@ fmod IMP-BASE-EXP is
   pr IMP-VALUE .
   pr IMP-VAR .
 
-  sorts PExp RExp FExp LExp Exp .
+--- SExp : Special Expression
+--- PExp : Var Decl.
+--- RExp : RValue
+--- FExp : Function related
+--- LExp : LValue
+  sorts SExp PExp RExp FExp LExp Exp .
   subsort Value < Exp .
   subsort LValue Var < LExp < Exp .
-  subsort PExp RExp FExp < Exp .
+  subsort PExp RExp FExp < Exp < SExp .
 endfm
 
 fmod IMP-LIST is
@@ -127,8 +132,6 @@ fmod IMP-FUNC-SIG is
   pr IMP-EXP-LIST .
 
   sorts FuncSig FuncId .
-
-  op __ : Type Var -> PExp [ctor] .
 
   var T : Type .
   var F : FuncId .
@@ -186,6 +189,7 @@ fmod IMP-EXP is
   op _||_ : Exp Exp -> Exp [ctor gather(E e) prec 55] .
   op !_ : Exp -> Exp [ctor prec 53] .
   op _._ : LExp Var -> LExp [ctor gather(E e) prec 30] .
+  op __ : Type Var -> PExp [ctor prec 30] .
 
   op _(_) : FuncId ExpList -> FExp [ctor prec 30] .
   op _() : FuncId -> FExp [ctor prec 30] .
@@ -222,41 +226,38 @@ fmod IMP-STMT is
   pr IMP-BTYPE .
   pr IMP-REF-TYPE .
 
-  sort Stmt CStmt .
+  sort Stmt .
 
   var F : FuncId .
   var T : Type .
   var X : Var .
-  var S : Stmt .
-  vars CS CS' : CStmt .
+  var S S' : Stmt .
   var E : Exp .
   var EL : ExpList .
-  --- var TEEAPI : TeeApi .
 
-  op _; : Stmt -> CStmt [ctor prec 67] .
-  op _; : Exp -> CStmt [ctor prec 67] .
-  op __ : CStmt CStmt -> CStmt [ctor gather(e E) prec 68] .
+  op _; : SExp -> Stmt [ctor prec 60] .
+  op __ : Stmt Stmt -> Stmt [ctor assoc prec 62] .
 
   op skip : -> Stmt [ctor] .
-  op _=_ : Exp Exp -> Stmt [ctor] .
-  op if(_){_}else{_} : Exp CStmt CStmt -> CStmt [ctor] .
-  op if(_){_} : Exp CStmt -> CStmt [ctor] .
+  op _:=_; : Exp Exp -> Stmt [ctor prec 60] .
+  op if(_){_}else{_} : Exp Stmt Stmt -> Stmt [ctor prec 60] .
+  op if(_){_} : Exp Stmt -> Stmt [ctor prec 60] .
 
-  eq if(E){CS} = if(E){CS}else{skip ;} .
+  eq if(E){S} = if(E){S}else{skip} .
 
-  op while(_){_} : Exp CStmt -> CStmt [ctor] .
-  op goto_ : Label -> Stmt [ctor] .
-  op _:_ : Label CStmt -> CStmt [ctor prec 68] .
+  op while(_){_} : Exp Stmt -> Stmt [ctor prec 60] .
+  op goto_; : Label -> Stmt [ctor prec 60] .
+  op _:_ : Label Stmt -> Stmt [ctor prec 60] .
 
 --- Structure & function declaration
 
-  op _{_} : SType CStmt -> Stmt [ctor prec 49] .
-  op _{_} : FuncSig CStmt -> CStmt [ctor prec 49] .
+  op _{_} : SType Stmt -> SExp [ctor prec 49] .
+  op _{_} : FuncSig Stmt -> Stmt [ctor prec 49] .
 
 --- Function call
 
   --- op call_ : Exp -> Stmt [ctor prec 60] .
-  op return_ : Exp -> Stmt [ctor prec 60] .
+  op return_; : Exp -> Stmt [ctor prec 60] .
 
   --- op _(_;_) : TeeApi ExpList ExpList -> Exp [ctor] .
   --- op _(_;) : TeeApi ExpList -> Exp [ctor] .
@@ -269,34 +270,49 @@ fmod IMP-STMT is
 --- Internal Stmt
 ------------------------------------------------------------
 
-  op $push : -> CStmt [ctor] .
-  op $prepArgs : ExpList ExpList -> CStmt [ctor] .
-  op $exec : CStmt -> CStmt [ctor] .
-  op $setLoc : Var Nat -> CStmt [ctor] .
-  op $callByRefInst : Exp Var -> CStmt [ctor] .
-  op $callByValInst : Exp -> CStmt [ctor] .
-  op $callByRefArg : ExpList -> CStmt [ctor] .
-  op $callByValArg : ExpList -> CStmt [ctor] .
-  op $ignore : -> CStmt [ctor] .
-  op $clearMem : Exp -> CStmt [ctor] .
-  op $waitSysCall : TeeApi -> CStmt [ctor] .
-  op $assign : ExpList ExpList -> CStmt [ctor] .
-  op $callByRefAssign : ValueList VarList -> CStmt [ctor] .
-  op $prep(_) : ExpList -> CStmt [ctor] .
-  op $in(_) : ValueList -> CStmt [ctor] .
-  op $out(_) : ExpList -> CStmt [ctor] .
-  op $out(_|_) : ExpList ExpList -> CStmt [ctor] .
-  op $alloc : CStmt -> CStmt [ctor] .
-  op $allocType : Type -> CStmt [ctor] .
-  op $update : Var Var -> CStmt [ctor] .
+  op $push : -> Stmt [ctor] .
+  op $prepArgs : ExpList ExpList -> Stmt [ctor] .
+  op $exec : Stmt -> Stmt [ctor] .
+  op $setLoc : Var Nat -> Stmt [ctor] .
+  op $callByRefInst : Exp Var -> Stmt [ctor] .
+  op $callByValInst : Exp -> Stmt [ctor] .
+  op $callByRefArg : ExpList -> Stmt [ctor] .
+  op $callByValArg : ExpList -> Stmt [ctor] .
+  op $ignore : -> Stmt [ctor] .
+  op $clearMem : Exp -> Stmt [ctor] .
+  op $waitSysCall : TeeApi -> Stmt [ctor] .
+  op $assign : ExpList ExpList -> Stmt [ctor] .
+  op $callByRefAssign : ValueList VarList -> Stmt [ctor] .
+  op $prep(_) : ExpList -> Stmt [ctor] .
+  op $in(_) : ValueList -> Stmt [ctor] .
+  op $out(_) : ExpList -> Stmt [ctor] .
+  op $out(_|_) : ExpList ExpList -> Stmt [ctor] .
+  op $alloc : Stmt -> Stmt [ctor] .
+  op $allocType : Type -> Stmt [ctor] .
+  op $update : Var Var -> Stmt [ctor] .
+
+------------------------------------------------------------
+--- Auxiliary Functions
+------------------------------------------------------------
+
+  sort SElem SList .
+  subsort SElem < SList .
+
+  op nilElem : -> SList [ctor] .
+  op <_> : Stmt -> SElem .
+  op __ : SList SList -> SList [assoc id: nilElem] .
+  
+  op getSList : Stmt -> SList .
+  eq getSList(S S') = < S > getSList(S') .
+  eq getSList(S) = < S > [owise] .
 endfm
 
 --- view Stmt from TRIV to IMP-STMT is
 ---   sort Elt to Stmt .
 --- endv
 
-view CStmt from TRIV to IMP-STMT is
-  sort Elt to CStmt .
+view Stmt from TRIV to IMP-STMT is
+  sort Elt to Stmt .
 endv
 
 --- IMP programs
@@ -305,7 +321,7 @@ fmod IMP-PROGRAM is
   pr IMP-STMT .
 
   sort Program .
-  subsort CStmt < Program .
+  subsort Stmt < Program .
 endfm
 
 --- Evaluation contexts
@@ -329,11 +345,11 @@ fmod IMP-EVAL-CONTEXT is
   --- op eval : Exp -> KLabel [ctor] .
   op eval(`[`]) : -> KLabel [ctor] .
 
-  op `[`]=_; : Value -> KLabel [ctor] .
-  op _=`[`]; : Exp -> KLabel [ctor] .
+  op `[`]:=_; : Value -> KLabel [ctor] .
+  op _:=`[`]; : Exp -> KLabel [ctor] .
   op `[`]; : -> KLabel [ctor prec 68] .
 
-  op if(`[`]){_}else{_} : CStmt CStmt -> KLabel [ctor] .
+  op if(`[`]){_}else{_} : Stmt Stmt -> KLabel [ctor] .
 
   op return`[`]; : -> KLabel [ctor] .
 
@@ -355,7 +371,7 @@ fmod IMP-STRICTNESS is
   vars V V1 V2 : Value .
   vars LV LV1 : LocValue .
   var SV1 : StructValue .
-  vars S S1 S2 : CStmt .
+  vars S S1 S2 : Stmt .
   var X : Var .
   var K : K .
   var F : FuncId .
@@ -421,12 +437,12 @@ fmod IMP-STRICTNESS is
 --- assign
 
   --- ceq k(E1 = E2 ; ~> K)      = k(E2 ~> E1 = []; ~> K) if not (E2 :: Value) .
-  ceq k(E1 = E2 ; ~> K)      = k(E2 ~> E1 = []; ~> K) if not (E2 :: Value) and E2 :: FExp .
-  ceq k(E1 = E2 ; ~> K)      = k(eval(E2) ~> E1 = []; ~> K) if not (E2 :: Value or E2 :: FExp) .
-   eq k(V2 ~> E1 = []; ~> K) = k(E1 = V2 ; ~> K) .
+  ceq k(E1 := E2 ; ~> K)      = k(E2 ~> E1 := []; ~> K) if not (E2 :: Value) and E2 :: FExp .
+  ceq k(E1 := E2 ; ~> K)      = k(eval(E2) ~> E1 := []; ~> K) if not (E2 :: Value or E2 :: FExp) .
+   eq k(V2 ~> E1 := []; ~> K) = k(E1 := V2 ; ~> K) .
 
-  ceq k(E = V2 ; ~> K)        = k(E ~> [] = V2 ; ~> K) if not E :: Value and E :: LExp .
-   eq k(V1 ~> [] = V2 ; ~> K) = k(V1 = V2 ; ~> K) .
+  ceq k(E := V2 ; ~> K)        = k(E ~> [] := V2 ; ~> K) if not E :: Value and E :: LExp .
+   eq k(V1 ~> [] := V2 ; ~> K) = k(V1 := V2 ; ~> K) .
 
 --- reval
   ceq k(read(E) ~> K)       = k(E ~> read([]) ~> K) if not E :: Value .
@@ -451,7 +467,7 @@ fmod IMP-STRICTNESS is
 
 --- TODO
   ceq k($prep(E , EL) ~> K) = k(E ~> $prep([], EL) ~> K) if not E :: Value .
-   eq k(V ~> $prep([], EL) ~> $in(VL) S ~> K) = k($prep(EL) ~> $in(VL, V) S ~> K) .
+   eq k(V ~> $prep([], EL) ~> $in(VL) ~> K) = k($prep(EL) ~> $in(VL, V) ~> K) .
 
 
   --- ceq k($callByRefInst(E , X) ~> K)
@@ -475,11 +491,11 @@ endfm
 
 fmod IMP-CALL-STACK is
   pr MAP{Var,Nat} * (op _,_ to _;_) .
-  pr MAP{Label,CStmt} * (op undefined to nolabel) .
+  pr MAP{Label,Stmt} * (op undefined to nolabel) .
   inc K-COMPUTATION .
 
   sort StackItem .
-  op item : Map{Var,Nat} Map{Label,CStmt} K Nat -> StackItem [ctor] .
+  op item : Map{Var,Nat} Map{Label,Stmt} K Nat -> StackItem [ctor] .
 
   sort CallStack .
   op nilStack : -> CallStack [ctor] .
@@ -491,19 +507,19 @@ endfm
 fmod IMP-CONFIG is
   pr IMP-PROGRAM .
   pr IMP-CALL-STACK .
-  pr MAP{Label,CStmt} * (op undefined to nolabel) .
+  pr MAP{Label,Stmt} * (op undefined to nolabel) .
   pr MAP{Nat,Value?} * (op _,_ to _;_) .
-  pr MAP{SType,CStmt} * (op undefined to noSDecl) .
-  pr MAP{FuncSig,CStmt} * (op undefined to noFDecl) .
+  pr MAP{SType,Stmt} * (op undefined to noSDecl) .
+  pr MAP{FuncSig,Stmt} * (op undefined to noFDecl) .
   inc K-CONFIG .
 
   op env : Map{Var,Nat} -> KConfigItem [ctor] .
   op store : Map{Nat,Value?} -> KConfigItem [ctor] .
-  op sdecl : Map{SType,CStmt} -> KConfigItem [ctor] .
-  op fdecl : Map{FuncSig,CStmt} -> KConfigItem [ctor] .
+  op sdecl : Map{SType,Stmt} -> KConfigItem [ctor] .
+  op fdecl : Map{FuncSig,Stmt} -> KConfigItem [ctor] .
   op fstack : CallStack -> KConfigItem [ctor] .
   op nextLoc : Nat -> KConfigItem [ctor] .
-  op labels : Map{Label,CStmt} -> KConfigItem [ctor] .
+  op labels : Map{Label,Stmt} -> KConfigItem [ctor] .
 
 endfm
 
@@ -511,9 +527,9 @@ mod IMP-AUX is
   pr IMP-CONFIG .
   pr IMP-STRICTNESS .
 
-  vars S S' : CStmt .
+  vars S S' : Stmt .
   var LB : Label .
-  var LM : Map{Label,CStmt} .
+  var LM : Map{Label,Stmt} .
   var P : Program .
   var N : Nat .
   vars X Y : Var .
@@ -523,7 +539,7 @@ mod IMP-AUX is
 ------------------------------------------------------------
 
   op run : Program -> KConfig .
-  op getLabels : Program Map{Label,CStmt} -> Map{Label,CStmt} .
+  op getLabels : Program Map{Label,Stmt} -> Map{Label,Stmt} .
 
   eq run(P) = k(P) env(empty) store(empty) fdecl(empty) sdecl(empty) fstack(nilStack) nextLoc(0) labels(getLabels(P, empty)) .
 
@@ -531,10 +547,10 @@ mod IMP-AUX is
   eq getLabels(S S' , LM) = getLabels(S , LM) , getLabels(S', LM) .
   eq getLabels(S , LM) = empty [owise] .
 
-  op getOffSet : CStmt Var -> Nat .
+  op getOffSet : Stmt Var -> Nat .
   eq getOffSet(S, X) = getOffSet(S, X, 1) .
 
-  op getOffSet : CStmt Var Nat -> Nat .
+  op getOffSet : Stmt Var Nat -> Nat .
   eq getOffSet(T X ; S, X, N) = N .
   eq getOffSet(T X ;, X, N) = N .
   eq getOffSet(T Y ; S, X, N) = getOffSet(S, X, N + 1) [owise] .
@@ -560,17 +576,17 @@ mod IMP-SEMANTICS is
   var B : Bool .
   vars L L' I I' : Int .
   vars E E' E1 E2 : Exp .
-  vars S S' : CStmt .
+  vars S S' : Stmt .
   var F : FuncId .
   var TEEAPI : TeeApi .
-  var SDCL : Map{SType,CStmt} .
-  var FDCL : Map{FuncSig,CStmt} .
+  var SDCL : Map{SType,Stmt} .
+  var FDCL : Map{FuncSig,Stmt} .
   var STIT : StackItem .
   var STACK : CallStack .
   var VL : ValueList .
   vars EL EL' : ExpList .
   var LB : Label .
-  vars LM LM' : Map{Label,CStmt} .
+  vars LM LM' : Map{Label,Stmt} .
   var P : Program .
   var FSIG : FuncSig .
 
@@ -595,12 +611,12 @@ mod IMP-SEMANTICS is
 
 --- Assign
 
-  rl k(loc(L) = V ; ~> K) store(MEM)
-  => k(                K) store(insert(L, V, MEM)) .
+  rl k(loc(L) := V ; ~> K) store(MEM)
+  => k(                 K) store(insert(L, V, MEM)) .
 
 --- decl & initialization
 
-  rl k(T X = V ; ~> K) => k(T X ; ~> X = V ; ~> K) .
+  rl k(T X := V ; ~> K) => k(T X ; ~> X := V ; ~> K) .
 
 --- exp
 
@@ -616,7 +632,7 @@ mod IMP-SEMANTICS is
   rl  k(# false || E ~> K) => k(E ~> K) .
   rl  k(! (# B) ~> K)      => k(# (not B) ~> K) .
 
-  rl k(skip ; ~> K) 
+  rl k(skip ~> K) 
   => k(K) .
 
   rl k(K ~> S S' ~> K') => k(K ~> S ~> S' ~> K') .
@@ -629,7 +645,7 @@ mod IMP-SEMANTICS is
   rl k(if (# false) {S} else {S'} ~> K) => k(S' ~> K) .
 
   rl k(while (E) {S} ~> K) 
-  => k(if (E) {(S while (E) {S})} else {skip ;} ~> K) .
+  => k(if (E) {(S while (E) {S})} else {skip} ~> K) .
 
 --- declaration
 --- for simplicity we don't allow nested structure.
@@ -638,7 +654,7 @@ mod IMP-SEMANTICS is
    => k(       K) env(insert(X , L , ENV)) store(insert(L , undef , MEM)) nextLoc(L + 1) if not T :: SType .
 
   rl k(struct T X ~> K) sdecl((struct T |-> S , SDCL))
-  => k(T X ; X = struct(T) ; ~> $alloc(S) ~> K) sdecl((struct T |-> S , SDCL)) .
+  => k(T X ; X := struct(T) ; ~> $alloc(S) ~> K) sdecl((struct T |-> S , SDCL)) .
 
 --- alloc
 
@@ -647,7 +663,7 @@ mod IMP-SEMANTICS is
   
   crl k($allocType(T) ~> K) store(MEM) nextLoc(L) => k(K) store((L |-> undef) ; MEM) nextLoc(L + 1) if not T :: SType .
    rl k($allocType(struct T) ~> K) nextLoc(L) sdecl((struct T |-> S , SDCL))
-   => k(loc(L) = struct(T) ; ~> $alloc(S) ~> K) nextLoc(L + 1) sdecl((struct T |-> S , SDCL)) .
+   => k(loc(L) := struct(T) ; ~> $alloc(S) ~> K) nextLoc(L + 1) sdecl((struct T |-> S , SDCL)) .
 
 --- function & structure declaration
 
@@ -675,7 +691,7 @@ mod IMP-SEMANTICS is
 --- call by value, where E should be value
 
   crl k($prepArgs((E, EL), (T X, PARAMS)) ~> K)
-   => k(T X = E ; ~> $prepArgs(EL, PARAMS) ~> K) if not T :: RType .
+   => k(T X := E ; ~> $prepArgs(EL, PARAMS) ~> K) if not T :: RType .
 
 --- Return statement
 
@@ -689,7 +705,7 @@ mod IMP-SEMANTICS is
 
   rl k($prep(nil) ~> K) => k(K) .
 
-  rl k($assign((E,EL), (E',EL')) ~> K) => k(E' = E ; ~> $assign(EL, EL') ~> K) .
+  rl k($assign((E,EL), (E',EL')) ~> K) => k(E' := E ; ~> $assign(EL, EL') ~> K) .
   rl k($assign(EL, nil) ~> K) => k(K) .
 
 
@@ -720,17 +736,17 @@ mod IMP-SEMANTICS-INVISIBLE is
   var B : Bool .
   vars L L' I I' : Int .
   vars E E' E1 E2 : Exp .
-  vars S S' : CStmt .
+  vars S S' : Stmt .
   var F : FuncId .
   --- var TEEAPI : TeeApi .
-  var SDCL : Map{SType,CStmt} .
-  var FDCL : Map{FuncSig,CStmt} .
+  var SDCL : Map{SType,Stmt} .
+  var FDCL : Map{FuncSig,Stmt} .
   var STIT : StackItem .
   var STACK : CallStack .
   var VL : ValueList .
   vars EL EL' : ExpList .
   var LB : Label .
-  vars LM LM' : Map{Label,CStmt} .
+  vars LM LM' : Map{Label,Stmt} .
   var P : Program .
   var FSIG : FuncSig .
 
@@ -761,7 +777,7 @@ mod IMP-SEMANTICS-INVISIBLE is
   eq  k(# false && E ~> K) = k(# false ~> K) .
   eq  k(! (# B) ~> K)      = k(# (not B) ~> K) .
 
-  eq k(skip ; ~> K) 
+  eq k(skip ~> K) 
    = k(K) .
 
   eq k(S S' ~> K) = k(S ~> S' ~> K) .
@@ -774,7 +790,7 @@ mod IMP-SEMANTICS-INVISIBLE is
   eq k(if (# false) {S} else {S'} ~> K) = k(S' ~> K) .
 
   eq k(while (E) {S} ~> K) 
-  = k(if (E) {(S ; while (E) {S})} else {skip ;} ~> K) .
+  = k(if (E) {(S ; while (E) {S})} else {skip} ~> K) .
 
 --- declaration
 --- for simplicity we don't allow nested structure.
@@ -816,7 +832,7 @@ mod IMP-SEMANTICS-INVISIBLE is
 --- call by value, where E should be value
 
   ceq k($prepArgs((E, EL), (T X, PARAMS)) ~> K)
-    = k(T X = E ; ~> $prepArgs(EL, PARAMS) ~> K) if not T :: RType .
+    = k(T X := E ; ~> $prepArgs(EL, PARAMS) ~> K) if not T :: RType .
 
 --- return
 
@@ -825,7 +841,7 @@ mod IMP-SEMANTICS-INVISIBLE is
 
 --- TODO: Clean
 
-  eq k($assign((E,EL), (E',EL')) ~> K) = k(E' = E ; ~> $assign(EL, EL') ~> K) .
+  eq k($assign((E,EL), (E',EL')) ~> K) = k(E' := E ; ~> $assign(EL, EL') ~> K) .
   eq k($assign(EL, nil) ~> K) = k(K) .
 
 

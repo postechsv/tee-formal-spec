@@ -33,18 +33,18 @@ omod PROGRAM-APP-AUX is
   var FSIG : FuncSig .
   vars S S' : CStmt .
   var FMAP : Map{FuncSig,CStmt} .
-  var PARAMS : ParamList .
+  var PARAMS : ExpList .
 
   op execute : Program FuncId ValueList -> KConfig .
   op readReturn : FuncId KConfig -> ValueList .
 
   op mRet : -> Var [ctor] .
 
-  op mkPreStmt : ParamList ValueList -> CStmt .
+  op mkPreStmt : ExpList ValueList -> CStmt .
   eq mkPreStmt((T X, PARAMS), (V,VL)) = T X ; (X = V) ; mkPreStmt(PARAMS, VL) .
   eq mkPreStmt(nil, nil) = skip ; .
 
-  op getVars : ParamList -> VarList .
+  op getVars : ExpList -> VarList .
   eq getVars((T X, PARAMS)) = X , getVars(PARAMS) .
   eq getVars(nil) = nil .
 
@@ -52,7 +52,7 @@ omod PROGRAM-APP-AUX is
   eq mkFunMap(FSIG {S} S', FMAP) = mkFunMap(S', insert(FSIG, S, FMAP)) .
   eq mkFunMap(S S', FMAP) = mkFunMap(S', FMAP) [owise] .
 
-  op getParams : FuncId Map{FuncSig,CStmt} -> ParamList .
+  op getParams : FuncId Map{FuncSig,CStmt} -> ExpList .
   eq getParams(FUNC, (T FUNC(PARAMS) |-> S , FMAP)) = PARAMS .
   eq getParams(FUNC, FMAP) = nil [owise] .
 

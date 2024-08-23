@@ -572,9 +572,6 @@ mod IMP-SEMANTICS is
   rl k(X      ~> K) env((X |-> L) ; ENV)
   => k(loc(L) ~> K) env((X |-> L) ; ENV) .
 
-  --- rl k(struct(T) . X ~> K) sdecl((struct T |-> ((X |--> N $ T') ; SMAP) , SDCL)) 
-  --- => k(loc(N) ~> K) sdecl((struct T |-> ((X |--> N $ T') ; SMAP) , SDCL)) .
-
   crl k(loc(L) . X ~> K) store((L |-> struct(T)) ; MEM) sdecl(((struct T |-> S) , SDCL))
    => k(loc(L + N) ~> K) store((L |-> struct(T)) ; MEM) sdecl(((struct T |-> S) , SDCL)) 
    if N := getOffSet(S, X) .
@@ -720,33 +717,43 @@ mod IMP-SEMANTICS-INVISIBLE is
 --- IMP Semantics
 ------------------------------------------------------------
 
-  --- eq k(X      ~> K) env((X |-> L) ; ENV)
-  ---  = k(loc(L) ~> K) env((X |-> L) ; ENV) .
+  eq k(X      ~> K) env((X |-> L) ; ENV)
+   = k(loc(L) ~> K) env((X |-> L) ; ENV) .
 
-  --- eq k(struct(STRT) . E ~> K) = k(loc(STRT[E]) ~> K) .
+  ceq k(loc(L) . X ~> K) store((L |-> struct(T)) ; MEM) sdecl(((struct T |-> S) , SDCL))
+    = k(loc(L + N) ~> K) store((L |-> struct(T)) ; MEM) sdecl(((struct T |-> S) , SDCL)) 
+  if N := getOffSet(S, X) .
 
-  --- eq k(loc(L) ~> K) store((L |-> V) ; MEM)
-  ---  = k(V      ~> K) store((L |-> V) ; MEM) .
+  eq k(read(loc(L)) ~> K) store((L |-> V) ; MEM)
+   = k(V            ~> K) store((L |-> V) ; MEM) .
 
 --- Assign
 
-  --- eq k(loc(L) = V ; ~> K) store(MEM)
-  ---  = k(                K) store(insert(L, V, MEM)) .
+  eq k(loc(L) := V ; ~> K) store(MEM)
+   = k(                 K) store(insert(L, V, MEM)) .
 
+--- decl & initialization
+
+  eq k(T X := V ; ~> K) = k(T X ; ~> X := V ; ~> K) .
+
+--- exp
 
   eq  k(# I + # I' ~> K)   = k(# (I + I') ~> K) .
+  eq  k(# I - # I' ~> K)   = k(# (I - I') ~> K) .
   eq  k(# I * # I' ~> K)   = k(# (I * I') ~> K) .
   ceq k(# I / # I' ~> K)   = k(# (I quo I') ~> K) if I' =/= 0 .
   eq  k(# I <= # I' ~> K)  = k(# (I <= I') ~> K) .
-  eq  k(V == V' ~> K)     = k(# (V == V') ~> K) .
+  eq  k(V == V' ~> K)      = k(# (V == V') ~> K) .
   eq  k(# true  && E ~> K) = k(E ~> K) .
   eq  k(# false && E ~> K) = k(# false ~> K) .
+  eq  k(# true  || E ~> K) = k(# true ~> K) .
+  eq  k(# false || E ~> K) = k(E ~> K) .
   eq  k(! (# B) ~> K)      = k(# (not B) ~> K) .
 
   eq k(skip ~> K) 
    = k(K) .
 
-  eq k(S S' ~> K) = k(S ~> S' ~> K) .
+  eq k(K ~> S S' ~> K') = k(K ~> S ~> S' ~> K') .
 
   eq k(goto LB ; ~> K) labels(((LB |-> S) , LM)) = k(S) labels(((LB |-> S) , LM)) .
   eq k(goto LB ; ~> K) labels(LM) = k(K) labels(LM) [owise] .
@@ -756,26 +763,30 @@ mod IMP-SEMANTICS-INVISIBLE is
   eq k(if (# false) {S} else {S'} ~> K) = k(S' ~> K) .
 
   eq k(while (E) {S} ~> K) 
-  = k(if (E) {(S ; while (E) {S})} else {skip} ~> K) .
+  = k(if (E) {(S while (E) {S})} else {skip} ~> K) .
 
 --- declaration
 --- for simplicity we don't allow nested structure.
 
-  --- ceq k(T X ~> K) env(ENV) store(MEM) nextLoc(L)
-  ---   = k(       K) env(insert(X , L , ENV)) store(insert(L , undef , MEM)) nextLoc(L + 1) if not T :: SType .
+  ceq k(T X ~> K) env(ENV) store(MEM) nextLoc(L)
+    = k(       K) env(insert(X , L , ENV)) store(insert(L , undef , MEM)) nextLoc(L + 1) if not T :: SType .
 
-  --- eq k(struct T X ~> K) sdecl((struct T |-> SMAP , SDCL))
-  ---  = k(T X ; X = struct(T) ; ~> $alloc(SMAP) ~> K) sdecl((struct T |-> SMAP , SDCL)) .
+  eq k(struct T X ~> K) sdecl((struct T |-> S , SDCL))
+   = k(T X ; X := struct(T) ; ~> $alloc(S) ~> K) sdecl((struct T |-> S , SDCL)) .
 
 --- alloc
 
-  --- eq k($alloc(s N) ~> K) store(MEM) nextLoc(L) = k($alloc(N) ~> K) store((L |-> undef) ; MEM) nextLoc(L + 1) .
-  --- eq k($alloc(0) ~> K) store(MEM) nextLoc(L) = k(K) store((L |-> undef) ; MEM) nextLoc(L + 1) .
+   eq k($alloc(T X ; S) ~> K) = k($allocType(T) ~> $alloc(S) ~> K) .
+   eq k($alloc(T X ;  ) ~> K) = k($allocType(T) ~> K) .
+  
+  ceq k($allocType(T) ~> K) store(MEM) nextLoc(L) = k(K) store((L |-> undef) ; MEM) nextLoc(L + 1) if not T :: SType .
+   eq k($allocType(struct T) ~> K) nextLoc(L) sdecl((struct T |-> S , SDCL))
+    = k(loc(L) := struct(T) ; ~> $alloc(S) ~> K) nextLoc(L + 1) sdecl((struct T |-> S , SDCL)) .
 
 --- function & structure declaration
 
   eq k(FSIG {S} ~> K) fdecl(FDCL) = k(K) fdecl(insert(FSIG, S, FDCL)) .
-  --- eq k(struct T {S} ; ~> K) sdecl(SDCL) = k(K) sdecl(insert(struct T, mkStOffsetMap(S, 1), SDCL)) .
+  eq k(struct T {S} ; ~> K) sdecl(SDCL) = k(K) sdecl(insert(struct T, S, SDCL)) .
 
 --- function call
 
@@ -793,17 +804,20 @@ mod IMP-SEMANTICS-INVISIBLE is
   ceq k($prepArgs((Y, EL) || (T X, PARAMS)) ~> K) env(((Y |-> L) ; ENV))
     = k(T X ; ~> $setLoc(X, L) ~> $prepArgs(EL || PARAMS) ~> K) env(((Y |-> L) ; ENV)) if T :: RType .
   
-   eq k($setLoc(X, L) ~> K) env(((X |-> L') ; ENV)) = k(K) env(((X |-> L) ; ENV)) .
+  eq k($setLoc(X, L) ~> K) env(((X |-> L') ; ENV)) = k(K) env(((X |-> L) ; ENV)) .
 
 --- call by value, where E should be value
 
   ceq k($prepArgs((E, EL) || (T X, PARAMS)) ~> K)
     = k(T X := E ; ~> $prepArgs(EL || PARAMS) ~> K) if not T :: RType .
 
---- return
+--- Return statement
 
   eq k(return V ; ~> K) env(ENV) fstack(item(ENV',LM',K',L') :: STACK) nextLoc(L) labels(LM)
    = k(V ~> K') env(ENV') fstack(STACK) nextLoc(L') labels(LM') .
+
+  eq k(.K) env(ENV) fstack(item(ENV',LM',K',L') :: STACK) nextLoc(L) labels(LM)
+   = k(K') env(ENV') fstack(STACK) nextLoc(L') labels(LM') . --- for void return
 
 --- TODO: Clean
 

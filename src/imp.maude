@@ -271,7 +271,7 @@ fmod IMP-STMT is
 ------------------------------------------------------------
 
   op $push : -> Stmt [ctor] .
-  op $prepArgs : ExpList ExpList -> Stmt [ctor] .
+  op $prepArgs(_||_) : ExpList ExpList -> Stmt [ctor] .
   op $exec : Stmt -> Stmt [ctor] .
   op $setLoc : Var Nat -> Stmt [ctor] .
   op $callByRefInst : Exp Var -> Stmt [ctor] .
@@ -673,25 +673,25 @@ mod IMP-SEMANTICS is
 --- function call
 
   rl k(F(EL) ~> K) fdecl(((T F(PARAMS) |-> S) , FDCL))
-  => k($push ~> $prepArgs(EL, PARAMS) ~> $exec(S) ~> K) fdecl(((T F(PARAMS) |-> S) , FDCL)) .
+  => k($push ~> $prepArgs(EL || PARAMS) ~> $exec(S) ~> K) fdecl(((T F(PARAMS) |-> S) , FDCL)) .
 
-  rl k($push ~> $prepArgs(EL, PARAMS) ~> $exec(S) ~> K) env(ENV) fstack(STACK) nextLoc(L) labels(LM)
-  => k($prepArgs(EL, PARAMS) ~> $exec(S)) env(ENV) fstack(item(ENV,LM,K,L) :: STACK) nextLoc(L) labels(LM) . 
+  rl k($push ~> $prepArgs(EL || PARAMS) ~> $exec(S) ~> K) env(ENV) fstack(STACK) nextLoc(L) labels(LM)
+  => k($prepArgs(EL || PARAMS) ~> $exec(S)) env(ENV) fstack(item(ENV,LM,K,L) :: STACK) nextLoc(L) labels(LM) . 
 
-  rl k($prepArgs(nil, nil) ~> K) => k(K) . 
+  rl k($prepArgs(nil || nil) ~> K) => k(K) . 
   rl k($exec(S)) => k(S) .
 
 --- call by reference, where E should be variable (i.e., Y)
 
-  crl k($prepArgs((Y, EL), (T X, PARAMS)) ~> K) env(((Y |-> L) ; ENV))
-   => k(T X ; ~> $setLoc(X, L) ~> $prepArgs(EL, PARAMS) ~> K) env(((Y |-> L) ; ENV)) if T :: RType .
+  crl k($prepArgs((Y, EL) || (T X, PARAMS)) ~> K) env(((Y |-> L) ; ENV))
+   => k(T X ; ~> $setLoc(X, L) ~> $prepArgs(EL || PARAMS) ~> K) env(((Y |-> L) ; ENV)) if T :: RType .
   
   rl k($setLoc(X, L) ~> K) env(((X |-> L') ; ENV)) => k(K) env(((X |-> L) ; ENV)) .
 
 --- call by value, where E should be value
 
-  crl k($prepArgs((E, EL), (T X, PARAMS)) ~> K)
-   => k(T X := E ; ~> $prepArgs(EL, PARAMS) ~> K) if not T :: RType .
+  crl k($prepArgs((E, EL) || (T X, PARAMS)) ~> K)
+   => k(T X := E ; ~> $prepArgs(EL || PARAMS) ~> K) if not T :: RType .
 
 --- Return statement
 
@@ -814,25 +814,25 @@ mod IMP-SEMANTICS-INVISIBLE is
 --- function call
 
   eq k(F(EL) ~> K) fdecl(((T F(PARAMS) |-> S) , FDCL))
-   = k($push ~> $prepArgs(EL, PARAMS) ~> $exec(S) ~> K) fdecl(((T F(PARAMS) |-> S) , FDCL)) .
+   = k($push ~> $prepArgs(EL || PARAMS) ~> $exec(S) ~> K) fdecl(((T F(PARAMS) |-> S) , FDCL)) .
 
-  eq k($push ~> $prepArgs(EL, PARAMS) ~> $exec(S) ~> K) env(ENV) fstack(STACK) nextLoc(L) labels(LM)
-   = k($prepArgs(EL, PARAMS) ~> $exec(S)) env(ENV) fstack(item(ENV,LM,K,L) :: STACK) nextLoc(L) labels(LM) . 
+  eq k($push ~> $prepArgs(EL || PARAMS) ~> $exec(S) ~> K) env(ENV) fstack(STACK) nextLoc(L) labels(LM)
+   = k($prepArgs(EL || PARAMS) ~> $exec(S)) env(ENV) fstack(item(ENV,LM,K,L) :: STACK) nextLoc(L) labels(LM) . 
 
-  eq k($prepArgs(nil, nil) ~> K) = k(K) . 
+  eq k($prepArgs(nil || nil) ~> K) = k(K) . 
   eq k($exec(S)) = k(S) .
 
 --- call by reference, where E should be variable (i.e., Y)
 
-  ceq k($prepArgs((Y, EL), (T X, PARAMS)) ~> K) env(((Y |-> L) ; ENV))
-    = k(T X ; ~> $setLoc(X, L) ~> $prepArgs(EL, PARAMS) ~> K) env(((Y |-> L) ; ENV)) if T :: RType .
+  ceq k($prepArgs((Y, EL) || (T X, PARAMS)) ~> K) env(((Y |-> L) ; ENV))
+    = k(T X ; ~> $setLoc(X, L) ~> $prepArgs(EL || PARAMS) ~> K) env(((Y |-> L) ; ENV)) if T :: RType .
   
    eq k($setLoc(X, L) ~> K) env(((X |-> L') ; ENV)) = k(K) env(((X |-> L) ; ENV)) .
 
 --- call by value, where E should be value
 
-  ceq k($prepArgs((E, EL), (T X, PARAMS)) ~> K)
-    = k(T X := E ; ~> $prepArgs(EL, PARAMS) ~> K) if not T :: RType .
+  ceq k($prepArgs((E, EL) || (T X, PARAMS)) ~> K)
+    = k(T X := E ; ~> $prepArgs(EL || PARAMS) ~> K) if not T :: RType .
 
 --- return
 

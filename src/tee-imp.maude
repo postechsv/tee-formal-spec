@@ -11,6 +11,54 @@ fmod TEE-IMP-API is
   subsort TeeApi < FuncId .
 endfm
 
+--- This module provides a set of aux functions to implement TEE syscall.
+
+fmod TEE-API-IMP-PROG-AUX is
+  pr IMP-PROGRAM .
+  pr TEE-IMP-API .
+  
+------------------------------------------------------------
+--- Auxiliary functions to make Syscalls
+------------------------------------------------------------
+
+  sort SysAnnot .
+  ops @inArgs @outArgs : ExpList -> SysAnnot [ctor] .
+  op @return : Exp -> SysAnnot [ctor] .
+  op @body : Stmt -> SysAnnot [ctor] .
+  op @noReturn : -> SysAnnot [ctor] .
+
+  var F : FuncId .
+  var T : Type .
+  vars XL IN OUT EL : ExpList .
+  var E : Exp .
+  var S : Stmt .
+
+  op defineSysCall : FuncSig SysAnnot SysAnnot SysAnnot SysAnnot -> Program .
+  eq defineSysCall(T F(XL), @inArgs(IN), @outArgs(OUT), @body(S), @return(E))
+   = T F(XL) {
+        $prep(mkEval(IN))
+        $in(nil)
+        $waitSysCall(F)
+        $out(OUT) 
+        S
+        return E ;
+      } . 
+ 
+  eq defineSysCall(void F(XL), @inArgs(IN), @outArgs(OUT), @body(S), @noReturn)
+   = void F(XL) {
+        $prep(mkEval(IN))
+        $in(nil)
+        $waitSysCall(F)
+        S
+        $out(OUT) 
+      } 
+  . 
+
+  op mkEval : ExpList -> ExpList .
+  eq mkEval(E, EL) = eval(E), mkEval(EL) .
+  eq mkEval(nil) = nil .
+endfm
+
 --- This module defines IMP values for TEE client API.
 
 mod TEE-CLIENT-IMP-VALUE is
@@ -256,6 +304,7 @@ mod PERSISTENT-OBJECT-TEE-CALL is
   pr RETURN-IMP-VALUE .
   pr PERSISTENT-OBJECT-FUNC .
   pr PERSISTENT-OBJECT-IMP-VALUE .
+  pr TEE-API-IMP-PROG-AUX .
 
   var STORID : StorageIdentifier .
   var FILE : FileId .
@@ -274,7 +323,21 @@ mod PERSISTENT-OBJECT-TEE-CALL is
 
   eq makeCall(CreatePersistentObject , (# STORID , # FILE , # DATAFLAGS , # HANDLE , # DATA , # DATASIZE , # OPTHANDLE)) 
    = apiCall(CreatePersistentObject , (fileId(FILE) , flags(DATAFLAGS) , handle(HANDLE) , data(DATA) , size(DATASIZE) , opt(OPTHANDLE))) .
-  eq makeReturnStmt(CreatePersistentObject , RET , handle(HANDLE) , EL) = $assign((# RET , # HANDLE) , EL) .
+  eq makeReturnStmt(CreatePersistentObject , RET , handle(HANDLE) , EL) = 
+    auto 'ret := # 0 ;
+    $assign((# RET , # HANDLE) , EL) .
+
+  op CreatePersistentObjectLib : -> Program .
+  eq CreatePersistentObjectLib 
+  = defineSysCall(
+      int CreatePersistentObject(auto 'storageId, auto 'fileId, 
+                                 auto 'dataFlags, auto 'handle, auto 'data, auto 'size, 
+                                 auto * 'optHandle),                         --- signature 
+      @inArgs('storageId, 'fileId, 'dataFlags, 'handle, 'data, 'size, 'optHandle),                   
+      @outArgs('ret, 'handle),                  
+      @body(skip),
+      @return('ret)                                                        --- return
+  ) .
 
   eq makeCall(CloseAndDeletePersistentObject1 , (# HANDLE)) = apiCall(CloseAndDeletePersistentObject1 , handle(HANDLE)) .
   eq makeReturnStmt(CloseAndDeletePersistentObject1 , RET , empty , (R , H)) = $clearMem(H) $assign(# RET , R) .
@@ -282,6 +345,14 @@ mod PERSISTENT-OBJECT-TEE-CALL is
 
   eq makeCall(RenamePersistentObject , (# HANDLE , # FILE)) = apiCall(RenamePersistentObject , (handle(HANDLE) , fileId(FILE))) .
   eq makeReturnStmt(RenamePersistentObject , RET , empty , R) = $assign(# RET , R) .
+
+
+  op PersistLibs : -> Program .
+  eq PersistLibs = 
+    CreatePersistentObjectLib 
+
+
+  .
 endm
 
 --- This module defines IMP call and return for generic object functions.
@@ -551,6 +622,7 @@ mod TEE-INTERNAL-CLIENT-CALL is
   pr ID-IMP-VALUE .
   pr TEE-IMP-STRUCT-DECL .
   pr RETURN-IMP-VALUE .
+  pr TEE-API-IMP-PROG-AUX .
 
   var EL : ExpList .
   var HANDLE : HandleId .
@@ -559,46 +631,50 @@ mod TEE-INTERNAL-CLIENT-CALL is
   var RO : ReturnOrigin .
   var FUNC : FuncId .
   var VL : ValueList .
-  vars E1 E2 E3 : Exp .
+  vars E E1 E2 E3 : Exp .
   vars V V1 V2 V3 V4 : Value .
 
   eq makeCall(TeeOpenTASession , (# TA , # TO )) = apiCall(TeeOpenTASession , (uuid(TA) , taCancelReqTime(TO))) .
   eq makeReturnStmt(TeeOpenTASession , TEE-SUCCESS , (handle(HANDLE) , returnOrig(RO)) , EL) = $assign((# TEE-SUCCESS , # HANDLE , # RO) , EL) .
 
   eq makeCall(TeeInvokeTACommand , (# HANDLE , # FUNC , VL)) = apiCall(TeeInvokeTACommand , (handle(HANDLE) , funcId(FUNC) , values(VL))) .
-  eq makeReturnStmt(TeeInvokeTACommand , TEE-SUCCESS , values((V1, V2, V3, V4)) , (E1 , E2 , E3)) = 
-    $assign((# TEE-SUCCESS , # TEE-ORIGIN-TRUSTED-APP), (E1, E3))
-    E2 . param1 := V1 ; E2 . param2 := V2 ; E2 . param3 := V3 ; E2 . param4 := V4 ; .
+  eq makeReturnStmt(TeeInvokeTACommand , TEE-SUCCESS , values(V) , (E1 , E2)) = 
+    auto 'ret := # TEE-SUCCESS ;
+    E2 := # TEE-ORIGIN-TRUSTED-APP ;
+    E1 := V ; .
+
+
+  op TeeOpenTASessionLib : -> Program .
+  eq TeeOpenTASessionLib 
+  = defineSysCall(
+      int TeeOpenTASession(auto 'dest, auto 'TO, auto * 'code, auto * 'handle, auto * 'orig),
+      @inArgs('dest, 'TO),                   
+      @outArgs('code, 'handle, 'orig),       
+      @body(skip),            
+      @return(# 1)
+  ) .
+
+  op TeeInvokeTACommandLib : -> Program .
+  eq TeeInvokeTACommandLib 
+  = defineSysCall(
+      int TeeInvokeTACommand(auto * 'sess, auto 'cmd, auto * 'params, auto * 'orig),
+      @inArgs('sess, 'cmd, 'params),                  
+      @outArgs('params, 'orig),                
+      @body(skip),    
+      @return('ret)
+  ) .
+
+  op SessionLibs : -> Program .
+  eq SessionLibs = 
+    TeeOpenTASessionLib 
+    TeeInvokeTACommandLib
+  .
 endm
 
 mod TEE-API-IMP-PROGRAM is
   pr TEE-IMP-API .
+  pr PERSISTENT-OBJECT-TEE-CALL .
   pr TEE-INTERNAL-CLIENT-CALL .
-
-
-  op TeeOpenTASessionImpl : -> Program .
-  eq TeeOpenTASessionImpl =
-    int TeeOpenTASession(auto 'dest, auto 'TO, auto * 'code, auto * 'handle, auto * 'orig){
-      $prep(eval('dest), eval('TO))
-      $in(nil)
-      $waitSysCall(TeeOpenTASession)
-      $out('code, 'handle, 'orig)
-      --- return # 1 ;
-    } 
-  .
---- TeeInvokeTACommand(handle , # main , params , out)
-  op TeeInvokeTACommandImpl : -> Program .
-  eq TeeInvokeTACommandImpl =
-    int TeeInvokeTACommand(auto * 'sess, auto 'cmd, auto * 'params, auto * 'orig){
-      --- 'params . param1, 'params . param2, 'params . param3, 'params . param4
-      --- $prep(eval('sess), eval('cmd), eval('params . param1), eval('params . param2), eval('params . param3), eval('params . param4))
-      $prep(eval('sess), eval('cmd), eval('params))
-      $in(nil)
-      $waitSysCall(TeeInvokeTACommand)
-      $out('orig)
-      --- return # 1 ;
-    } 
-  .
 
   op Params : -> Type [ctor] .
 
@@ -611,8 +687,8 @@ mod TEE-API-IMP-PROGRAM is
       int param4 ;
     } ;
 
-    TeeOpenTASessionImpl 
-    TeeInvokeTACommandImpl
-    .
+    PersistLibs
+    SessionLibs 
+  .
 
 endm

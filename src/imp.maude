@@ -274,15 +274,8 @@ fmod IMP-STMT is
   op $prepArgs(_||_) : ExpList ExpList -> Stmt [ctor] .
   op $exec : Stmt -> Stmt [ctor] .
   op $setLoc : Var Nat -> Stmt [ctor] .
-  op $callByRefInst : Exp Var -> Stmt [ctor] .
-  op $callByValInst : Exp -> Stmt [ctor] .
-  op $callByRefArg : ExpList -> Stmt [ctor] .
-  op $callByValArg : ExpList -> Stmt [ctor] .
-  op $ignore : -> Stmt [ctor] .
-  op $clearMem : Exp -> Stmt [ctor] .
   op $waitSysCall : TeeApi -> Stmt [ctor] .
   op $assign : ExpList ExpList -> Stmt [ctor] .
-  op $callByRefAssign : ValueList VarList -> Stmt [ctor] .
   op $prep(_) : ExpList -> Stmt [ctor] .
   op $in(_) : ValueList -> Stmt [ctor] .
   op $out(_) : ExpList -> Stmt [ctor] .
@@ -352,10 +345,6 @@ fmod IMP-EVAL-CONTEXT is
   op if(`[`]){_}else{_} : Stmt Stmt -> KLabel [ctor] .
 
   op return`[`]; : -> KLabel [ctor] .
-
-  op $callByRefInst(`[`]`,_) : Var -> KLabel [ctor] .
-  op $callByValInst(`[`]) : -> KLabel [ctor] .
-  op $clearMem`[`] : -> KLabel [ctor] .
 endfm
 
 --- Heating/cooling rules for IMP
@@ -469,22 +458,6 @@ fmod IMP-STRICTNESS is
   ceq k($prep(E , EL) ~> K) = k(E ~> $prep([], EL) ~> K) if not E :: Value .
    eq k(V ~> $prep([], EL) ~> $in(VL) ~> K) = k($prep(EL) ~> $in(VL, V) ~> K) .
 
-
-  --- ceq k($callByRefInst(E , X) ~> K)
-  ---   = k(lvalue(E) ~> $callByRefInst([] , X) ~> K) if not E :: Value .
-  ---  eq k(V ~> $callByRefInst([] , X) ~> K) 
-  ---   = k($callByRefInst(V , X) ~> K) .
-
-  --- ceq k($callByValInst(E) ~> K)
-  ---   = k(leval(E) ~> $callByValInst([]) ~> K) if not E :: Value .
-
-  --- ceq k(V ~> $callByValInst([]) ~> K) 
-  ---   = k($callByValInst(V) ~> K) if not V :: LValue .
-
-  --- ceq k($clearMem(E) ~> K)
-  ---   = k(lvalue(E) ~> $clearMem [] ~> K) if not E :: LocValue .
-   eq k(LV ~> $clearMem [] ~> K)
-    = k($clearMem(LV) ~> K) .
 endfm
 
 --- Call stacks for IMP
@@ -707,13 +680,6 @@ mod IMP-SEMANTICS is
 
   rl k($assign((E,EL), (E',EL')) ~> K) => k(E' := E ; ~> $assign(EL, EL') ~> K) .
   rl k($assign(EL, nil) ~> K) => k(K) .
-
-
-  rl k($ignore ~> K) => k(K) .
-
---- TODO : use lvalue instead of var
-  rl k($clearMem(loc(L)) ~> K) store((L |-> V) ; MEM) => k(K) store((L |-> undef) ; MEM) .
-
 endm
 
 --- This module provides invisible reduction for IMP semantics.
@@ -843,11 +809,5 @@ mod IMP-SEMANTICS-INVISIBLE is
 
   eq k($assign((E,EL), (E',EL')) ~> K) = k(E' := E ; ~> $assign(EL, EL') ~> K) .
   eq k($assign(EL, nil) ~> K) = k(K) .
-
-
-  eq k($ignore ~> K) = k(K) .
-
---- TODO : use lvalue instead of var
-  eq k($clearMem(loc(L)) ~> K) store((L |-> V) ; MEM) = k(K) store((L |-> undef) ; MEM) .
 
 endm

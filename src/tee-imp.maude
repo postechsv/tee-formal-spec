@@ -258,12 +258,12 @@ mod TRANSIENT-OBJECT-TEE-CALL is
   eq makeReturnStmt(AllocateTransientObject , TEE-ERROR-NOT-SUPPORTED , empty , (R , H)) = $assign(# TEE-ERROR-NOT-SUPPORTED , R) .
 
   eq makeCall(FreeTransientObject , (# HANDLE)) = apiCall(FreeTransientObject , handle(HANDLE)) .
-  eq makeReturnStmt(FreeTransientObject , noReturnCode , empty , E) = $clearMem(E) .
+  eq makeReturnStmt(FreeTransientObject , noReturnCode , empty , E) = skip .
   --- TODO: Problem - No canonical states when FreeTransientObject(# TEE-HANDLE-NULL) 
-  eq makeReturnStmt(FreeTransientObject , noReturnCode , handle(TEE-HANDLE-NULL) , E) = $ignore .
+  eq makeReturnStmt(FreeTransientObject , noReturnCode , handle(TEE-HANDLE-NULL) , E) = skip .
 
   eq makeCall(ResetTransientObject , (# HANDLE)) = apiCall(ResetTransientObject , handle(HANDLE)) .
-  eq makeReturnStmt(ResetTransientObject , noReturnCode , empty , nil) = $ignore .
+  eq makeReturnStmt(ResetTransientObject , noReturnCode , empty , nil) = skip .
 
   eq makeCall(PopulateTransientObject , (# HANDLE , # ATTRS)) = apiCall(PopulateTransientObject , (handle(HANDLE) , attrs(ATTRS))) .
   eq makeReturnStmt(PopulateTransientObject , RET , empty , R) = $assign(# RET , R) .
@@ -313,19 +313,39 @@ mod PERSISTENT-OBJECT-TEE-CALL is
   var DATA : List{Data} .
   var DATASIZE : DataSize .
   var RET : ReturnCode .
+  var E : Exp .
   var EL : ExpList .
   vars R H : Exp .
 
---- TODO: CONSIDER STORAGE IDENTIFIER
+------------------------------------------------------------
+--- 'TEE_OpenPersistentObject' Syscall
+------------------------------------------------------------
+
   eq makeCall(OpenPersistentObject , (# STORID , # FILE , # DATAFLAGS)) 
    = apiCall(OpenPersistentObject , (fileId(FILE) , flags(DATAFLAGS))) . 
-  eq makeReturnStmt(OpenPersistentObject , RET , handle(HANDLE) , EL) = $assign((# RET , # HANDLE) , EL) .
+  eq makeReturnStmt(OpenPersistentObject , RET , handle(HANDLE) , E) = 
+    auto 'ret := # RET ;
+    E := # HANDLE ; .
+
+  op OpenPersistentObjectLib : -> Program .
+  eq OpenPersistentObjectLib 
+  = defineSysCall(
+      int OpenPersistentObject(auto 'storageId, auto 'fileId, auto 'dataFlags, auto * 'handle),
+      @inArgs('storageId, 'fileId, 'dataFlags), --- should match with the makeCall              
+      @outArgs('handle),                        --- should match with the makeReturnStmt
+      @body(skip),
+      @return('ret)
+  ) .
+
+------------------------------------------------------------
+--- 'TEE_CreatePersistentObject' Syscall
+------------------------------------------------------------
 
   eq makeCall(CreatePersistentObject , (# STORID , # FILE , # DATAFLAGS , # HANDLE , # DATA , # DATASIZE , # OPTHANDLE)) 
    = apiCall(CreatePersistentObject , (fileId(FILE) , flags(DATAFLAGS) , handle(HANDLE) , data(DATA) , size(DATASIZE) , opt(OPTHANDLE))) .
-  eq makeReturnStmt(CreatePersistentObject , RET , handle(HANDLE) , EL) = 
-    auto 'ret := # 0 ;
-    $assign((# RET , # HANDLE) , EL) .
+  eq makeReturnStmt(CreatePersistentObject , RET , handle(HANDLE) , E) = 
+    auto 'ret := # RET ;
+    E := # HANDLE ; .
 
   op CreatePersistentObjectLib : -> Program .
   eq CreatePersistentObjectLib 
@@ -334,14 +354,36 @@ mod PERSISTENT-OBJECT-TEE-CALL is
                                  auto 'dataFlags, auto 'handle, auto 'data, auto 'size, 
                                  auto * 'optHandle),                         --- signature 
       @inArgs('storageId, 'fileId, 'dataFlags, 'handle, 'data, 'size, 'optHandle),                   
-      @outArgs('ret, 'handle),                  
+      @outArgs('optHandle),                  
       @body(skip),
       @return('ret)                                                        --- return
   ) .
 
+------------------------------------------------------------
+--- 'TEE_CloseAndDeletePersistentObject1' Syscall
+------------------------------------------------------------
+
   eq makeCall(CloseAndDeletePersistentObject1 , (# HANDLE)) = apiCall(CloseAndDeletePersistentObject1 , handle(HANDLE)) .
-  eq makeReturnStmt(CloseAndDeletePersistentObject1 , RET , empty , (R , H)) = $clearMem(H) $assign(# RET , R) .
-  eq makeReturnStmt(CloseAndDeletePersistentObject1 , RET , handle(TEE-HANDLE-NULL) , (R , H)) = $assign(# RET , R) .
+  eq makeReturnStmt(CloseAndDeletePersistentObject1 , RET , empty , (H)) = 
+    auto 'ret := # RET ; . 
+  
+  eq makeReturnStmt(CloseAndDeletePersistentObject1 , RET , handle(HANDLE) , (H)) = 
+    auto 'ret := # RET ;
+    H := # HANDLE ; .
+
+  op CloseAndDeletePersistentObjectLib : -> Program .
+  eq CloseAndDeletePersistentObjectLib 
+  = defineSysCall(
+      int CloseAndDeletePersistentObject1(auto * 'handle),
+      @inArgs('handle),                         --- should match with the makeCall              
+      @outArgs('handle),                        --- should match with the makeReturnStmt
+      @body(skip),
+      @return('ret)
+  ) .
+
+------------------------------------------------------------
+--- 'TEE_RenamePersistentObject' Syscall
+------------------------------------------------------------
 
   eq makeCall(RenamePersistentObject , (# HANDLE , # FILE)) = apiCall(RenamePersistentObject , (handle(HANDLE) , fileId(FILE))) .
   eq makeReturnStmt(RenamePersistentObject , RET , empty , R) = $assign(# RET , R) .
@@ -349,8 +391,9 @@ mod PERSISTENT-OBJECT-TEE-CALL is
 
   op PersistLibs : -> Program .
   eq PersistLibs = 
+    OpenPersistentObjectLib
     CreatePersistentObjectLib 
-
+    CloseAndDeletePersistentObjectLib
 
   .
 endm
@@ -399,8 +442,8 @@ mod GENERIC-OBJECT-TEE-CALL is
   eq makeReturnStmt(GetObjectValueAttribute , RET , constVal(V) , EL) = $assign((# RET , # V) , EL) .
 
   eq makeCall(CloseObject , (# HANDLE)) = apiCall(CloseObject , handle(HANDLE)) .
-  eq makeReturnStmt(CloseObject , noReturnCode , empty , E) = $clearMem(E) .
-  eq makeReturnStmt(CloseObject , noReturnCode , handle(TEE-HANDLE-NULL) , E) = $ignore .
+  eq makeReturnStmt(CloseObject , noReturnCode , empty , E) = skip .
+  eq makeReturnStmt(CloseObject , noReturnCode , handle(TEE-HANDLE-NULL) , E) = skip .
 endm
 
 --- This module defines IMP call and return for persistent object enumeration functions.
@@ -434,11 +477,11 @@ mod ENUMERATOR-OBJECT-TEE-CALL is
   eq makeReturnStmt(AllocatePersistentObjectEnumerator , RET , handle(HANDLE) , EL) = $assign((# RET , # HANDLE) , EL) .
   
   eq makeCall(FreePersistentObjectEnumerator , (# HANDLE)) = apiCall(FreePersistentObjectEnumerator , handle(HANDLE)) .
-  eq makeReturnStmt(FreePersistentObjectEnumerator , noReturnCode , empty , E) = $clearMem(E) .
-  eq makeReturnStmt(FreePersistentObjectEnumerator , noReturnCode , handle(TEE-HANDLE-NULL) , E) = $ignore .
+  eq makeReturnStmt(FreePersistentObjectEnumerator , noReturnCode , empty , E) = skip .
+  eq makeReturnStmt(FreePersistentObjectEnumerator , noReturnCode , handle(TEE-HANDLE-NULL) , E) = skip .
 
   eq makeCall(ResetPersistentObjectEnumerator , (# HANDLE)) = apiCall(ResetPersistentObjectEnumerator , handle(HANDLE)) .
-  eq makeReturnStmt(ResetPersistentObjectEnumerator , noReturnCode , empty , nil) = $ignore .
+  eq makeReturnStmt(ResetPersistentObjectEnumerator , noReturnCode , empty , nil) = skip .
 
   eq makeCall(StartPersistentObjectEnumerator , (# HANDLE , # STORID)) = apiCall(StartPersistentObjectEnumerator , handle(HANDLE)) .
   eq makeReturnStmt(StartPersistentObjectEnumerator , RET , empty , E) = $assign(# RET , E) .
@@ -523,11 +566,11 @@ mod CRYPTO-OPERATION-TEE-CALL is
   eq makeReturnStmt(AllocateOperation , RET , empty , (E , E')) = $assign(# RET , E) .
   
   eq makeCall(FreeOperation , (# HANDLE)) = apiCall(FreeOperation , handle(HANDLE)) .
-  eq makeReturnStmt(FreeOperation , noReturnCode , empty , E) = $clearMem(E) .
-  eq makeReturnStmt(FreeOperation , noReturnCode , handle(TEE-HANDLE-NULL) , E) = $ignore .
+  eq makeReturnStmt(FreeOperation , noReturnCode , empty , E) = skip .
+  eq makeReturnStmt(FreeOperation , noReturnCode , handle(TEE-HANDLE-NULL) , E) = skip .
   
   eq makeCall(ResetOperation , (# HANDLE)) = apiCall(ResetOperation , handle(HANDLE)) .
-  eq makeReturnStmt(ResetOperation , noReturnCode , empty , nil) = $ignore .
+  eq makeReturnStmt(ResetOperation , noReturnCode , empty , nil) = skip .
 
   eq makeCall(SetOperationKey , (# HANDLE1 , # HANDLE2)) = apiCall(SetOperationKey , (handle(HANDLE1) , keyHandle(HANDLE2))) .
   eq makeReturnStmt(SetOperationKey , RET , empty , E) = $assign(# RET , E) .
@@ -547,14 +590,14 @@ mod CRYPTO-OPERATION-TEE-CALL is
   --- eq makeReturnStmt(SetOperationKey2Return(RET) , E) = $assign(# RET , E) .
 
   eq makeCall(CopyOperation , (# HANDLE1 , # HANDLE2)) = apiCall(CopyOperation , (trgHandle(HANDLE1) , srcHandle(HANDLE2))) .
-  eq makeReturnStmt(CopyOperation , noReturnCode , empty , nil) = $ignore .
+  eq makeReturnStmt(CopyOperation , noReturnCode , empty , nil) = skip .
 
   --- eq makeCall(IsAlgorithmSupported , (# ALGO , # ELEM)) = IsAlgorithmSupportedCall(ALGO , ELEM) .
   --- eq makeReturnStmt(IsAlgorithmSupportedReturn(RET) , E) = $assign(# RET , E) .
 
 --- Message Digest
   eq makeCall(DigestUpdate , (# HANDLE , # DATA)) = apiCall(DigestUpdate , (handle(HANDLE) , data(DATA))) .
-  eq makeReturnStmt(DigestUpdate , noReturnCode , empty , nil) = $ignore .
+  eq makeReturnStmt(DigestUpdate , noReturnCode , empty , nil) = skip .
   
   eq makeCall(DigestDoFinal , (# HANDLE , # DATA)) = apiCall(DigestDoFinal , (handle(HANDLE) , data(DATA))) .
   eq makeReturnStmt(DigestDoFinal , TEE-SUCCESS , data(DATA) , EL) = $assign((# TEE-SUCCESS , # DATA) , EL) .
@@ -565,7 +608,7 @@ mod CRYPTO-OPERATION-TEE-CALL is
 
 --- Symmetric Cipher
   eq makeCall(CipherInit , (# HANDLE , # IV)) = apiCall(CipherInit , (handle(HANDLE) , iv(IV))) .
-  eq makeReturnStmt(CipherInit , noReturnCode , empty , nil) = $ignore .
+  eq makeReturnStmt(CipherInit , noReturnCode , empty , nil) = skip .
 
   eq makeCall(CipherUpdate , (# HANDLE , # DL)) = apiCall(CipherUpdate , (handle(HANDLE) , data(DL))) .
   eq makeReturnStmt(CipherUpdate , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
@@ -576,10 +619,10 @@ mod CRYPTO-OPERATION-TEE-CALL is
 
 --- MAC
   eq makeCall(MACInit , (# HANDLE , # IV)) = apiCall(MACInit , (handle(HANDLE) , iv(IV))) .
-  eq makeReturnStmt(MACInit , noReturnCode , empty , nil) = $ignore .
+  eq makeReturnStmt(MACInit , noReturnCode , empty , nil) = skip .
 
   eq makeCall(MACUpdate , (# HANDLE , # DL)) = apiCall(MACUpdate , (handle(HANDLE) , data(DL))) .
-  eq makeReturnStmt(MACUpdate , noReturnCode , empty , nil) = $ignore .
+  eq makeReturnStmt(MACUpdate , noReturnCode , empty , nil) = skip .
 
   eq makeCall(MACComputeFinal , (# HANDLE , # DL)) = apiCall(MACComputeFinal , (handle(HANDLE) , data(DL))) .
   eq makeReturnStmt(MACComputeFinal , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
@@ -592,7 +635,7 @@ mod CRYPTO-OPERATION-TEE-CALL is
   eq makeReturnStmt(AEInit , RET , empty , E) = $assign(# RET , E) .
 
   eq makeCall(AEUpdateAAD , (# HANDLE , # DL)) = apiCall(AEUpdateAAD , (handle(HANDLE) , data(DL))) .
-  eq makeReturnStmt(AEUpdateAAD , noReturnCode , empty , E) = $ignore .
+  eq makeReturnStmt(AEUpdateAAD , noReturnCode , empty , E) = skip .
 
   eq makeCall(AEUpdate , (# HANDLE , # DL)) = apiCall(AEUpdate , (handle(HANDLE) , data(DL))) .
   eq makeReturnStmt(AEUpdate , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
@@ -632,17 +675,11 @@ mod TEE-INTERNAL-CLIENT-CALL is
   var FUNC : FuncId .
   var VL : ValueList .
   vars E E1 E2 E3 : Exp .
+  var RET : ReturnCode .
   vars V V1 V2 V3 V4 : Value .
 
   eq makeCall(TeeOpenTASession , (# TA , # TO )) = apiCall(TeeOpenTASession , (uuid(TA) , taCancelReqTime(TO))) .
   eq makeReturnStmt(TeeOpenTASession , TEE-SUCCESS , (handle(HANDLE) , returnOrig(RO)) , EL) = $assign((# TEE-SUCCESS , # HANDLE , # RO) , EL) .
-
-  eq makeCall(TeeInvokeTACommand , (# HANDLE , # FUNC , VL)) = apiCall(TeeInvokeTACommand , (handle(HANDLE) , funcId(FUNC) , values(VL))) .
-  eq makeReturnStmt(TeeInvokeTACommand , TEE-SUCCESS , values(V) , (E1 , E2)) = 
-    auto 'ret := # TEE-SUCCESS ;
-    E2 := # TEE-ORIGIN-TRUSTED-APP ;
-    E1 := V ; .
-
 
   op TeeOpenTASessionLib : -> Program .
   eq TeeOpenTASessionLib 
@@ -653,6 +690,12 @@ mod TEE-INTERNAL-CLIENT-CALL is
       @body(skip),            
       @return(# 1)
   ) .
+
+  eq makeCall(TeeInvokeTACommand , (# HANDLE , # FUNC , VL)) = apiCall(TeeInvokeTACommand , (handle(HANDLE) , funcId(FUNC) , values(VL))) .
+  eq makeReturnStmt(TeeInvokeTACommand , RET , values(V) , (E1 , E2)) = 
+    auto 'ret := # RET ;
+    E2 := # TEE-ORIGIN-TRUSTED-APP ;
+    E1 := V ; .
 
   op TeeInvokeTACommandLib : -> Program .
   eq TeeInvokeTACommandLib 

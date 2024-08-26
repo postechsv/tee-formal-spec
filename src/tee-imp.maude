@@ -239,7 +239,7 @@ mod TRANSIENT-OBJECT-TEE-CALL is
   pr GENERIC-OBJECT-IMP-VALUE .
   pr PERSISTENT-OBJECT-IMP-VALUE .
   pr BASIC-DATA .
-  pr TEE-IMP-API .
+  pr TEE-API-IMP-PROG-AUX .
 
   var OBJTYPE : ObjectType .
   var KEYSIZE : CryptoKeySize .
@@ -252,15 +252,50 @@ mod TRANSIENT-OBJECT-TEE-CALL is
   vars E R H : Exp .
   var EL : ExpList .
 
+------------------------------------------------------------
+--- 'TEE_AllocateTransientObject' Syscall
+------------------------------------------------------------
+
   eq makeCall(AllocateTransientObject , (# OBJTYPE , # KEYSIZE)) = apiCall(AllocateTransientObject , (type(OBJTYPE) , size(KEYSIZE))) .
-  eq makeReturnStmt(AllocateTransientObject , TEE-SUCCESS , handle(HANDLE) , EL) = $assign((# TEE-SUCCESS , # HANDLE) , EL) .
-  eq makeReturnStmt(AllocateTransientObject , TEE-ERROR-OUT-OF-MEMORY , empty , (R , H)) = $assign(# TEE-ERROR-OUT-OF-MEMORY , R) .
-  eq makeReturnStmt(AllocateTransientObject , TEE-ERROR-NOT-SUPPORTED , empty , (R , H)) = $assign(# TEE-ERROR-NOT-SUPPORTED , R) .
+  eq makeReturnStmt(AllocateTransientObject , TEE-SUCCESS , handle(HANDLE) , E) = 
+    auto 'ret := # TEE-SUCCESS ;
+    E := # HANDLE ; .
+
+  eq makeReturnStmt(AllocateTransientObject , TEE-ERROR-OUT-OF-MEMORY , empty , (H)) = auto 'ret := # TEE-ERROR-OUT-OF-MEMORY ; .
+  eq makeReturnStmt(AllocateTransientObject , TEE-ERROR-NOT-SUPPORTED , empty , (H)) = auto 'ret := # TEE-ERROR-NOT-SUPPORTED ; .
+
+  op AllocateTransientObjectLib : -> Program .
+  eq AllocateTransientObjectLib 
+  = defineSysCall(
+      int AllocateTransientObject(auto 'objType, auto 'size, auto * 'handle),
+      @inArgs('objType, 'size),                 --- should match with the makeCall              
+      @outArgs('handle),                        --- should match with the makeReturnStmt
+      @body(skip),
+      @return('ret)
+  ) .
+
+------------------------------------------------------------
+--- 'TEE_FreeTransientObject' Syscall
+------------------------------------------------------------
 
   eq makeCall(FreeTransientObject , (# HANDLE)) = apiCall(FreeTransientObject , handle(HANDLE)) .
-  eq makeReturnStmt(FreeTransientObject , noReturnCode , empty , E) = skip .
+  eq makeReturnStmt(FreeTransientObject , noReturnCode , empty , nil) = skip .
   --- TODO: Problem - No canonical states when FreeTransientObject(# TEE-HANDLE-NULL) 
-  eq makeReturnStmt(FreeTransientObject , noReturnCode , handle(TEE-HANDLE-NULL) , E) = skip .
+  eq makeReturnStmt(FreeTransientObject , noReturnCode , handle(TEE-HANDLE-NULL) , nil) = skip .
+
+  op FreeTransientObjectLib : -> Program .
+  eq FreeTransientObjectLib 
+  = defineSysCall(
+      int FreeTransientObject(auto * 'handle),
+      @inArgs('handle),                     --- should match with the makeCall              
+      @outArgs(nil),                        --- should match with the makeReturnStmt
+      @body(skip),
+      @return(# 1)
+  ) .
+
+------------------------------------------------------------
+--- 'TEE_ResetTransientObject' Syscall
+------------------------------------------------------------
 
   eq makeCall(ResetTransientObject , (# HANDLE)) = apiCall(ResetTransientObject , handle(HANDLE)) .
   eq makeReturnStmt(ResetTransientObject , noReturnCode , empty , nil) = skip .
@@ -282,16 +317,12 @@ mod TRANSIENT-OBJECT-TEE-CALL is
   eq makeReturnStmt(GenerateKey , RET , empty , E) = $assign(# RET , E) .
 
 
-  --- op TeeOpenTASessionImpl : -> Program .
-  --- eq TeeOpenTASessionImpl =
-  ---   int TeeOpenTASession(auto 'dest, auto 'TO, auto * 'code, auto * 'handle, auto * 'orig){
-  ---     $prep(eval('dest), eval('TO))
-  ---     $in(nil)
-  ---     $waitSysCall(TeeOpenTASession)
-  ---     $out('code, 'handle, 'orig)
-  ---     --- return # 1 ;
-  ---   } 
-  --- .
+  op TransientLibs : -> Program .
+  eq TransientLibs = 
+    AllocateTransientObjectLib
+    FreeTransientObjectLib
+  .
+
 endm
 
 --- This module defines IMP call and return for persistent object functions.
@@ -715,7 +746,7 @@ mod TEE-INTERNAL-CLIENT-CALL is
 endm
 
 mod TEE-API-IMP-PROGRAM is
-  pr TEE-IMP-API .
+  pr TRANSIENT-OBJECT-TEE-CALL .
   pr PERSISTENT-OBJECT-TEE-CALL .
   pr TEE-INTERNAL-CLIENT-CALL .
 
@@ -730,6 +761,7 @@ mod TEE-API-IMP-PROGRAM is
       int param4 ;
     } ;
 
+    TransientLibs
     PersistLibs
     SessionLibs 
   .

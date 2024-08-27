@@ -161,11 +161,10 @@ fmod IMP-LVALUE is
   pr IMP-TYPE .
   pr MAP{Var,Nat} * (op _,_ to _;_) .
 
-  sort StructValue LocValue .
-  subsort StructValue LocValue < LValue .
-
-  op struct : Type -> StructValue [ctor] .
-  op loc : Nat -> LocValue [ctor] .
+  op sobj : Map{Var,Nat} -> Value [ctor] .
+  op lvalue : Exp -> Exp [ctor] .
+  op loc : Nat -> Value [ctor] .
+  op ref : Nat -> Value [ctor] .
 endfm
 
 --- Expressions in IMP
@@ -196,20 +195,20 @@ fmod IMP-EXP is
   eq F () = F (nil) .
 
 --- Aux
-  op read : LExp -> RExp .
-  op eval : Exp -> Exp .
+  --- op read : LExp -> RExp .
+  --- op eval : Exp -> Exp .
 
-  eq eval(E1 + E2) = eval(E1) + eval(E2) .
-  eq eval(E1 - E2) = eval(E1) - eval(E2) .
-  eq eval(E1 * E2) = eval(E1) * eval(E2) .
-  eq eval(E1 / E2) = eval(E1) / eval(E2) .
-  eq eval(E1 <= E2) = eval(E1) <= eval(E2) .
-  eq eval(E1 == E2) = eval(E1) == eval(E2) .
-  eq eval(E1 && E2) = eval(E1) && eval(E2) .
-  eq eval(E1 || E2) = eval(E1) || eval(E2) .
-  eq eval(! E) = ! eval(E) .
-  eq eval(LE) = read(LE) .
-  eq eval(E) = E [owise] .
+  --- eq eval(E1 + E2) = eval(E1) + eval(E2) .
+  --- eq eval(E1 - E2) = eval(E1) - eval(E2) .
+  --- eq eval(E1 * E2) = eval(E1) * eval(E2) .
+  --- eq eval(E1 / E2) = eval(E1) / eval(E2) .
+  --- eq eval(E1 <= E2) = eval(E1) <= eval(E2) .
+  --- eq eval(E1 == E2) = eval(E1) == eval(E2) .
+  --- eq eval(E1 && E2) = eval(E1) && eval(E2) .
+  --- eq eval(E1 || E2) = eval(E1) || eval(E2) .
+  --- eq eval(! E) = ! eval(E) .
+  --- eq eval(LE) = read(LE) .
+  --- eq eval(E) = E [owise] .
 
 endfm
 
@@ -239,6 +238,7 @@ fmod IMP-STMT is
 
   op skip : -> Stmt [ctor] .
   op _:=_; : Exp Exp -> Stmt [ctor prec 60] .
+  op _::=_; : Exp Exp -> Stmt [ctor prec 60] .
   op if(_){_}else{_} : Exp Stmt Stmt -> Stmt [ctor prec 60] .
   op if(_){_} : Exp Stmt -> Stmt [ctor prec 60] .
 
@@ -257,12 +257,17 @@ fmod IMP-STMT is
 
   op return_; : Exp -> Stmt [ctor prec 60] .
 
+
+--- decl & initialization
+
+  eq T X ::= E ; = T X ; X := E ; .
+
 ------------------------------------------------------------
---- Internal Stmt
+--- Internal KLabel
 ------------------------------------------------------------
 
   op $push : -> Stmt [ctor] .
-  op $prepArgs(_||_) : ExpList ExpList -> Stmt [ctor] .
+  op $bind(_|_|_) : ExpList ExpList ExpList -> Stmt [ctor] .
   op $exec : Stmt -> Stmt [ctor] .
   op $setLoc : Var Nat -> Stmt [ctor] .
   op $waitSysCall : TeeApi -> Stmt [ctor] .
@@ -271,9 +276,12 @@ fmod IMP-STMT is
   op $in(_) : ValueList -> Stmt [ctor] .
   op $out(_) : ExpList -> Stmt [ctor] .
   op $out(_|_) : ExpList ExpList -> Stmt [ctor] .
-  op $alloc : Stmt -> Stmt [ctor] .
-  op $allocType : Type -> Stmt [ctor] .
+  op $alloc : Type -> Stmt [ctor] .
+  op $setLoc : Var -> Stmt [ctor] .
+  op $updateLoc : Var Value -> Stmt [ctor] .
+  op $member : Var -> Stmt [ctor] .
   op $update : Var Var -> Stmt [ctor] .
+  op $eval : Exp Exp -> Stmt [ctor] .
 
 ------------------------------------------------------------
 --- Auxiliary Functions
@@ -322,12 +330,12 @@ fmod IMP-EVAL-CONTEXT is
   op $prep(`[`],_) : ExpList -> KLabel [ctor] .
 
   --- op lvalue : Exp -> KLabel [ctor] .
-  op lvalue(`[`]._) : Exp -> KLabel [ctor] .
+  op lvalue(`[`]) : -> KLabel [ctor] .
 
   op read(`[`]) : -> KLabel [ctor] .
 
   --- op eval : Exp -> KLabel [ctor] .
-  op eval(`[`]) : -> KLabel [ctor] .
+  op $eval(`[`],_) : Exp -> KLabel [ctor] .
 
   op `[`]:=_; : Value -> KLabel [ctor] .
   op _:=`[`]; : Exp -> KLabel [ctor] .
@@ -336,6 +344,15 @@ fmod IMP-EVAL-CONTEXT is
   op if(`[`]){_}else{_} : Stmt Stmt -> KLabel [ctor] .
 
   op return`[`]; : -> KLabel [ctor] .
+
+------------------------------------------------------------
+--- Internal KLabel
+------------------------------------------------------------
+
+  op $decl(_|_) : SList Map{Var,Nat} -> KLabel [ctor] .
+  op $loc : Nat -> KLabel [ctor] .
+  op $setStruct : Map{Var,Nat} -> KLabel [ctor] .
+
 endfm
 
 --- Heating/cooling rules for IMP
@@ -349,8 +366,6 @@ fmod IMP-STRICTNESS is
   var T : Type .
   vars E E1 E2 : Exp .
   vars V V1 V2 : Value .
-  vars LV LV1 : LocValue .
-  var SV1 : StructValue .
   vars S S1 S2 : Stmt .
   var X : Var .
   var K : K .
@@ -416,34 +431,37 @@ fmod IMP-STRICTNESS is
 
 --- assign
 
-  --- ceq k(E1 = E2 ; ~> K)      = k(E2 ~> E1 = []; ~> K) if not (E2 :: Value) .
-  ceq k(E1 := E2 ; ~> K)      = k(E2 ~> E1 := []; ~> K) if not (E2 :: Value) and E2 :: FExp .
-  ceq k(E1 := E2 ; ~> K)      = k(eval(E2) ~> E1 := []; ~> K) if not (E2 :: Value or E2 :: FExp) .
+  ceq k(E1 := E2 ; ~> K)      = k(E2 ~> E1 := []; ~> K) if not (E2 :: Value or E1 :: PExp) .
    eq k(V2 ~> E1 := []; ~> K) = k(E1 := V2 ; ~> K) .
 
-  ceq k(E := V2 ; ~> K)        = k(E ~> [] := V2 ; ~> K) if not E :: Value and E :: LExp .
+  ceq k(E1 := V2 ; ~> K)       = k(lvalue(E1) ~> [] := V2 ; ~> K) if not (E1 :: Value or E1 :: PExp) .
    eq k(V1 ~> [] := V2 ; ~> K) = k(V1 := V2 ; ~> K) .
-
---- reval
-  ceq k(read(E) ~> K)       = k(E ~> read([]) ~> K) if not E :: Value .
-   eq k(V ~> read([]) ~> K) = k(read(V) ~> K) .
 
 --- struct member access
 
-  --- eq k(E1 . E2 ~> K)        = k(eval(E1) ~> [] . E2 ~> K) .
-  --- eq k(V1 ~> [] . E2 ~> K)  = k(V1 . E2 ~> K) .
-  ceq k(E1 . E2 ~> K)        = k(E1 ~> [] . E2 ~> K) if not E1 :: Value .
-  --- ceq k(E1 . E2 ~> K)        = k(eval(E1) ~> [] . E2 ~> K) if not E1 :: Value .
+  ceq k(E1 . E2 ~> K)        = k(lvalue(E1) ~> [] . E2 ~> K) if not E1 :: Value .
    eq k(V1 ~> [] . E2 ~> K)  = k(V1 . E2 ~> K) .
 
+  ceq k(lvalue(E1 . E2) ~> K)        = k(E1 . E2 ~> lvalue([]) ~> K) if not E1 :: Value .
+   eq k(V1 . E2 ~> lvalue([]) ~> K)  = k(lvalue(V1 . E2) ~> K) .
+
+--- Conditional statement
+
   ceq k(if (E) {S1} else {S2} ~> K)       
-    = k(eval(E) ~> if ([]) {S1} else {S2} ~> K) if not E :: Value .
+    = k(E ~> if ([]) {S1} else {S2} ~> K) if not E :: Value .
   ceq k(V ~> if ([]) {S1} else {S2} ~> K) 
     = k(if (V) {S1} else {S2} ~> K) if not V :: LValue .
 
   --- ceq k(return E ; ~> K) = k(E ~> return []; ~> K) if not E :: Value .
-  ceq k(return E ; ~> K) = k(eval(E) ~> return []; ~> K) if not E :: Value .
+  ceq k(return E ; ~> K) = k(E ~> return []; ~> K) if not E :: Value .
    eq k(V ~> return []; ~> K) = k(return V ; ~> K) .
+
+--- Call-by-value & call-by-reference
+
+  ceq k($eval(E, T X) ~> K) = if T :: RType then k(lvalue(E) ~> $eval([], T X) ~> K)
+                              else k(E ~> $eval([], T X) ~> K) fi if not E :: Value .
+
+   eq k(V ~> $eval([], T X) ~> K) = k($eval(V, T X) ~> K) .
 
 --- TODO
   ceq k($prep(E , EL) ~> K) = k(E ~> $prep([], EL) ~> K) if not E :: Value .
@@ -518,6 +536,10 @@ mod IMP-AUX is
   eq getOffSet(T X ; S, X, N) = N .
   eq getOffSet(T X ;, X, N) = N .
   eq getOffSet(T Y ; S, X, N) = getOffSet(S, X, N + 1) [owise] .
+
+  op isBaseType : Type -> Bool .
+  eq isBaseType(struct T) = false .
+  eq isBaseType(T) = true .
 endm
 
 --- IMP Semantics
@@ -529,18 +551,18 @@ mod IMP-SEMANTICS is
   vars T T' : Type .
   var ST : SType .
   vars X X' Y : Var .
-  var XL : VarList .
+  var XL : ExpList .
   var PARAMS : ExpList .
   vars K K' : K .
   vars V V' : Value? .
-  vars LV : LocValue .
   vars ENV ENV' : Map{Var,Nat} .
-  vars STRT STRT' : Map{Var,Nat} .
+  vars SO : Map{Var,Nat} .
   var MEM : Map{Nat,Value?} .
   var B : Bool .
   vars L L' I I' : Int .
   vars E E' E1 E2 : Exp .
   vars S S' : Stmt .
+  var SL : SList .
   var F : FuncId .
   var TEEAPI : TeeApi .
   var SDCL : Map{SType,Stmt} .
@@ -558,26 +580,21 @@ mod IMP-SEMANTICS is
 --- IMP Semantics
 ------------------------------------------------------------
 
-  --- crl k(E ~> K) => k(eval(E) ~> K) if not (E :: Value or E :: FExp or E :: PExp or E :: RExp or E :: LExp) .
+  rl k(X ~> K) env((X |-> L) ; ENV) store((L |-> V) ; MEM)
+  => k(V ~> K) env((X |-> L) ; ENV) store((L |-> V) ; MEM) .
 
-  rl k(X      ~> K) env((X |-> L) ; ENV)
+  rl k(lvalue(X) ~> K) env((X |-> L) ; ENV)
   => k(loc(L) ~> K) env((X |-> L) ; ENV) .
 
-  crl k(loc(L) . X ~> K) store((L |-> struct(T)) ; MEM) sdecl(((struct T |-> S) , SDCL))
-   => k(loc(L + N) ~> K) store((L |-> struct(T)) ; MEM) sdecl(((struct T |-> S) , SDCL)) 
-   if N := getOffSet(S, X) .
-
-  rl k(read(loc(L)) ~> K) store((L |-> V) ; MEM)
-  => k(V            ~> K) store((L |-> V) ; MEM) .
+  rl [struct-member-access]: k(loc(L) . X ~> K) store((L |-> sobj((X |-> N) ; SO)) ; (N |-> V) ; MEM) 
+                          => k(V ~> K) store((L |-> sobj((X |-> N) ; SO)) ; (N |-> V) ; MEM) .
+  rl [struct-member-access]: k(lvalue(loc(L) . X) ~> K) store((L |-> sobj((X |-> N) ; SO)) ; MEM) 
+                          => k(loc(N) ~> K) store((L |-> sobj((X |-> N) ; SO)) ; MEM) .
 
 --- Assign
 
   rl k(loc(L) := V ; ~> K) store(MEM)
   => k(                 K) store(insert(L, V, MEM)) .
-
---- decl & initialization
-
-  rl k(T X := V ; ~> K) => k(T X ; ~> X := V ; ~> K) .
 
 --- exp
 
@@ -611,20 +628,22 @@ mod IMP-SEMANTICS is
 --- declaration
 --- for simplicity we don't allow nested structure.
 
-  crl k(T X ~> K) env(ENV) store(MEM) nextLoc(L)
-   => k(       K) env(insert(X , L , ENV)) store(insert(L , undef , MEM)) nextLoc(L + 1) if not T :: SType .
+  rl [assn]:     k(T X ~> K) => k($alloc(T) ~> $setLoc(X) ~> K) .
 
-  rl k(struct T X ~> K) sdecl((struct T |-> S , SDCL))
-  => k(T X ; X := struct(T) ; ~> $alloc(S) ~> K) sdecl((struct T |-> S , SDCL)) .
+  rl [sAlloc-i]: k($alloc(struct T) ~> K) sdecl((struct T |-> S , SDCL))
+              => k($decl(getSList(S) | empty) ~> $alloc(T) ~> K) sdecl((struct T |-> S , SDCL)) .
+
+  rl [sAlloc-e]: k($decl(nilElem | SO) ~> $alloc(T) ~> K) => k($alloc(T) ~> $setStruct(SO) ~> K) .
+  rl [setStruc]: k($loc(L) ~> $setStruct(SO) ~> K) store((L |-> V) ; MEM)
+              => k($loc(L) ~> K) store((L |-> sobj(SO)) ; MEM) .
+
+  rl [sDecl]:    k($decl(< T Y ; > SL | SO) ~> K) => k($alloc(T) ~> $member(Y) ~> $decl(SL | SO) ~> K) .
+  rl [sMemDecl]: k($loc(L) ~> $member(Y) ~> $decl(SL | SO) ~> K) => k($decl(SL | ((Y |-> L) ; SO)) ~> K) .
 
 --- alloc
 
-   rl k($alloc(T X ; S) ~> K) => k($allocType(T) ~> $alloc(S) ~> K) .
-   rl k($alloc(T X ;  ) ~> K) => k($allocType(T) ~> K) .
-  
-  crl k($allocType(T) ~> K) store(MEM) nextLoc(L) => k(K) store((L |-> undef) ; MEM) nextLoc(L + 1) if not T :: SType .
-   rl k($allocType(struct T) ~> K) nextLoc(L) sdecl((struct T |-> S , SDCL))
-   => k(loc(L) := struct(T) ; ~> $alloc(S) ~> K) nextLoc(L + 1) sdecl((struct T |-> S , SDCL)) .
+  crl [alloc]:   k($alloc(T) ~> K) store(MEM) nextLoc(L) => k($loc(L) ~> K) store(insert(L, undef, MEM)) nextLoc(L + 1) if isBaseType(T) .
+  rl [decl]:     k($loc(L) ~> $setLoc(X) ~> K) env(ENV) => k(K) env(insert(X, L, ENV)) .
 
 --- function & structure declaration
 
@@ -634,25 +653,23 @@ mod IMP-SEMANTICS is
 --- function call
 
   rl k(F(EL) ~> K) fdecl(((T F(PARAMS) |-> S) , FDCL))
-  => k($push ~> $prepArgs(EL || PARAMS) ~> $exec(S) ~> K) fdecl(((T F(PARAMS) |-> S) , FDCL)) .
+  => k($push ~> $bind(EL | PARAMS | nil) ~> $exec(S) ~> K) fdecl(((T F(PARAMS) |-> S) , FDCL)) .
 
-  rl k($push ~> $prepArgs(EL || PARAMS) ~> $exec(S) ~> K) env(ENV) fstack(STACK) nextLoc(L) labels(LM)
-  => k($prepArgs(EL || PARAMS) ~> $exec(S)) env(ENV) fstack(item(ENV,LM,K,L) :: STACK) nextLoc(L) labels(LM) . 
+  rl k($push ~> $bind(EL | PARAMS | nil) ~> $exec(S) ~> K) env(ENV) fstack(STACK) nextLoc(L) labels(LM)
+  => k($bind(EL | PARAMS | nil) ~> $exec(S)) env(ENV) fstack(item(ENV,LM,K,L) :: STACK) nextLoc(L) labels(LM) . 
 
-  rl k($prepArgs(nil || nil) ~> K) => k(K) . 
-  rl k($exec(S)) => k(S) .
+--- call by reference & call by value
 
---- call by reference, where E should be variable (i.e., Y)
+  rl [fBind]: k($bind(nil | T X, XL | V, VL) ~> K) => 
+              if T :: RType then k(T X ; ~> $updateLoc(X, V) ~> $bind(nil | XL | VL) ~> K) 
+              else k(T X ; X := V ; ~> $bind(nil | XL | VL) ~> K) fi .
 
-  crl k($prepArgs((Y, EL) || (T X, PARAMS)) ~> K) env(((Y |-> L) ; ENV))
-   => k(T X ; ~> $setLoc(X, L) ~> $prepArgs(EL || PARAMS) ~> K) env(((Y |-> L) ; ENV)) if T :: RType .
-  
-  rl k($setLoc(X, L) ~> K) env(((X |-> L') ; ENV)) => k(K) env(((X |-> L) ; ENV)) .
+  rl [fBind]: k($bind(nil | nil | nil) ~> $exec(S)) => k(S) .
 
---- call by value, where E should be value
+  rl [eval-i]: k($bind(E, EL | T X, XL | VL) ~> K) => k($eval(E, T X) ~> $bind(EL | XL, T X | VL) ~> K) .
+  rl [eval-e]: k($eval(V, T X) ~> $bind(EL | XL | VL) ~> K) => k($bind(EL | XL | VL, V) ~> K) . 
 
-  crl k($prepArgs((E, EL) || (T X, PARAMS)) ~> K)
-   => k(T X := E ; ~> $prepArgs(EL || PARAMS) ~> K) if not T :: RType .
+  rl [updateLoc]: k($updateLoc(X, loc(L)) ~> K) env((X |-> L') ; ENV) => k(K) env((X |-> L) ; ENV) .
 
 --- Return statement
 
@@ -679,20 +696,20 @@ mod IMP-SEMANTICS-INVISIBLE is
   vars T T' : Type .
   var ST : SType .
   vars X X' Y : Var .
-  var XL : VarList .
+  var XL : ExpList .
   var PARAMS : ExpList .
   vars K K' : K .
   vars V V' : Value? .
-  vars LV : LocValue .
   vars ENV ENV' : Map{Var,Nat} .
-  vars STRT STRT' : Map{Var,Nat} .
+  vars SO : Map{Var,Nat} .
   var MEM : Map{Nat,Value?} .
   var B : Bool .
   vars L L' I I' : Int .
   vars E E' E1 E2 : Exp .
   vars S S' : Stmt .
+  var SL : SList .
   var F : FuncId .
-  --- var TEEAPI : TeeApi .
+  var TEEAPI : TeeApi .
   var SDCL : Map{SType,Stmt} .
   var FDCL : Map{FuncSig,Stmt} .
   var STIT : StackItem .
@@ -708,24 +725,21 @@ mod IMP-SEMANTICS-INVISIBLE is
 --- IMP Semantics
 ------------------------------------------------------------
 
-  eq k(X      ~> K) env((X |-> L) ; ENV)
+  eq k(X ~> K) env((X |-> L) ; ENV) store((L |-> V) ; MEM)
+   = k(V ~> K) env((X |-> L) ; ENV) store((L |-> V) ; MEM) .
+
+  eq k(lvalue(X) ~> K) env((X |-> L) ; ENV)
    = k(loc(L) ~> K) env((X |-> L) ; ENV) .
 
-  ceq k(loc(L) . X ~> K) store((L |-> struct(T)) ; MEM) sdecl(((struct T |-> S) , SDCL))
-    = k(loc(L + N) ~> K) store((L |-> struct(T)) ; MEM) sdecl(((struct T |-> S) , SDCL)) 
-  if N := getOffSet(S, X) .
-
-  eq k(read(loc(L)) ~> K) store((L |-> V) ; MEM)
-   = k(V            ~> K) store((L |-> V) ; MEM) .
+  eq [struct-member-access]: k(loc(L) . X ~> K) store((L |-> sobj((X |-> N) ; SO)) ; (N |-> V) ; MEM) 
+                           = k(V ~> K) store((L |-> sobj((X |-> N) ; SO)) ; (N |-> V) ; MEM) .
+  eq [struct-member-access]: k(lvalue(loc(L) . X) ~> K) store((L |-> sobj((X |-> N) ; SO)) ; MEM) 
+                           = k(loc(N) ~> K) store((L |-> sobj((X |-> N) ; SO)) ; MEM) .
 
 --- Assign
 
   eq k(loc(L) := V ; ~> K) store(MEM)
    = k(                 K) store(insert(L, V, MEM)) .
-
---- decl & initialization
-
-  eq k(T X := V ; ~> K) = k(T X ; ~> X := V ; ~> K) .
 
 --- exp
 
@@ -759,20 +773,22 @@ mod IMP-SEMANTICS-INVISIBLE is
 --- declaration
 --- for simplicity we don't allow nested structure.
 
-  ceq k(T X ~> K) env(ENV) store(MEM) nextLoc(L)
-    = k(       K) env(insert(X , L , ENV)) store(insert(L , undef , MEM)) nextLoc(L + 1) if not T :: SType .
+  eq k(T X ~> K) = k($alloc(T) ~> $setLoc(X) ~> K) .
 
-  eq k(struct T X ~> K) sdecl((struct T |-> S , SDCL))
-   = k(T X ; X := struct(T) ; ~> $alloc(S) ~> K) sdecl((struct T |-> S , SDCL)) .
+  eq k($alloc(struct T) ~> K) sdecl((struct T |-> S , SDCL))
+   = k($decl(getSList(S) | empty) ~> $alloc(T) ~> K) sdecl((struct T |-> S , SDCL)) .
+
+  eq k($decl(nilElem | SO) ~> $alloc(T) ~> K) = k($alloc(T) ~> $setStruct(SO) ~> K) .
+  eq k($loc(L) ~> $setStruct(SO) ~> K) store((L |-> V) ; MEM)
+   = k($loc(L) ~> K) store((L |-> sobj(SO)) ; MEM) .
+
+  eq k($decl(< T Y ; > SL | SO) ~> K) = k($alloc(T) ~> $member(Y) ~> $decl(SL | SO) ~> K) .
+  eq k($loc(L) ~> $member(Y) ~> $decl(SL | SO) ~> K) = k($decl(SL | ((Y |-> L) ; SO)) ~> K) .
 
 --- alloc
 
-   eq k($alloc(T X ; S) ~> K) = k($allocType(T) ~> $alloc(S) ~> K) .
-   eq k($alloc(T X ;  ) ~> K) = k($allocType(T) ~> K) .
-  
-  ceq k($allocType(T) ~> K) store(MEM) nextLoc(L) = k(K) store((L |-> undef) ; MEM) nextLoc(L + 1) if not T :: SType .
-   eq k($allocType(struct T) ~> K) nextLoc(L) sdecl((struct T |-> S , SDCL))
-    = k(loc(L) := struct(T) ; ~> $alloc(S) ~> K) nextLoc(L + 1) sdecl((struct T |-> S , SDCL)) .
+  ceq k($alloc(T) ~> K) store(MEM) nextLoc(L) = k($loc(L) ~> K) store(insert(L, undef, MEM)) nextLoc(L + 1) if isBaseType(T) .
+  eq k($loc(L) ~> $setLoc(X) ~> K) env(ENV) = k(K) env(insert(X, L, ENV)) .
 
 --- function & structure declaration
 
@@ -782,25 +798,22 @@ mod IMP-SEMANTICS-INVISIBLE is
 --- function call
 
   eq k(F(EL) ~> K) fdecl(((T F(PARAMS) |-> S) , FDCL))
-   = k($push ~> $prepArgs(EL || PARAMS) ~> $exec(S) ~> K) fdecl(((T F(PARAMS) |-> S) , FDCL)) .
+   = k($push ~> $bind(EL | PARAMS | nil) ~> $exec(S) ~> K) fdecl(((T F(PARAMS) |-> S) , FDCL)) .
 
-  eq k($push ~> $prepArgs(EL || PARAMS) ~> $exec(S) ~> K) env(ENV) fstack(STACK) nextLoc(L) labels(LM)
-   = k($prepArgs(EL || PARAMS) ~> $exec(S)) env(ENV) fstack(item(ENV,LM,K,L) :: STACK) nextLoc(L) labels(LM) . 
+  eq k($push ~> $bind(EL | PARAMS | nil) ~> $exec(S) ~> K) env(ENV) fstack(STACK) nextLoc(L) labels(LM)
+   = k($bind(EL | PARAMS | nil) ~> $exec(S)) env(ENV) fstack(item(ENV,LM,K,L) :: STACK) nextLoc(L) labels(LM) . 
 
-  eq k($prepArgs(nil || nil) ~> K) = k(K) . 
-  eq k($exec(S)) = k(S) .
+--- call by reference & call by value
 
---- call by reference, where E should be variable (i.e., Y)
+  eq k($bind(nil | T X, XL | V, VL) ~> K) = if T :: RType then k(T X ; ~> $updateLoc(X, V) ~> $bind(nil | XL | VL) ~> K) 
+                                            else k(T X ; X := V ; ~> $bind(nil | XL | VL) ~> K) fi .
 
-  ceq k($prepArgs((Y, EL) || (T X, PARAMS)) ~> K) env(((Y |-> L) ; ENV))
-    = k(T X ; ~> $setLoc(X, L) ~> $prepArgs(EL || PARAMS) ~> K) env(((Y |-> L) ; ENV)) if T :: RType .
-  
-  eq k($setLoc(X, L) ~> K) env(((X |-> L') ; ENV)) = k(K) env(((X |-> L) ; ENV)) .
+  eq k($bind(nil | nil | nil) ~> $exec(S)) = k(S) .
 
---- call by value, where E should be value
+  eq k($bind(E, EL | T X, XL | VL) ~> K) = k($eval(E, T X) ~> $bind(EL | XL, T X | VL) ~> K) .
+  eq k($eval(V, T X) ~> $bind(EL | XL | VL) ~> K) = k($bind(EL | XL | VL, V) ~> K) . 
 
-  ceq k($prepArgs((E, EL) || (T X, PARAMS)) ~> K)
-    = k(T X := E ; ~> $prepArgs(EL || PARAMS) ~> K) if not T :: RType .
+  eq k($updateLoc(X, loc(L)) ~> K) env((X |-> L') ; ENV) = k(K) env((X |-> L) ; ENV) .
 
 --- Return statement
 

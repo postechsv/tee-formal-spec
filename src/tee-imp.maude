@@ -527,7 +527,7 @@ omod TRUST-APP-IMP-BEHAVIOR is
                       current-api : noApi , current-params : empty >
     => 
     < TI : TrustApp | proc : (k($waitSysCall(TEEAPI) ~> K) KS) ,
-                      api-call : makeCall(TEEAPI , VL) > 
+                      api-call : makeCall(TEEAPI , VL), state-changed : false > 
   .
 
   rl [tee-api-call-accept] :
@@ -535,7 +535,7 @@ omod TRUST-APP-IMP-BEHAVIOR is
                       current-api : noApi , current-params : empty >
     => 
     < TI : TrustApp | api-call : noCall , api-state : started ,
-                      current-api : TEEAPI , current-params : PARAMS >
+                      current-api : TEEAPI , current-params : PARAMS, state-changed : false >
   .
 
 --- Version In Paper
@@ -554,7 +554,70 @@ omod TRUST-APP-IMP-BEHAVIOR is
     => 
     < TI : TrustApp | proc : (k(makeReturnStmt(TEEAPI , RET , PARAMS , EL) ~> K) KS) ,
                       api-state : noState , api-return : noReturn , 
-                      current-api : noApi , current-params : empty > 
+                      current-api : noApi , current-params : empty, state-changed : false > 
+  .
+
+endom
+
+omod TRUST-APP-IMP-BEHAVIOR-INVISIBLE is
+  pr TRUST-APP-IMP-BEHAVIOR .
+
+  var TI : TaInstId .
+  var K : K .
+  var TEEAPI : TeeApi .
+  var VL : ValueList .
+  var EL : ExpList .
+  var KS : KConfig .
+  var RET : ReturnCode? .
+  var PARAMS : Set{TeeApiParam} .
+
+------------------------------------------------------------
+--- IMP Semantics
+------------------------------------------------------------
+
+--- Version In Paper
+  --- crl [tee-api-call] :
+  ---   < TI : TA | proc : (k(FUNC(VL) ~> K) KS) > 
+  ---   => 
+  ---   < TI : TA | proc : (k($wait(FUNC) ~> K) KS) , api-call : FUNC(VL) > 
+  --- if isTeeApi(FUNC) 
+  --- .
+
+--- Model/Implementation Specific Version (2 rules)
+  eq
+    < TI : TrustApp | proc : (k($in(VL) ~> $waitSysCall(TEEAPI) ~> K) KS) ,
+                      api-state : noState , api-call : noCall , api-return : noReturn ,
+                      current-api : noApi , current-params : empty >
+    =
+    < TI : TrustApp | proc : (k($waitSysCall(TEEAPI) ~> K) KS) ,
+                      api-call : makeCall(TEEAPI , VL), state-changed : false > 
+  .
+
+  eq
+    < TI : TrustApp | api-call : apiCall(TEEAPI , PARAMS) , api-state : noState , 
+                      current-api : noApi , current-params : empty >
+    =
+    < TI : TrustApp | api-call : noCall , api-state : started ,
+                      current-api : TEEAPI , current-params : PARAMS, state-changed : false >
+  .
+
+--- Version In Paper
+  --- crl [tee-api-call-return] :
+  ---   < TI : TA | proc : (k($wait(FUNC) ~> $out(XL) ~> K) KS) ,
+  ---               api-call : return(FUNC , VL) >
+  ---   => 
+  ---   < TI : TA | proc : (k(STMT ~> K) KS) , api-call : noCall >
+  --- if isTeeApi(FUNC) /\ STMT := makeRetStmt(VL , XL) 
+  --- .
+
+--- Actual Implemenation
+  eq
+    < TI : TrustApp | proc : (k($waitSysCall(TEEAPI) ~> $out(EL) ~> K) KS) , api-state : finished ,
+                      api-return : apiReturn(TEEAPI , RET , PARAMS) , current-api : TEEAPI >
+    =
+    < TI : TrustApp | proc : (k(makeReturnStmt(TEEAPI , RET , PARAMS , EL) ~> K) KS) ,
+                      api-state : noState , api-return : noReturn , 
+                      current-api : noApi , current-params : empty, state-changed : false > 
   .
 
 endom

@@ -22,7 +22,7 @@ omod TRUST-APP is
   --- subclass TA < App TAKernel .
 
 --- Model/Implementation Specific Version
-  class TrustApp | task : Task?, task-counter : Nat .
+  class TrustApp | task : Task?, task-counter : Nat, state-changed : Bool .
   subclass TrustApp < TaKernel ProgramApp .
 endom
 
@@ -76,7 +76,7 @@ omod TRUST-APP-BEHAVIOR is
     invokeTA(TI , MSG , RI)
     < TI : TrustApp | task : noTask , running : false >
     => 
-    < TI : TrustApp | task : task(MSG , RI) > 
+    < TI : TrustApp | task : task(MSG , RI), state-changed : false > 
   .
 
 --- Handle REE request by running TA program.
@@ -86,7 +86,7 @@ omod TRUST-APP-BEHAVIOR is
                       proc : none , prog : P , running : false >
     => 
     < TI : TrustApp | task-counter : N + 1 ,
-                      proc : execute(P , FUNC , VL) , running : true > 
+                      proc : execute(P , FUNC , VL) , running : true, state-changed : true > 
   .
 
 --- Version In Paper
@@ -105,7 +105,7 @@ omod TRUST-APP-BEHAVIOR is
   rl [handle-invoke-ta-finish] :
     < TI : TrustApp | proc : (k(.K) KS) , task : task({SID , FUNC , VL} , RI) , running : true >
     => 
-    < TI : TrustApp | proc : none , task : noTask , running : false >
+    < TI : TrustApp | proc : none , task : noTask , running : false, state-changed : true >
     invokeTAReturn({SID , FUNC , readReturn(FUNC, KS)} , RI) 
   .
 

@@ -127,6 +127,7 @@ fmod IMP-LVALUE is
 
   sort StructValue LocValue LValue .
   subsort StructValue LocValue < LValue < Value .
+  subsort LValue < LExp .
 
   op struct : Map{Var,Nat} -> StructValue [ctor] .
   op loc : Nat -> LocValue [ctor] .
@@ -230,7 +231,7 @@ fmod IMP-STMT is
   op $ignore : -> Stmt [ctor] .
   op $clearMem : Exp -> Stmt [ctor] .
   op $waitSysCall : TeeApi -> Stmt [ctor] .
-  op $assign : ExpList ExpList -> Stmt [ctor] .
+  op $assign(_|_) : ExpList ExpList -> Stmt [ctor] .
   op $callByRefAssign : ValueList VarList -> Stmt [ctor] .
   op $in(_) : ValueList -> Stmt [ctor] .
   op $out(_) : ExpList -> Stmt [ctor] .
@@ -544,24 +545,24 @@ mod IMP-SEMANTICS is
   rl k(struct X X' ~> K) sdecl(SDCLS1 ;; struct {SMST} X ;; SDCLS2) nextLoc(L)
   => k($structNameDecl(X') ~> $structMemDecl(SMST, L) ~> K) sdecl(SDCLS1 ;; struct {SMST} X ;; SDCLS2) nextLoc(L) .
  
-  eq k($structNameDecl(X) ~> K) env(ENV) store(MEM) nextLoc(L)
-   = k(K) env(insert(X, L, ENV)) store(insert(L, struct(empty), MEM)) nextLoc(L + 1) .
+  rl k($structNameDecl(X) ~> K) env(ENV) store(MEM) nextLoc(L)
+  => k(K) env(insert(X, L, ENV)) store(insert(L, struct(empty), MEM)) nextLoc(L + 1) .
  
-  eq k($structMemDecl(var X ; SMST, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
-   = k($structMemDecl(SMST, L') ~> K) store((L' |-> struct(insert(X, L, ENV))) ; (L |-> undef) ; MEM) nextLoc(L + 1) .
+  rl k($structMemDecl(var X ; SMST, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
+  => k($structMemDecl(SMST, L') ~> K) store((L' |-> struct(insert(X, L, ENV))) ; (L |-> undef) ; MEM) nextLoc(L + 1) .
 
-  eq k($structMemDecl(var X, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
-   = k(K) store((L' |-> struct(insert(X, L, ENV))) ; (L |-> undef) ; MEM) nextLoc(L + 1) .
+  rl k($structMemDecl(var X, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
+  => k(K) store((L' |-> struct(insert(X, L, ENV))) ; (L |-> undef) ; MEM) nextLoc(L + 1) .
 
-  eq k($structMemDecl(struct {SMST'} X ; SMST, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
-   = k($structMemDecl(SMST', L) ~> $structMemDecl(SMST, L') ~> K) store((L' |-> struct(insert(X, L, ENV))) ; (L |-> struct(empty)) ; MEM)  nextLoc(L + 1) .
+  rl k($structMemDecl(struct {SMST'} X ; SMST, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
+  => k($structMemDecl(SMST', L) ~> $structMemDecl(SMST, L') ~> K) store((L' |-> struct(insert(X, L, ENV))) ; (L |-> struct(empty)) ; MEM)  nextLoc(L + 1) .
 
-  eq k($structMemDecl(struct {SMST} X, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
-   = k($structMemDecl(SMST, L) ~> K) store((L' |-> struct(insert(X, L, ENV))) ; (L |-> struct(empty)) ; MEM)  nextLoc(L + 1) .
+  rl k($structMemDecl(struct {SMST} X, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
+  => k($structMemDecl(SMST, L) ~> K) store((L' |-> struct(insert(X, L, ENV))) ; (L |-> struct(empty)) ; MEM)  nextLoc(L + 1) .
   
-  eq k(SDCL ~> K) sdecl(SDCLS) = k(K) sdecl(SDCLS ;; SDCL) .
+  rl k(SDCL ~> K) sdecl(SDCLS) => k(K) sdecl(SDCLS ;; SDCL) .
 
-  eq k(FDCL ~> K) fdecl(FDCLS) = k(K) fdecl(FDCLS ;; FDCL) .
+  rl k(FDCL ~> K) fdecl(FDCLS) => k(K) fdecl(FDCLS ;; FDCL) .
 
   rl k(F(EL) ~> K) fdecl(FDCLS1 ;; (F(XL){S}) ;; FDCLS2)
   => k($funcCall(S , XL , EL) ~> K) fdecl(FDCLS1 ;; (F(XL){S}) ;; FDCLS2) .
@@ -591,8 +592,8 @@ mod IMP-SEMANTICS is
 
 --- TODO: Clean
 
-  rl k($assign((E,EL), (E',EL')) ~> K) => k(E' := E ~> $assign(EL, EL') ~> K) .
-  rl k($assign(EL, nil) ~> K) => k(K) .
+  rl k($assign((E,EL) | (E',EL')) ~> K) => k(E' := E ~> $assign(EL | EL') ~> K) .
+  rl k($assign(EL | nil) ~> K) => k(K) .
 
 
   rl k($ignore ~> K) => k(K) .
@@ -643,13 +644,13 @@ mod IMP-SEMANTICS-INVISIBLE is
 
   eq k(struct(STRT) . E ~> K) = k(loc(STRT[E]) ~> K) .
 
-  eq k(leval(loc(L)) ~> K) store((L |-> V) ; MEM)
-  = k(V             ~> K) store((L |-> V) ; MEM) .
+  --- eq k(leval(loc(L)) ~> K) store((L |-> V) ; MEM)
+  --- = k(V             ~> K) store((L |-> V) ; MEM) .
 
 --- Assign
 
-  eq k(loc(L) := V ~> K) store(MEM)
-  = k(               K) store(insert(L, V, MEM)) .
+  --- eq k(loc(L) := V ~> K) store(MEM)
+  --- = k(               K) store(insert(L, V, MEM)) .
 
 
   eq  k(# I + # I' ~> K)   = k(# (I + I') ~> K) .
@@ -676,26 +677,26 @@ mod IMP-SEMANTICS-INVISIBLE is
   eq k(while (E) {S} ~> K) 
   = k(if (E) {(S ; while (E) {S})} else {skip} ~> K) .
 
-  eq k(var X ~> K) env(ENV) store(MEM) nextLoc(L)
-  = k(         K) env(insert(X , L , ENV)) store(insert(L , undef , MEM)) nextLoc(L + 1) .
+  --- eq k(var X ~> K) env(ENV) store(MEM) nextLoc(L)
+  --- = k(         K) env(insert(X , L , ENV)) store(insert(L , undef , MEM)) nextLoc(L + 1) .
 
   eq k(struct X X' ~> K) sdecl(SDCLS1 ;; struct {SMST} X ;; SDCLS2) nextLoc(L)
   = k($structNameDecl(X') ~> $structMemDecl(SMST, L) ~> K) sdecl(SDCLS1 ;; struct {SMST} X ;; SDCLS2) nextLoc(L) .
  
-  eq k($structNameDecl(X) ~> K) env(ENV) store(MEM) nextLoc(L)
-   = k(K) env(insert(X, L, ENV)) store(insert(L, struct(empty), MEM)) nextLoc(L + 1) .
+  --- eq k($structNameDecl(X) ~> K) env(ENV) store(MEM) nextLoc(L)
+  ---  = k(K) env(insert(X, L, ENV)) store(insert(L, struct(empty), MEM)) nextLoc(L + 1) .
  
-  eq k($structMemDecl(var X ; SMST, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
-   = k($structMemDecl(SMST, L') ~> K) store((L' |-> struct(insert(X, L, ENV))) ; (L |-> undef) ; MEM) nextLoc(L + 1) .
+  --- eq k($structMemDecl(var X ; SMST, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
+  ---  = k($structMemDecl(SMST, L') ~> K) store((L' |-> struct(insert(X, L, ENV))) ; (L |-> undef) ; MEM) nextLoc(L + 1) .
 
-  eq k($structMemDecl(var X, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
-   = k(K) store((L' |-> struct(insert(X, L, ENV))) ; (L |-> undef) ; MEM) nextLoc(L + 1) .
+  --- eq k($structMemDecl(var X, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
+  ---  = k(K) store((L' |-> struct(insert(X, L, ENV))) ; (L |-> undef) ; MEM) nextLoc(L + 1) .
 
-  eq k($structMemDecl(struct {SMST'} X ; SMST, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
-   = k($structMemDecl(SMST', L) ~> $structMemDecl(SMST, L') ~> K) store((L' |-> struct(insert(X, L, ENV))) ; (L |-> struct(empty)) ; MEM)  nextLoc(L + 1) .
+  --- eq k($structMemDecl(struct {SMST'} X ; SMST, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
+  ---  = k($structMemDecl(SMST', L) ~> $structMemDecl(SMST, L') ~> K) store((L' |-> struct(insert(X, L, ENV))) ; (L |-> struct(empty)) ; MEM)  nextLoc(L + 1) .
 
-  eq k($structMemDecl(struct {SMST} X, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
-   = k($structMemDecl(SMST, L) ~> K) store((L' |-> struct(insert(X, L, ENV))) ; (L |-> struct(empty)) ; MEM)  nextLoc(L + 1) .
+  --- eq k($structMemDecl(struct {SMST} X, L') ~> K) store((L' |-> struct(ENV)) ; MEM) nextLoc(L)
+  ---  = k($structMemDecl(SMST, L) ~> K) store((L' |-> struct(insert(X, L, ENV))) ; (L |-> struct(empty)) ; MEM)  nextLoc(L + 1) .
   
   eq k(SDCL ~> K) sdecl(SDCLS) = k(K) sdecl(SDCLS ;; SDCL) .
 
@@ -715,8 +716,8 @@ mod IMP-SEMANTICS-INVISIBLE is
   eq k($callByRefInst(loc(L) , X) ~> K) env(ENV)
   = k(K) env(insert(X , L , ENV)) .
 
-  ceq k($callByRefInst(V , X) ~> K) env(ENV) store(MEM) nextLoc(L)
-   = k(K) env(insert(X , L , ENV)) store(insert(L , V , MEM)) nextLoc(L + 1) if not V :: LocValue .
+  --- ceq k($callByRefInst(V , X) ~> K) env(ENV) store(MEM) nextLoc(L)
+  ---  = k(K) env(insert(X , L , ENV)) store(insert(L , V , MEM)) nextLoc(L + 1) if not V :: LocValue .
   
   ceq k(TEEAPI(EL ; EL') ~> K) = k($callByValArg(EL) ~> $in(nil) ~> $waitSysCall(TEEAPI) ~> $out(EL') ~> K) if not TEEAPI :: TeeClientApi .
   ceq k(TEEAPI(EL ; EL') ~> K) = k($callByValArg(EL) ~> $in(nil) ~> $waitSysCall(TEEAPI) ~> $out(EL' | EL) ~> K) if TEEAPI :: TeeClientApi .
@@ -729,13 +730,13 @@ mod IMP-SEMANTICS-INVISIBLE is
 
 --- TODO: Clean
 
-  eq k($assign((E,EL), (E',EL')) ~> K) = k(E' := E ~> $assign(EL, EL') ~> K) .
-  eq k($assign(EL, nil) ~> K) = k(K) .
+  eq k($assign((E,EL) | (E',EL')) ~> K) = k(E' := E ~> $assign(EL | EL') ~> K) .
+  eq k($assign(EL | nil) ~> K) = k(K) .
 
 
   eq k($ignore ~> K) = k(K) .
 
 --- TODO : use lvalue instead of var
-  eq k($clearMem(loc(L)) ~> K) store((L |-> V) ; MEM) = k(K) store((L |-> undef) ; MEM) .
+  --- eq k($clearMem(loc(L)) ~> K) store((L |-> V) ; MEM) = k(K) store((L |-> undef) ; MEM) .
 
 endm

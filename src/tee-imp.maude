@@ -168,9 +168,9 @@ mod TRANSIENT-OBJECT-TEE-CALL is
   var EL : ExpList .
 
   eq makeCall(AllocateTransientObject , (# OBJTYPE , # KEYSIZE)) = apiCall(AllocateTransientObject , (type(OBJTYPE) , size(KEYSIZE))) .
-  eq makeReturnStmt(AllocateTransientObject , TEE-SUCCESS , handle(HANDLE) , EL) = $assign((# TEE-SUCCESS , # HANDLE) , EL) .
-  eq makeReturnStmt(AllocateTransientObject , TEE-ERROR-OUT-OF-MEMORY , empty , (R , H)) = $assign(# TEE-ERROR-OUT-OF-MEMORY , R) .
-  eq makeReturnStmt(AllocateTransientObject , TEE-ERROR-NOT-SUPPORTED , empty , (R , H)) = $assign(# TEE-ERROR-NOT-SUPPORTED , R) .
+  eq makeReturnStmt(AllocateTransientObject , TEE-SUCCESS , handle(HANDLE) , EL) = $assign((# TEE-SUCCESS , # HANDLE) | EL) .
+  eq makeReturnStmt(AllocateTransientObject , TEE-ERROR-OUT-OF-MEMORY , empty , (R , H)) = $assign(# TEE-ERROR-OUT-OF-MEMORY | R) .
+  eq makeReturnStmt(AllocateTransientObject , TEE-ERROR-NOT-SUPPORTED , empty , (R , H)) = $assign(# TEE-ERROR-NOT-SUPPORTED | R) .
 
   eq makeCall(FreeTransientObject , (# HANDLE)) = apiCall(FreeTransientObject , handle(HANDLE)) .
   eq makeReturnStmt(FreeTransientObject , noReturnCode , empty , E) = $clearMem(E) .
@@ -181,20 +181,20 @@ mod TRANSIENT-OBJECT-TEE-CALL is
   eq makeReturnStmt(ResetTransientObject , noReturnCode , empty , nil) = $ignore .
 
   eq makeCall(PopulateTransientObject , (# HANDLE , # ATTRS)) = apiCall(PopulateTransientObject , (handle(HANDLE) , attrs(ATTRS))) .
-  eq makeReturnStmt(PopulateTransientObject , RET , empty , R) = $assign(# RET , R) .
+  eq makeReturnStmt(PopulateTransientObject , RET , empty , R) = $assign(# RET | R) .
 
   eq makeCall(InitRefAttribute , (# REF , # V)) = apiCall(InitRefAttribute , (constId(REF) , constVal(V))) .
   eq makeCall(InitRefAttribute , (# REF , # attrContentData(V))) = apiCall(InitRefAttribute , (constId(REF) , constVal(V))) .
-  eq makeReturnStmt(InitRefAttribute , noReturnCode , attrs(ATTRS) , E) = $assign(# ATTRS , E) .
+  eq makeReturnStmt(InitRefAttribute , noReturnCode , attrs(ATTRS) , E) = $assign(# ATTRS | E) .
 
   eq makeCall(InitValueAttribute , (# VAL , # V)) = apiCall(InitValueAttribute , (constId(VAL) , constVal(V))) .
-  eq makeReturnStmt(InitValueAttribute , noReturnCode , attrs(ATTRS) , E) = $assign(# ATTRS , E) .
+  eq makeReturnStmt(InitValueAttribute , noReturnCode , attrs(ATTRS) , E) = $assign(# ATTRS | E) .
 
   eq makeCall(CopyObjectAttributes1 , (# HANDLE1 , # HANDLE2)) = apiCall(CopyObjectAttributes1 , (trgHandle(HANDLE1) , srcHandle(HANDLE2))) .
-  eq makeReturnStmt(CopyObjectAttributes1 , RET , empty , E) = $assign(# RET , E) .
+  eq makeReturnStmt(CopyObjectAttributes1 , RET , empty , E) = $assign(# RET | E) .
 
   eq makeCall(GenerateKey , (# HANDLE , # KEYSIZE , # ATTRS)) = apiCall(GenerateKey , (handle(HANDLE) , size(KEYSIZE) , attrs(ATTRS))) .
-  eq makeReturnStmt(GenerateKey , RET , empty , E) = $assign(# RET , E) .
+  eq makeReturnStmt(GenerateKey , RET , empty , E) = $assign(# RET | E) .
 endm
 
 --- This module defines IMP call and return for persistent object functions.
@@ -221,18 +221,18 @@ mod PERSISTENT-OBJECT-TEE-CALL is
 --- TODO: CONSIDER STORAGE IDENTIFIER
   eq makeCall(OpenPersistentObject , (# STORID , # FILE , # DATAFLAGS)) 
    = apiCall(OpenPersistentObject , (fileId(FILE) , flags(DATAFLAGS))) . 
-  eq makeReturnStmt(OpenPersistentObject , RET , handle(HANDLE) , EL) = $assign((# RET , # HANDLE) , EL) .
+  eq makeReturnStmt(OpenPersistentObject , RET , handle(HANDLE) , EL) = $assign((# RET , # HANDLE) | EL) .
 
   eq makeCall(CreatePersistentObject , (# STORID , # FILE , # DATAFLAGS , # HANDLE , # DATA , # DATASIZE , # OPTHANDLE)) 
    = apiCall(CreatePersistentObject , (fileId(FILE) , flags(DATAFLAGS) , handle(HANDLE) , data(DATA) , size(DATASIZE) , opt(OPTHANDLE))) .
-  eq makeReturnStmt(CreatePersistentObject , RET , handle(HANDLE) , EL) = $assign((# RET , # HANDLE) , EL) .
+  eq makeReturnStmt(CreatePersistentObject , RET , handle(HANDLE) , EL) = $assign((# RET , # HANDLE) | EL) .
 
   eq makeCall(CloseAndDeletePersistentObject1 , (# HANDLE)) = apiCall(CloseAndDeletePersistentObject1 , handle(HANDLE)) .
-  eq makeReturnStmt(CloseAndDeletePersistentObject1 , RET , empty , (R , H)) = $clearMem(H) ; $assign(# RET , R) .
-  eq makeReturnStmt(CloseAndDeletePersistentObject1 , RET , handle(TEE-HANDLE-NULL) , (R , H)) = $assign(# RET , R) .
+  eq makeReturnStmt(CloseAndDeletePersistentObject1 , RET , empty , (R , H)) = $clearMem(H) ; $assign(# RET | R) .
+  eq makeReturnStmt(CloseAndDeletePersistentObject1 , RET , handle(TEE-HANDLE-NULL) , (R , H)) = $assign(# RET | R) .
 
   eq makeCall(RenamePersistentObject , (# HANDLE , # FILE)) = apiCall(RenamePersistentObject , (handle(HANDLE) , fileId(FILE))) .
-  eq makeReturnStmt(RenamePersistentObject , RET , empty , R) = $assign(# RET , R) .
+  eq makeReturnStmt(RenamePersistentObject , RET , empty , R) = $assign(# RET | R) .
 endm
 
 --- This module defines IMP call and return for generic object functions.
@@ -264,19 +264,19 @@ mod GENERIC-OBJECT-TEE-CALL is
 
   eq makeCall(GetObjectInfo1 , (# HANDLE)) = apiCall(GetObjectInfo1 , handle(HANDLE)) .
   eq makeReturnStmt(GetObjectInfo1 , TEE-SUCCESS , info(teeObjectInfo(OBJTYPE , OBJSIZE , MAXOBJSIZE , OBJUSAGES , DATASIZE , DATAPOS , DATAFLAGS)) , (E , E')) 
-  = $assign(# TEE-SUCCESS , E) ;
+  = $assign(# TEE-SUCCESS | E) ;
     E' . objectType := # OBJTYPE ; E' . objectSize := # OBJSIZE ; E' . maxObjectSize := # MAXOBJSIZE ;
     E' . objectUsage := # OBJUSAGES ; E' . dataSize := # DATASIZE ; E' . dataPosition := # DATAPOS ; E' . handleFlags := # DATAFLAGS .  
-  eq makeReturnStmt(GetObjectInfo1 , RET , empty , (E , E')) = $assign(# RET , E) .
+  eq makeReturnStmt(GetObjectInfo1 , RET , empty , (E , E')) = $assign(# RET | E) .
 
   eq makeCall(RestrictObjectUsage1 , (# HANDLE , # OBJUSAGES)) = apiCall(RestrictObjectUsage1 , (handle(HANDLE) , usages(OBJUSAGES))) .
-  eq makeReturnStmt(RestrictObjectUsage1 , RET , empty , E) = $assign(# RET , E) .
+  eq makeReturnStmt(RestrictObjectUsage1 , RET , empty , E) = $assign(# RET | E) .
 
   eq makeCall(GetObjectBufferAttribute , (# HANDLE , # ID)) = apiCall(GetObjectBufferAttribute , (handle(HANDLE) , constId(ID))) .
-  eq makeReturnStmt(GetObjectBufferAttribute , RET , constVal(V) , EL) = $assign((# RET , # V) , EL) .
+  eq makeReturnStmt(GetObjectBufferAttribute , RET , constVal(V) , EL) = $assign((# RET , # V) | EL) .
 
   eq makeCall(GetObjectValueAttribute , (# HANDLE , # ID)) = apiCall(GetObjectValueAttribute , (handle(HANDLE) , constId(ID))) .
-  eq makeReturnStmt(GetObjectValueAttribute , RET , constVal(V) , EL) = $assign((# RET , # V) , EL) .
+  eq makeReturnStmt(GetObjectValueAttribute , RET , constVal(V) , EL) = $assign((# RET , # V) | EL) .
 
   eq makeCall(CloseObject , (# HANDLE)) = apiCall(CloseObject , handle(HANDLE)) .
   eq makeReturnStmt(CloseObject , noReturnCode , empty , E) = $clearMem(E) .
@@ -311,7 +311,7 @@ mod ENUMERATOR-OBJECT-TEE-CALL is
   var EL : ExpList .
 
   eq makeCall(AllocatePersistentObjectEnumerator , nil) = apiCall(AllocatePersistentObjectEnumerator , empty) .
-  eq makeReturnStmt(AllocatePersistentObjectEnumerator , RET , handle(HANDLE) , EL) = $assign((# RET , # HANDLE) , EL) .
+  eq makeReturnStmt(AllocatePersistentObjectEnumerator , RET , handle(HANDLE) , EL) = $assign((# RET , # HANDLE) | EL) .
   
   eq makeCall(FreePersistentObjectEnumerator , (# HANDLE)) = apiCall(FreePersistentObjectEnumerator , handle(HANDLE)) .
   eq makeReturnStmt(FreePersistentObjectEnumerator , noReturnCode , empty , E) = $clearMem(E) .
@@ -321,15 +321,15 @@ mod ENUMERATOR-OBJECT-TEE-CALL is
   eq makeReturnStmt(ResetPersistentObjectEnumerator , noReturnCode , empty , nil) = $ignore .
 
   eq makeCall(StartPersistentObjectEnumerator , (# HANDLE , # STORID)) = apiCall(StartPersistentObjectEnumerator , handle(HANDLE)) .
-  eq makeReturnStmt(StartPersistentObjectEnumerator , RET , empty , E) = $assign(# RET , E) .
+  eq makeReturnStmt(StartPersistentObjectEnumerator , RET , empty , E) = $assign(# RET | E) .
 
   eq makeCall(GetNextPersistentObject , (# HANDLE)) = apiCall(GetNextPersistentObject , handle(HANDLE)) .
   eq makeReturnStmt(GetNextPersistentObject , TEE-SUCCESS , (info(teeObjectInfo(OBJTYPE , OBJSIZE , MAXOBJSIZE , OBJUSAGES , DATASIZE , DATAPOS , DATAFLAGS)) , fileId(FILE)) , (R , E , E'))
-    = $assign(# TEE-SUCCESS , R) ;
+    = $assign(# TEE-SUCCESS | R) ;
       E . objectType := # OBJTYPE ; E . objectSize := # OBJSIZE ; E . maxObjectSize := # MAXOBJSIZE ;
       E . objectUsage := # OBJUSAGES ; E . dataSize := # DATASIZE ; E . dataPosition := # DATAPOS ; E . handleFlags := # DATAFLAGS ;
-      $assign(# FILE , E') .
-  eq makeReturnStmt(GetNextPersistentObject , RET , empty , (R , E , E')) = $assign(# RET , R) .
+      $assign(# FILE | E') .
+  eq makeReturnStmt(GetNextPersistentObject , RET , empty , (R , E , E')) = $assign(# RET | R) .
 endm
 
 --- This module defines IMP call and return for data stream access functions.
@@ -352,17 +352,17 @@ mod DATA-STREAM-OBJECT-TEE-CALL is
   var EL : ExpList .
 
   eq makeCall(ReadObjectData , (# HANDLE , # DATASIZE)) = apiCall(ReadObjectData , (handle(HANDLE) , size(DATASIZE))) .
-  eq makeReturnStmt(ReadObjectData , TEE-SUCCESS , data(DATA) , EL) = $assign((# TEE-SUCCESS , # DATA) , EL) .
-  eq makeReturnStmt(ReadObjectData , RET , empty , (E , E')) = $assign(# RET , E) .
+  eq makeReturnStmt(ReadObjectData , TEE-SUCCESS , data(DATA) , EL) = $assign((# TEE-SUCCESS , # DATA) | EL) .
+  eq makeReturnStmt(ReadObjectData , RET , empty , (E , E')) = $assign(# RET | E) .
   
   eq makeCall(WriteObjectData , (# HANDLE , # DATA)) = apiCall(WriteObjectData , (handle(HANDLE) , data(DATA))) .
-  eq makeReturnStmt(WriteObjectData , RET , empty , E) = $assign(# RET , E) .
+  eq makeReturnStmt(WriteObjectData , RET , empty , E) = $assign(# RET | E) .
  
   eq makeCall(TruncateObjectData , (# HANDLE , # DATASIZE)) = apiCall(TruncateObjectData , (handle(HANDLE) , size(DATASIZE))) .
-  eq makeReturnStmt(TruncateObjectData , RET , empty , E) = $assign(# RET , E) .
+  eq makeReturnStmt(TruncateObjectData , RET , empty , E) = $assign(# RET | E) .
 
   eq makeCall(SeekObjectData , (# HANDLE , # OFST , # WHENCE)) = apiCall(SeekObjectData , (handle(HANDLE) , size(OFST) , type(WHENCE))) .
-  eq makeReturnStmt(SeekObjectData , RET , empty , E) = $assign(# RET , E) .
+  eq makeReturnStmt(SeekObjectData , RET , empty , E) = $assign(# RET | E) .
 endm
 
 --- This module defines IMP call and return for cryptographic operation functions.
@@ -399,8 +399,8 @@ mod CRYPTO-OPERATION-TEE-CALL is
 
 --- Generic
   eq makeCall(AllocateOperation , (# ALGO , # OM , # KEYSIZE)) = apiCall(AllocateOperation , (alg(ALGO) , mode(OM) , size(KEYSIZE))) .
-  eq makeReturnStmt(AllocateOperation , RET , handle(HANDLE) , EL) = $assign((# RET , # HANDLE) , EL) .
-  eq makeReturnStmt(AllocateOperation , RET , empty , (E , E')) = $assign(# RET , E) .
+  eq makeReturnStmt(AllocateOperation , RET , handle(HANDLE) , EL) = $assign((# RET , # HANDLE) | EL) .
+  eq makeReturnStmt(AllocateOperation , RET , empty , (E , E')) = $assign(# RET | E) .
   
   eq makeCall(FreeOperation , (# HANDLE)) = apiCall(FreeOperation , handle(HANDLE)) .
   eq makeReturnStmt(FreeOperation , noReturnCode , empty , E) = $clearMem(E) .
@@ -410,7 +410,7 @@ mod CRYPTO-OPERATION-TEE-CALL is
   eq makeReturnStmt(ResetOperation , noReturnCode , empty , nil) = $ignore .
 
   eq makeCall(SetOperationKey , (# HANDLE1 , # HANDLE2)) = apiCall(SetOperationKey , (handle(HANDLE1) , keyHandle(HANDLE2))) .
-  eq makeReturnStmt(SetOperationKey , RET , empty , E) = $assign(# RET , E) .
+  eq makeReturnStmt(SetOperationKey , RET , empty , E) = $assign(# RET | E) .
 
 --- TODO: NEED TO UPDATE RETURN
   eq makeCall(GetOperationInfo , (# HANDLE)) = apiCall(GetOperationInfo , handle(HANDLE)) .
@@ -437,22 +437,22 @@ mod CRYPTO-OPERATION-TEE-CALL is
   eq makeReturnStmt(DigestUpdate , noReturnCode , empty , nil) = $ignore .
   
   eq makeCall(DigestDoFinal , (# HANDLE , # DATA)) = apiCall(DigestDoFinal , (handle(HANDLE) , data(DATA))) .
-  eq makeReturnStmt(DigestDoFinal , TEE-SUCCESS , data(DATA) , EL) = $assign((# TEE-SUCCESS , # DATA) , EL) .
-  eq makeReturnStmt(DigestDoFinal , RET , empty , (E , E')) = $assign(# RET , E) .
+  eq makeReturnStmt(DigestDoFinal , TEE-SUCCESS , data(DATA) , EL) = $assign((# TEE-SUCCESS , # DATA) | EL) .
+  eq makeReturnStmt(DigestDoFinal , RET , empty , (E , E')) = $assign(# RET | E) .
   
   eq makeCall(DigestExtract , (# HANDLE)) = apiCall(DigestExtract , handle(HANDLE)) .
-  eq makeReturnStmt(DigestExtract , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
+  eq makeReturnStmt(DigestExtract , RET , data(DL) , EL) = $assign((# RET , # DL) | EL) .
 
 --- Symmetric Cipher
   eq makeCall(CipherInit , (# HANDLE , # IV)) = apiCall(CipherInit , (handle(HANDLE) , iv(IV))) .
   eq makeReturnStmt(CipherInit , noReturnCode , empty , nil) = $ignore .
 
   eq makeCall(CipherUpdate , (# HANDLE , # DL)) = apiCall(CipherUpdate , (handle(HANDLE) , data(DL))) .
-  eq makeReturnStmt(CipherUpdate , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
-  eq makeReturnStmt(CipherUpdate , RET , empty , (E, E')) = $assign(# RET , E) .
+  eq makeReturnStmt(CipherUpdate , RET , data(DL) , EL) = $assign((# RET , # DL) | EL) .
+  eq makeReturnStmt(CipherUpdate , RET , empty , (E, E')) = $assign(# RET | E) .
   
   eq makeCall(CipherDoFinal , (# HANDLE , # DL)) = apiCall(CipherDoFinal , (handle(HANDLE) , data(DL))) .
-  eq makeReturnStmt(CipherDoFinal , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
+  eq makeReturnStmt(CipherDoFinal , RET , data(DL) , EL) = $assign((# RET , # DL) | EL) .
 
 --- MAC
   eq makeCall(MACInit , (# HANDLE , # IV)) = apiCall(MACInit , (handle(HANDLE) , iv(IV))) .
@@ -462,34 +462,34 @@ mod CRYPTO-OPERATION-TEE-CALL is
   eq makeReturnStmt(MACUpdate , noReturnCode , empty , nil) = $ignore .
 
   eq makeCall(MACComputeFinal , (# HANDLE , # DL)) = apiCall(MACComputeFinal , (handle(HANDLE) , data(DL))) .
-  eq makeReturnStmt(MACComputeFinal , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
+  eq makeReturnStmt(MACComputeFinal , RET , data(DL) , EL) = $assign((# RET , # DL) | EL) .
 
   eq makeCall(MACCompareFinal , (# HANDLE , # DL , # MAC)) = apiCall(MACCompareFinal , (handle(HANDLE) , data(DL) , mac(MAC))) .
-  eq makeReturnStmt(MACCompareFinal , RET , empty , E) = $assign(# RET , E) .
+  eq makeReturnStmt(MACCompareFinal , RET , empty , E) = $assign(# RET | E) .
 
 --- AE
   eq makeCall(AEInit , (# HANDLE , # IV)) = apiCall(AEInit , (handle(HANDLE) , iv(IV))) .
-  eq makeReturnStmt(AEInit , RET , empty , E) = $assign(# RET , E) .
+  eq makeReturnStmt(AEInit , RET , empty , E) = $assign(# RET | E) .
 
   eq makeCall(AEUpdateAAD , (# HANDLE , # DL)) = apiCall(AEUpdateAAD , (handle(HANDLE) , data(DL))) .
   eq makeReturnStmt(AEUpdateAAD , noReturnCode , empty , E) = $ignore .
 
   eq makeCall(AEUpdate , (# HANDLE , # DL)) = apiCall(AEUpdate , (handle(HANDLE) , data(DL))) .
-  eq makeReturnStmt(AEUpdate , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
+  eq makeReturnStmt(AEUpdate , RET , data(DL) , EL) = $assign((# RET , # DL) | EL) .
 
 --- Asymmetic Cipher
   eq makeCall(AsymmetricEncrypt , (# HANDLE , # DL)) = apiCall(AsymmetricEncrypt , (handle(HANDLE) , data(DL))) .
-  eq makeReturnStmt(AsymmetricEncrypt , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
+  eq makeReturnStmt(AsymmetricEncrypt , RET , data(DL) , EL) = $assign((# RET , # DL) | EL) .
 
   eq makeCall(AsymmetricDecrypt , (# HANDLE , # DL)) = apiCall(AsymmetricDecrypt , (handle(HANDLE) , data(DL))) .
-  eq makeReturnStmt(AsymmetricDecrypt , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
+  eq makeReturnStmt(AsymmetricDecrypt , RET , data(DL) , EL) = $assign((# RET , # DL) | EL) .
 
   eq makeCall(AsymmetricDecrypt , (# HANDLE , # DL)) = apiCall(AsymmetricDecrypt , (handle(HANDLE) , data(DL))) .
-  eq makeReturnStmt(AsymmetricDecrypt , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
+  eq makeReturnStmt(AsymmetricDecrypt , RET , data(DL) , EL) = $assign((# RET , # DL) | EL) .
 
 --- Misc
   eq makeCall(GenerateRandom , nil) = apiCall(GenerateRandom , empty) .
-  eq makeReturnStmt(GenerateRandom , noReturnCode , data(DL) , E) = $assign(# DL , E) .
+  eq makeReturnStmt(GenerateRandom , noReturnCode , data(DL) , E) = $assign(# DL | E) .
 endm
 
 --- This module defines IMP call and return for trust applications.

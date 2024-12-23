@@ -29,6 +29,22 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   var HS : Configuration .
 
 ------------------------------------------------------------
+--- Auxilary Functions
+------------------------------------------------------------
+
+--- For TEE_ReadObjectData
+
+  op isReadable : Set{DataFlag} -> Bool .
+  eq isReadable((TEE-DATA-FLAG-ACCESS-READ , DATAFLAGS)) = true .
+  eq isReadable(DATAFLAGS) = false [owise] .
+
+--- For TEE_WriteObjectData
+
+  op isWritable : Set{DataFlag} -> Bool .
+  eq isWritable((TEE-DATA-FLAG-ACCESS-WRITE , DATAFLAGS)) = true .
+  eq isWritable(DATAFLAGS) = false [owise] .
+
+------------------------------------------------------------
 --- 'TEE_ReadObjectData'
 ------------------------------------------------------------
 
@@ -104,10 +120,6 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   --- .
 
 --- Model/Implementation Specific Version
-  op isReadable : Set{DataFlag} -> Bool .
-  eq isReadable((TEE-DATA-FLAG-ACCESS-READ , DATAFLAGS)) = true .
-  eq isReadable(DATAFLAGS) = false [owise] .
-
   crl [read-object-data-subroutine] :
     readObjectData(HANDLE , DATASIZE , TK , TN)
     < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-access-flag-set : DATAFLAGS , data-position : DATAPOS > HS) , 
@@ -166,10 +178,6 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
     < TK : TaKernel | api-state : waitWriteObjectData >
     writeObjectData(HANDLE , DATA , TK , TN)
   .
-
-  op isWritable : Set{DataFlag} -> Bool .
-  eq isWritable((TEE-DATA-FLAG-ACCESS-WRITE , DATAFLAGS)) = true .
-  eq isWritable(DATAFLAGS) = false [owise] .
 
   crl [write-object-data-subroutine] :
     writeObjectData(HANDLE , DATA , TK , TN)

@@ -81,7 +81,7 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
 --- The 'TEE_FreePersistentObjectEnumerator' function deallocates all resources associated with an object enumerator handle.
 --- See page 166 of the G.P. documentation for more details.
 
---- The following three rules delete an enumerator object.
+--- The following three rules delete the enumerator object pointed by the valid input handle.
 
   msg deleteEnumerator : HandleId TaInstId -> Msg .
   msg finishDeleteEnumerator : TaInstId -> Msg .
@@ -180,6 +180,8 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
 --- The 'TEE_StartPersistentObjectEnumerator' function starts the enumeration of all the persistent objects in a given Trusted Storage.
 --- See page 168 of the G.P. documentation for more details.
 
+--- The following four rules start the enumeration.
+
   msg startEnumerator : HandleId Set{FileId} TaInstId -> Msg .
   msg finishStartEnumerator : TaInstId -> Msg .
 
@@ -220,6 +222,8 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
                       api-return : apiReturn(StartPersistentObjectEnumerator , TEE-SUCCESS) >
   .
 
+--- This rule returns TEE_ERROR_ITEM_NOT_FOUND if there is no object in the specified storage.
+
   rl [start-enumerator-item-not-found] :
     retTrustedOS(storageStatus(storageNormal) storageEmpty , TK)
     < TK : TaKernel | api-state : waitStorageCheck , 
@@ -246,6 +250,8 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
 
 --- The 'TEE_GetNextPersistentObject' function gets the next object in an enumeration and returns information about the object: type, size, identifier, etc.
 --- See page 169 of the G.P. documentation for more details.
+
+--- The following six rules acquire the next object and its data in an enumeration.
 
   rl [get-next-persistent-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -315,6 +321,9 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
     =>
     < TK : TaKernel | api-state : finished , api-return : apiReturn(GetNextPersistentObject , TEE-SUCCESS , (info(INFO) , fileId(FILE))) >
   .
+
+--- This rule returns TEE_ERROR_CORRUPT_OBJECT if the storage is corrupt.
+--- This rule returns TEE_ERROR_STORAGE_NOT_AVAILABLE if the persistent object is stored in a storage area which is currently inaccessible.
 
   crl [get-next-persistent-storage-err] :
     retTrustedOS(storageStatus(STATUS) , TK)

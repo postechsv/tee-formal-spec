@@ -51,10 +51,11 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 
 --- For TEE_PopulateTransientObject
 --- All mandatory attributes SHALL be specified, otherwise the routine will panic.
---- TODO: NEED TO UPDATE TO COVER WHOLE TABLE 5-10.
+--- TODO: NEED TO UPDATE TO COVER WHOLE TABLE 5-10 (to support additional benchmarks).
 
   op mandatory : ObjectType -> Set{AttrId} .
   eq mandatory(TEE-TYPE-AES) = (TEE-ATTR-SECRET-VALUE) .
+  eq mandatory(TEE-TYPE-HMAC-SHA256) = (TEE-ATTR-SECRET-VALUE) .
   eq mandatory(TEE-TYPE-RSA-PUBLIC-KEY) = (TEE-ATTR-RSA-MODULUS , TEE-ATTR-RSA-PUBLIC-EXPONENT) .
   eq mandatory(TEE-TYPE-RSA-KEYPAIR) = (TEE-ATTR-RSA-MODULUS , TEE-ATTR-RSA-PUBLIC-EXPONENT , TEE-ATTR-RSA-PRIVATE-EXPONENT) .
   eq mandatory(TEE-TYPE-ECDSA-PUBLIC-KEY) = (TEE-ATTR-ECC-PUBLIC-VALUE-X , TEE-ATTR-ECC-PUBLIC-VALUE-Y , TEE-ATTR-ECC-CURVE) .
@@ -63,10 +64,11 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 --- For TEE_PopulateTransientObject
 --- Only the attributes specified in Table 5-10 associated with the object's type are valid.
 --- The presence of any other attribute in the attribute list is an error and will cause the routine to panic. 
---- TODO: NEED TO UPDATE TO COVER WHOLE TABLE 5-10.
+--- TODO: NEED TO UPDATE TO COVER WHOLE TABLE 5-10 (to support additional benchmarks).
 
   op allowed : ObjectType -> Set{AttrId} .
   eq allowed(TEE-TYPE-AES) = (TEE-ATTR-SECRET-VALUE) .
+  eq allowed(TEE-TYPE-HMAC-SHA256) = (TEE-ATTR-SECRET-VALUE) .
   eq allowed(TEE-TYPE-RSA-PUBLIC-KEY) = (TEE-ATTR-RSA-MODULUS , TEE-ATTR-RSA-PUBLIC-EXPONENT) .
   eq allowed(TEE-TYPE-RSA-KEYPAIR) = (TEE-ATTR-RSA-MODULUS , TEE-ATTR-RSA-PUBLIC-EXPONENT , 
                                       TEE-ATTR-RSA-PRIVATE-EXPONENT , TEE-ATTR-RSA-PRIME1 , 
@@ -334,6 +336,9 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 --- The 'TEE_CopyObjectAttributes1' function populates an uninitialized object handle with the attributes of another object handle; that is,
 --- it populates the attributes of destObject with the attributes of srcObject.
 --- See page 151 of the G.P. documentation for more details.
+
+--- The following five rules populates an object with attributes acquired from a (transient) object.
+--- Note: rules acquiring attributes from a persistent object is in persistent.maude file.
 
   crl [copy-object-attributes-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,

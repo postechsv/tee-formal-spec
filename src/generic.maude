@@ -38,6 +38,37 @@ omod GENERIC-OBJECT-BEHAVIOR is
   var PARAMS : Set{TeeApiParam} .
 
 ------------------------------------------------------------
+--- Auxilary Functions
+------------------------------------------------------------
+
+--- For TEE_GetObjectBufferAttribute & TEE_GetObjectValueAttribute
+
+  op canAcquireAttr : AttrId Set{ObjectUsage} -> Bool .
+  eq canAcquireAttr(ID , OBJUSAGES) = not (not publicType(ID) and not (protectedType(ID) and extractable(OBJUSAGES))) .
+
+  op protectedType : AttrId -> Bool .
+  eq protectedType(ID) = ID :: AttrProtected .
+
+  op publicType : AttrId -> Bool .
+  eq publicType(ID) = ID :: AttrPublic .
+
+  op extractable : Set{ObjectUsage} -> Bool .
+  eq extractable(OBJUSAGES) = (TEE-USAGE-EXTRACTABLE) in OBJUSAGES .
+
+  op getAttrContent : AttrId Set{TeeAttribute} -> AttrContent .
+  eq getAttrContent(ID, (teeAttribute(ID , V) , ATTRS)) = V .
+
+--- For TEE_GetObjectBufferAttribute
+
+  op bufferType : AttrId -> Bool .
+  eq bufferType(ID) = ID :: AttrRef .
+
+--- For TEE_GetObjectValueAttribute
+
+  op valueType : AttrId -> Bool .
+  eq valueType(ID) = ID :: AttrVal .
+
+------------------------------------------------------------
 --- 'TEE_GetObjectInfo1'
 ------------------------------------------------------------
 
@@ -80,7 +111,7 @@ omod GENERIC-OBJECT-BEHAVIOR is
                       api-return : apiReturn(GetObjectInfo1 , TEE-SUCCESS , info(teeObjectInfo(OBJTYPE , KEYSIZE , MAXOBJSIZE , OBJUSAGES , dataSize(0) , pos(0) , empty))) >
   .
 
---- The following two rules acquire persistent object and its associated data stream data.
+--- The following three rules acquire persistent object and its associated data stream data.
 
   rl [get-obj-info-persistent-subroutine] :
     reqObjectInfo(HANDLE , TK , TN)
@@ -133,7 +164,7 @@ omod GENERIC-OBJECT-BEHAVIOR is
 --- The 'TEE_RestrictObjectUsage1' restricts the object usage flags of an object handle to contain at most the flags passed in the 'objectUsage' parameter.
 --- See page 134 of the G.P. documentation for more details.
 
---- This rule restricts the usage of the object.
+--- The following four rules restricts the usage of the (transient) object.
 
   msg restrictUsage : HandleId Set{ObjectUsage} TaInstId -> Msg .
   msg finishRestrictUsage : TaInstId -> Msg .
@@ -172,6 +203,8 @@ omod GENERIC-OBJECT-BEHAVIOR is
     =>
     < TK : TaKernel | api-state : finished , api-return : apiReturn(RestrictObjectUsage1) >
   .
+
+--- The following two rules check storage status before restricting the usage of the persistent object.
 
   rl [restrict-object-usage-subroutine] :
     retAttributePr(ATTRS , OBJTYPE , OBJUSAGES , TK)
@@ -214,23 +247,7 @@ omod GENERIC-OBJECT-BEHAVIOR is
 --- The 'TEE_GetObjectBufferAttribute' function extracts one buffer attribute from an object.
 --- See page 135 of the G.P. documentation for more details.
 
-  op bufferType : AttrId -> Bool .
-  eq bufferType(ID) = ID :: AttrRef .
-
-  op canAcquireAttr : AttrId Set{ObjectUsage} -> Bool .
-  eq canAcquireAttr(ID , OBJUSAGES) = not (not publicType(ID) and not (protectedType(ID) and extractable(OBJUSAGES))) .
-
-  op protectedType : AttrId -> Bool .
-  eq protectedType(ID) = ID :: AttrProtected .
-
-  op publicType : AttrId -> Bool .
-  eq publicType(ID) = ID :: AttrPublic .
-
-  op extractable : Set{ObjectUsage} -> Bool .
-  eq extractable(OBJUSAGES) = (TEE-USAGE-EXTRACTABLE) in OBJUSAGES .
-
-  op getAttrContent : AttrId Set{TeeAttribute} -> AttrContent .
-  eq getAttrContent(ID, (teeAttribute(ID , V) , ATTRS)) = V .
+--- The following three rules extract one buffer attribute from the (transient) object.
 
   crl [get-object-buffer-attribute-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -261,6 +278,8 @@ omod GENERIC-OBJECT-BEHAVIOR is
                       api-return : apiReturn(GetObjectBufferAttribute , TEE-SUCCESS , constVal(getAttrContent(ID , ATTRS))) >
   if ID in getAttrIds(ATTRS) /\ canAcquireAttr(ID , OBJUSAGES)
   .
+
+--- The following two rules check storage status before extracting one buffer attribute from the persistent object.
 
   rl [get-object-buffer-attribute-subroutine] :
     retAttributePr(ATTRS , OBJTYPE , OBJUSAGES , TK)
@@ -323,8 +342,7 @@ omod GENERIC-OBJECT-BEHAVIOR is
 --- The 'TEE_GetObjectValueAttribute' function extracts a value attribute from an object.
 --- See page 137 of the G.P. documentation for more details.
 
-  op valueType : AttrId -> Bool .
-  eq valueType(ID) = ID :: AttrVal .
+--- The following three rules extract one value attribute from the (transient) object.
 
   crl [get-object-value-attribute-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -355,6 +373,8 @@ omod GENERIC-OBJECT-BEHAVIOR is
                       api-return : apiReturn(GetObjectValueAttribute , TEE-SUCCESS , constVal(getAttrContent(ID , ATTRS))) >
   if ID in getAttrIds(ATTRS) /\ canAcquireAttr(ID , OBJUSAGES)
   .
+
+--- The following two rules check storage status before extracting one value attribute from the persistent object.
 
   rl [get-object-value-attribute-subroutine] :
     retAttributePr(ATTRS , OBJTYPE , OBJUSAGES , TK)

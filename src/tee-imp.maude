@@ -456,6 +456,10 @@ mod GENERIC-OBJECT-TEE-CALL is
   vars E E' : Exp .
   var EL : ExpList .
 
+------------------------------------------------------------
+--- 'TEE_GetObjectInfo1' Syscall
+------------------------------------------------------------
+
   eq makeCall(GetObjectInfo1 , (# HANDLE)) = apiCall(GetObjectInfo1 , handle(HANDLE)) .
   eq makeReturnStmt(GetObjectInfo1 , TEE-SUCCESS , info(teeObjectInfo(OBJTYPE , OBJSIZE , MAXOBJSIZE , OBJUSAGES , DATASIZE , DATAPOS , DATAFLAGS)) , (E , E')) 
   = $assign(# TEE-SUCCESS , E) 
@@ -463,14 +467,30 @@ mod GENERIC-OBJECT-TEE-CALL is
     E' . objectUsage := # OBJUSAGES ; E' . dataSize := # DATASIZE ; E' . dataPosition := # DATAPOS ; E' . handleFlags := # DATAFLAGS ; .  
   eq makeReturnStmt(GetObjectInfo1 , RET , empty , (E , E')) = $assign(# RET , E) .
 
+------------------------------------------------------------
+--- 'TEE_RestrictObjectUsage1' Syscall
+------------------------------------------------------------
+
   eq makeCall(RestrictObjectUsage1 , (# HANDLE , # OBJUSAGES)) = apiCall(RestrictObjectUsage1 , (handle(HANDLE) , usages(OBJUSAGES))) .
   eq makeReturnStmt(RestrictObjectUsage1 , RET , empty , E) = $assign(# RET , E) .
+
+------------------------------------------------------------
+--- 'TEE_GetObjectBufferAttribute' Syscall
+------------------------------------------------------------
 
   eq makeCall(GetObjectBufferAttribute , (# HANDLE , # ID)) = apiCall(GetObjectBufferAttribute , (handle(HANDLE) , constId(ID))) .
   eq makeReturnStmt(GetObjectBufferAttribute , RET , constVal(V) , EL) = $assign((# RET , # V) , EL) .
 
+------------------------------------------------------------
+--- 'TEE_GetObjectValueAttribute' Syscall
+------------------------------------------------------------
+
   eq makeCall(GetObjectValueAttribute , (# HANDLE , # ID)) = apiCall(GetObjectValueAttribute , (handle(HANDLE) , constId(ID))) .
   eq makeReturnStmt(GetObjectValueAttribute , RET , constVal(V) , EL) = $assign((# RET , # V) , EL) .
+
+------------------------------------------------------------
+--- 'TEE_CloseObject' Syscall
+------------------------------------------------------------
 
   eq makeCall(CloseObject , (# HANDLE)) = apiCall(CloseObject , handle(HANDLE)) .
   eq makeReturnStmt(CloseObject , noReturnCode , empty , E) = skip .
@@ -504,18 +524,38 @@ mod ENUMERATOR-OBJECT-TEE-CALL is
   var E E' R : Exp .
   var EL : ExpList .
 
+------------------------------------------------------------
+--- 'TEE_AllocatePersistentObjectEnumerator' Syscall
+------------------------------------------------------------
+
   eq makeCall(AllocatePersistentObjectEnumerator , nil) = apiCall(AllocatePersistentObjectEnumerator , empty) .
   eq makeReturnStmt(AllocatePersistentObjectEnumerator , RET , handle(HANDLE) , EL) = $assign((# RET , # HANDLE) , EL) .
-  
+
+------------------------------------------------------------
+--- 'TEE_FreePersistentObjectEnumerator' Syscall
+------------------------------------------------------------
+
   eq makeCall(FreePersistentObjectEnumerator , (# HANDLE)) = apiCall(FreePersistentObjectEnumerator , handle(HANDLE)) .
   eq makeReturnStmt(FreePersistentObjectEnumerator , noReturnCode , empty , E) = skip .
   eq makeReturnStmt(FreePersistentObjectEnumerator , noReturnCode , handle(TEE-HANDLE-NULL) , E) = skip .
 
+------------------------------------------------------------
+--- 'TEE_ResetPersistentObjectEnumerator' Syscall
+------------------------------------------------------------
+
   eq makeCall(ResetPersistentObjectEnumerator , (# HANDLE)) = apiCall(ResetPersistentObjectEnumerator , handle(HANDLE)) .
   eq makeReturnStmt(ResetPersistentObjectEnumerator , noReturnCode , empty , nil) = skip .
 
+------------------------------------------------------------
+--- 'TEE_StartPersistentObjectEnumerator' Syscall
+------------------------------------------------------------
+
   eq makeCall(StartPersistentObjectEnumerator , (# HANDLE , # STORID)) = apiCall(StartPersistentObjectEnumerator , handle(HANDLE)) .
   eq makeReturnStmt(StartPersistentObjectEnumerator , RET , empty , E) = $assign(# RET , E) .
+
+------------------------------------------------------------
+--- 'TEE_GetNextPersistentObject' Syscall
+------------------------------------------------------------
 
   eq makeCall(GetNextPersistentObject , (# HANDLE)) = apiCall(GetNextPersistentObject , handle(HANDLE)) .
   eq makeReturnStmt(GetNextPersistentObject , TEE-SUCCESS , (info(teeObjectInfo(OBJTYPE , OBJSIZE , MAXOBJSIZE , OBJUSAGES , DATASIZE , DATAPOS , DATAFLAGS)) , fileId(FILE)) , (R , E , E'))
@@ -545,15 +585,31 @@ mod DATA-STREAM-OBJECT-TEE-CALL is
   vars E E' : Exp .
   var EL : ExpList .
 
+------------------------------------------------------------
+--- 'TEE_ReadObjectData' Syscall
+------------------------------------------------------------
+
   eq makeCall(ReadObjectData , (# HANDLE , # DATASIZE)) = apiCall(ReadObjectData , (handle(HANDLE) , size(DATASIZE))) .
   eq makeReturnStmt(ReadObjectData , TEE-SUCCESS , data(DATA) , EL) = $assign((# TEE-SUCCESS , # DATA) , EL) .
   eq makeReturnStmt(ReadObjectData , RET , empty , (E , E')) = $assign(# RET , E) .
   
+------------------------------------------------------------
+--- 'TEE_WriteObjectData' Syscall
+------------------------------------------------------------
+
   eq makeCall(WriteObjectData , (# HANDLE , # DATA)) = apiCall(WriteObjectData , (handle(HANDLE) , data(DATA))) .
   eq makeReturnStmt(WriteObjectData , RET , empty , E) = $assign(# RET , E) .
- 
+
+------------------------------------------------------------
+--- 'TEE_TruncateObjectData' Syscall
+------------------------------------------------------------
+
   eq makeCall(TruncateObjectData , (# HANDLE , # DATASIZE)) = apiCall(TruncateObjectData , (handle(HANDLE) , size(DATASIZE))) .
   eq makeReturnStmt(TruncateObjectData , RET , empty , E) = $assign(# RET , E) .
+
+------------------------------------------------------------
+--- 'TEE_SeekObjectData' Syscall
+------------------------------------------------------------
 
   eq makeCall(SeekObjectData , (# HANDLE , # OFST , # WHENCE)) = apiCall(SeekObjectData , (handle(HANDLE) , size(OFST) , type(WHENCE))) .
   eq makeReturnStmt(SeekObjectData , RET , empty , E) = $assign(# RET , E) .
@@ -686,7 +742,7 @@ mod CRYPTO-OPERATION-TEE-CALL is
   eq makeReturnStmt(GenerateRandom , noReturnCode , data(DL) , E) = $assign(# DL , E) .
 endm
 
---- This module defines IMP call and return for transient object functions.
+--- This module defines IMP call and return for internal client API functions.
 
 mod TEE-INTERNAL-CLIENT-CALL is
   pr TEE-API-IMP-CALL .
@@ -709,6 +765,10 @@ mod TEE-INTERNAL-CLIENT-CALL is
   var RET : ReturnCode .
   vars V V1 V2 V3 V4 : Value .
 
+------------------------------------------------------------
+--- 'TEE_OpenTASession' Syscall
+------------------------------------------------------------
+
   eq makeCall(TeeOpenTASession , (# TA , # TO )) = apiCall(TeeOpenTASession , (uuid(TA) , taCancelReqTime(TO))) .
   eq makeReturnStmt(TeeOpenTASession , TEE-SUCCESS , (handle(HANDLE) , returnOrig(RO)) , EL) = $assign((# TEE-SUCCESS , # HANDLE , # RO) , EL) .
 
@@ -721,6 +781,10 @@ mod TEE-INTERNAL-CLIENT-CALL is
       @body(skip),            
       @return(# 1)
   ) .
+
+------------------------------------------------------------
+--- 'TEE_InvokeTACommand' Syscall
+------------------------------------------------------------
 
   eq makeCall(TeeInvokeTACommand , (# HANDLE , # FUNC , VL)) = apiCall(TeeInvokeTACommand , (handle(HANDLE) , funcId(FUNC) , values(VL))) .
   eq makeReturnStmt(TeeInvokeTACommand , RET , values(V) , (E1 , E2)) = 

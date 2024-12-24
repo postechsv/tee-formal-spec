@@ -151,10 +151,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- Auxilary Functions
 ------------------------------------------------------------
 
-------------------------------------------------------------
---- TEE_AllocateOperation
-------------------------------------------------------------
-
+--- For TEE_AllocateOperation
 --- This operator returns the operation class of the input algorithm (Table 6-1).
   op determineOpClass : AlgorithmIdentifier -> OperationClass .
   eq determineOpClass(TEE-ALG-AES-ECB-NOPAD) = TEE-OPERATION-CIPHER .
@@ -194,6 +191,82 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   eq validParams(ALGO , MODE , KEYSIZE) = 
     compatibleMode(ALGO , MODE) and 
     validKeySize(ALGO , KEYSIZE) .
+
+--- For TEE_SetOperationKey
+--- Table 6-5
+  --- op publicKey : ObjectType -> Bool .
+  --- eq publicKey(TEE-TYPE-RSA-PUBLIC-KEY) = true .
+  --- eq publicKey(TEE-TYPE-DSA-PUBLIC-KEY) = true .
+  --- eq publicKey(OBJTYPE) = false [owise] .
+
+--- TODO: NEED TO UPDATE.
+  --- op keySizeCompatible : CryptoKeySize CryptoKeySize -> Bool .
+  --- eq keySizeCompatible(KEYSIZE , MAXKEYSIZE) = true .
+  --- eq keySizeCompatible(64Bits , 128Bits) = ..
+
+--- TODO: IN GP docu. checks key usage and operation mode compatability however, in mqttz code it doesn't?
+  --- op modeUsageCompatible : Set{ObjectUsage} OperationMode -> Bool .
+  --- eq modeUsageCompatible((TEE-USAGE-ENCRYPT , TEE-USAGE-VERIFY , OBJUSAGES) , TEE-MODE-ENCRYPT) = true .
+  --- eq modeUsageCompatible((TEE-USAGE-DECRYPT , TEE-USAGE-SIGN , OBJUSAGES) , TEE-MODE-DECRYPT) = true .
+  --- eq modeUsageCompatible(OBJUSAGES , OM) = false [owise] .
+
+--- For a public key object, the allowed operation modes depend on the type of key and are specified in Table 6-5.
+  op typeModeCompatible : ObjectType OperationMode -> Bool .
+  eq typeModeCompatible(TEE-TYPE-AES , TEE-MODE-ENCRYPT) = true .
+  eq typeModeCompatible(TEE-TYPE-AES , TEE-MODE-DECRYPT) = true .
+  eq typeModeCompatible(TEE-TYPE-RSA-PUBLIC-KEY , TEE-MODE-VERIFY) = true .
+  eq typeModeCompatible(TEE-TYPE-RSA-PUBLIC-KEY , TEE-MODE-ENCRYPT) = true .
+  eq typeModeCompatible(TEE-TYPE-DSA-PUBLIC-KEY , TEE-MODE-VERIFY) = true .
+  --- TODO: Update operator to define full Table 6-5 (to support additional benchmarks).
+  eq typeModeCompatible(TEE-TYPE-HMAC-SHA256 , TEE-MODE-MAC) = true .
+  eq typeModeCompatible(OBJTYPE , MODE) = false [owise] .
+
+--- For TEE_DigestUpdate
+
+  op extractingState : OperationState -> Bool .
+  eq extractingState(TEE-OPERATION-STATE-EXTRACTING) = true .
+  eq extractingState(OS) = false [owise] .
+
+--- For TEE_CipherInit
+--- Table 6-6b
+  op ivRequired : AlgorithmIdentifier -> Bool .
+  eq ivRequired(TEE-ALG-AES-CBC-NOPAD) = true .
+  eq ivRequired(TEE-ALG-AES-CTR) = true .
+  eq ivRequired(TEE-ALG-AES-CTS) = true .
+  eq ivRequired(TEE-ALG-AES-XTS) = true .
+  eq ivRequired(ALGO) = false [owise] .
+
+--- If the operation is in active state, it is reset and then initialized.
+--- If the operation is in initial state, it is moved to active state.
+  op updateOpState : OperationState OperationClass -> OperationState .
+  eq updateOpState(TEE-OPERATION-STATE-INITIAL , TEE-OPERATION-CIPHER) = TEE-OPERATION-STATE-ACTIVE .
+  eq updateOpState(TEE-OPERATION-STATE-ACTIVE , TEE-OPERATION-CIPHER) = TEE-OPERATION-STATE-INITIAL .
+  eq updateOpState(TEE-OPERATION-STATE-INITIAL , TEE-OPERATION-MAC) = TEE-OPERATION-STATE-ACTIVE .
+  eq updateOpState(TEE-OPERATION-STATE-ACTIVE , TEE-OPERATION-MAC) = TEE-OPERATION-STATE-INITIAL .
+
+--- TODO: Need to check whether the IV does have the length required by the algorithm.
+  --- op ivLengthProblem : AlgorithmIdentifer List{Data} -> Bool .
+  --- eq ivLengthProblem(ALGO , IV) = false .
+
+--- For TEE_MACCompareFinal
+
+  op getReturnCode : List{Data} List{Data} -> ReturnCode .
+  eq getReturnCode(MAC , MAC) = TEE-SUCCESS .
+  eq getReturnCode(DATA , MAC) = TEE-ERROR-MAC-INVALID [owise] .
+
+--- For TEE_AsymmetricVerifyDigest
+
+  op getReturnCodeOfDigest : List{Data} List{Data} -> ReturnCode .
+  eq getReturnCodeOfDigest(MAC , MAC) = TEE-SUCCESS .
+  eq getReturnCodeOfDigest(DATA , MAC) = TEE-ERROR-SIGNATURE-INVALID [owise] .
+
+
+------------------------------------------------------------
+--- TEE_AllocateOperation
+------------------------------------------------------------
+
+--- The 'TEE_AllocateOperation' function allocates a handle for a new cryptographic operation and sets the mode and algorithm type.
+--- See page 184 of the G.P. documentation for more details.
 
 --- Version In Paper
   --- crl [allocate-operation-success] :
@@ -273,6 +346,11 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- TEE_FreeOperation
 ------------------------------------------------------------
 
+--- The 'TEE_FreeOperation' function deallocates all resources associated with an operation handle.
+--- See page 189 of the G.P. documentation for more details.
+
+--- The following three rules delete the cryptographic operation.
+
   msg deleteOperationObject : HandleId TaInstId -> Msg .
   msg finishDeleteOperationObject : TaInstId -> Msg .
 
@@ -318,6 +396,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- TEE_GetOperationInfo
 ------------------------------------------------------------
 
+--- The 'TEE_GetOperationInfo' function returns information about an operation handle.
+--- See page 190 of the G.P. documentation for more details.
+
   msg reqOperationAttr : HandleId TaInstId -> Msg .
   msg retOperationAttr : OpObjectAttr OpHandleAttr TaInstId -> Msg .
 
@@ -359,6 +440,10 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 ------------------------------------------------------------
 --- TEE_ResetOperation
 ------------------------------------------------------------
+
+--- The 'TEE_ResetOperation' function resets the TEE_OperationHandle to the state after the initial TEE_AllocateOperation call
+--- with the addition of any keys which were configured subsequent to this.
+--- See page 194 of the G.P. documentation for more details.
 
 --- Version In Paper
   --- rl [reset-operation-request-reset] :
@@ -443,31 +528,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- TEE_SetOperationKey
 ------------------------------------------------------------
 
---- Table 6-5
-  --- op publicKey : ObjectType -> Bool .
-  --- eq publicKey(TEE-TYPE-RSA-PUBLIC-KEY) = true .
-  --- eq publicKey(TEE-TYPE-DSA-PUBLIC-KEY) = true .
-  --- eq publicKey(OBJTYPE) = false [owise] .
-
---- TODO: NEED TO UPDATE.
-  --- op keySizeCompatible : CryptoKeySize CryptoKeySize -> Bool .
-  --- eq keySizeCompatible(KEYSIZE , MAXKEYSIZE) = true .
-  --- eq keySizeCompatible(64Bits , 128Bits) = ..
-
---- TODO: IN GP docu. checks key usage and operation mode compatability however, in mqttz code it doesn't?
-  --- op modeUsageCompatible : Set{ObjectUsage} OperationMode -> Bool .
-  --- eq modeUsageCompatible((TEE-USAGE-ENCRYPT , TEE-USAGE-VERIFY , OBJUSAGES) , TEE-MODE-ENCRYPT) = true .
-  --- eq modeUsageCompatible((TEE-USAGE-DECRYPT , TEE-USAGE-SIGN , OBJUSAGES) , TEE-MODE-DECRYPT) = true .
-  --- eq modeUsageCompatible(OBJUSAGES , OM) = false [owise] .
-
---- For a public key object, the allowed operation modes depend on the type of key and are specified in Table 6-5.
-  op typeModeCompatible : ObjectType OperationMode -> Bool .
-  eq typeModeCompatible(TEE-TYPE-AES , TEE-MODE-ENCRYPT) = true .
-  eq typeModeCompatible(TEE-TYPE-AES , TEE-MODE-DECRYPT) = true .
-  eq typeModeCompatible(TEE-TYPE-RSA-PUBLIC-KEY , TEE-MODE-VERIFY) = true .
-  eq typeModeCompatible(TEE-TYPE-RSA-PUBLIC-KEY , TEE-MODE-ENCRYPT) = true .
-  eq typeModeCompatible(TEE-TYPE-DSA-PUBLIC-KEY , TEE-MODE-VERIFY) = true .
-  eq typeModeCompatible(OBJTYPE , MODE) = false [owise] .
+--- The 'TEE_SetOperationKey' function programs the key of an operation; that is, it associates an operation with a key.
 
   msg reqSetOperationKey : HandleId ObjectType Set{TeeAttribute} TaInstId -> Msg .
   msg finishSetOperationKey : TaInstId -> Msg .
@@ -583,6 +644,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- TEE_CopyOperation
 ------------------------------------------------------------
 
+--- The 'TEE_CopyOperation' function copies an operation state from one operation handle into another operation handle.
+--- See page 200 of the G.P. documentation for more details.
+
   msg reqCopyOperation : HandleId OpObjectAttr OpHandleAttr TaInstId -> Msg .
   msg finishCopyOperation : TaInstId -> Msg .
 
@@ -637,6 +701,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- TEE_DigestUpdate
 ------------------------------------------------------------
 
+--- The 'TEE_DigestUpdate' function accumulates message data for hashing.
+--- See page 203 of the G.P. documentation for more details.
+
   msg digestUpdate : HandleId List{Data} TaInstId -> Msg .
   msg finishDigestUpdate : TaInstId -> Msg .
 
@@ -648,10 +715,6 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | api-state : waitDigestUpdate >
     digestUpdate(HANDLE , DATA , TK)
   .
-
-  op extractingState : OperationState -> Bool .
-  eq extractingState(TEE-OPERATION-STATE-EXTRACTING) = true .
-  eq extractingState(OS) = false [owise] .
 
   crl [digest-update-subroutine] :
     digestUpdate(HANDLE , DATA , TK)
@@ -679,6 +742,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 ------------------------------------------------------------
 --- TEE_DigestDoFinal
 ------------------------------------------------------------
+
+--- The 'TEE_DigestDoFinal' function finalizes the message digest operation and produces the message hash.
+--- See page 204 of the G.P. documentation for more details.
 
   msg digestDoFinal : HandleId List{Data} TaInstId -> Msg .
   msg finishDigestDoFinal : List{Data} TaInstId -> Msg .
@@ -716,6 +782,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- TEE_DigestExtract
 ------------------------------------------------------------
 
+--- The 'TEE_DigestExtract' function extracts some or all of the digest depending on the size of the hash buffer.
+--- See page 205 of the G.P. documentation for more details.
+
   msg digestExtract : HandleId TaInstId -> Msg .
   msg finishDigestExtract : List{Data} TaInstId -> Msg .
 
@@ -752,25 +821,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- TEE_CipherInit
 ------------------------------------------------------------
 
---- Table 6-6b
-  op ivRequired : AlgorithmIdentifier -> Bool .
-  eq ivRequired(TEE-ALG-AES-CBC-NOPAD) = true .
-  eq ivRequired(TEE-ALG-AES-CTR) = true .
-  eq ivRequired(TEE-ALG-AES-CTS) = true .
-  eq ivRequired(TEE-ALG-AES-XTS) = true .
-  eq ivRequired(ALGO) = false [owise] .
-
---- If the operation is in active state, it is reset and then initialized.
---- If the operation is in initial state, it is moved to active state.
-  op updateOpState : OperationState OperationClass -> OperationState .
-  eq updateOpState(TEE-OPERATION-STATE-INITIAL , TEE-OPERATION-CIPHER) = TEE-OPERATION-STATE-ACTIVE .
-  eq updateOpState(TEE-OPERATION-STATE-ACTIVE , TEE-OPERATION-CIPHER) = TEE-OPERATION-STATE-INITIAL .
-  eq updateOpState(TEE-OPERATION-STATE-INITIAL , TEE-OPERATION-MAC) = TEE-OPERATION-STATE-ACTIVE .
-  eq updateOpState(TEE-OPERATION-STATE-ACTIVE , TEE-OPERATION-MAC) = TEE-OPERATION-STATE-INITIAL .
-
---- TODO: Need to check whether the IV does have the length required by the algorithm.
-  --- op ivLengthProblem : AlgorithmIdentifer List{Data} -> Bool .
-  --- eq ivLengthProblem(ALGO , IV) = false .
+--- The 'TEE_CipherInit' function starts the symmetric cipher operation.
+--- See page 207 of the G.P. documentation for more details.
 
   msg initOperation : HandleId List{Data} TaInstId -> Msg .
   msg finishInitOperation : TaInstId -> Msg .
@@ -817,6 +869,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 ------------------------------------------------------------
 --- TEE_CipherUpdate
 ------------------------------------------------------------
+
+--- The 'TEE_CipherUpdate' function encrypts or decrypts input data.
+--- See page 209 of the G.P. documentation for more details.
 
 --- Version In Paper
   --- rl [cipher-update-request-cipher] : 
@@ -933,6 +988,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- TEE_CipherDoFinal
 ------------------------------------------------------------
 
+--- The 'TEE_CipherDoFinal' function finalizes the cipher operation, processing data that has not been processed by previous calls to TEE_CipherUpdate as well as data supplied in 'srcData'.
+--- See page 210 of the G.P. documentation for more details.
+
   msg cipherDoFinal : HandleId List{Data} TaInstId -> Msg .
   msg finishCipherDoFinal : List{Data} TaInstId -> Msg .
 
@@ -970,6 +1028,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- TEE_MACInit
 ------------------------------------------------------------
 
+--- The 'TEE_MACInit' function initializes a MAC operation.
+--- See page 212 of the G.P. documentation for more details.
+
   rl [mac-init-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : MACInit ,
@@ -990,6 +1051,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 ------------------------------------------------------------
 --- TEE_MACUpdate
 ------------------------------------------------------------
+
+--- The 'TEE_MACUpdate' function accumulates data for a MAC calculation.
+--- See page 213 of the G.P. documentation for more details.
 
   msg macUpdate : HandleId List{Data} TaInstId -> Msg .
   msg finishMacUpdate : TaInstId -> Msg .
@@ -1026,6 +1090,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 ------------------------------------------------------------
 --- TEE_MACComputeFinal
 ------------------------------------------------------------
+
+--- The 'TEE_MACComputeFinal' function finalizes the MAC operation with a last chunk of message, and computes the MAC.
+--- See page 214 of the G.P. documentation for more details.
 
   msg macComputeFinal : HandleId List{Data} TaInstId -> Msg .
   msg finishMacComputeFinal : List{Data} TaInstId -> Msg .
@@ -1068,6 +1135,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- TEE_MACCompareFinal
 ------------------------------------------------------------
 
+--- The 'TEE_MACCompareFinal' function finalizes the MAC operation and compares the MAC with the buffer passed to the function.
+--- See page 215 of the G.P. documentation for more details.
+
   rl [mac-compare-final-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : MACCompareFinal ,
@@ -1076,10 +1146,6 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | api-state : waitMacComputeFinal >
     macComputeFinal(HANDLE , DATA , TK) 
   .
-
-  op getReturnCode : List{Data} List{Data} -> ReturnCode .
-  eq getReturnCode(MAC , MAC) = TEE-SUCCESS .
-  eq getReturnCode(DATA , MAC) = TEE-ERROR-MAC-INVALID [owise] .
 
   rl [mac-compare-final-success] :
     finishMacComputeFinal(DATA , TK)
@@ -1092,6 +1158,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 ------------------------------------------------------------
 --- TEE_AEInit
 ------------------------------------------------------------
+
+--- The 'TEE_AEInit' function initializes an Authentication Encryption operation.
+--- See page 217 of the G.P. documentation for more details.
 
   rl [ae-init-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -1113,6 +1182,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 ------------------------------------------------------------
 --- TEE_AEUpdateAAD
 ------------------------------------------------------------
+
+--- The 'TEE_AEUpdateAAD' function feeds a new chunk of Additional Authentication Data (AAD) to the AE operation.
+--- See page 219 of the G.P. documentation for more details.
 
   msg reqAEUpdateAAD : HandleId List{Data} TaInstId -> Msg .
   msg finishAEUpdateAAD : TaInstId -> Msg .
@@ -1149,6 +1221,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 ------------------------------------------------------------
 --- TEE_AEUpdate
 ------------------------------------------------------------
+
+--- The 'TEE_AEUpdate' function accumulates data for an Authentication Encryption operation.
+--- See page 220 of the G.P. documentation for more details.
 
   msg reqAEUpdate : HandleId List{Data} TaInstId -> Msg .
   msg finishAEUpdate : List{Data} TaInstId -> Msg .
@@ -1209,6 +1284,10 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 ------------------------------------------------------------
 --- TEE_AsymmetricEncrypt, TEE_AsymmetricDecrypt
 ------------------------------------------------------------
+
+--- The 'TEE_AsymmetricEncrypt' function encrypts a message within an asymmetric operation.
+--- The 'TEE_AsymmetricDecrypt' function decrypts the result.
+--- See page 225 of the G.P. documentation for more details.
 
   msg asymEncrypt : HandleId List{Data} TaInstId -> Msg .
   msg finishAsymEncrypt : List{Data} TaInstId -> Msg .
@@ -1276,6 +1355,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- TEE_AsymmetricSignDigest
 ------------------------------------------------------------
 
+--- The 'TEE_AsymmetricSignDigest' function signs a message digest within an asymmetric operation.
+--- See page 228 of the G.P. documentation for more details.
+
   msg asymSignDigest : HandleId List{Data} TaInstId -> Msg .
   msg finishAsymSignDigest : List{Data} TaInstId -> Msg .
 
@@ -1311,6 +1393,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- TEE_AsymmetricVerifyDigest
 ------------------------------------------------------------
 
+--- The 'TEE_AsymmetricVerifyDigest' function verifies a message digest signature within an asymmetric operation.
+--- See page 231 of the G.P. documentation for more details.
+
   msg asymVerifyDigest : HandleId List{Data} TaInstId -> Msg .
   msg finishAsymVerifyDigest : List{Data} TaInstId -> Msg .
 
@@ -1334,10 +1419,6 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     finishAsymVerifyDigest(signDigest(ALGO , KEYS , DATA) , TK)
   .
 
-  op getReturnCodeOfDigest : List{Data} List{Data} -> ReturnCode .
-  eq getReturnCodeOfDigest(MAC , MAC) = TEE-SUCCESS .
-  eq getReturnCodeOfDigest(DATA , MAC) = TEE-ERROR-SIGNATURE-INVALID [owise] .
-
   rl [asymmetric-verify-digest-success] :
     finishAsymVerifyDigest(DATA , TK)
     < TK : TaKernel | api-state : waitAsymSignDigest ,
@@ -1355,6 +1436,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 ------------------------------------------------------------
 --- TEE_GenerateRandom
 ------------------------------------------------------------
+
+--- The 'TEE_GenerateRandom' function generates random data.
+--- See page 237 of the G.P. documentation for more details.
 
   rl [generate-random-success] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,

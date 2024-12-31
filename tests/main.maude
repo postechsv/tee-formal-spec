@@ -1,0 +1,65 @@
+load ../src/main
+--- load aux
+load ./cases/transient
+
+mod TEST-DRIVER is
+  pr TEE-BEHAVIOR .
+  pr TEE-IMP-BEHAVIOR .
+  pr TEST-AUX .
+
+  var P : Program .
+
+  op osId : -> Oid .
+  op testFileId : -> FileId .
+  ops persistentObjId dataStreamId : -> TaObjectId .
+
+  op initTrustedOS : -> Configuration .
+  eq initTrustedOS
+  = < osId : TeeOSKernel | opened-session : (sessionId(0) |-> testTa) , session-counter : 1 ,
+                           storage : TESTTA |-> testFileId , storage-status : (TESTTA |-> storageNormal) ,
+                           service-request-ta : noAppId , service-request-ta-inst : noInstId ,
+                           service-in : nil , service-out : nil ,
+                           temporary-objects : empty > .
+
+  
+  op testKey : -> Configuration .
+  eq testKey = 
+    < persistentObjId : PersistentObject | handle-set : none , object-type : TEE-TYPE-DATA , max-object-size : 0 Bits  , 
+                                           file-id : testFileId , trust-app-id : TESTTA ,
+                                           attribute-set : empty , object-usage-set : empty , data-stream-id : dataStreamId >
+    < dataStreamId : DataStreamObject | data-size : dataSize(1) , content : newContent(attrContentData(randomAttrVal)) >
+  .
+
+  --- op initRa : Program -> Configuration .
+  --- eq initRa(P) = < ra : RichApp | proc : none , prog : P , running : false , 
+  ---                                 invoke-req-queue : nil , invoke-ret-queue : nil > .
+
+  op initTestTa : Program -> Configuration .
+  eq initTestTa(P) = < testTa : TrustApp | proc : none , prog : P , running : false ,
+                                           app-status : normal , api-call : noCall , api-return : noReturn ,
+                                           current-api : noApi , api-state : noState , current-params : empty , id-counter : 0 ,
+                                           trust-app-id : TESTTA ,
+                                           task : task({sessionId(0) , main , nil} , testRa) , task-counter : 0, state-changed : false > .
+
+endm
+
+mod TEST-CASES is
+  pr TRANSIENT-TEST-CASES .
+endm
+
+mod TEST-SCENARIO is
+  pr TEST-DRIVER .
+  pr TEST-CASES .  
+
+  var P : Program .
+
+  op scenarioWithoutKey : Program -> Configuration .
+  eq scenarioWithoutKey(P)
+    = initTestTa(P) initTrustedOS .
+
+  op scenarioWithKey : Program -> Configuration .
+  eq scenarioWithKey(P)
+    = initTestTa(P) initTrustedOS testKey .
+endm
+
+rew scenarioWithoutKey(testTransient) .

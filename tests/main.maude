@@ -1,6 +1,7 @@
 load ../src/main
---- load aux
+load ./cases/aux
 load ./cases/transient
+load ./cases/persistent
 
 mod TEST-DRIVER is
   pr TEE-BEHAVIOR .
@@ -9,9 +10,13 @@ mod TEST-DRIVER is
 
   var P : Program .
 
-  op osId : -> Oid .
-  op testFileId : -> FileId .
-  ops persistentObjId dataStreamId : -> TaObjectId .
+  op initTrustedOSwithNoKey : -> Configuration .
+  eq initTrustedOSwithNoKey
+  = < osId : TeeOSKernel | opened-session : (sessionId(0) |-> testTa) , session-counter : 1 ,
+                           storage : empty , storage-status : (TESTTA |-> storageNormal) ,
+                           service-request-ta : noAppId , service-request-ta-inst : noInstId ,
+                           service-in : nil , service-out : nil ,
+                           temporary-objects : empty > .
 
   op initTrustedOS : -> Configuration .
   eq initTrustedOS
@@ -45,6 +50,7 @@ endm
 
 mod TEST-CASES is
   pr TRANSIENT-TEST-CASES .
+  pr PERSISTENT-TEST-CASES .
 endm
 
 mod TEST-SCENARIO is
@@ -55,11 +61,13 @@ mod TEST-SCENARIO is
 
   op scenarioWithoutKey : Program -> Configuration .
   eq scenarioWithoutKey(P)
-    = initTestTa(P) initTrustedOS .
+    = initTestTa(P) initTrustedOSwithNoKey .
 
   op scenarioWithKey : Program -> Configuration .
   eq scenarioWithKey(P)
     = initTestTa(P) initTrustedOS testKey .
 endm
 
-rew scenarioWithoutKey(testTransient) .
+--- rew scenarioWithoutKey(testTransient) .
+--- rew scenarioWithoutKey(testPersistent) .
+rew scenarioWithKey(testPersistent) .

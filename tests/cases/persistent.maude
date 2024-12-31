@@ -1,0 +1,47 @@
+mod PERSISTENT-TEST-CASES is
+  pr TEE-BEHAVIOR .
+  pr TEE-IMP-BEHAVIOR .
+  pr TEST-AUX .
+
+  op testPersistent : -> Program [ctor] .
+
+  op persistentObjExists : -> Stmt [ctor] .
+  eq persistentObjExists =
+    objDataFlag := # (TEE-DATA-FLAG-ACCESS-READ, TEE-DATA-FLAG-ACCESS-WRITE, TEE-DATA-FLAG-ACCESS-WRITE-META, TEE-DATA-FLAG-OVERWRITE) ;
+    object  := # handleId(0, testTa)  ; 
+    CreatePersistentObject(# TEE-STORAGE-PRIVATE, # testFileId, objDataFlag, # TEE-HANDLE-NULL, # noData, # dataSize(0), object  ; res , object) .
+
+  eq testPersistent = 
+    main () 
+    {
+      var res ; 
+      var srcKey ; var destKey ;
+      var attr ;
+      var objDataFlag ; var object ;
+
+      --- For TEE_CreatePersistentObject
+      --- Test Case 1 (requires scenario without keys)
+      --- objDataFlag := # (TEE-DATA-FLAG-ACCESS-READ, TEE-DATA-FLAG-ACCESS-WRITE, TEE-DATA-FLAG-ACCESS-WRITE-META, TEE-DATA-FLAG-OVERWRITE) ;
+      --- object  := # handleId(0, testTa)  ; 
+      --- CreatePersistentObject(# TEE-STORAGE-PRIVATE, # testFileId, objDataFlag, # TEE-HANDLE-NULL, # noData, # dataSize(0), object  ; res , object) ;
+      --- return res
+
+      --- For TEE_CloseAndDeletePersistentObject1 
+      --- Test Case 1 (requires scenario without keys)
+      --- persistentObjExists ;
+      --- CloseAndDeletePersistentObject1(object ; res) ;
+      --- return res
+
+      --- For TEE_OpenPersistentObject
+      --- Test Case 1
+      --- OpenPersistentObject(# TEE-STORAGE-PRIVATE, # testFileId, # TEE-DATA-FLAG-ACCESS-READ  ; res , object) ;
+      --- return object
+
+      --- For TEE_RenamePersistentObject
+      --- Test Case 1
+      OpenPersistentObject(# TEE-STORAGE-PRIVATE, # testFileId, # TEE-DATA-FLAG-ACCESS-WRITE-META  ; res , object) ;
+      RenamePersistentObject(object, # newTestFileId ; res) ;
+      return res
+    }
+  .
+endm

@@ -1,0 +1,154 @@
+mod CRYPTOGRAPHIC-TEST-CASES is
+  pr TEE-BEHAVIOR .
+  pr TEE-IMP-BEHAVIOR .
+  pr TEST-AUX .
+
+  ops testCryptoGeneric testCryptoCipher testCryptoMAC testCryptoMisc : -> Program [ctor] .
+
+  op keyForCipherExists : -> Stmt [ctor] .
+  eq keyForCipherExists = 
+    AllocateTransientObject(# TEE-TYPE-AES, # 256 Bits ; res, key) ;
+    InitRefAttribute(# TEE-ATTR-SECRET-VALUE, # randomAttrVal  ; attr) ;
+    PopulateTransientObject(key, attr  ; res) .
+
+  op keySetOperationForCipherExists : -> Stmt [ctor] .
+  eq keySetOperationForCipherExists = 
+    keyForCipherExists ;
+    AllocateOperation(# TEE-ALG-AES-CBC-NOPAD, # TEE-MODE-ENCRYPT, # 256 Bits  ; res, op) ;
+    SetOperationKey(op, key ; res) ;
+    FreeTransientObject(key ; key) . --- To analyze results better
+
+  op keyForMACExists : -> Stmt [ctor] .
+  eq keyForMACExists = 
+    AllocateTransientObject(# TEE-TYPE-HMAC-SHA256, # 256 Bits ; res, key) ;
+    InitRefAttribute(# TEE-ATTR-SECRET-VALUE, # randomAttrVal  ; attr) ;
+    PopulateTransientObject(key, attr  ; res) .
+
+  op keySetOperationForMACExists : -> Stmt [ctor] .
+  eq keySetOperationForMACExists = 
+    keyForMACExists ;
+    AllocateOperation(# TEE-ALG-HMAC-SHA256, # TEE-MODE-MAC, # 256 Bits  ; res, op) ;
+    SetOperationKey(op, key ; res) ;
+    FreeTransientObject(key ; key) . --- To analyze results better
+
+  eq testCryptoGeneric = 
+    main () 
+    {
+      var res ; var op ;
+      var attr ; var key ;
+      var iv ; iv := # noData ;
+
+      --- For TEE_AllocateOperation
+      --- Test Case 1 (For Symmetric Cipher)
+      --- AllocateOperation(# TEE-ALG-AES-CBC-NOPAD, # TEE-MODE-ENCRYPT, # 256 Bits  ; res, op) ;
+      --- return res
+
+      --- Test Case 2 (For MAC)
+      --- AllocateOperation(# TEE-ALG-HMAC-SHA256, # TEE-MODE-MAC, # 256 Bits  ; res, op) ;
+      --- return res
+
+      --- For TEE_SetOperationKey
+      --- Test Case 1
+      --- keyForCipherExists ;
+      --- AllocateOperation(# TEE-ALG-AES-CBC-NOPAD, # TEE-MODE-ENCRYPT, # 256 Bits  ; res, op) ;
+      --- SetOperationKey(op, key ; res) ;
+      --- return res
+
+      --- For TEE_FreeOperation
+      --- Test Case 1
+      --- keySetOperationForCipherExists ;
+      --- FreeOperation(op ; op) ;
+      --- return res
+
+      --- For TEE_ResetOperation
+      --- Test Case 1
+      keySetOperationForCipherExists ;
+      CipherInit(op, iv ;) ; --- Tested in testCryptoCipher
+      ResetOperation(op ;) ;
+      return res
+    }
+  .
+
+
+
+  eq testCryptoCipher = 
+    main () 
+    {
+      var res ; var op ;
+      var attr ; var key ;
+      var iv ; iv := # noData ;
+      var srcData ; srcData := # randomData ; var destData ;
+
+      --- For TEE_CipherInit
+      --- Test Case 1
+      --- keySetOperationForCipherExists ;
+      --- CipherInit(op, iv ;) ;
+      --- return res
+
+      --- For TEE_CipherUpdate
+      --- Test Case 1
+      --- keySetOperationForCipherExists ;
+      --- CipherInit(op, iv ;) ;
+      --- CipherUpdate(op, srcData ; res, destData) ;
+      --- return destData
+
+      --- For TEE_CipherDoFinal
+      --- Test Case 1
+      keySetOperationForCipherExists ;
+      CipherInit(op, iv ;) ;
+      CipherDoFinal(op, srcData ; res, destData) ;
+      return destData
+    }
+  .
+
+  eq testCryptoMAC = 
+    main () 
+    {
+      var res ; var op ;
+      var attr ; var key ;
+      var iv ; iv := # noData ;
+      var chunk ; chunk := # randomData ;
+      var message ; message := # randomData ;
+      var mac ;
+
+      --- For TEE_MACInit
+      --- Test Case 1
+      --- keySetOperationForMACExists ;
+      --- MACInit(op, iv ;) ;
+      --- return res
+
+      --- For TEE_MACUpdate
+      --- Test Case 1
+      --- keySetOperationForMACExists ;
+      --- MACInit(op, iv ;) ;
+      --- MACUpdate(op, chunk ;) ;
+      --- return res
+
+      --- For TEE_MACComputeFinal
+      --- Test Case 1
+      --- keySetOperationForMACExists ;
+      --- MACInit(op, iv ;) ;
+      --- MACComputeFinal(op, message ; res, mac) ;
+      --- return mac
+
+      --- For TEE_MACCompareFinal
+      --- Test Case 1
+      keySetOperationForMACExists ;
+      MACInit(op, iv ;) ;
+      mac := # macValue(randomData, TEE-ALG-HMAC-SHA256, key(teeAttribute(TEE-ATTR-SECRET-VALUE,randomAttrVal))) ;
+      MACCompareFinal(op, message, mac ; res) ;
+      return res
+    }
+  .
+
+  eq testCryptoMisc = 
+    main () 
+    {
+      var data ;
+      --- For TEE_GenerateRandom
+      --- Test Case 1
+      GenerateRandom(nil ; data) ;
+      return data
+    }
+  .
+endm

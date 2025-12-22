@@ -1,0 +1,73 @@
+mod TRANSIENT-TEST-CASES is
+  pr TEE-BEHAVIOR .
+  pr TEE-IMP-BEHAVIOR .
+  pr TEST-AUX .
+
+  op testTransient : -> Program [ctor] .
+
+  op allocatedTransientObjExists : -> Stmt [ctor] .
+  eq allocatedTransientObjExists = 
+    AllocateTransientObject(# TEE-TYPE-AES, # 256 Bits  ; res, destKey) .
+
+  op populatedTransientObjExists : -> Stmt [ctor] .
+  eq populatedTransientObjExists = 
+    AllocateTransientObject(# TEE-TYPE-AES, # 256 Bits  ; res, srcKey) ;
+    InitRefAttribute(# TEE-ATTR-SECRET-VALUE, # randomAttrVal  ; attr) ;
+    PopulateTransientObject(srcKey, attr  ; res) .
+
+  eq testTransient = 
+    main () 
+    {
+      var res ; 
+      var srcKey ; var destKey ;
+      var attr ;
+
+      --- For TEE_AllocateTransientObject
+      --- Test Case 1
+      --- AllocateTransientObject(# TEE-TYPE-AES, # 256 Bits  ; res, srcKey) ;
+      --- return res
+
+      --- For TEE_FreeTransientObject
+      --- Test Case 1
+      --- AllocateTransientObject(# TEE-TYPE-AES, # 256 Bits  ; res, srcKey) ;
+      --- FreeTransientObject(srcKey ; srcKey) ;
+      --- return res
+
+      --- For TEE_InitRefAttribute, TEE_InitValueAttribute
+      --- Test Case 1
+      --- InitRefAttribute(# TEE-ATTR-SECRET-VALUE, # randomAttrVal  ; attr) ;
+      --- return attr
+
+      --- Test Case 2
+      --- InitValueAttribute(# TEE-ATTR-DH-X-BITS, # randomAttrVal  ; attr) ;
+      --- return attr
+
+      --- For TEE_PopulateTransientObject
+      --- Test Case 1
+      --- AllocateTransientObject(# TEE-TYPE-AES, # 256 Bits  ; res, srcKey) ;
+      --- InitRefAttribute(# TEE-ATTR-SECRET-VALUE, # randomAttrVal  ; attr) ;
+      --- PopulateTransientObject(srcKey, attr  ; res) ;
+      --- return res
+
+      --- For TEE_ResetTransientObject
+      --- Test Case 1
+      --- populatedTransientObjExists ;
+      --- ResetTransientObject(srcKey ; ) ;
+      --- return res
+
+      --- For TEE_CopyObjectAttributes1
+      --- Test Case 1
+      --- populatedTransientObjExists ;
+      --- allocatedTransientObjExists ;
+      --- CopyObjectAttributes1(destKey, srcKey ; res) ;
+      --- return res
+
+      --- For TEE_GenerateKey
+      --- Test Case 1
+      allocatedTransientObjExists ;
+      InitRefAttribute(# TEE-ATTR-SECRET-VALUE, # randomAttrVal  ; attr) ;
+      GenerateKey(destKey, # 256 Bits, attr ; res) ;
+      return res
+    }
+  .
+endm

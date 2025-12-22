@@ -1,0 +1,49 @@
+mod DATA-STREAM-TEST-CASES is
+  pr TEE-BEHAVIOR .
+  pr TEE-IMP-BEHAVIOR .
+  pr TEST-AUX .
+
+  op testDataStream : -> Program [ctor] .
+
+  --- TODO: Fix problem with multiple data flags
+  op openedHandleToPersistentObj : -> Stmt [ctor] .
+  eq openedHandleToPersistentObj = 
+    --- objDataFlag := # (TEE-DATA-FLAG-ACCESS-READ, TEE-DATA-FLAG-ACCESS-WRITE, TEE-DATA-FLAG-ACCESS-WRITE-META, TEE-DATA-FLAG-OVERWRITE) ;
+    --- OpenPersistentObject(# TEE-STORAGE-PRIVATE, # testFileId, # objDataFlag  ; res, object) .
+    OpenPersistentObject(# TEE-STORAGE-PRIVATE, # testFileId, # TEE-DATA-FLAG-ACCESS-READ  ; res, object) .
+    --- OpenPersistentObject(# TEE-STORAGE-PRIVATE, # testFileId, # TEE-DATA-FLAG-ACCESS-WRITE  ; res, object) .
+
+  eq testDataStream = 
+    main () 
+    {
+      var res ; 
+      var objDataFlag ; var object ;
+      var data ;
+
+      --- For TEE_ReadObjectData
+      --- Test Case 1
+      --- openedHandleToPersistentObj ;
+      --- ReadObjectData(object, # dataSize(1) ; data, res) ;
+      --- return res
+
+      --- For TEE_WriteObjectData
+      --- Test Case 1 
+      --- openedHandleToPersistentObj ;
+      --- WriteObjectData(object, # noData ; res) ;
+      --- return res
+
+      --- For TEE_TruncateObjectData
+      --- Test Case 1
+      --- openedHandleToPersistentObj ;
+      --- WriteObjectData(object, # noData ; res) ;
+      --- TruncateObjectData(object, # dataSize(0) ; res) ;
+      --- return res
+
+      --- For TEE_SeekObjectData
+      --- Test Case 1 (whence is TEE_DATA_SEEK_SET)
+      openedHandleToPersistentObj ;
+      SeekObjectData(object, # dataSize(7), # TEE-DATA-SEEK-SET ; res) ;
+      return res
+    }
+  .
+endm

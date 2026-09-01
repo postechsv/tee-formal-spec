@@ -804,6 +804,32 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
   if checkCompatible(OBJTYPE , ATTRS)
   .
 
+  ceq
+    reqPopulateTransient(HANDLE , ATTRS , TK)
+    < TK : TaKernel | app-status : normal , api-state : waitPopulateTransient ,
+                      current-api : PopulateTransientObject >
+    < OI : TransientObject | handle-id-set : handleIdSet(HANDLE) ,
+                             object-type : OBJTYPE >
+    < HANDLE : ObjectHandle | oid : OI , is-initialized : false >
+    =
+    < TK : TaKernel | app-status : panic , api-state : finished >
+    < OI : TransientObject | >
+    < HANDLE : ObjectHandle | >
+  if not checkCompatible(OBJTYPE , ATTRS)
+  .
+
+  eq
+    reqPopulateTransient(HANDLE , ATTRS , TK)
+    < TK : TaKernel | app-status : normal , api-state : waitPopulateTransient ,
+                      current-api : PopulateTransientObject >
+    < OI : TransientObject | handle-id-set : handleIdSet(HANDLE) >
+    < HANDLE : ObjectHandle | oid : OI , is-initialized : true >
+    =
+    < TK : TaKernel | app-status : panic , api-state : finished >
+    < OI : TransientObject | >
+    < HANDLE : ObjectHandle | >
+  .
+
   eq
     retPopulateTransient(TK)
     < TK : TaKernel | api-state : waitPopulateTransient ,
@@ -927,7 +953,83 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | api-state : waitCopyAttribute ,
                       current-api : CopyObjectAttributes1 >
     =
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(CopyObjectAttributes1 , TEE-SUCCESS) > 
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(CopyObjectAttributes1 , TEE-SUCCESS) >
+  .
+
+------------------------------------------------------------
+--- 'TEE_GenerateKey'
+------------------------------------------------------------
+
+  eq
+    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : GenerateKey ,
+                      current-params : handle(HANDLE) , size(KEYSIZE) , attrs(ATTRS) >
+    =
+    < TK : TaKernel | api-state : waitReqGenerateKey >
+    reqGenerateKey(HANDLE , KEYSIZE , ATTRS , TK)
+  .
+
+  ceq
+    reqGenerateKey(HANDLE , KEYSIZE , ATTRS , TK)
+    < TK : TaKernel | api-state : waitReqGenerateKey , current-api : GenerateKey >
+    < OI : TransientObject | handle-id-set : handleIdSet(HANDLE) ,
+                             object-type : OBJTYPE , max-object-size : MAXOBJSIZE >
+    < HANDLE : ObjectHandle | oid : OI , is-initialized : false >
+    =
+    < TK : TaKernel | api-state : finished , current-api : GenerateKey ,
+                      api-return : apiReturn(GenerateKey , TEE-SUCCESS) >
+    < OI : TransientObject | initialized : true,
+                             attribute-set : randomAttributes(OBJTYPE , ATTRS) >
+    < HANDLE : ObjectHandle | is-initialized : true >
+  if KEYSIZE <= MAXOBJSIZE /\ mandatoryParamsForKeyGen(OBJTYPE , ATTRS)
+  .
+
+  ceq
+    reqGenerateKey(HANDLE , KEYSIZE , ATTRS , TK)
+    < TK : TaKernel | app-status : normal , api-state : waitReqGenerateKey ,
+                      current-api : GenerateKey >
+    < OI : TransientObject | handle-id-set : handleIdSet(HANDLE) ,
+                             object-type : OBJTYPE , max-object-size : MAXOBJSIZE >
+    < HANDLE : ObjectHandle | oid : OI , is-initialized : false >
+    =
+    < TK : TaKernel | app-status : panic , api-state : finished >
+    < OI : TransientObject | >
+    < HANDLE : ObjectHandle | >
+  if not (KEYSIZE <= MAXOBJSIZE)
+  .
+
+  ceq
+    reqGenerateKey(HANDLE , KEYSIZE , ATTRS , TK)
+    < TK : TaKernel | app-status : normal , api-state : waitReqGenerateKey ,
+                      current-api : GenerateKey >
+    < OI : TransientObject | handle-id-set : handleIdSet(HANDLE) ,
+                             object-type : OBJTYPE , max-object-size : MAXOBJSIZE >
+    < HANDLE : ObjectHandle | oid : OI , is-initialized : false >
+    =
+    < TK : TaKernel | app-status : panic , api-state : finished >
+    < OI : TransientObject | >
+    < HANDLE : ObjectHandle | >
+  if KEYSIZE <= MAXOBJSIZE /\ not mandatoryParamsForKeyGen(OBJTYPE , ATTRS)
+  .
+
+  eq
+    reqGenerateKey(HANDLE , KEYSIZE , ATTRS , TK)
+    < TK : TaKernel | app-status : normal , api-state : waitReqGenerateKey ,
+                      current-api : GenerateKey >
+    < OI : TransientObject | handle-id-set : handleIdSet(HANDLE) >
+    < HANDLE : ObjectHandle | oid : OI , is-initialized : true >
+    =
+    < TK : TaKernel | app-status : panic , api-state : finished >
+    < OI : TransientObject | >
+    < HANDLE : ObjectHandle | >
+  .
+
+  eq
+    retGenerateKey(TK)
+    < TK : TaKernel | api-state : waitReqGenerateKey , current-api : GenerateKey >
+    =
+    < TK : TaKernel | api-state : finished ,
+                      api-return : apiReturn(GenerateKey , TEE-SUCCESS) >
   .
 
 endom

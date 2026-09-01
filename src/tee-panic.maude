@@ -14,8 +14,26 @@ omod GENERAL-PANIC is
   var TK : TaInstId .
   var API : TeeApi .
   var HANDLE : HandleId .
+  var CI : TaObjectId .
   var PARAMS : Set{TeeApiParam} .
   var DATAFLAGS : Set{DataFlag} .
+  vars OC OC' : OperationClass .
+
+  --- The paper assigns the operation class to OpHandle.  The concrete object
+  --- retains a compatibility copy while the model is being migrated; a
+  --- disagreement is an invalid handle/resource relation and must not be
+  --- allowed to select behavior from the object's stale class.
+  ceq [operation-class-mismatch-panic] :
+    < TK : TaKernel | app-status : normal, api-state : started,
+                      current-api : API,
+                      current-params : handle(HANDLE), PARAMS >
+    < HANDLE : OperationHandle | oid : CI, opclass : OC >
+    < CI : CryptoOperation | operation-class : OC' >
+    =
+    < TK : TaKernel | app-status : panic, api-state : finished >
+    < HANDLE : OperationHandle | >
+    < CI : CryptoOperation | >
+  if OC =/= OC' .
 
   --- APIs for which TEE_HANDLE_NULL is a programmer error.  Free-style APIs
   --- explicitly accept NULL and are intentionally excluded.

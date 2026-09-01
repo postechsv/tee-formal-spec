@@ -911,12 +911,26 @@ search [1] in COMPLETION-TEST :
                         current-api : GenerateKey > C .
 
 search [1] in COMPLETION-TEST :
-  reqGenerateKey(handleId(1, testTa), 128 Bits, empty, testTa)
+  reqGenerateKey(handleId(1, testTa), 0 Bits, empty, testTa)
   < testTa : TaKernel | app-status : normal, api-state : waitReqGenerateKey,
                         current-api : GenerateKey >
   < taOid(1, testTa) : TransientObject |
       handle-id-set : handleIdSet(handleId(1, testTa)), object-type : TEE-TYPE-DH-KEYPAIR,
       max-object-size : 256 Bits >
+  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa),
+      is-initialized : false >
+=>1
+  < testTa : TaKernel | app-status : panic, api-state : finished,
+                        current-api : GenerateKey > C .
+
+--- GP 5.6.7: a Table 5-9-unsupported key size is a programmer error.
+search [1] in COMPLETION-TEST :
+  reqGenerateKey(handleId(1, testTa), 64 Bits, empty, testTa)
+  < testTa : TaKernel | app-status : normal, api-state : waitReqGenerateKey,
+                        current-api : GenerateKey >
+  < taOid(1, testTa) : TransientObject |
+      handle-id-set : handleIdSet(handleId(1, testTa)), object-type : TEE-TYPE-AES,
+      max-object-size : 128 Bits >
   < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa),
       is-initialized : false >
 =>1
@@ -973,7 +987,7 @@ search [1] in COMPLETION-INVISIBLE-TEST :
                         current-api : PopulateTransientObject > C .
 
 search [1] in COMPLETION-INVISIBLE-TEST :
-  reqGenerateKey(handleId(1, testTa), 128 Bits, empty, testTa)
+  reqGenerateKey(handleId(1, testTa), 0 Bits, empty, testTa)
   < testTa : TaKernel | app-status : normal, api-state : waitReqGenerateKey,
                         current-api : GenerateKey >
   < taOid(1, testTa) : TransientObject |

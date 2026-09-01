@@ -160,6 +160,16 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
     getAttrIds(ATTRS) == TEE-ATTR-ECC-CURVE .
   eq mandatoryParamsForKeyGen(OBJTYPE , ATTRS) = false [owise] .
 
+  --- GP 5.6.7: domain parameters determine the size of DSA, DH, and generic
+  --- ECC keys, so callers pass zero.  Other generated keys use a Table 5-9
+  --- size supported by the destination object type.
+  op validKeySizeForGeneration : ObjectType CryptoKeySize -> Bool .
+  eq validKeySizeForGeneration(TEE-TYPE-DSA-KEYPAIR , N Bits) = (N == 0) .
+  eq validKeySizeForGeneration(TEE-TYPE-DH-KEYPAIR , N Bits) = (N == 0) .
+  eq validKeySizeForGeneration(TEE-TYPE-ECDSA-KEYPAIR , N Bits) = (N == 0) .
+  eq validKeySizeForGeneration(TEE-TYPE-ECDH-KEYPAIR , N Bits) = (N == 0) .
+  eq validKeySizeForGeneration(OBJTYPE , KEYSIZE) = supported(OBJTYPE , KEYSIZE) [owise] .
+
 ------------------------------------------------------------
 --- TEE_AllocateTransientObject
 ------------------------------------------------------------
@@ -562,7 +572,8 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
                              attribute-set : randomAttributes(OBJTYPE , ATTRS) >
     < HANDLE : ObjectHandle | is-initialized : true >
     retGenerateKey(TK)
-  if KEYSIZE <= MAXOBJSIZE /\ mandatoryParamsForKeyGen(OBJTYPE , ATTRS)
+  if KEYSIZE <= MAXOBJSIZE /\ validKeySizeForGeneration(OBJTYPE , KEYSIZE)
+     /\ mandatoryParamsForKeyGen(OBJTYPE , ATTRS)
   .
 
   crl [generate-key-oversized-key-panic] :
@@ -579,6 +590,20 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
   if not (KEYSIZE <= MAXOBJSIZE)
   .
 
+  crl [generate-key-unsupported-key-size-panic] :
+    reqGenerateKey(HANDLE , KEYSIZE , ATTRS , TK)
+    < TK : TaKernel | app-status : normal , api-state : waitReqGenerateKey ,
+                      current-api : GenerateKey >
+    < OI : TransientObject | handle-id-set : handleIdSet(HANDLE) ,
+                             object-type : OBJTYPE , max-object-size : MAXOBJSIZE >
+    < HANDLE : ObjectHandle | oid : OI , is-initialized : false >
+    =>
+    < TK : TaKernel | app-status : panic , api-state : finished >
+    < OI : TransientObject | >
+    < HANDLE : ObjectHandle | >
+  if KEYSIZE <= MAXOBJSIZE /\ not validKeySizeForGeneration(OBJTYPE , KEYSIZE)
+  .
+
   crl [generate-key-missing-parameters-panic] :
     reqGenerateKey(HANDLE , KEYSIZE , ATTRS , TK)
     < TK : TaKernel | app-status : normal , api-state : waitReqGenerateKey ,
@@ -590,7 +615,8 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
     < TK : TaKernel | app-status : panic , api-state : finished >
     < OI : TransientObject | >
     < HANDLE : ObjectHandle | >
-  if KEYSIZE <= MAXOBJSIZE /\ not mandatoryParamsForKeyGen(OBJTYPE , ATTRS)
+  if KEYSIZE <= MAXOBJSIZE /\ validKeySizeForGeneration(OBJTYPE , KEYSIZE)
+     /\ not mandatoryParamsForKeyGen(OBJTYPE , ATTRS)
   .
 
   rl [generate-key-initialized-object-panic] :
@@ -981,7 +1007,8 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
     < OI : TransientObject | initialized : true,
                              attribute-set : randomAttributes(OBJTYPE , ATTRS) >
     < HANDLE : ObjectHandle | is-initialized : true >
-  if KEYSIZE <= MAXOBJSIZE /\ mandatoryParamsForKeyGen(OBJTYPE , ATTRS)
+  if KEYSIZE <= MAXOBJSIZE /\ validKeySizeForGeneration(OBJTYPE , KEYSIZE)
+     /\ mandatoryParamsForKeyGen(OBJTYPE , ATTRS)
   .
 
   ceq
@@ -1009,7 +1036,22 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | app-status : panic , api-state : finished >
     < OI : TransientObject | >
     < HANDLE : ObjectHandle | >
-  if KEYSIZE <= MAXOBJSIZE /\ not mandatoryParamsForKeyGen(OBJTYPE , ATTRS)
+  if KEYSIZE <= MAXOBJSIZE /\ not validKeySizeForGeneration(OBJTYPE , KEYSIZE)
+  .
+
+  ceq
+    reqGenerateKey(HANDLE , KEYSIZE , ATTRS , TK)
+    < TK : TaKernel | app-status : normal , api-state : waitReqGenerateKey ,
+                      current-api : GenerateKey >
+    < OI : TransientObject | handle-id-set : handleIdSet(HANDLE) ,
+                             object-type : OBJTYPE , max-object-size : MAXOBJSIZE >
+    < HANDLE : ObjectHandle | oid : OI , is-initialized : false >
+    =
+    < TK : TaKernel | app-status : panic , api-state : finished >
+    < OI : TransientObject | >
+    < HANDLE : ObjectHandle | >
+  if KEYSIZE <= MAXOBJSIZE /\ validKeySizeForGeneration(OBJTYPE , KEYSIZE)
+     /\ not mandatoryParamsForKeyGen(OBJTYPE , ATTRS)
   .
 
   eq

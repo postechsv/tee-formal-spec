@@ -133,6 +133,21 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   if isReadable(DATAFLAGS)
   .
 
+  crl [read-object-data-top-level-handle] :
+    readObjectData(HANDLE , DATASIZE , TK , TN)
+    < OI : PersistentObject | handle-set : none,
+                              data-stream-id : DI , trust-app-id : TN >
+    < HANDLE : ObjectHandle | oid : OI, data-access-flag-set : DATAFLAGS,
+                              data-position : DATAPOS >
+    < DI : DataStreamObject | data-size : DS , content : DM >
+    =>
+    < OI : PersistentObject | >
+    < HANDLE : ObjectHandle | data-position : updatePos(DATAPOS, DATASIZE, DS) >
+    < DI : DataStreamObject | >
+    finishReadData(read(DATAPOS, DATASIZE, DM), TK)
+  if isReadable(DATAFLAGS)
+  .
+
 --- Version In Paper
   --- rl [read-object-data-success] : 
   ---   (msg retData[DATA] from HI to TK) 
@@ -158,6 +173,11 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 --- See page 173 of the G.P. documentation for more details.
 
   msg writeObjectData : HandleId List{Data} TaInstId AppId -> Msg .
+  msg writeObjectDataTop : HandleId List{Data} TaInstId AppId TaObjectId TaObjectId -> Msg .
+  msg writeObjectStreamTop : List{Data} DataPosition TaInstId TaObjectId TaObjectId -> Msg .
+  msg writeObjectOwnerTop : List{Data} DataPosition TaInstId TaObjectId TaObjectId DataSize Map{DataPosition,Data} -> Msg .
+  msg writeDataStreamTop : List{Data} DataPosition TaInstId TaObjectId -> Msg .
+  msg writeObjectOverflowTop : TaInstId -> Msg .
   msg finishWriteData : TaInstId -> Msg .
 
   rl [write-object-data-subroutine] :
@@ -196,6 +216,106 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   if isWritable(DATAFLAGS) /\ withinMaxPosition(advancePos(DATAPOS , sizeOfData(DATA)))
   .
 
+  crl [write-object-data-top-level-handle] :
+    writeObjectData(HANDLE , DATA , TK , TN)
+    < OI : PersistentObject | handle-set : none,
+                              data-stream-id : DI , trust-app-id : TN >
+    < HANDLE : ObjectHandle | oid : OI, data-access-flag-set : DATAFLAGS,
+                              data-position : DATAPOS >
+    < DI : DataStreamObject | data-size : DS , content : DM >
+    =>
+    < OI : PersistentObject |
+      data-stream : read(pos(0), updateSize(DS, DATAPOS, sizeOfData(DATA)),
+        writeStream(DATA, DATAPOS, DS, DM)) >
+    < HANDLE : ObjectHandle |
+      data-position : advancePos(DATAPOS, sizeOfData(DATA)) >
+    < DI : DataStreamObject |
+      data-size : updateSize(DS, DATAPOS, sizeOfData(DATA)),
+      content : writeStream(DATA, DATAPOS, DS, DM) >
+    finishWriteData(TK)
+  if isWritable(DATAFLAGS) /\ withinMaxPosition(advancePos(DATAPOS, sizeOfData(DATA)))
+  .
+
+  rl [write-object-data-top-level-resolve-owner] :
+    writeObjectData(HANDLE, DATA, TK, TN)
+    < OI : PersistentObject | handle-set : none,
+                              data-stream-id : DI, trust-app-id : TN >
+    =>
+    < OI : PersistentObject | >
+    writeObjectDataTop(HANDLE, DATA, TK, TN, OI, DI)
+  .
+
+  crl [write-object-data-top-level-update-handle] :
+    writeObjectDataTop(HANDLE, DATA, TK, TN, OI, DI)
+    < HANDLE : ObjectHandle | oid : OI, data-access-flag-set : DATAFLAGS,
+                              data-position : DATAPOS >
+    =>
+    < HANDLE : ObjectHandle |
+      data-position : advancePos(DATAPOS, sizeOfData(DATA)) >
+    writeObjectStreamTop(DATA, DATAPOS, TK, OI, DI)
+  if isWritable(DATAFLAGS) /\ withinMaxPosition(advancePos(DATAPOS, sizeOfData(DATA)))
+  .
+
+  crl [write-object-data-top-level-detect-overflow] :
+    writeObjectDataTop(HANDLE, DATA, TK, TN, OI, DI)
+    < HANDLE : ObjectHandle | oid : OI, data-access-flag-set : DATAFLAGS,
+                              data-position : DATAPOS >
+    =>
+    < HANDLE : ObjectHandle | >
+    writeObjectOverflowTop(TK)
+  if isWritable(DATAFLAGS) /\ not withinMaxPosition(advancePos(DATAPOS, sizeOfData(DATA)))
+  .
+
+  rl [write-object-data-top-level-update-stream] :
+    writeObjectStreamTop(DATA, DATAPOS, TK, OI, DI)
+    < OI : PersistentObject | >
+    < DI : DataStreamObject | data-size : DS, content : DM >
+    =>
+    < OI : PersistentObject |
+      data-stream : read(pos(0), updateSize(DS, DATAPOS, sizeOfData(DATA)),
+        writeStream(DATA, DATAPOS, DS, DM)) >
+    < DI : DataStreamObject |
+      data-size : updateSize(DS, DATAPOS, sizeOfData(DATA)),
+      content : writeStream(DATA, DATAPOS, DS, DM) >
+    finishWriteData(TK)
+  .
+
+  rl [write-object-data-top-level-resolve-stream] :
+    writeObjectStreamTop(DATA, DATAPOS, TK, OI, DI)
+    < DI : DataStreamObject | data-size : DS, content : DM >
+    =>
+    < DI : DataStreamObject | >
+    writeObjectOwnerTop(DATA, DATAPOS, TK, OI, DI, DS, DM)
+  .
+
+  rl [write-object-data-top-level-update-owner] :
+    writeObjectOwnerTop(DATA, DATAPOS, TK, OI, DI, DS, DM)
+    < OI : PersistentObject | data-stream-id : DI >
+    =>
+    < OI : PersistentObject |
+      data-stream : read(pos(0), updateSize(DS, DATAPOS, sizeOfData(DATA)),
+        writeStream(DATA, DATAPOS, DS, DM)) >
+    writeDataStreamTop(DATA, DATAPOS, TK, DI)
+  .
+
+  rl [write-object-data-top-level-update-data-stream] :
+    writeDataStreamTop(DATA, DATAPOS, TK, DI)
+    < DI : DataStreamObject | data-size : DS, content : DM >
+    =>
+    < DI : DataStreamObject |
+      data-size : updateSize(DS, DATAPOS, sizeOfData(DATA)),
+      content : writeStream(DATA, DATAPOS, DS, DM) >
+    finishWriteData(TK)
+  .
+
+  rl [write-object-data-top-level-finish-overflow] :
+    writeObjectOverflowTop(TK)
+    < TK : TaKernel | api-state : waitWriteObjectData, current-api : WriteObjectData >
+    =>
+    < TK : TaKernel | api-state : finished,
+      api-return : apiReturn(WriteObjectData, TEE-ERROR-OVERFLOW) >
+  .
+
   rl [write-object-data-success] :
     finishWriteData(TK)
     < TK : TaKernel | api-state : waitWriteObjectData , 
@@ -216,6 +336,20 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
     < TK : TaKernel | api-state : finished , current-api : WriteObjectData ,
                       api-return : apiReturn(WriteObjectData , TEE-ERROR-OVERFLOW) >
   if isWritable(DATAFLAGS) /\ not withinMaxPosition(advancePos(DATAPOS , sizeOfData(DATA)))
+  .
+
+  crl [write-object-data-top-level-overflow] :
+    writeObjectData(HANDLE , DATA , TK , TN)
+    < TK : TaKernel | api-state : waitWriteObjectData , current-api : WriteObjectData >
+    < OI : PersistentObject | handle-set : none, trust-app-id : TN >
+    < HANDLE : ObjectHandle | oid : OI, data-access-flag-set : DATAFLAGS,
+                              data-position : DATAPOS >
+    =>
+    < OI : PersistentObject | >
+    < HANDLE : ObjectHandle | >
+    < TK : TaKernel | api-state : finished , current-api : WriteObjectData,
+                      api-return : apiReturn(WriteObjectData, TEE-ERROR-OVERFLOW) >
+  if isWritable(DATAFLAGS) /\ not withinMaxPosition(advancePos(DATAPOS, sizeOfData(DATA)))
   .
 
 --- This rule returns TEE_ERROR_STORAGE_NO_SPACE if insufficient storage space is available.
@@ -239,6 +373,10 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 --- See page 175 of the G.P. documentation for more details.
 
   msg truncateObjectData : HandleId DataSize TaInstId AppId -> Msg .
+  msg truncateObjectDataTop : HandleId DataSize TaInstId AppId TaObjectId TaObjectId -> Msg .
+  msg truncateObjectStreamTop : DataSize TaInstId TaObjectId TaObjectId -> Msg .
+  msg truncateObjectOwnerTop : DataSize TaInstId TaObjectId TaObjectId DataSize Map{DataPosition,Data} -> Msg .
+  msg truncateDataStreamTop : DataSize TaInstId TaObjectId DataSize Map{DataPosition,Data} -> Msg .
   msg finishTruncateData : TaInstId -> Msg .
 
   rl [truncate-object-data-subroutine] :
@@ -277,6 +415,50 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   if isWritable(DATAFLAGS)
   .
 
+  rl [truncate-object-data-top-level-resolve-owner] :
+    truncateObjectData(HANDLE, DATASIZE, TK, TN)
+    < OI : PersistentObject | handle-set : none,
+                              data-stream-id : DI, trust-app-id : TN >
+    =>
+    < OI : PersistentObject | >
+    truncateObjectDataTop(HANDLE, DATASIZE, TK, TN, OI, DI)
+  .
+
+  crl [truncate-object-data-top-level-check-handle] :
+    truncateObjectDataTop(HANDLE, DATASIZE, TK, TN, OI, DI)
+    < HANDLE : ObjectHandle | oid : OI, data-access-flag-set : DATAFLAGS >
+    =>
+    < HANDLE : ObjectHandle | >
+    truncateObjectStreamTop(DATASIZE, TK, OI, DI)
+  if isWritable(DATAFLAGS)
+  .
+
+  rl [truncate-object-data-top-level-resolve-stream] :
+    truncateObjectStreamTop(DATASIZE, TK, OI, DI)
+    < DI : DataStreamObject | data-size : DS, content : DM >
+    =>
+    < DI : DataStreamObject | >
+    truncateObjectOwnerTop(DATASIZE, TK, OI, DI, DS, DM)
+  .
+
+  rl [truncate-object-data-top-level-update-owner] :
+    truncateObjectOwnerTop(DATASIZE, TK, OI, DI, DS, DM)
+    < OI : PersistentObject | data-stream-id : DI >
+    =>
+    < OI : PersistentObject |
+      data-stream : read(pos(0), DATASIZE, resizeContent(DS, DATASIZE, DM)) >
+    truncateDataStreamTop(DATASIZE, TK, DI, DS, DM)
+  .
+
+  rl [truncate-object-data-top-level-update-stream] :
+    truncateDataStreamTop(DATASIZE, TK, DI, DS, DM)
+    < DI : DataStreamObject | >
+    =>
+    < DI : DataStreamObject | data-size : DATASIZE,
+                              content : resizeContent(DS, DATASIZE, DM) >
+    finishTruncateData(TK)
+  .
+
   rl [truncate-object-data-success] :
     finishTruncateData(TK)
     < TK : TaKernel | api-state : waitTruncateObjectData , 
@@ -306,6 +488,9 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 --- See page 176 of the G.P. documentation for more details.
 
   msg seekObjectData : HandleId Int SeekType TaInstId AppId -> Msg .
+  msg seekObjectDataTop : HandleId Int SeekType TaInstId AppId TaObjectId TaObjectId -> Msg .
+  msg seekObjectHandleTop : HandleId Int SeekType TaInstId TaObjectId DataSize -> Msg .
+  msg seekObjectOverflowTop : TaInstId -> Msg .
   msg finishSeekData : TaInstId -> Msg .
 
   rl [seek-object-data-subroutine] :
@@ -342,6 +527,50 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
     < DI : DataStreamObject | >
     finishSeekData(TK)
   if withinMaxPosition(seekPos(WHENCE , DATAPOS , OFST , DATASIZE))
+  .
+
+  rl [seek-object-data-top-level-resolve-owner] :
+    seekObjectData(HANDLE, OFST, WHENCE, TK, TN)
+    < OI : PersistentObject | handle-set : none,
+                              data-stream-id : DI, trust-app-id : TN >
+    =>
+    < OI : PersistentObject | >
+    seekObjectDataTop(HANDLE, OFST, WHENCE, TK, TN, OI, DI)
+  .
+
+  rl [seek-object-data-top-level-resolve-stream] :
+    seekObjectDataTop(HANDLE, OFST, WHENCE, TK, TN, OI, DI)
+    < DI : DataStreamObject | data-size : DATASIZE >
+    =>
+    < DI : DataStreamObject | >
+    seekObjectHandleTop(HANDLE, OFST, WHENCE, TK, OI, DATASIZE)
+  .
+
+  crl [seek-object-data-top-level-update-handle] :
+    seekObjectHandleTop(HANDLE, OFST, WHENCE, TK, OI, DATASIZE)
+    < HANDLE : ObjectHandle | oid : OI, data-position : DATAPOS >
+    =>
+    < HANDLE : ObjectHandle |
+      data-position : seekPos(WHENCE, DATAPOS, OFST, DATASIZE) >
+    finishSeekData(TK)
+  if withinMaxPosition(seekPos(WHENCE, DATAPOS, OFST, DATASIZE))
+  .
+
+  crl [seek-object-data-top-level-detect-overflow] :
+    seekObjectHandleTop(HANDLE, OFST, WHENCE, TK, OI, DATASIZE)
+    < HANDLE : ObjectHandle | oid : OI, data-position : DATAPOS >
+    =>
+    < HANDLE : ObjectHandle | >
+    seekObjectOverflowTop(TK)
+  if not withinMaxPosition(seekPos(WHENCE, DATAPOS, OFST, DATASIZE))
+  .
+
+  rl [seek-object-data-top-level-finish-overflow] :
+    seekObjectOverflowTop(TK)
+    < TK : TaKernel | api-state : waitSeekObjectData, current-api : SeekObjectData >
+    =>
+    < TK : TaKernel | api-state : finished,
+      api-return : apiReturn(SeekObjectData, TEE-ERROR-OVERFLOW) >
   .
 
   rl [seek-object-data-success] :
@@ -435,6 +664,21 @@ omod DATA-STREAM-OBJECT-BEHAVIOR-INVISIBLE is
   if isReadable(DATAFLAGS)
   .
 
+  ceq
+    readObjectData(HANDLE , DATASIZE , TK , TN)
+    < OI : PersistentObject | handle-set : none,
+                              data-stream-id : DI , trust-app-id : TN >
+    < HANDLE : ObjectHandle | oid : OI, data-access-flag-set : DATAFLAGS,
+                              data-position : DATAPOS >
+    < DI : DataStreamObject | data-size : DS , content : DM >
+    =
+    < OI : PersistentObject | >
+    < HANDLE : ObjectHandle | data-position : updatePos(DATAPOS, DATASIZE, DS) >
+    < DI : DataStreamObject | >
+    finishReadData(read(DATAPOS, DATASIZE, DM), TK)
+  if isReadable(DATAFLAGS)
+  .
+
   eq
     finishReadData(DATA , TK)
     < TK : TaKernel | api-state : waitReadObjectData , 
@@ -493,6 +737,26 @@ omod DATA-STREAM-OBJECT-BEHAVIOR-INVISIBLE is
 
   ceq
     writeObjectData(HANDLE , DATA , TK , TN)
+    < OI : PersistentObject | handle-set : none,
+                              data-stream-id : DI , trust-app-id : TN >
+    < HANDLE : ObjectHandle | oid : OI, data-access-flag-set : DATAFLAGS,
+                              data-position : DATAPOS >
+    < DI : DataStreamObject | data-size : DS , content : DM >
+    =
+    < OI : PersistentObject |
+      data-stream : read(pos(0), updateSize(DS, DATAPOS, sizeOfData(DATA)),
+        writeStream(DATA, DATAPOS, DS, DM)) >
+    < HANDLE : ObjectHandle |
+      data-position : advancePos(DATAPOS, sizeOfData(DATA)) >
+    < DI : DataStreamObject |
+      data-size : updateSize(DS, DATAPOS, sizeOfData(DATA)),
+      content : writeStream(DATA, DATAPOS, DS, DM) >
+    finishWriteData(TK)
+  if isWritable(DATAFLAGS) /\ withinMaxPosition(advancePos(DATAPOS, sizeOfData(DATA)))
+  .
+
+  ceq
+    writeObjectData(HANDLE , DATA , TK , TN)
     < TK : TaKernel | api-state : waitWriteObjectData , current-api : WriteObjectData >
     < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-access-flag-set : DATAFLAGS , data-position : DATAPOS > HS) ,
                               trust-app-id : TN >
@@ -501,6 +765,86 @@ omod DATA-STREAM-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | api-state : finished , current-api : WriteObjectData ,
                       api-return : apiReturn(WriteObjectData , TEE-ERROR-OVERFLOW) >
   if isWritable(DATAFLAGS) /\ not withinMaxPosition(advancePos(DATAPOS , sizeOfData(DATA)))
+  .
+
+  ceq
+    writeObjectData(HANDLE , DATA , TK , TN)
+    < TK : TaKernel | api-state : waitWriteObjectData , current-api : WriteObjectData >
+    < OI : PersistentObject | handle-set : none, trust-app-id : TN >
+    < HANDLE : ObjectHandle | oid : OI, data-access-flag-set : DATAFLAGS,
+                              data-position : DATAPOS >
+    =
+    < OI : PersistentObject | >
+    < HANDLE : ObjectHandle | >
+    < TK : TaKernel | api-state : finished , current-api : WriteObjectData,
+                      api-return : apiReturn(WriteObjectData, TEE-ERROR-OVERFLOW) >
+  if isWritable(DATAFLAGS) /\ not withinMaxPosition(advancePos(DATAPOS, sizeOfData(DATA)))
+  .
+
+  eq
+    writeObjectData(HANDLE, DATA, TK, TN)
+    < OI : PersistentObject | handle-set : none,
+                              data-stream-id : DI, trust-app-id : TN >
+    =
+    < OI : PersistentObject | >
+    writeObjectDataTop(HANDLE, DATA, TK, TN, OI, DI)
+  .
+
+  ceq
+    writeObjectDataTop(HANDLE, DATA, TK, TN, OI, DI)
+    < HANDLE : ObjectHandle | oid : OI, data-access-flag-set : DATAFLAGS,
+                              data-position : DATAPOS >
+    =
+    < HANDLE : ObjectHandle |
+      data-position : advancePos(DATAPOS, sizeOfData(DATA)) >
+    writeObjectStreamTop(DATA, DATAPOS, TK, OI, DI)
+  if isWritable(DATAFLAGS) /\ withinMaxPosition(advancePos(DATAPOS, sizeOfData(DATA)))
+  .
+  --- Legacy nested-handle invisible rule retained for compatibility.
+  ceq
+    writeObjectDataTop(HANDLE, DATA, TK, TN, OI, DI)
+    < HANDLE : ObjectHandle | oid : OI, data-access-flag-set : DATAFLAGS,
+                              data-position : DATAPOS >
+    =
+    < HANDLE : ObjectHandle | >
+    writeObjectOverflowTop(TK)
+  if isWritable(DATAFLAGS) /\ not withinMaxPosition(advancePos(DATAPOS, sizeOfData(DATA)))
+  .
+
+  eq
+    writeObjectStreamTop(DATA, DATAPOS, TK, OI, DI)
+    < DI : DataStreamObject | data-size : DS, content : DM >
+    =
+    < DI : DataStreamObject | >
+    writeObjectOwnerTop(DATA, DATAPOS, TK, OI, DI, DS, DM)
+  .
+
+  eq
+    writeObjectOwnerTop(DATA, DATAPOS, TK, OI, DI, DS, DM)
+    < OI : PersistentObject | data-stream-id : DI >
+    =
+    < OI : PersistentObject |
+      data-stream : read(pos(0), updateSize(DS, DATAPOS, sizeOfData(DATA)),
+        writeStream(DATA, DATAPOS, DS, DM)) >
+    writeDataStreamTop(DATA, DATAPOS, TK, DI)
+  .
+
+  eq
+    writeDataStreamTop(DATA, DATAPOS, TK, DI)
+    < DI : DataStreamObject | data-size : DS, content : DM >
+    =
+    < DI : DataStreamObject |
+      data-size : updateSize(DS, DATAPOS, sizeOfData(DATA)),
+      content : writeStream(DATA, DATAPOS, DS, DM) >
+    finishWriteData(TK)
+  .
+
+  eq
+    writeObjectOverflowTop(TK)
+    < TK : TaKernel | api-state : waitWriteObjectData, current-api : WriteObjectData >
+    =
+    < TK : TaKernel | api-state : finished,
+      api-return : apiReturn(WriteObjectData, TEE-ERROR-OVERFLOW) >
   .
 
   eq

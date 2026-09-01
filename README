@@ -40,4 +40,26 @@ Below is a brief description of each file separated into three categories.
   - k-prelude.maude : K-framework foundation.
   - tee-imp.maude   : TEE API specific language semantics.
 
-The main.maude file is the main maude file that includes all of the above-mentioned files.
+The main.maude file is the entry point for the active model. The legacy
+tee-panic.maude module is not loaded because it depends on retired call-message
+modules; panic behavior used by the active APIs is modeled in their behavior
+modules instead.
+
+======================================================
+Handle Ownership Invariant
+======================================================
+
+The paper-level model represents handles as top-level configuration objects.
+An OpenableObject records only their identities in handle-id-set, while every
+Handle records its owner in oid. New API allocations therefore satisfy:
+
+  - the owner has handle-set : none;
+  - the owner contains the handle ID in handle-id-set;
+  - the handle is a separate top-level object whose oid is the owner Oid; and
+  - an Oid is never represented both as a nested and a top-level handle.
+
+Nested handle-set rules remain only as compatibility paths for the original
+artifact fixtures. Active allocation paths create top-level ObjectHandle,
+ObjectEnumHandle, OperationHandle, and TaSessionHandle objects. Persistent
+objects may own multiple handles; close removes one ID, while close-and-delete
+consumes every ID and top-level handle before deleting the owner and stream.

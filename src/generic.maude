@@ -34,6 +34,7 @@ omod GENERIC-OBJECT-BEHAVIOR is
   var DATAPOS : DataPosition .
   var DATASIZE : DataSize .
   var HS : Configuration .
+  var HIDS : HandleIdSet .
   var STATUS : StorageStatus .
   var INFO : TeeObjectInfo .
   var PARAMS : Set{TeeApiParam} .
@@ -151,6 +152,23 @@ omod GENERIC-OBJECT-BEHAVIOR is
     retObjectInfoPr(OBJTYPE , keySize(ATTRS) , MAXOBJSIZE , OBJUSAGES , DATASIZE , DATAPOS , DATAFLAGS , TK)
   .
 
+  rl [get-obj-info-persistent-top-level-handle] :
+    reqObjectInfo(HANDLE, TK, TN)
+    < OI : PersistentObject | handle-set : none,
+                              object-type : OBJTYPE, max-object-size : MAXOBJSIZE,
+                              attribute-set : ATTRS, object-usage-set : OBJUSAGES,
+                              data-stream-id : DI, trust-app-id : TN >
+    < HANDLE : ObjectHandle | oid : OI, data-access-flag-set : DATAFLAGS,
+                              data-position : DATAPOS >
+    < DI : DataStreamObject | data-size : DATASIZE >
+    =>
+    < OI : PersistentObject | >
+    < HANDLE : ObjectHandle | >
+    < DI : DataStreamObject | >
+    retObjectInfoPr(OBJTYPE, keySize(ATTRS), MAXOBJSIZE, OBJUSAGES,
+                    DATASIZE, DATAPOS, DATAFLAGS, TK)
+  .
+
   rl [get-obj-info-persistent-subroutine] :
     retObjectInfoPr(OBJTYPE , KEYSIZE , MAXOBJSIZE , OBJUSAGES , DATASIZE , DATAPOS , DATAFLAGS , TK)
     < TK : TaKernel | api-state : waitObjectInfo ,
@@ -228,6 +246,16 @@ omod GENERIC-OBJECT-BEHAVIOR is
     < HANDLE : ObjectHandle | oid : OI >
     =>
     < OI : TransientObject | object-usage-set : OBJUSAGES >
+    < HANDLE : ObjectHandle | >
+    finishRestrictUsage(TK)
+  .
+
+  rl [restrict-persistent-usage-top-level-handle] :
+    restrictUsage(HANDLE, OBJUSAGES, TK)
+    < OI : PersistentObject | handle-set : none >
+    < HANDLE : ObjectHandle | oid : OI >
+    =>
+    < OI : PersistentObject | object-usage-set : OBJUSAGES >
     < HANDLE : ObjectHandle | >
     finishRestrictUsage(TK)
   .
@@ -495,6 +523,15 @@ omod GENERIC-OBJECT-BEHAVIOR is
     finishCloseObject(TK)
   .
 
+  rl [close-persistent-top-level-handle] :
+    closeObject(HANDLE , TK)
+    < OI : PersistentObject | handle-id-set : HIDS >
+    < HANDLE : ObjectHandle | oid : OI >
+    =>
+    < OI : PersistentObject | handle-id-set : removeHandleId(HANDLE, HIDS) >
+    finishCloseObject(TK)
+  .
+
   rl [close-transient-top-level-handle] :
     closeObject(HANDLE , TK)
     < OI : TransientObject | handle-id-set : handleIdSet(HANDLE) >
@@ -550,6 +587,7 @@ omod GENERIC-OBJECT-BEHAVIOR-INVISIBLE is
   var DATAPOS : DataPosition .
   var DATASIZE : DataSize .
   var HS : Configuration .
+  var HIDS : HandleIdSet .
   var STATUS : StorageStatus .
   var INFO : TeeObjectInfo .
   var PARAMS : Set{TeeApiParam} .
@@ -611,6 +649,23 @@ omod GENERIC-OBJECT-BEHAVIOR-INVISIBLE is
     < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS) >
     < DI : DataStreamObject | >
     retObjectInfoPr(OBJTYPE , keySize(ATTRS) , MAXOBJSIZE , OBJUSAGES , DATASIZE , DATAPOS , DATAFLAGS , TK)
+  .
+
+  eq
+    reqObjectInfo(HANDLE, TK, TN)
+    < OI : PersistentObject | handle-set : none,
+                              object-type : OBJTYPE, max-object-size : MAXOBJSIZE,
+                              attribute-set : ATTRS, object-usage-set : OBJUSAGES,
+                              data-stream-id : DI, trust-app-id : TN >
+    < HANDLE : ObjectHandle | oid : OI, data-access-flag-set : DATAFLAGS,
+                              data-position : DATAPOS >
+    < DI : DataStreamObject | data-size : DATASIZE >
+    =
+    < OI : PersistentObject | >
+    < HANDLE : ObjectHandle | >
+    < DI : DataStreamObject | >
+    retObjectInfoPr(OBJTYPE, keySize(ATTRS), MAXOBJSIZE, OBJUSAGES,
+                    DATASIZE, DATAPOS, DATAFLAGS, TK)
   .
 
   eq
@@ -676,6 +731,15 @@ omod GENERIC-OBJECT-BEHAVIOR-INVISIBLE is
     < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS) >
     =
     < OI : PersistentObject | handle-set : HS >
+    finishCloseObject(TK)
+  .
+
+  eq
+    closeObject(HANDLE , TK)
+    < OI : PersistentObject | handle-id-set : HIDS >
+    < HANDLE : ObjectHandle | oid : OI >
+    =
+    < OI : PersistentObject | handle-id-set : removeHandleId(HANDLE, HIDS) >
     finishCloseObject(TK)
   .
 

@@ -48,6 +48,8 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
   var TK : TaInstId .
   vars DATAFLAGS DATAFLAGS2 : Set{DataFlag} .
   var HS : Configuration .
+  var HIDS : HandleIdSet .
+  var VALID : Bool .
   var OBJUSAGES : Set{ObjectUsage} .
   var ATTRS : Set{TeeAttribute} .
   vars OBJTYPE : ObjectType .
@@ -97,6 +99,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 --- The following four rules create a new persistent object handle.
 
   msg openPersistentHandle : FileId Set{DataFlag} Nat TaInstId -> Msg .
+  msg checkPersistentHandles : Set{DataFlag} Nat TaInstId TaObjectId HandleIdSet Bool -> Msg .
   msg finishOpenPersistentHandle : HandleId TaInstId -> Msg .
   msg failOpenPersistentHandle : TaInstId -> Msg .
 
@@ -141,11 +144,52 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 
   crl [open-persistent-subroutine] :
     openPersistentHandle(FILE , DATAFLAGS , N , TK)
-    < OI : PersistentObject | handle-set : HS , file-id : FILE >
+    < OI : PersistentObject | handle-id-set : noHandleIds, handle-set : HS , file-id : FILE >
     =>
     < OI : PersistentObject | handle-set : (freshPersistentHandle(N , TK , DATAFLAGS , OI) HS) >
     finishOpenPersistentHandle(handleId(N , TK) , TK)
   if accessRightChecking(DATAFLAGS , HS)
+  .
+
+  rl [open-persistent-top-level-check] :
+    openPersistentHandle(FILE , DATAFLAGS , N , TK)
+    < OI : PersistentObject | handle-id-set : HIDS, handle-set : none, file-id : FILE >
+    =>
+    < OI : PersistentObject | >
+    checkPersistentHandles(DATAFLAGS, N, TK, OI, HIDS, true)
+  .
+
+  rl [open-persistent-top-level-check-single] :
+    checkPersistentHandles(DATAFLAGS, N, TK, OI, handleIdSet(H), VALID)
+    < H : ObjectHandle | oid : OI, data-access-flag-set : DATAFLAGS2 >
+    =>
+    < H : ObjectHandle | >
+    checkPersistentHandles(DATAFLAGS, N, TK, OI, noHandleIds,
+      VALID and accessRightCheckingAux(DATAFLAGS, DATAFLAGS2))
+  .
+
+  rl [open-persistent-top-level-check-next] :
+    checkPersistentHandles(DATAFLAGS, N, TK, OI, addHandleId(H, HIDS), VALID)
+    < H : ObjectHandle | oid : OI, data-access-flag-set : DATAFLAGS2 >
+    =>
+    < H : ObjectHandle | >
+    checkPersistentHandles(DATAFLAGS, N, TK, OI, HIDS,
+      VALID and accessRightCheckingAux(DATAFLAGS, DATAFLAGS2))
+  .
+
+  rl [open-persistent-top-level-success] :
+    checkPersistentHandles(DATAFLAGS, N, TK, OI, noHandleIds, true)
+    < OI : PersistentObject | handle-id-set : HIDS >
+    =>
+    < OI : PersistentObject |
+      handle-id-set : addHandleId(handleId(N, TK), HIDS) >
+    freshPersistentHandle(N, TK, DATAFLAGS, OI)
+    finishOpenPersistentHandle(handleId(N, TK), TK)
+  .
+
+  rl [open-persistent-top-level-fail] :
+    checkPersistentHandles(DATAFLAGS, N, TK, OI, noHandleIds, false)
+    => failOpenPersistentHandle(TK)
   .
 
   rl [open-persistent-success] : 
@@ -160,7 +204,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 
   crl [open-persistent-subroutine] :
     openPersistentHandle(FILE , DATAFLAGS , N , TK)
-    < OI : PersistentObject | handle-set : HS , file-id : FILE >
+    < OI : PersistentObject | handle-id-set : noHandleIds, handle-set : HS , file-id : FILE >
     =>
     < OI : PersistentObject | >
     failOpenPersistentHandle(TK)
@@ -321,9 +365,17 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 
   rl [create-persistent-subroutine-2] :
     reqAttributeAndDelete(HANDLE, TK)
-    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | is-initialized : true >, 
+    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | is-initialized : true >,
                              object-type : OBJTYPE, attribute-set : ATTRS,
-                             object-usage-set : OBJUSAGES > 
+                             object-usage-set : OBJUSAGES >
+  => retAttributeAndDelete(ATTRS, OBJTYPE, OBJUSAGES, TK) .
+
+  rl [create-persistent-top-level-source] :
+    reqAttributeAndDelete(HANDLE, TK)
+    < OI : TransientObject | handle-id-set : handleIdSet(HANDLE),
+                             object-type : OBJTYPE, attribute-set : ATTRS,
+                             object-usage-set : OBJUSAGES >
+    < HANDLE : ObjectHandle | oid : OI, is-initialized : true >
   => retAttributeAndDelete(ATTRS, OBJTYPE, OBJUSAGES, TK) .
 
   rl [create-persistent-sucess] : 
@@ -336,13 +388,14 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     < TK : TaKernel | api-state : finished , id-counter : N + 3 ,
                       current-params : (fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) , PARAMS , openedHandle(handleId(N + 1 , TK))) ,
                       api-return : apiReturn(CreatePersistentObject , TEE-SUCCESS , handle(handleId(N + 1 , TK))) >
-    < taOid(N , TK) : PersistentObject | handle-set : freshPersistentHandle(N + 1 , TK , DATAFLAGS , taOid(N , TK)) ,
+    < taOid(N , TK) : PersistentObject | handle-id-set : handleIdSet(handleId(N + 1 , TK)), handle-set : none ,
                                          file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
                                          file-id : FILE , object-type : OBJTYPE , max-object-size : keySize(ATTRS) ,
                                          attribute-set : ATTRS , object-usage-set : OBJUSAGES ,
                                          data-stream-id : taOid(N + 2, TK) ,
                                          trust-app-id : TN >
-    < taOid(N + 2 , TK) : DataStreamObject | persistent-owner-id : taOid(N , TK) , 
+    freshPersistentHandle(N + 1 , TK , DATAFLAGS , taOid(N , TK))
+    < taOid(N + 2 , TK) : DataStreamObject | persistent-owner-id : taOid(N , TK) ,
                                              data-size : DATASIZE , content : newContent(DATALIST) >
   .
 
@@ -452,13 +505,14 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     < TK : TaKernel | api-state : waitNotifyFileCreation , id-counter : N + 3 ,
                       current-params : (fileId(FILE) , data(DATALIST) , size(DATASIZE) , flags(DATAFLAGS) , 
                                         PARAMS , openedHandle(handleId(N + 1 , TK))) >
-    < taOid(N , TK) : PersistentObject | handle-set : freshPersistentHandle(N + 1 , TK , DATAFLAGS , taOid(N , TK)) ,
+    < taOid(N , TK) : PersistentObject | handle-id-set : handleIdSet(handleId(N + 1 , TK)), handle-set : none ,
                                          file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
                                          file-id : FILE , object-type : TEE-TYPE-DATA , max-object-size : 0 Bits ,
                                          attribute-set : empty , object-usage-set : empty ,
                                          data-stream-id : taOid(N + 2, TK) ,
                                          trust-app-id : TN >
-    < taOid(N + 2 , TK) : DataStreamObject | persistent-owner-id : taOid(N , TK) , 
+    freshPersistentHandle(N + 1 , TK , DATAFLAGS , taOid(N , TK))
+    < taOid(N + 2 , TK) : DataStreamObject | persistent-owner-id : taOid(N , TK) ,
                                              data-size : DATASIZE , content : newContent(DATALIST) >
     reqTrustedOS(notifyFileCreation(FILE) , TK , TN)
   .
@@ -504,13 +558,14 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     < TK : TaKernel | api-state : waitNotifyFileCreation , id-counter : N + 3 ,
                       current-params : fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) ,
                                        attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) , PARAMS , openedHandle(handleId(N + 1 , TK)) >
-    < taOid(N , TK) : PersistentObject | handle-set : freshPersistentHandle(N + 1 , TK , DATAFLAGS , taOid(N , TK)) ,
+    < taOid(N , TK) : PersistentObject | handle-id-set : handleIdSet(handleId(N + 1 , TK)), handle-set : none ,
                                          file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
                                          file-id : FILE , object-type : OBJTYPE , max-object-size : keySize(ATTRS) ,
                                          attribute-set : ATTRS , object-usage-set : OBJUSAGES ,
                                          data-stream-id : taOid(N + 2, TK) ,
                                          trust-app-id : TN >
-    < taOid(N + 2 , TK) : DataStreamObject | persistent-owner-id : taOid(N , TK) , 
+    freshPersistentHandle(N + 1 , TK , DATAFLAGS , taOid(N , TK))
+    < taOid(N + 2 , TK) : DataStreamObject | persistent-owner-id : taOid(N , TK) ,
                                              data-size : DATASIZE , content : newContent(DATALIST) >
     reqTrustedOS(notifyFileCreation(FILE) , TK , TN)
   .
@@ -553,6 +608,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
   .
 
   msg deletePersistent : HandleId TaInstId AppId -> Msg .
+  msg deletePersistentHandles : TaInstId TaObjectId TaObjectId FileId HandleIdSet -> Msg .
   msg finishDeletePersistent : FileId TaInstId -> Msg .
   msg failDeletePersistent : TaInstId -> Msg .
 
@@ -570,7 +626,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
   eq hasWriteMeta((TEE-DATA-FLAG-ACCESS-WRITE-META , DATAFLAGS)) = true .
   eq hasWriteMeta(DATAFLAGS) = false [owise] .
 
-  crl [close-and-delete-persistent-subroutine] : 
+  crl [close-and-delete-persistent-subroutine] :
     deletePersistent(HANDLE , TK , TN)
     < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-access-flag-set : DATAFLAGS > HS) , 
                               data-stream-id : DI , file-id : FILE , trust-app-id : TN >
@@ -578,6 +634,49 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     => 
     finishDeletePersistent(FILE , TK)
   if hasWriteMeta(DATAFLAGS)
+  .
+
+  crl [close-and-delete-persistent-top-level-start] :
+    deletePersistent(HANDLE, TK, TN)
+    < OI : PersistentObject | handle-id-set : HIDS, handle-set : none,
+                              data-stream-id : DI, file-id : FILE,
+                              trust-app-id : TN >
+    < HANDLE : ObjectHandle | oid : OI, data-access-flag-set : DATAFLAGS >
+    =>
+    < OI : PersistentObject | >
+    < HANDLE : ObjectHandle | >
+    deletePersistentHandles(TK, OI, DI, FILE, HIDS)
+  if hasWriteMeta(DATAFLAGS)
+  .
+
+  rl [close-and-delete-persistent-top-level-single] :
+    deletePersistentHandles(TK, OI, DI, FILE, handleIdSet(H))
+    < H : ObjectHandle | oid : OI >
+    => deletePersistentHandles(TK, OI, DI, FILE, noHandleIds)
+  .
+
+  rl [close-and-delete-persistent-top-level-next] :
+    deletePersistentHandles(TK, OI, DI, FILE, addHandleId(H, HIDS))
+    < H : ObjectHandle | oid : OI >
+    => deletePersistentHandles(TK, OI, DI, FILE, HIDS)
+  .
+
+  rl [close-and-delete-persistent-top-level-finish] :
+    deletePersistentHandles(TK, OI, DI, FILE, noHandleIds)
+    < OI : PersistentObject | data-stream-id : DI >
+    < DI : DataStreamObject | >
+    => finishDeletePersistent(FILE, TK)
+  .
+
+  crl [close-and-delete-persistent-top-level-fail] :
+    deletePersistent(HANDLE, TK, TN)
+    < OI : PersistentObject | handle-set : none, trust-app-id : TN >
+    < HANDLE : ObjectHandle | oid : OI, data-access-flag-set : DATAFLAGS >
+    =>
+    < OI : PersistentObject | >
+    < HANDLE : ObjectHandle | >
+    failDeletePersistent(TK)
+  if not hasWriteMeta(DATAFLAGS)
   .
 
   rl [close-and-delete-persistent-subroutine] : 
@@ -652,6 +751,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 --- The following five rules rename the persistent object's id when there does not exist a persistent object with the same id as the input id.
 
   msg renamePersistent : HandleId FileId TaInstId AppId -> Msg .
+  msg renamePersistentOwner : FileId TaInstId TaObjectId -> Msg .
   msg finishRenamePersistent : FileId TaInstId -> Msg .
 
   rl [rename-persistent-subroutine] : 
@@ -683,7 +783,24 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS),
                               file-name : FILE, file-id : FILE >
     finishRenamePersistent(FILE' , TK)
-  if hasWriteMeta(DATAFLAGS) 
+  if hasWriteMeta(DATAFLAGS)
+  .
+
+  crl [rename-persistent-top-level-check-handle] :
+    renamePersistent(HANDLE, FILE, TK, TN)
+    < HANDLE : ObjectHandle | oid : OI, data-access-flag-set : DATAFLAGS >
+    =>
+    < HANDLE : ObjectHandle | >
+    renamePersistentOwner(FILE, TK, OI)
+  if hasWriteMeta(DATAFLAGS)
+  .
+
+  rl [rename-persistent-top-level-update-owner] :
+    renamePersistentOwner(FILE, TK, OI)
+    < OI : PersistentObject | file-id : FILE' >
+    =>
+    < OI : PersistentObject | file-name : FILE, file-id : FILE >
+    finishRenamePersistent(FILE', TK)
   .
 
   rl [rename-persistent-subroutine] :
@@ -740,7 +857,18 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
                               object-usage-set : OBJUSAGES >
     => 
     < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS) >
-    retAttributePr(ATTRS , OBJTYPE , OBJUSAGES , TK) 
+    retAttributePr(ATTRS , OBJTYPE , OBJUSAGES , TK)
+  .
+
+  rl [copy-object-attributes-top-level-handle] :
+    reqAttribute(HANDLE, TK)
+    < OI : PersistentObject | object-type : OBJTYPE, attribute-set : ATTRS,
+                              object-usage-set : OBJUSAGES >
+    < HANDLE : ObjectHandle | oid : OI >
+    =>
+    < OI : PersistentObject | >
+    < HANDLE : ObjectHandle | >
+    retAttributePr(ATTRS, OBJTYPE, OBJUSAGES, TK)
   .
 
   rl [copy-object-attributes-subroutine] :
@@ -805,8 +933,10 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
   var FILE : FileId .
   var TN : AppId .
   var TK : TaInstId .
-  var DATAFLAGS : Set{DataFlag} .
+  vars DATAFLAGS DATAFLAGS2 : Set{DataFlag} .
   var HS : Configuration .
+  var HIDS : HandleIdSet .
+  var VALID : Bool .
   var OBJUSAGES : Set{ObjectUsage} .
   var ATTRS : Set{TeeAttribute} .
   vars OBJTYPE : ObjectType .
@@ -832,6 +962,17 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
   if supportedStorage(STORID)
   .
 
+  eq
+    reqAttribute(HANDLE, TK)
+    < OI : PersistentObject | object-type : OBJTYPE, attribute-set : ATTRS,
+                              object-usage-set : OBJUSAGES >
+    < HANDLE : ObjectHandle | oid : OI >
+    =
+    < OI : PersistentObject | >
+    < HANDLE : ObjectHandle | >
+    retAttributePr(ATTRS, OBJTYPE, OBJUSAGES, TK)
+  .
+
   ceq
     < TK : TaKernel | app-status : normal , api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : OpenPersistentObject ,
@@ -855,16 +996,57 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
 
   ceq
     openPersistentHandle(FILE , DATAFLAGS , N , TK)
-    < OI : PersistentObject | handle-set : HS , file-id : FILE >
+    < OI : PersistentObject | handle-id-set : noHandleIds, handle-set : HS , file-id : FILE >
     =
     < OI : PersistentObject | handle-set : (freshPersistentHandle(N , TK , DATAFLAGS , OI) HS) >
     finishOpenPersistentHandle(handleId(N , TK) , TK)
   if accessRightChecking(DATAFLAGS , HS)
   .
 
+  eq
+    openPersistentHandle(FILE , DATAFLAGS , N , TK)
+    < OI : PersistentObject | handle-id-set : HIDS, handle-set : none, file-id : FILE >
+    =
+    < OI : PersistentObject | >
+    checkPersistentHandles(DATAFLAGS, N, TK, OI, HIDS, true)
+  .
+
+  eq
+    checkPersistentHandles(DATAFLAGS, N, TK, OI, handleIdSet(H), VALID)
+    < H : ObjectHandle | oid : OI, data-access-flag-set : DATAFLAGS2 >
+    =
+    < H : ObjectHandle | >
+    checkPersistentHandles(DATAFLAGS, N, TK, OI, noHandleIds,
+      VALID and accessRightCheckingAux(DATAFLAGS, DATAFLAGS2))
+  .
+
+  eq
+    checkPersistentHandles(DATAFLAGS, N, TK, OI, addHandleId(H, HIDS), VALID)
+    < H : ObjectHandle | oid : OI, data-access-flag-set : DATAFLAGS2 >
+    =
+    < H : ObjectHandle | >
+    checkPersistentHandles(DATAFLAGS, N, TK, OI, HIDS,
+      VALID and accessRightCheckingAux(DATAFLAGS, DATAFLAGS2))
+  .
+
+  eq
+    checkPersistentHandles(DATAFLAGS, N, TK, OI, noHandleIds, true)
+    < OI : PersistentObject | handle-id-set : HIDS >
+    =
+    < OI : PersistentObject |
+      handle-id-set : addHandleId(handleId(N, TK), HIDS) >
+    freshPersistentHandle(N, TK, DATAFLAGS, OI)
+    finishOpenPersistentHandle(handleId(N, TK), TK)
+  .
+
+  eq
+    checkPersistentHandles(DATAFLAGS, N, TK, OI, noHandleIds, false)
+    = failOpenPersistentHandle(TK)
+  .
+
   ceq
     openPersistentHandle(FILE , DATAFLAGS , N , TK)
-    < OI : PersistentObject | handle-set : HS , file-id : FILE >
+    < OI : PersistentObject | handle-id-set : noHandleIds, handle-set : HS , file-id : FILE >
     =
     < OI : PersistentObject | >
     failOpenPersistentHandle(TK)
@@ -1000,13 +1182,14 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | api-state : waitNotifyFileCreation , id-counter : N + 3 ,
                       current-params : (fileId(FILE) , data(DATALIST) , size(DATASIZE) , flags(DATAFLAGS) , 
                                         PARAMS , openedHandle(handleId(N + 1 , TK))) >
-    < taOid(N , TK) : PersistentObject | handle-set : freshPersistentHandle(N + 1 , TK , DATAFLAGS , taOid(N , TK)) ,
+    < taOid(N , TK) : PersistentObject | handle-id-set : handleIdSet(handleId(N + 1 , TK)), handle-set : none ,
                                          file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
                                          file-id : FILE , object-type : TEE-TYPE-DATA , max-object-size : 0 Bits ,
                                          attribute-set : empty , object-usage-set : empty ,
                                          data-stream-id : taOid(N + 2, TK) ,
                                          trust-app-id : TN >
-    < taOid(N + 2 , TK) : DataStreamObject | persistent-owner-id : taOid(N , TK) , 
+    freshPersistentHandle(N + 1 , TK , DATAFLAGS , taOid(N , TK))
+    < taOid(N + 2 , TK) : DataStreamObject | persistent-owner-id : taOid(N , TK) ,
                                              data-size : DATASIZE , content : newContent(DATALIST) >
     reqTrustedOS(notifyFileCreation(FILE) , TK , TN)
   .
@@ -1032,13 +1215,14 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | api-state : finished , id-counter : N + 3 ,
                       current-params : (fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) , PARAMS , openedHandle(handleId(N + 1 , TK))) ,
                       api-return : apiReturn(CreatePersistentObject , TEE-SUCCESS , handle(handleId(N + 1 , TK))) >
-    < taOid(N , TK) : PersistentObject | handle-set : freshPersistentHandle(N + 1 , TK , DATAFLAGS , taOid(N , TK)) ,
+    < taOid(N , TK) : PersistentObject | handle-id-set : handleIdSet(handleId(N + 1 , TK)), handle-set : none ,
                                          file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
                                          file-id : FILE , object-type : OBJTYPE , max-object-size : keySize(ATTRS) ,
                                          attribute-set : ATTRS , object-usage-set : OBJUSAGES ,
                                          data-stream-id : taOid(N + 2, TK) ,
                                          trust-app-id : TN >
-    < taOid(N + 2 , TK) : DataStreamObject | persistent-owner-id : taOid(N , TK) , 
+    freshPersistentHandle(N + 1 , TK , DATAFLAGS , taOid(N , TK))
+    < taOid(N + 2 , TK) : DataStreamObject | persistent-owner-id : taOid(N , TK) ,
                                              data-size : DATASIZE , content : newContent(DATALIST) >
   .
 
@@ -1083,13 +1267,14 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | api-state : waitNotifyFileCreation , id-counter : N + 3 ,
                       current-params : fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) ,
                                        attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) , PARAMS , openedHandle(handleId(N + 1 , TK)) >
-    < taOid(N , TK) : PersistentObject | handle-set : freshPersistentHandle(N + 1 , TK , DATAFLAGS , taOid(N , TK)) ,
+    < taOid(N , TK) : PersistentObject | handle-id-set : handleIdSet(handleId(N + 1 , TK)), handle-set : none ,
                                          file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
                                          file-id : FILE , object-type : OBJTYPE , max-object-size : keySize(ATTRS) ,
                                          attribute-set : ATTRS , object-usage-set : OBJUSAGES ,
                                          data-stream-id : taOid(N + 2, TK) ,
                                          trust-app-id : TN >
-    < taOid(N + 2 , TK) : DataStreamObject | persistent-owner-id : taOid(N , TK) , 
+    freshPersistentHandle(N + 1 , TK , DATAFLAGS , taOid(N , TK))
+    < taOid(N + 2 , TK) : DataStreamObject | persistent-owner-id : taOid(N , TK) ,
                                              data-size : DATASIZE , content : newContent(DATALIST) >
     reqTrustedOS(notifyFileCreation(FILE) , TK , TN)
   .
@@ -1209,6 +1394,49 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
     =
     < TK : TaKernel | api-state : finished , 
                       api-return : apiReturn(CloseAndDeletePersistentObject1 , TEE-ERROR-STORAGE-NOT-AVAILABLE) >
+  .
+
+  ceq
+    deletePersistent(HANDLE, TK, TN)
+    < OI : PersistentObject | handle-id-set : HIDS, handle-set : none,
+                              data-stream-id : DI, file-id : FILE,
+                              trust-app-id : TN >
+    < HANDLE : ObjectHandle | oid : OI, data-access-flag-set : DATAFLAGS >
+    =
+    < OI : PersistentObject | >
+    < HANDLE : ObjectHandle | >
+    deletePersistentHandles(TK, OI, DI, FILE, HIDS)
+  if hasWriteMeta(DATAFLAGS)
+  .
+
+  eq
+    deletePersistentHandles(TK, OI, DI, FILE, handleIdSet(H))
+    < H : ObjectHandle | oid : OI >
+    = deletePersistentHandles(TK, OI, DI, FILE, noHandleIds)
+  .
+
+  eq
+    deletePersistentHandles(TK, OI, DI, FILE, addHandleId(H, HIDS))
+    < H : ObjectHandle | oid : OI >
+    = deletePersistentHandles(TK, OI, DI, FILE, HIDS)
+  .
+
+  eq
+    deletePersistentHandles(TK, OI, DI, FILE, noHandleIds)
+    < OI : PersistentObject | data-stream-id : DI >
+    < DI : DataStreamObject | >
+    = finishDeletePersistent(FILE, TK)
+  .
+
+  ceq
+    deletePersistent(HANDLE, TK, TN)
+    < OI : PersistentObject | handle-set : none, trust-app-id : TN >
+    < HANDLE : ObjectHandle | oid : OI, data-access-flag-set : DATAFLAGS >
+    =
+    < OI : PersistentObject | >
+    < HANDLE : ObjectHandle | >
+    failDeletePersistent(TK)
+  if not hasWriteMeta(DATAFLAGS)
   .
 
 ------------------------------------------------------------

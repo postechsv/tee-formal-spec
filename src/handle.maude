@@ -74,10 +74,34 @@ endom
 
 --- This module defines operation handle, a subclass of handle.
 
+fmod HANDLE-STATE is
+  sorts HandleStateFlag HandleState .
+  subsort HandleStateFlag < HandleState .
+
+  ops init keySet extract : -> HandleStateFlag [ctor] .
+  op noHandleState : -> HandleState [ctor] .
+  op __ : HandleState HandleState -> HandleState
+    [ctor assoc comm id: noHandleState idem] .
+
+  op handleState : Bool Bool Bool -> HandleState .
+  eq handleState(false, false, false) = noHandleState .
+  eq handleState(true,  false, false) = init .
+  eq handleState(false, true,  false) = keySet .
+  eq handleState(true,  true,  false) = init keySet .
+  eq handleState(false, false, true)  = extract .
+  eq handleState(true,  false, true)  = init extract .
+  eq handleState(false, true,  true)  = keySet extract .
+  eq handleState(true,  true,  true)  = init keySet extract .
+endfm
+
 omod OPERATION-HANDLE is
   pr HANDLE .
+  pr HANDLE-STATE .
+  pr OPERATION-CLASS .
 
-  class OpHandle | key-material-set : Bool .
+  class OpHandle | state : HandleState,
+                   key-material-set : Bool,
+                   opclass : OperationClass .
   subclass OpHandle < Handle .
 
 --- Model/Implementation Specific Version
@@ -117,11 +141,12 @@ omod HANDLE-AUX is
   var DATAFLAGS : Set{DataFlag} .
   var HANDLE : HandleId .
   var OI : Oid .
+  var OC : OperationClass .
 
   op freshTransientHandle : Nat TaInstId Oid -> Configuration .
   op freshPersistentHandle : Nat TaInstId Set{DataFlag} Oid -> Configuration .
   op freshEnumeratorHandle : Nat TaInstId Oid -> Configuration .
-  op freshOperationHandle : Nat TaInstId Oid -> Configuration .
+  op freshOperationHandle : Nat TaInstId Oid OperationClass -> Configuration .
   op freshSessionHandle : Nat TaInstId -> Configuration . 
   op freshSessionHandle : Nat TaInstId Oid -> Configuration .
   
@@ -142,9 +167,11 @@ omod HANDLE-AUX is
   eq freshEnumeratorHandle(N , TK , OI)
    = < handleId(N , TK) : ObjectEnumHandle | oid : OI, is-initialized : false > .
 
-  eq freshOperationHandle(N , TK , OI)
+  eq freshOperationHandle(N , TK , OI, OC)
    = < handleId(N , TK) : OperationHandle | oid : OI, is-initialized : false,
+                                            state : noHandleState,
                                             key-material-set : false,
+                                            opclass : OC,
                                             is-key-set : false, is-extracting : false > .
 
   eq freshSessionHandle(N, TK)

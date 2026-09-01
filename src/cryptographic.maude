@@ -450,7 +450,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                                         operation-class : determineOpClass(ALGO) , 
                                         operation-state : TEE-OPERATION-STATE-INITIAL ,
                                         trust-app-id : TN >
-    freshOperationHandle(N + 1 , TK , taOid(N , TK))
+    freshOperationHandle(N + 1 , TK , taOid(N , TK), determineOpClass(ALGO))
   if validParams(ALGO , MODE , KEYSIZE)
   .
 
@@ -659,7 +659,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < CI : CryptoOperation | accumulated-data : nil ,
                             initialization-vector : nil ,
                             operation-state : TEE-OPERATION-STATE-INITIAL >
-    < HANDLE : OperationHandle | is-extracting : false >
+    < HANDLE : OperationHandle | state : noHandleState,
+                                 is-extracting : false >
     finishResetOperation(TK)
   .
 
@@ -674,7 +675,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < CI : CryptoOperation | accumulated-data : nil ,
                             initialization-vector : nil ,
                             operation-state : TEE-OPERATION-STATE-INITIAL >
-    < HANDLE : OperationHandle | is-initialized : false >
+    < HANDLE : OperationHandle | state : keySet,
+                                 is-initialized : false >
     finishResetOperation(TK)
   .
 
@@ -759,7 +761,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < HANDLE : OperationHandle | is-initialized : false ,
                                  key-material-set : false , is-key-set : false >
     =>
-    < HANDLE : OperationHandle | key-material-set : true , is-key-set : true >
+    < HANDLE : OperationHandle | state : keySet,
+                                 key-material-set : true , is-key-set : true >
     finishSetOperationKey(TK)
   .
 
@@ -871,7 +874,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < HANDLE : OperationHandle | is-initialized : false , key-material-set : false ,
                                  is-key-set : false , is-extracting : false >
     =>
-       < HANDLE : OperationHandle | key-material-set : true , is-key-set : true >
+       < HANDLE : OperationHandle | state : keySet,
+                                    key-material-set : true , is-key-set : true >
        finishSetOperationKey2(TK) .
   rl [set-operation-key2-success] :
     finishSetOperationKey2(TK)
@@ -932,7 +936,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < HANDLE : OperationHandle | is-initialized : B1' , key-material-set : B2' ,
                                  is-key-set : B2' , is-extracting : B3' >
     =>
-    < HANDLE : OperationHandle | is-initialized : B1 , key-material-set : B2 ,
+    < HANDLE : OperationHandle | state : handleState(B1, B2, B3),
+                                 is-initialized : B1 , key-material-set : B2 ,
                                  is-key-set : B2 , is-extracting : B3 >
     finishCopyOperation(TK)
   .
@@ -1222,7 +1227,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     initTopOperationHandle(HANDLE , TK)
     < HANDLE : OperationHandle | is-key-set : true , is-initialized : false >
     =>
-    < HANDLE : OperationHandle | is-initialized : true >
+    < HANDLE : OperationHandle | state : init keySet,
+                                 is-initialized : true >
     finishInitOperation(TK)
   .
 
@@ -2454,7 +2460,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
                                         operation-class : determineOpClass(ALGO) , 
                                         operation-state : TEE-OPERATION-STATE-INITIAL ,
                                         trust-app-id : TN >
-    freshOperationHandle(N + 1 , TK , taOid(N , TK))
+    freshOperationHandle(N + 1 , TK , taOid(N , TK), determineOpClass(ALGO))
   if validParams(ALGO , MODE , KEYSIZE)
   .
 
@@ -2539,7 +2545,8 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     =
     < CI : CryptoOperation | accumulated-data : nil , initialization-vector : nil ,
                             operation-state : TEE-OPERATION-STATE-INITIAL >
-    < HANDLE : OperationHandle | is-extracting : false >
+    < HANDLE : OperationHandle | state : noHandleState,
+                                 is-extracting : false >
     finishResetOperation(TK)
   .
 
@@ -2564,7 +2571,8 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     =
     < CI : CryptoOperation | accumulated-data : nil , initialization-vector : nil ,
                             operation-state : TEE-OPERATION-STATE-INITIAL >
-    < HANDLE : OperationHandle | is-initialized : false >
+    < HANDLE : OperationHandle | state : keySet,
+                                 is-initialized : false >
     finishResetOperation(TK)
   .
 
@@ -2616,7 +2624,8 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     < HANDLE : OperationHandle | is-initialized : false ,
                                  key-material-set : false , is-key-set : false >
     =
-    < HANDLE : OperationHandle | key-material-set : true , is-key-set : true >
+    < HANDLE : OperationHandle | state : keySet,
+                                 key-material-set : true , is-key-set : true >
     finishSetOperationKey(TK)
   .
 
@@ -2726,7 +2735,8 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     initTopOperationHandle(HANDLE , TK)
     < HANDLE : OperationHandle | is-key-set : true , is-initialized : false >
     =
-    < HANDLE : OperationHandle | is-initialized : true >
+    < HANDLE : OperationHandle | state : init keySet,
+                                 is-initialized : true >
     finishInitOperation(TK)
   .
 

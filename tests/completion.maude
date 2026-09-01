@@ -5,6 +5,10 @@ load ./cases/aux
 mod COMPLETION-TEST is
   pr TEE-BEHAVIOR .
   pr TEST-AUX .
+  var C : Configuration .
+  var TESTDIGEST : List{Data} .
+  var CIPHERRESULT : List{Data} .
+  var TESTMAC : List{Data} .
 endm
 
 mod COMPLETION-INVISIBLE-TEST is
@@ -445,3 +449,302 @@ search [1] in COMPLETION-TEST :
   < taOid(1, testTa) : TransientObject | initialized : false,
       handle-set : < handleId(1, testTa) : ObjectHandle | is-initialized : false >,
       attribute-set : empty, object-usage-set : empty > .
+
+--- Paper-level handles are top-level objects referenced by the object's handle set.
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | api-call : noCall, api-return : noReturn,
+                        api-state : started, current-api : ResetTransientObject,
+                        current-params : handle(handleId(1, testTa)) >
+  < taOid(1, testTa) : TransientObject | initialized : true,
+      handle-id-set : handleIdSet(handleId(1, testTa)), handle-set : none,
+      attribute-set : teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal),
+      object-usage-set : TEE-USAGE-ENCRYPT >
+  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa),
+      is-initialized : true >
+=>*
+  < testTa : TaKernel | api-call : noCall, api-state : finished,
+                        current-api : ResetTransientObject,
+                        current-params : handle(handleId(1, testTa)),
+                        api-return : apiReturn(ResetTransientObject, noReturnCode, empty) >
+  < taOid(1, testTa) : TransientObject | initialized : false,
+      handle-id-set : handleIdSet(handleId(1, testTa)), handle-set : none,
+      attribute-set : empty, object-usage-set : empty >
+  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa),
+      is-initialized : false > .
+
+--- Enumerator handles use the same top-level object representation.
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | api-call : noCall, api-return : noReturn,
+                        api-state : started,
+                        current-api : ResetPersistentObjectEnumerator,
+                        current-params : handle(handleId(1, testTa)) >
+  < taOid(1, testTa) : EnumeratorObject |
+      handle-id-set : handleIdSet(handleId(1, testTa)), handle-set : none,
+      persistent-objects : testFileId, enumerating : true >
+  < handleId(1, testTa) : ObjectEnumHandle | oid : taOid(1, testTa) >
+=>*
+  < testTa : TaKernel | api-call : noCall, api-state : finished,
+                        current-api : ResetPersistentObjectEnumerator,
+                        current-params : handle(handleId(1, testTa)),
+                        api-return : apiReturn(ResetPersistentObjectEnumerator,
+                                               noReturnCode, empty) >
+  < taOid(1, testTa) : EnumeratorObject |
+      handle-id-set : handleIdSet(handleId(1, testTa)), handle-set : none,
+      persistent-objects : empty, enumerating : false >
+  < handleId(1, testTa) : ObjectEnumHandle | oid : taOid(1, testTa) > .
+
+--- Crypto operation state and its top-level operation handle reset together.
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | api-call : noCall, api-return : noReturn,
+                        api-state : started, current-api : ResetOperation,
+                        current-params : handle(handleId(1, testTa)) >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)), handle-set : none,
+      accumulated-data : randomData, initialization-vector : randomData,
+      operation-state : TEE-OPERATION-STATE-ACTIVE >
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      is-key-set : true, is-initialized : true >
+=>*
+  < testTa : TaKernel | api-call : noCall, api-state : finished,
+                        current-api : ResetOperation,
+                        current-params : handle(handleId(1, testTa)),
+                        api-return : apiReturn(ResetOperation, noReturnCode, empty) >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)), handle-set : none,
+      accumulated-data : nil, initialization-vector : nil,
+      operation-state : TEE-OPERATION-STATE-INITIAL >
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      is-key-set : true, is-initialized : false > .
+
+--- SetOperationKey updates a top-level operation handle and its owner object.
+search [1] in COMPLETION-TEST :
+  reqSetOperationKey(handleId(1, testTa), TEE-TYPE-AES,
+                     teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal),
+                     TEE-USAGE-ENCRYPT, testTa)
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)), handle-set : none,
+      operation-mode : TEE-MODE-ENCRYPT, crypto-keys : nil,
+      operation-state : TEE-OPERATION-STATE-INITIAL >
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      is-initialized : false, is-key-set : false, key-material-set : false >
+=>*
+  finishSetOperationKey(testTa)
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      is-initialized : false, is-key-set : true, key-material-set : true >
+  C .
+
+--- CipherInit updates the operation object and top-level handle in two steps.
+search [1] in COMPLETION-TEST :
+  initOperation(handleId(1, testTa), randomData, testTa)
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)), handle-set : none,
+      algorithm : TEE-ALG-AES-GCM, operation-class : TEE-OPERATION-CIPHER,
+      operation-state : TEE-OPERATION-STATE-INITIAL,
+      initialization-vector : nil >
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      is-key-set : true, is-initialized : false >
+=>*
+  finishInitOperation(testTa)
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)), handle-set : none,
+      algorithm : TEE-ALG-AES-GCM, operation-class : TEE-OPERATION-CIPHER,
+      operation-state : TEE-OPERATION-STATE-ACTIVE,
+      initialization-vector : randomData >
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      is-key-set : true, is-initialized : true > .
+
+--- CopyOperation synchronizes the destination object and top-level handle.
+search [1] in COMPLETION-TEST :
+  reqCopyOperation(handleId(1, testTa),
+    opObjectAttr(TEE-ALG-AES-GCM, TEE-MODE-ENCRYPT,
+                 TEE-OPERATION-STATE-ACTIVE,
+                 key(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal))),
+    opHandleAttr(true, true, false), testTa)
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)), handle-set : none,
+      algorithm : TEE-ALG-AES-GCM, operation-mode : TEE-MODE-ENCRYPT,
+      operation-state : TEE-OPERATION-STATE-INITIAL, crypto-keys : nil >
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      is-initialized : false, key-material-set : false,
+      is-key-set : false, is-extracting : false >
+=>*
+  finishCopyOperation(testTa)
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)), handle-set : none,
+      algorithm : TEE-ALG-AES-GCM, operation-mode : TEE-MODE-ENCRYPT,
+      operation-state : TEE-OPERATION-STATE-ACTIVE,
+      crypto-keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)) >
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      is-initialized : true, key-material-set : true,
+      is-key-set : true, is-extracting : false > .
+
+--- DigestDoFinal resets digest state through a top-level operation handle.
+search [1] in COMPLETION-TEST :
+  digestDoFinal(handleId(1, testTa), randomData, testTa)
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)), handle-set : none,
+      accumulated-data : randomData, algorithm : TEE-ALG-SHA256,
+      operation-class : TEE-OPERATION-DIGEST,
+      operation-state : TEE-OPERATION-STATE-ACTIVE >
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      is-extracting : true >
+=>*
+  finishDigestDoFinal(TESTDIGEST, testTa)
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      is-extracting : false >
+  C .
+
+--- CipherDoFinal resets the operation and its top-level initialized flag.
+search [1] in COMPLETION-TEST :
+  cipherDoFinal(handleId(1, testTa), randomData, testTa)
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)), handle-set : none,
+      crypto-keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)),
+      algorithm : TEE-ALG-AES-GCM, operation-mode : TEE-MODE-ENCRYPT,
+      operation-class : TEE-OPERATION-CIPHER,
+      operation-state : TEE-OPERATION-STATE-ACTIVE >
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      is-initialized : true >
+=>*
+  finishCipherDoFinal(CIPHERRESULT, testTa)
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      is-initialized : false >
+  C .
+
+--- Asymmetric encryption resolves a top-level key-set operation handle.
+search [1] in COMPLETION-TEST :
+  asymEncrypt(handleId(1, testTa), randomData, testTa)
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)), handle-set : none,
+      crypto-keys : key(teeAttribute(TEE-ATTR-RSA-MODULUS, randomAttrVal)),
+      algorithm : TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA1,
+      max-key-size : 2048 Bits, operation-mode : TEE-MODE-ENCRYPT,
+      operation-class : TEE-OPERATION-ASYMMETRIC-CIPHER >
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      is-key-set : true >
+=>*
+  finishAsymEncrypt(CIPHERRESULT, testTa)
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      is-key-set : true >
+  C .
+
+--- DeriveKey links top-level operation and destination object handles.
+search [1] in COMPLETION-TEST :
+  deriveKey(handleId(1, testTa), empty, handleId(2, testTa), testTa)
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)), handle-set : none,
+      operation-mode : TEE-MODE-DERIVE,
+      operation-class : TEE-OPERATION-KEY-DERIVATION >
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      is-key-set : true >
+  < taOid(2, testTa) : TransientObject |
+      handle-id-set : handleIdSet(handleId(2, testTa)), handle-set : none,
+      initialized : false, object-type : TEE-TYPE-GENERIC-SECRET,
+      attribute-set : empty >
+  < handleId(2, testTa) : ObjectHandle | oid : taOid(2, testTa),
+      is-initialized : false >
+=>*
+  finishDeriveKey(testTa)
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      is-key-set : true >
+  < handleId(2, testTa) : ObjectHandle | oid : taOid(2, testTa),
+      is-initialized : true >
+  C .
+
+--- Asymmetric capacity checks resolve the top-level operation owner.
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | api-call : noCall, api-return : noReturn,
+                        api-state : started, current-api : AsymmetricEncrypt,
+                        current-params : (handle(handleId(1, testTa)),
+                                          data(randomData), capacity(dataSize(0))) >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)), handle-set : none,
+      crypto-keys : key(teeAttribute(TEE-ATTR-RSA-MODULUS, randomAttrVal)),
+      algorithm : TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA1,
+      max-key-size : 2048 Bits, operation-mode : TEE-MODE-ENCRYPT,
+      operation-class : TEE-OPERATION-ASYMMETRIC-CIPHER >
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      is-key-set : true >
+=>*
+  < testTa : TaKernel | api-call : noCall, api-state : finished,
+                        current-api : AsymmetricEncrypt,
+                        current-params : (handle(handleId(1, testTa)),
+                                          data(randomData), capacity(dataSize(0))),
+                        api-return : apiReturn(AsymmetricEncrypt,
+                          TEE-ERROR-SHORT-BUFFER, size(dataSize(256))) >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)), handle-set : none,
+      crypto-keys : key(teeAttribute(TEE-ATTR-RSA-MODULUS, randomAttrVal)),
+      algorithm : TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA1,
+      max-key-size : 2048 Bits, operation-mode : TEE-MODE-ENCRYPT,
+      operation-class : TEE-OPERATION-ASYMMETRIC-CIPHER >
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      is-key-set : true > .
+
+--- Asymmetric signing resolves a top-level key-set operation handle.
+search [1] in COMPLETION-TEST :
+  asymSignDigest(handleId(1, testTa), repeatDigestByte(randomData, 32), testTa)
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)), handle-set : none,
+      crypto-keys : key(teeAttribute(TEE-ATTR-RSA-MODULUS, randomAttrVal)),
+      algorithm : TEE-ALG-RSASSA-PKCS1-V1-5-SHA256,
+      operation-mode : TEE-MODE-SIGN,
+      operation-class : TEE-OPERATION-ASYMMETRIC-SIGNATURE >
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      is-key-set : true >
+=>*
+  finishAsymSignDigest(CIPHERRESULT, testTa)
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      is-key-set : true >
+  C .
+
+--- AEUpdate accumulates data through a top-level initialized handle.
+search [1] in COMPLETION-TEST :
+  reqAEUpdate(handleId(1, testTa), randomData, testTa)
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)), handle-set : none,
+      crypto-keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)),
+      accumulated-data : nil, algorithm : TEE-ALG-AES-GCM,
+      operation-mode : TEE-MODE-ENCRYPT, operation-class : TEE-OPERATION-AE,
+      operation-state : TEE-OPERATION-STATE-INITIAL >
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      is-initialized : true >
+=>*
+  finishAEUpdate(CIPHERRESULT, testTa)
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      is-initialized : true >
+  C .
+
+--- AEEncryptFinal produces ciphertext/tag and resets the top-level handle.
+search [1] in COMPLETION-TEST :
+  aeEncryptFinal(handleId(1, testTa), randomData, testTa)
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)), handle-set : none,
+      crypto-keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)),
+      accumulated-data : randomData, algorithm : TEE-ALG-AES-GCM,
+      operation-mode : TEE-MODE-ENCRYPT, operation-class : TEE-OPERATION-AE,
+      operation-state : TEE-OPERATION-STATE-ACTIVE >
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      is-initialized : true >
+=>*
+  finishAEEncryptFinal(CIPHERRESULT, TESTMAC, testTa)
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      is-initialized : false >
+  C .
+
+--- MAC finalization resets both operation state and the top-level handle.
+search [1] in COMPLETION-TEST :
+  macComputeFinal(handleId(1, testTa), randomData, testTa)
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)), handle-set : none,
+      crypto-keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)),
+      accumulated-data : randomData, algorithm : TEE-ALG-HMAC-SHA256,
+      operation-class : TEE-OPERATION-MAC,
+      operation-state : TEE-OPERATION-STATE-ACTIVE >
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      is-initialized : true >
+=>*
+  finishMacComputeFinal(CIPHERRESULT, testTa)
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      is-initialized : false >
+  C .

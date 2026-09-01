@@ -115,6 +115,19 @@ omod GENERIC-OBJECT-BEHAVIOR is
     retObjectInfoTr(OBJTYPE , keySize(ATTRS) , MAXOBJSIZE , OBJUSAGES , TK)
   .
 
+  rl [get-obj-info-transient-top-level-handle] :
+    reqObjectInfo(HANDLE , TK , TN)
+    < OI : TransientObject | handle-id-set : handleIdSet(HANDLE) ,
+                             object-type : OBJTYPE , max-object-size : MAXOBJSIZE ,
+                             attribute-set : ATTRS , object-usage-set : OBJUSAGES ,
+                             trust-app-id : TN >
+    < HANDLE : ObjectHandle | oid : OI >
+    =>
+    < OI : TransientObject | >
+    < HANDLE : ObjectHandle | >
+    retObjectInfoTr(OBJTYPE , keySize(ATTRS) , MAXOBJSIZE , OBJUSAGES , TK)
+  .
+
   rl [get-obj-info-transient-success] :
     retObjectInfoTr(OBJTYPE , KEYSIZE , MAXOBJSIZE , OBJUSAGES , TK)
     < TK : TaKernel | api-state : waitObjectInfo ,
@@ -206,6 +219,16 @@ omod GENERIC-OBJECT-BEHAVIOR is
     =>
     < OI : TrustedStorageObject | handle-set : (< HANDLE : ObjectHandle | > HS) ,
                                   object-usage-set : OBJUSAGES >
+    finishRestrictUsage(TK)
+  .
+
+  rl [restrict-object-usage-top-level-handle] :
+    restrictUsage(HANDLE , OBJUSAGES , TK)
+    < OI : TransientObject | handle-id-set : handleIdSet(HANDLE) >
+    < HANDLE : ObjectHandle | oid : OI >
+    =>
+    < OI : TransientObject | object-usage-set : OBJUSAGES >
+    < HANDLE : ObjectHandle | >
     finishRestrictUsage(TK)
   .
 
@@ -472,6 +495,14 @@ omod GENERIC-OBJECT-BEHAVIOR is
     finishCloseObject(TK)
   .
 
+  rl [close-transient-top-level-handle] :
+    closeObject(HANDLE , TK)
+    < OI : TransientObject | handle-id-set : handleIdSet(HANDLE) >
+    < HANDLE : ObjectHandle | oid : OI >
+    =>
+    finishCloseObject(TK)
+  .
+
   rl [close-object-not-null-subroutine] :
     closeObject(HANDLE , TK)
     < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS) >
@@ -549,6 +580,19 @@ omod GENERIC-OBJECT-BEHAVIOR-INVISIBLE is
   .
 
   eq
+    reqObjectInfo(HANDLE , TK , TN)
+    < OI : TransientObject | handle-id-set : handleIdSet(HANDLE) ,
+                             object-type : OBJTYPE , max-object-size : MAXOBJSIZE ,
+                             attribute-set : ATTRS , object-usage-set : OBJUSAGES ,
+                             trust-app-id : TN >
+    < HANDLE : ObjectHandle | oid : OI >
+    =
+    < OI : TransientObject | >
+    < HANDLE : ObjectHandle | >
+    retObjectInfoTr(OBJTYPE , keySize(ATTRS) , MAXOBJSIZE , OBJUSAGES , TK)
+  .
+
+  eq
     retObjectInfoTr(OBJTYPE , KEYSIZE , MAXOBJSIZE , OBJUSAGES , TK)
     < TK : TaKernel | api-state : waitObjectInfo ,
                       current-api : GetObjectInfo1 >
@@ -615,6 +659,14 @@ omod GENERIC-OBJECT-BEHAVIOR-INVISIBLE is
   eq
     closeObject(HANDLE , TK)
     < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | > >
+    =
+    finishCloseObject(TK)
+  .
+
+  eq
+    closeObject(HANDLE , TK)
+    < OI : TransientObject | handle-id-set : handleIdSet(HANDLE) >
+    < HANDLE : ObjectHandle | oid : OI >
     =
     finishCloseObject(TK)
   .

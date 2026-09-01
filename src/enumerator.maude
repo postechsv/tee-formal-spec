@@ -61,9 +61,11 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
     =>
     < TK : TaKernel | api-state : finished , id-counter : N + 2 ,
                       api-return : apiReturn(AllocatePersistentObjectEnumerator , TEE-SUCCESS, handle(handleId(N + 1 , TK))) >
-    < taOid(N , TK) : EnumeratorObject | handle-set : freshEnumeratorHandle(N + 1 , TK , taOid(N , TK)) ,
+    < taOid(N , TK) : EnumeratorObject | handle-id-set : handleIdSet(handleId(N + 1 , TK)),
+                                         handle-set : none ,
                                          persistent-objects : empty , enumerating : false ,
                                          trust-app-id : TN >
+    freshEnumeratorHandle(N + 1 , TK , taOid(N , TK))
   .
 
 --- This rule returns TEE_ERROR_OUT_OF_MEMORY if there is not enough memory to allocate the enumerator.
@@ -100,6 +102,14 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
   rl [free-enumerator-not-null-subroutine] :
     deleteEnumerator(HANDLE , TK)
     < EI : EnumeratorObject | handle-set : < HANDLE : ObjectEnumHandle | > >
+    =>
+    finishDeleteEnumerator(TK)
+  .
+
+  rl [free-enumerator-top-level-handle] :
+    deleteEnumerator(HANDLE , TK)
+    < EI : EnumeratorObject | handle-id-set : handleIdSet(HANDLE) >
+    < HANDLE : ObjectEnumHandle | oid : EI >
     =>
     finishDeleteEnumerator(TK)
   .
@@ -152,6 +162,16 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
     =>
     < EI : EnumeratorObject | handle-set : < HANDLE : ObjectEnumHandle | > ,
                               persistent-objects : empty , enumerating : false >
+    retResetEnumerator(TK)
+  .
+
+  rl [reset-enumerator-top-level-handle] :
+    reqResetEnumerator(HANDLE , TK)
+    < EI : EnumeratorObject | handle-id-set : handleIdSet(HANDLE) >
+    < HANDLE : ObjectEnumHandle | oid : EI >
+    =>
+    < EI : EnumeratorObject | persistent-objects : empty , enumerating : false >
+    < HANDLE : ObjectEnumHandle | >
     retResetEnumerator(TK)
   .
 
@@ -233,6 +253,16 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
     finishStartEnumerator(TK)
   .
 
+  rl [start-enumerator-top-level-handle] :
+    startEnumerator(HANDLE , FILES , TK)
+    < EI : EnumeratorObject | handle-id-set : handleIdSet(HANDLE) >
+    < HANDLE : ObjectEnumHandle | oid : EI >
+    =>
+    < EI : EnumeratorObject | persistent-objects : FILES , enumerating : true >
+    < HANDLE : ObjectEnumHandle | >
+    finishStartEnumerator(TK)
+  .
+
   rl [start-enumerator-success] : 
     finishStartEnumerator(TK)
     < TK : TaKernel | api-state : waitStartEnumerator , 
@@ -302,6 +332,17 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
     =>
     < EI : EnumeratorObject | handle-set : < HANDLE : ObjectEnumHandle | > ,
                               persistent-objects : FILES >
+    retNextObjectId(FILE , TK)
+  .
+
+  rl [get-next-persistent-top-level-handle] :
+    reqNextObjectId(HANDLE , TK)
+    < EI : EnumeratorObject | handle-id-set : handleIdSet(HANDLE) ,
+                              persistent-objects : (FILE , FILES) , enumerating : true >
+    < HANDLE : ObjectEnumHandle | oid : EI >
+    =>
+    < EI : EnumeratorObject | persistent-objects : FILES >
+    < HANDLE : ObjectEnumHandle | >
     retNextObjectId(FILE , TK)
   .
 

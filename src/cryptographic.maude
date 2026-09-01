@@ -1007,12 +1007,13 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   if not extractingState(OS)
   .
 
-  rl [digest-update-top-level-handle] :
+  crl [digest-update-top-level-handle] :
     finishTopDigestUpdate(HANDLE , TK)
-    < HANDLE : OperationHandle | is-extracting : false >
+    < HANDLE : OperationHandle | state : HS >
     =>
     < HANDLE : OperationHandle | >
     finishDigestUpdate(TK)
+  if not hasExtract(HS)
   .
 
   rl [digest-update-success] :
@@ -1088,7 +1089,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   rl [digest-do-final-top-level-handle] :
     resetTopDigestHandle(HANDLE , DATA , TK)
-    < HANDLE : OperationHandle | is-extracting : B1 >
+    < HANDLE : OperationHandle | state : HS >
     =>
     < HANDLE : OperationHandle | state : noHandleState,
                                  is-extracting : false >
@@ -1168,7 +1169,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   rl [digest-extract-top-level-handle] :
     extractTopDigestHandle(HANDLE , DATA , TK)
-    < HANDLE : OperationHandle | is-extracting : B1 >
+    < HANDLE : OperationHandle | state : HS >
     =>
     < HANDLE : OperationHandle | state : extract,
                                  is-extracting : true >
@@ -2030,12 +2031,13 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   if validRsaEncryptInput(ALGO , KEYSIZE , DATA)
   .
 
-  rl [asymmetric-encrypt-top-level-handle] :
+  crl [asymmetric-encrypt-top-level-handle] :
     finishTopAsymEncrypt(HANDLE , DATA , TK)
-    < HANDLE : OperationHandle | is-key-set : true >
+    < HANDLE : OperationHandle | state : HS >
     =>
     < HANDLE : OperationHandle | >
     finishAsymEncrypt(DATA , TK)
+  if hasKeySet(HS)
   .
 
   crl [asymmetric-encrypt-top-level-message-bad-parameters] :
@@ -2155,12 +2157,13 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   if validRsaCiphertextSize(KEYSIZE , DATA) /\ validRsaCiphertext(ALGO , KEYS , DATA)
   .
 
-  rl [asymmetric-decrypt-top-level-handle] :
+  crl [asymmetric-decrypt-top-level-handle] :
     finishTopAsymDecrypt(HANDLE , DATA , TK)
-    < HANDLE : OperationHandle | is-key-set : true >
+    < HANDLE : OperationHandle | state : HS >
     =>
     < HANDLE : OperationHandle | >
     finishAsymDecrypt(DATA , TK)
+  if hasKeySet(HS)
   .
 
   crl [asymmetric-decrypt-top-level-message-bad-parameters] :
@@ -2262,12 +2265,13 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   if validSignatureDigestLength(ALGO , DATA)
   .
 
-  rl [asymmetric-sign-digest-top-level-handle] :
+  crl [asymmetric-sign-digest-top-level-handle] :
     finishTopAsymSignDigest(HANDLE , DATA , TK)
-    < HANDLE : OperationHandle | is-key-set : true >
+    < HANDLE : OperationHandle | state : HS >
     =>
     < HANDLE : OperationHandle | >
     finishAsymSignDigest(DATA , TK)
+  if hasKeySet(HS)
   .
 
   crl [asymmetric-sign-digest-top-level-length-panic] :
@@ -2324,12 +2328,13 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   if validSignatureDigestLength(ALGO , DATA)
   .
 
-  rl [asymmetric-verify-digest-top-level-handle] :
+  crl [asymmetric-verify-digest-top-level-handle] :
     finishTopAsymVerifyDigest(HANDLE , DATA , TK)
-    < HANDLE : OperationHandle | is-key-set : true >
+    < HANDLE : OperationHandle | state : HS >
     =>
     < HANDLE : OperationHandle | >
     finishAsymVerifyDigest(DATA , TK)
+  if hasKeySet(HS)
   .
 
   crl [asymmetric-verify-digest-top-level-length-panic] :
@@ -2385,12 +2390,14 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < OI : TransientObject | initialized : true,
                              attribute-set : teeAttribute(TEE-ATTR-SECRET-VALUE , randomAttrVal) >
     validateTopDeriveHandle(HANDLE , DERIVED , TK) .
-  rl [derive-key-top-level-operation-handle] :
+  crl [derive-key-top-level-operation-handle] :
     validateTopDeriveHandle(HANDLE , DERIVED , TK)
-    < HANDLE : OperationHandle | is-key-set : true >
+    < HANDLE : OperationHandle | state : HS >
     =>
     < HANDLE : OperationHandle | >
-    finishTopDerivedHandle(DERIVED , TK) .
+    finishTopDerivedHandle(DERIVED , TK)
+  if hasKeySet(HS)
+  .
   rl [derive-key-top-level-derived-handle] :
     finishTopDerivedHandle(DERIVED , TK)
     < DERIVED : ObjectHandle | is-initialized : false >

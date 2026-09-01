@@ -102,6 +102,17 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
   eq allowed(TEE-TYPE-ED25519-PUBLIC-KEY) = TEE-ATTR-ED25519-PUBLIC-VALUE .
   eq allowed(TEE-TYPE-ED25519-KEYPAIR) = (TEE-ATTR-ED25519-PUBLIC-VALUE , TEE-ATTR-ED25519-PRIVATE-VALUE) .
 
+  --- GP Table 5-10: RSA CRT parameters are optional as a complete group.
+  op rsaCrtAttributes : -> Set{AttrId} .
+  eq rsaCrtAttributes = (TEE-ATTR-RSA-PRIME1, TEE-ATTR-RSA-PRIME2,
+                         TEE-ATTR-RSA-EXPONENT1, TEE-ATTR-RSA-EXPONENT2,
+                         TEE-ATTR-RSA-COEFFICIENT) .
+
+  op validOptionalAttributeGroups : ObjectType Set{AttrId} -> Bool .
+  eq validOptionalAttributeGroups(TEE-TYPE-RSA-KEYPAIR, IDS) =
+    intersection(IDS, rsaCrtAttributes) == empty or rsaCrtAttributes subset IDS .
+  eq validOptionalAttributeGroups(OBJTYPE, IDS) = true [owise] .
+
 --- TODO: NEED TO UPDATE
 --- If attribute values are larger than the maximum size specified when the object was created, the implementation SHALL panic.
   --- op validSize : Set{TeeAttribute} CryptoKeySize -> Bool .
@@ -109,9 +120,10 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 
 --- For TEE_PopulateTransientObject
   op checkCompatible : ObjectType Set{TeeAttribute} -> Bool .
-  eq checkCompatible(OBJTYPE , ATTRS) = 
-    mandatory(OBJTYPE) subset getAttrIds(ATTRS) and 
-    getAttrIds(ATTRS) subset allowed(OBJTYPE) .
+  eq checkCompatible(OBJTYPE , ATTRS) =
+    mandatory(OBJTYPE) subset getAttrIds(ATTRS) and
+    getAttrIds(ATTRS) subset allowed(OBJTYPE) and
+    validOptionalAttributeGroups(OBJTYPE, getAttrIds(ATTRS)) .
 
 --- For TEE_GenerateKey
   op randomAttributes : ObjectType Set{TeeAttribute} -> Set{TeeAttribute} [ctor] .
@@ -122,7 +134,6 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 
   op noKeyGenParams : ObjectType -> Bool .
   eq noKeyGenParams(TEE-TYPE-AES) = true .
-  eq noKeyGenParams(TEE-TYPE-DES) = true .
   eq noKeyGenParams(TEE-TYPE-DES3) = true .
   eq noKeyGenParams(TEE-TYPE-SM4) = true .
   eq noKeyGenParams(TEE-TYPE-HMAC-MD5) = true .

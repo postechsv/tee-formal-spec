@@ -241,6 +241,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   eq rsaKeyBytes(N Bits) = N quo 8 .
 
   op validRsaEncryptInput : AlgorithmIdentifier CryptoKeySize List{Data} -> Bool .
+  eq validRsaEncryptInput(TEE-ALG-RSA-NOPAD , KEYSIZE , DATA) =
+    size(DATA) <= rsaKeyBytes(KEYSIZE) .
   eq validRsaEncryptInput(ALGO , KEYSIZE , DATA) =
     size(DATA) <= sd(rsaKeyBytes(KEYSIZE) , (2 * rsaHashLength(ALGO)) + 2) .
 
@@ -266,6 +268,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   eq determineOpClass(TEE-ALG-AES-GCM) = TEE-OPERATION-AE .
   eq determineOpClass(TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA1) = TEE-OPERATION-ASYMMETRIC-CIPHER .
   eq determineOpClass(TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA224) = TEE-OPERATION-ASYMMETRIC-CIPHER .
+  eq determineOpClass(TEE-ALG-RSA-NOPAD) = TEE-OPERATION-ASYMMETRIC-CIPHER .
   eq determineOpClass(TEE-ALG-DH-DERIVE-SHARED-SECRET) = TEE-OPERATION-KEY-DERIVATION .
   eq determineOpClass(TEE-ALG-SM2-KEP) = TEE-OPERATION-KEY-DERIVATION .
 
@@ -289,6 +292,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   eq compatibleMode(TEE-ALG-AES-GCM , TEE-MODE-DECRYPT) = true .
   eq compatibleMode(TEE-ALG-DH-DERIVE-SHARED-SECRET , TEE-MODE-DERIVE) = true .
   eq compatibleMode(TEE-ALG-SM2-KEP , TEE-MODE-DERIVE) = true .
+  eq compatibleMode(TEE-ALG-RSA-NOPAD , TEE-MODE-ENCRYPT) = true .
+  eq compatibleMode(TEE-ALG-RSA-NOPAD , TEE-MODE-DECRYPT) = true .
   eq compatibleMode(ALGO , MODE) = false [owise] .
 
 --- The parameter maxKeySize SHALL be a valid value as defined in Table 5-9 for the algorithm, for algorithms referened in Table 5-9.
@@ -315,6 +320,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   eq validKeySize(TEE-ALG-SHA256 , 0 Bits) = true .
   ceq validKeySize(TEE-ALG-RSASSA-PKCS1-V1-5-SHA256 , N Bits) = true
     if 1024 <= N and N <= 4096 and N rem 8 == 0 .
+  ceq validKeySize(TEE-ALG-RSA-NOPAD , N Bits) = true
+    if 256 <= N and N <= 4096 and N rem 8 == 0 .
   eq validKeySize(ALGO , KEYSIZE) = false [owise] .  
 
   op validParams : AlgorithmIdentifier OperationMode CryptoKeySize -> Bool .
@@ -341,6 +348,14 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   eq modeUsageCompatible(OBJUSAGES , TEE-MODE-SIGN) = TEE-USAGE-SIGN in OBJUSAGES .
   eq modeUsageCompatible(OBJUSAGES , TEE-MODE-VERIFY) = TEE-USAGE-VERIFY in OBJUSAGES .
   eq modeUsageCompatible(OBJUSAGES , TEE-MODE-DERIVE) = TEE-USAGE-DERIVE in OBJUSAGES .
+
+  op operationUsageCompatible : AlgorithmIdentifier Set{ObjectUsage} OperationMode -> Bool .
+  eq operationUsageCompatible(TEE-ALG-RSA-NOPAD , OBJUSAGES , TEE-MODE-ENCRYPT) =
+    TEE-USAGE-ENCRYPT in OBJUSAGES and TEE-USAGE-VERIFY in OBJUSAGES .
+  eq operationUsageCompatible(TEE-ALG-RSA-NOPAD , OBJUSAGES , TEE-MODE-DECRYPT) =
+    TEE-USAGE-DECRYPT in OBJUSAGES and TEE-USAGE-SIGN in OBJUSAGES .
+  eq operationUsageCompatible(ALGO , OBJUSAGES , MODE) =
+    modeUsageCompatible(OBJUSAGES , MODE) [owise] .
 
 --- For a public key object, the allowed operation modes depend on the type of key and are specified in Table 6-5.
   op typeModeCompatible : ObjectType OperationMode -> Bool .
@@ -814,13 +829,13 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   crl [set-operation-key-top-level-handle-success] :
     reqSetOperationKey(HANDLE , OBJTYPE , ATTRS , OBJUSAGES , TK)
-    < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE) , operation-mode : MODE ,
+    < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE) , algorithm : ALGO , operation-mode : MODE ,
                              crypto-keys : KEYS , operation-state : OS >
     =>
     < CI : CryptoOperation | crypto-keys : key(ATTRS) ,
                              operation-state : TEE-OPERATION-STATE-INITIAL >
     installTopOperationKey(HANDLE , CI , ATTRS , TK)
-  if typeModeCompatible(OBJTYPE , MODE) /\ modeUsageCompatible(OBJUSAGES , MODE)
+  if typeModeCompatible(OBJTYPE , MODE) /\ operationUsageCompatible(ALGO , OBJUSAGES , MODE)
   .
 
   rl [install-operation-key-top-level-handle] :
@@ -836,11 +851,11 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   crl [set-operation-key-top-level-handle-fail] :
     reqSetOperationKey(HANDLE , OBJTYPE , ATTRS , OBJUSAGES , TK)
-    < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE) , operation-mode : MODE >
+    < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE) , algorithm : ALGO , operation-mode : MODE >
     =>
     < CI : CryptoOperation | >
     rejectTopOperationKey(HANDLE , TK)
-  if not (typeModeCompatible(OBJTYPE , MODE) and modeUsageCompatible(OBJUSAGES , MODE))
+  if not (typeModeCompatible(OBJTYPE , MODE) and operationUsageCompatible(ALGO , OBJUSAGES , MODE))
   .
 
   rl [reject-operation-key-top-level-handle] :
@@ -2720,13 +2735,13 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
 
   ceq
     reqSetOperationKey(HANDLE , OBJTYPE , ATTRS , OBJUSAGES , TK)
-    < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE) , operation-mode : MODE ,
+    < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE) , algorithm : ALGO , operation-mode : MODE ,
                              crypto-keys : KEYS , operation-state : OS >
     =
     < CI : CryptoOperation | crypto-keys : key(ATTRS) ,
                              operation-state : TEE-OPERATION-STATE-INITIAL >
     installTopOperationKey(HANDLE , CI , ATTRS , TK)
-  if typeModeCompatible(OBJTYPE , MODE) /\ modeUsageCompatible(OBJUSAGES , MODE)
+  if typeModeCompatible(OBJTYPE , MODE) /\ operationUsageCompatible(ALGO , OBJUSAGES , MODE)
   .
 
   eq
@@ -2742,11 +2757,11 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
 
   ceq
     reqSetOperationKey(HANDLE , OBJTYPE , ATTRS , OBJUSAGES , TK)
-    < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE) , operation-mode : MODE >
+    < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE) , algorithm : ALGO , operation-mode : MODE >
     =
     < CI : CryptoOperation | >
     rejectTopOperationKey(HANDLE , TK)
-  if not (typeModeCompatible(OBJTYPE , MODE) and modeUsageCompatible(OBJUSAGES , MODE))
+  if not (typeModeCompatible(OBJTYPE , MODE) and operationUsageCompatible(ALGO , OBJUSAGES , MODE))
   .
 
   eq

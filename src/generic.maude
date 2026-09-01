@@ -105,16 +105,6 @@ omod GENERIC-OBJECT-BEHAVIOR is
 
 --- The following two rules acquire transient object data.
 
-  rl [get-obj-info-transient-subroutine] :
-    reqObjectInfo(HANDLE , TK , TN)
-    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | > ,
-                             object-type : OBJTYPE , max-object-size : MAXOBJSIZE ,
-                             attribute-set : ATTRS , object-usage-set : OBJUSAGES , 
-                             trust-app-id : TN >
-    => 
-    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | > >
-    retObjectInfoTr(OBJTYPE , keySize(ATTRS) , MAXOBJSIZE , OBJUSAGES , TK)
-  .
 
   rl [get-obj-info-transient-top-level-handle] :
     reqObjectInfo(HANDLE , TK , TN)
@@ -140,17 +130,6 @@ omod GENERIC-OBJECT-BEHAVIOR is
 
 --- The following three rules acquire persistent object and its associated data stream data.
 
-  rl [get-obj-info-persistent-subroutine] :
-    reqObjectInfo(HANDLE , TK , TN)
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-access-flag-set : DATAFLAGS , data-position : DATAPOS > HS) ,
-                              object-type : OBJTYPE , max-object-size : MAXOBJSIZE , attribute-set : ATTRS , 
-                              object-usage-set : OBJUSAGES , data-stream-id : DI , trust-app-id : TN >
-    < DI : DataStreamObject | data-size : DATASIZE >
-    =>
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS) >
-    < DI : DataStreamObject | >
-    retObjectInfoPr(OBJTYPE , keySize(ATTRS) , MAXOBJSIZE , OBJUSAGES , DATASIZE , DATAPOS , DATAFLAGS , TK)
-  .
 
   rl [get-obj-info-persistent-top-level-handle] :
     reqObjectInfo(HANDLE, TK, TN)
@@ -231,14 +210,6 @@ omod GENERIC-OBJECT-BEHAVIOR is
     restrictUsage(HANDLE , updateObjectUsage(OBJUSAGES , OBJUSAGES') , TK)
   .
 
-  rl [restrict-object-usage-subroutine] :
-    restrictUsage(HANDLE , OBJUSAGES , TK)
-    < OI : TrustedStorageObject | handle-set : (< HANDLE : ObjectHandle | > HS) >
-    =>
-    < OI : TrustedStorageObject | handle-set : (< HANDLE : ObjectHandle | > HS) ,
-                                  object-usage-set : OBJUSAGES >
-    finishRestrictUsage(TK)
-  .
 
   rl [restrict-object-usage-top-level-handle] :
     restrictUsage(HANDLE , OBJUSAGES , TK)
@@ -516,12 +487,6 @@ omod GENERIC-OBJECT-BEHAVIOR is
   if not nullHandle(HANDLE)
   .
 
-  rl [close-object-not-null-subroutine] :
-    closeObject(HANDLE , TK)
-    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | > >
-    =>
-    finishCloseObject(TK)
-  .
 
   rl [close-persistent-top-level-handle] :
     closeObject(HANDLE , TK)
@@ -540,13 +505,6 @@ omod GENERIC-OBJECT-BEHAVIOR is
     finishCloseObject(TK)
   .
 
-  rl [close-object-not-null-subroutine] :
-    closeObject(HANDLE , TK)
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS) >
-    =>
-    < OI : PersistentObject | handle-set : HS >
-    finishCloseObject(TK)
-  .
 
   rl [close-object-not-null-success] :
     finishCloseObject(TK)
@@ -606,16 +564,6 @@ omod GENERIC-OBJECT-BEHAVIOR-INVISIBLE is
   if not nullHandle(HANDLE)
   .
 
-  eq
-    reqObjectInfo(HANDLE , TK , TN)
-    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | > ,
-                             object-type : OBJTYPE , max-object-size : MAXOBJSIZE ,
-                             attribute-set : ATTRS , object-usage-set : OBJUSAGES , 
-                             trust-app-id : TN >
-    =
-    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | > >
-    retObjectInfoTr(OBJTYPE , keySize(ATTRS) , MAXOBJSIZE , OBJUSAGES , TK)
-  .
 
   eq
     reqObjectInfo(HANDLE , TK , TN)
@@ -639,17 +587,6 @@ omod GENERIC-OBJECT-BEHAVIOR-INVISIBLE is
                       api-return : apiReturn(GetObjectInfo1 , TEE-SUCCESS , info(teeObjectInfo(OBJTYPE , KEYSIZE , MAXOBJSIZE , OBJUSAGES , dataSize(0) , pos(0) , empty))) >
   .
 
-  eq
-    reqObjectInfo(HANDLE , TK , TN)
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-access-flag-set : DATAFLAGS , data-position : DATAPOS > HS) ,
-                              object-type : OBJTYPE , max-object-size : MAXOBJSIZE , attribute-set : ATTRS , 
-                              object-usage-set : OBJUSAGES , data-stream-id : DI , trust-app-id : TN >
-    < DI : DataStreamObject | data-size : DATASIZE >
-    =
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS) >
-    < DI : DataStreamObject | >
-    retObjectInfoPr(OBJTYPE , keySize(ATTRS) , MAXOBJSIZE , OBJUSAGES , DATASIZE , DATAPOS , DATAFLAGS , TK)
-  .
 
   eq
     reqObjectInfo(HANDLE, TK, TN)
@@ -711,12 +648,6 @@ omod GENERIC-OBJECT-BEHAVIOR-INVISIBLE is
   if not nullHandle(HANDLE)
   .
 
-  eq
-    closeObject(HANDLE , TK)
-    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | > >
-    =
-    finishCloseObject(TK)
-  .
 
   eq
     closeObject(HANDLE , TK)
@@ -726,13 +657,6 @@ omod GENERIC-OBJECT-BEHAVIOR-INVISIBLE is
     finishCloseObject(TK)
   .
 
-  eq
-    closeObject(HANDLE , TK)
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS) >
-    =
-    < OI : PersistentObject | handle-set : HS >
-    finishCloseObject(TK)
-  .
 
   eq
     closeObject(HANDLE , TK)

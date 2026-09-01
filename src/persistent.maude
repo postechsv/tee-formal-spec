@@ -363,12 +363,6 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     reqAttributeAndDelete(HANDLE , TK)
   .
 
-  rl [create-persistent-subroutine-2] :
-    reqAttributeAndDelete(HANDLE, TK)
-    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | is-initialized : true >,
-                             object-type : OBJTYPE, attribute-set : ATTRS,
-                             object-usage-set : OBJUSAGES >
-  => retAttributeAndDelete(ATTRS, OBJTYPE, OBJUSAGES, TK) .
 
   rl [create-persistent-top-level-source] :
     reqAttributeAndDelete(HANDLE, TK)
@@ -624,17 +618,6 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 
   op hasWriteMeta : Set{DataFlag} -> Bool .
   eq hasWriteMeta((TEE-DATA-FLAG-ACCESS-WRITE-META , DATAFLAGS)) = true .
-  eq hasWriteMeta(DATAFLAGS) = false [owise] .
-
-  crl [close-and-delete-persistent-subroutine] :
-    deletePersistent(HANDLE , TK , TN)
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-access-flag-set : DATAFLAGS > HS) , 
-                              data-stream-id : DI , file-id : FILE , trust-app-id : TN >
-    < DI : DataStreamObject | > 
-    => 
-    finishDeletePersistent(FILE , TK)
-  if hasWriteMeta(DATAFLAGS)
-  .
 
   crl [close-and-delete-persistent-top-level-start] :
     deletePersistent(HANDLE, TK, TN)
@@ -699,15 +682,6 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 
 --- The following two rules panic the TA if handle is not opened with the write-meta access right.
 
-  crl [close-and-delete-persistent-subroutine] : 
-    deletePersistent(HANDLE , TK , TN)
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-access-flag-set : DATAFLAGS > HS) , 
-                              data-stream-id : DI , file-id : FILE , trust-app-id : TN >
-    => 
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-access-flag-set : DATAFLAGS > HS) >
-    failDeletePersistent(TK)
-  if not hasWriteMeta(DATAFLAGS)
-  .
 
   rl [close-and-delete-persistent-panic] :
     failDeletePersistent(TK)
@@ -775,16 +749,6 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     renamePersistent(HANDLE , FILE , TK , TN)
   .
 
-  crl [rename-persistent-subroutine] :
-    renamePersistent(HANDLE , FILE , TK , TN)
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-access-flag-set : DATAFLAGS > HS) ,
-                              file-id : FILE' , trust-app-id : TN >
-    =>
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS),
-                              file-name : FILE, file-id : FILE >
-    finishRenamePersistent(FILE' , TK)
-  if hasWriteMeta(DATAFLAGS)
-  .
 
   crl [rename-persistent-top-level-check-handle] :
     renamePersistent(HANDLE, FILE, TK, TN)
@@ -850,15 +814,6 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 
 --- The following three rules acquire attributes from a persistent object & check storage status before populating an object
 
-  rl [copy-object-attributes-subroutine] :
-    reqAttribute(HANDLE , TK)
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS),
-                              object-type : OBJTYPE , attribute-set : ATTRS ,
-                              object-usage-set : OBJUSAGES >
-    => 
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS) >
-    retAttributePr(ATTRS , OBJTYPE , OBJUSAGES , TK)
-  .
 
   rl [copy-object-attributes-top-level-handle] :
     reqAttribute(HANDLE, TK)
@@ -1341,25 +1296,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
     deletePersistent(HANDLE , TK , TN)
   .
 
-  ceq
-    deletePersistent(HANDLE , TK , TN)
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-access-flag-set : DATAFLAGS > HS) , 
-                              data-stream-id : DI , file-id : FILE , trust-app-id : TN >
-    < DI : DataStreamObject | > 
-    =
-    finishDeletePersistent(FILE , TK)
-  if hasWriteMeta(DATAFLAGS)
-  .
 
-  ceq
-    deletePersistent(HANDLE , TK , TN)
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-access-flag-set : DATAFLAGS > HS) , 
-                              data-stream-id : DI , file-id : FILE , trust-app-id : TN >
-    =
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-access-flag-set : DATAFLAGS > HS) >
-    failDeletePersistent(TK)
-  if not hasWriteMeta(DATAFLAGS)
-  .
 
   eq
     finishDeletePersistent(FILE , TK)
@@ -1443,18 +1380,9 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
 --- 'TEE_CopyObjectAttributes1'
 ------------------------------------------------------------
 
-  eq
-    reqAttribute(HANDLE , TK)
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS),
-                              object-type : OBJTYPE , attribute-set : ATTRS ,
-                              object-usage-set : OBJUSAGES >
-    =
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS) >
-    retAttributePr(ATTRS , OBJTYPE , OBJUSAGES , TK) 
-  .
 
   eq
-    retAttributePr(ATTRS , OBJTYPE , OBJUSAGES , TK) 
+    retAttributePr(ATTRS , OBJTYPE , OBJUSAGES , TK)
     < TK : TaKernel | api-state : waitReqAttribute ,
                       current-api : CopyObjectAttributes1 , current-params : PARAMS , 
                       trust-app-id : TN >

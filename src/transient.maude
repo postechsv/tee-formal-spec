@@ -231,12 +231,6 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
   if not nullHandle(HANDLE)
   .
 
-  rl [free-transient-not-null-subroutine] :
-    deleteTransient(HANDLE , TK)
-    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | > >
-    =>
-    finishDeleteTransient(TK)
-  .
 
   rl [free-transient-top-level-handle] :
     deleteTransient(HANDLE , TK)
@@ -288,15 +282,6 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
   if not nullHandle(HANDLE)
   .
 
-  rl [reset-transient-not-null-subroutine] :
-    reqResetTransient(HANDLE , TK)
-    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | > >
-    =>
-    < OI : TransientObject | initialized : false,
-                             handle-set : < HANDLE : ObjectHandle | is-initialized : false > ,
-                             attribute-set : empty , object-usage-set : empty >
-    retResetTransient(TK)
-  .
 
   rl [reset-transient-top-level-handle] :
     reqResetTransient(HANDLE , TK)
@@ -350,17 +335,6 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
     reqPopulateTransient(HANDLE , ATTRS , TK)
   .
 
-  crl [populate-transient-subroutine] :
-    reqPopulateTransient(HANDLE , ATTRS , TK)
-    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | is-initialized : false > ,
-                             object-type : OBJTYPE >
-    =>
-    < OI : TransientObject | initialized : true,
-                             handle-set : < HANDLE : ObjectHandle | is-initialized : true > ,
-                             attribute-set : ATTRS >
-    retPopulateTransient(TK)
-  if checkCompatible(OBJTYPE , ATTRS)
-  .
 
   crl [populate-transient-top-level-handle] :
     reqPopulateTransient(HANDLE , ATTRS , TK)
@@ -393,10 +367,8 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 
   --- crl [populate-transient-bad-params-err] :
   ---   apiCall(PopulateTransientObjectCall(HANDLE , ATTRS) , TI)
-  ---   < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | > ,
   ---                            object-type : OBJTYPE , max-object-size : MAXOBJSIZE >
   ---   =>
-  ---   < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | > >
   ---   apiReturn(PopulateTransientObjectReturn(TEE-ERROR-BAD-PARAMETERS) , TI)
   --- if validAttributes(OBJTYPE , MAXOBJSIZE , ATTRS) /\ not validAttrValues(OBJTYPE , ATTRS)
   --- .
@@ -448,15 +420,6 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
   if not nullHandle(HANDLE1) /\ not nullHandle(HANDLE2)
   .
 
-  rl [copy-object-attributes-subroutine] :
-    reqAttribute(HANDLE , TK)
-    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | is-initialized : true > ,
-                             object-type : OBJTYPE , attribute-set : ATTRS ,
-                             object-usage-set : OBJUSAGES >
-    => 
-    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | > >
-    retAttributeTr(ATTRS , OBJTYPE , OBJUSAGES , TK)
-  .
 
   rl [copy-object-attributes-from-top-level-handle] :
     reqAttribute(HANDLE , TK)
@@ -477,21 +440,9 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
                       current-params : srcHandle(HANDLE2) , trgHandle(HANDLE1) >
     => 
     < TK : TaKernel | api-state : waitCopyAttribute >
-    reqCopyAttribute(HANDLE1 , ATTRS , OBJTYPE , OBJUSAGES , TK) 
+    reqCopyAttribute(HANDLE1 , ATTRS , OBJTYPE , OBJUSAGES , TK)
   .
 
-  crl [copy-object-attributes-subroutine] :
-    reqCopyAttribute(HANDLE , ATTRS , OBJTYPE , OBJUSAGES , TK)
-    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | is-initialized : false > ,
-                             object-type : OBJTYPE' , object-usage-set : OBJUSAGES' >
-    => 
-    < OI : TransientObject | initialized : true,
-                             handle-set : < HANDLE : ObjectHandle | is-initialized : true > ,
-                             object-usage-set : updateObjectUsage(OBJUSAGES' , OBJUSAGES) ,
-                             attribute-set : ATTRS >
-    finishCopyAttribute(TK)
-  if typeCompatible(OBJTYPE', OBJTYPE)
-  .
 
   crl [copy-object-attributes-to-top-level-handle] :
     reqCopyAttribute(HANDLE , ATTRS , OBJTYPE , OBJUSAGES , TK)
@@ -533,20 +484,9 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
                       current-params : handle(HANDLE) , size(KEYSIZE) , attrs(ATTRS) >
     => 
     < TK : TaKernel | api-state : waitReqGenerateKey >
-    reqGenerateKey(HANDLE , KEYSIZE , ATTRS , TK) 
+    reqGenerateKey(HANDLE , KEYSIZE , ATTRS , TK)
   .
 
-  crl [generate-key-subroutine] :
-    reqGenerateKey(HANDLE , KEYSIZE , ATTRS , TK) 
-    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | is-initialized : false > ,
-                             object-type : OBJTYPE , max-object-size : MAXOBJSIZE >
-    => 
-    < OI : TransientObject | initialized : true,
-                             handle-set : < HANDLE : ObjectHandle | is-initialized : true > ,
-                             attribute-set : randomAttributes(OBJTYPE , ATTRS) >
-    retGenerateKey(TK)
-  if KEYSIZE <= MAXOBJSIZE /\ mandatoryParamsForKeyGen(OBJTYPE , ATTRS)
-  .
 
   crl [generate-key-top-level-handle] :
     reqGenerateKey(HANDLE , KEYSIZE , ATTRS , TK)
@@ -577,10 +517,8 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 
   --- crl [generate-key-bad-params-err] :
   ---   apiCall(GenerateKeyCall(HANDLE , KEYSIZE , ATTRS) , TI)
-  ---   < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | is-initialized : false > ,
   ---                            object-type : OBJTYPE , max-object-size : MAXOBJSIZE > 
   ---   =>
-  ---   < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | > >
   ---   apiReturn(GenerateKeyReturn(TEE-ERROR-BAD-PARAMETERS) , TI)
   --- if validParamsForKeyGen(OBJTYPE , MAXOBJSIZE , ATTRS , KEYSIZE) /\ not validParamValues(OBJTYPE , ATTRS)
   --- .
@@ -666,12 +604,6 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
   if not nullHandle(HANDLE)
   .
 
-  eq
-    deleteTransient(HANDLE , TK)
-    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | > >
-    =
-    finishDeleteTransient(TK)
-  .
 
   eq
     deleteTransient(HANDLE , TK)
@@ -713,15 +645,6 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
   if not nullHandle(HANDLE)
   .
 
-  eq
-    reqResetTransient(HANDLE , TK)
-    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | > >
-    =
-    < OI : TransientObject | initialized : false,
-                             handle-set : < HANDLE : ObjectHandle | is-initialized : false > ,
-                             attribute-set : empty , object-usage-set : empty >
-    retResetTransient(TK)
-  .
 
   eq
     reqResetTransient(HANDLE , TK)
@@ -764,17 +687,6 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
     reqPopulateTransient(HANDLE , ATTRS , TK)
   .
 
-  ceq
-    reqPopulateTransient(HANDLE , ATTRS , TK)
-    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | is-initialized : false > ,
-                             object-type : OBJTYPE >
-    =
-    < OI : TransientObject | initialized : true,
-                             handle-set : < HANDLE : ObjectHandle | is-initialized : true > ,
-                             attribute-set : ATTRS >
-    retPopulateTransient(TK)
-  if checkCompatible(OBJTYPE , ATTRS)
-  .
 
   ceq
     reqPopulateTransient(HANDLE , ATTRS , TK)
@@ -833,15 +745,6 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
   if not nullHandle(HANDLE1) /\ not nullHandle(HANDLE2)
   .
 
-  eq
-    reqAttribute(HANDLE , TK)
-    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | is-initialized : true > ,
-                             object-type : OBJTYPE , attribute-set : ATTRS ,
-                             object-usage-set : OBJUSAGES >
-    = 
-    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | > >
-    retAttributeTr(ATTRS , OBJTYPE , OBJUSAGES , TK)
-  .
 
   eq
     reqAttribute(HANDLE , TK)
@@ -862,21 +765,9 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
                       current-params : srcHandle(HANDLE2) , trgHandle(HANDLE1) >
     =
     < TK : TaKernel | api-state : waitCopyAttribute >
-    reqCopyAttribute(HANDLE1 , ATTRS , OBJTYPE , OBJUSAGES , TK) 
+    reqCopyAttribute(HANDLE1 , ATTRS , OBJTYPE , OBJUSAGES , TK)
   .
 
-  ceq
-    reqCopyAttribute(HANDLE , ATTRS , OBJTYPE , OBJUSAGES , TK)
-    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | is-initialized : false > ,
-                             object-type : OBJTYPE' , object-usage-set : OBJUSAGES' >
-    =
-    < OI : TransientObject | initialized : true,
-                             handle-set : < HANDLE : ObjectHandle | is-initialized : true > ,
-                             object-usage-set : updateObjectUsage(OBJUSAGES' , OBJUSAGES) ,
-                             attribute-set : ATTRS >
-    finishCopyAttribute(TK)
-  if typeCompatible(OBJTYPE', OBJTYPE)
-  .
 
   ceq
     reqCopyAttribute(HANDLE , ATTRS , OBJTYPE , OBJUSAGES , TK)

@@ -121,17 +121,6 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   --- .
 
 --- Model/Implementation Specific Version
-  crl [read-object-data-subroutine] :
-    readObjectData(HANDLE , DATASIZE , TK , TN)
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-access-flag-set : DATAFLAGS , data-position : DATAPOS > HS) , 
-                              data-stream-id : DI , trust-app-id : TN >
-    < DI : DataStreamObject | data-size : DS , content : DM >               
-    =>
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-position : updatePos(DATAPOS , DATASIZE , DS) > HS) >
-    < DI : DataStreamObject | >
-    finishReadData(read(DATAPOS , DATASIZE , DM) , TK)
-  if isReadable(DATAFLAGS)
-  .
 
   crl [read-object-data-top-level-handle] :
     readObjectData(HANDLE , DATASIZE , TK , TN)
@@ -200,21 +189,6 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
     writeObjectData(HANDLE , DATA , TK , TN)
   .
 
-  crl [write-object-data-subroutine] :
-    writeObjectData(HANDLE , DATA , TK , TN)
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-access-flag-set : DATAFLAGS , data-position : DATAPOS > HS) ,
-                              data-stream-id : DI , trust-app-id : TN >
-    < DI : DataStreamObject | data-size : DS , content : DM >
-    =>  
-    none
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-position : advancePos(DATAPOS , sizeOfData(DATA)) > HS),
-                              data-stream : read(pos(0), updateSize(DS, DATAPOS, sizeOfData(DATA)),
-                                writeStream(DATA, DATAPOS, DS, DM)) >
-    < DI : DataStreamObject | data-size : updateSize(DS , DATAPOS , sizeOfData(DATA)) , 
-                              content : writeStream(DATA , DATAPOS , DS , DM) >
-    finishWriteData(TK)
-  if isWritable(DATAFLAGS) /\ withinMaxPosition(advancePos(DATAPOS , sizeOfData(DATA)))
-  .
 
   crl [write-object-data-top-level-handle] :
     writeObjectData(HANDLE , DATA , TK , TN)
@@ -326,17 +300,6 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 
 --- This rule returns TEE_ERROR_OVERFLOW if the value of the data position indicator resulting from this operation would be greater than TEE_DATA_MAX_POSITION.
 
-  crl [write-object-data-overflow] :
-    writeObjectData(HANDLE , DATA , TK , TN)
-    < TK : TaKernel | api-state : waitWriteObjectData , current-api : WriteObjectData >
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-access-flag-set : DATAFLAGS , data-position : DATAPOS > HS) ,
-                              trust-app-id : TN >
-    =>
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS) >
-    < TK : TaKernel | api-state : finished , current-api : WriteObjectData ,
-                      api-return : apiReturn(WriteObjectData , TEE-ERROR-OVERFLOW) >
-  if isWritable(DATAFLAGS) /\ not withinMaxPosition(advancePos(DATAPOS , sizeOfData(DATA)))
-  .
 
   crl [write-object-data-top-level-overflow] :
     writeObjectData(HANDLE , DATA , TK , TN)
@@ -402,18 +365,6 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 --- This rule finds the persistent object pointed to by the input handle and its associated data stream, and
 --- changes the size of the found data stream when input size is greater then the current size of the data stream.
 
-  crl [truncate-object-data-subroutine] :
-    truncateObjectData(HANDLE , DATASIZE , TK , TN)
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-access-flag-set : DATAFLAGS > HS) ,
-                              data-stream-id : DI , trust-app-id : TN >
-    < DI : DataStreamObject | data-size : DS , content : DM >
-    =>  
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS),
-                              data-stream : read(pos(0), DATASIZE, resizeContent(DS, DATASIZE, DM)) >
-    < DI : DataStreamObject | data-size : DATASIZE , content : resizeContent(DS , DATASIZE , DM) >
-    finishTruncateData(TK)
-  if isWritable(DATAFLAGS)
-  .
 
   rl [truncate-object-data-top-level-resolve-owner] :
     truncateObjectData(HANDLE, DATASIZE, TK, TN)
@@ -517,17 +468,6 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 --- This rule sets the data position to its current position plus input offset when 'whence' is TEE_DATA_SEEK_CUR.
 --- The following three rules define 'TEE_SeekObjectData' when 'whence' in TEE_DATA_SEEK_END.
 
-  crl [seek-object-data-subroutine] :
-    seekObjectData(HANDLE , OFST , WHENCE , TK , TN)
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-position : DATAPOS > HS) ,
-                              data-stream-id : DI , trust-app-id : TN >
-    < DI : DataStreamObject | data-size : DATASIZE >
-    =>  
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-position : seekPos(WHENCE , DATAPOS , OFST , DATASIZE) > HS) >
-    < DI : DataStreamObject | >
-    finishSeekData(TK)
-  if withinMaxPosition(seekPos(WHENCE , DATAPOS , OFST , DATASIZE))
-  .
 
   rl [seek-object-data-top-level-resolve-owner] :
     seekObjectData(HANDLE, OFST, WHENCE, TK, TN)
@@ -583,19 +523,6 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 
 --- This rule returns TEE_ERROR_OVERFLOW if the value of the data position indicator resulting from this operation would be greater than TEE_DATA_MAX_POSITION.
 
-  crl [seek-object-data-overflow] :
-    seekObjectData(HANDLE , OFST , WHENCE , TK , TN)
-    < TK : TaKernel | api-state : waitSeekObjectData , current-api : SeekObjectData >
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-position : DATAPOS > HS) ,
-                              data-stream-id : DI , trust-app-id : TN >
-    < DI : DataStreamObject | data-size : DATASIZE >
-    =>
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS) >
-    < DI : DataStreamObject | >
-    < TK : TaKernel | api-state : finished , current-api : SeekObjectData ,
-                      api-return : apiReturn(SeekObjectData , TEE-ERROR-OVERFLOW) >
-  if not withinMaxPosition(seekPos(WHENCE , DATAPOS , OFST , DATASIZE))
-  .
 
 --- This rule returns TEE_ERROR_CORRUPT_OBJECT if the object is corrupt.
 --- This rule returns TEE_ERROR_STORAGE_NOT_AVAILABLE if the persistent object is stored in a storage area which is currently inaccessible.
@@ -652,17 +579,6 @@ omod DATA-STREAM-OBJECT-BEHAVIOR-INVISIBLE is
     readObjectData(HANDLE , DATASIZE , TK , TN)
   .
 
-  ceq
-    readObjectData(HANDLE , DATASIZE , TK , TN)
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-access-flag-set : DATAFLAGS , data-position : DATAPOS > HS) , 
-                              data-stream-id : DI , trust-app-id : TN >
-    < DI : DataStreamObject | data-size : DS , content : DM >               
-    =
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-position : updatePos(DATAPOS , DATASIZE , DS) > HS) >
-    < DI : DataStreamObject | >
-    finishReadData(read(DATAPOS , DATASIZE , DM) , TK)
-  if isReadable(DATAFLAGS)
-  .
 
   ceq
     readObjectData(HANDLE , DATASIZE , TK , TN)
@@ -720,20 +636,6 @@ omod DATA-STREAM-OBJECT-BEHAVIOR-INVISIBLE is
     writeObjectData(HANDLE , DATA , TK , TN)
   .
 
-  ceq
-    writeObjectData(HANDLE , DATA , TK , TN)
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-access-flag-set : DATAFLAGS , data-position : DATAPOS > HS) ,
-                              data-stream-id : DI , trust-app-id : TN >
-    < DI : DataStreamObject | data-size : DS , content : DM >
-    =
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-position : advancePos(DATAPOS , sizeOfData(DATA)) > HS),
-                              data-stream : read(pos(0), updateSize(DS, DATAPOS, sizeOfData(DATA)),
-                                writeStream(DATA, DATAPOS, DS, DM)) >
-    < DI : DataStreamObject | data-size : updateSize(DS , DATAPOS , sizeOfData(DATA)) , 
-                              content : writeStream(DATA , DATAPOS , DS , DM) >
-    finishWriteData(TK)
-  if isWritable(DATAFLAGS) /\ withinMaxPosition(advancePos(DATAPOS , sizeOfData(DATA)))
-  .
 
   ceq
     writeObjectData(HANDLE , DATA , TK , TN)
@@ -755,17 +657,6 @@ omod DATA-STREAM-OBJECT-BEHAVIOR-INVISIBLE is
   if isWritable(DATAFLAGS) /\ withinMaxPosition(advancePos(DATAPOS, sizeOfData(DATA)))
   .
 
-  ceq
-    writeObjectData(HANDLE , DATA , TK , TN)
-    < TK : TaKernel | api-state : waitWriteObjectData , current-api : WriteObjectData >
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-access-flag-set : DATAFLAGS , data-position : DATAPOS > HS) ,
-                              trust-app-id : TN >
-    =
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS) >
-    < TK : TaKernel | api-state : finished , current-api : WriteObjectData ,
-                      api-return : apiReturn(WriteObjectData , TEE-ERROR-OVERFLOW) >
-  if isWritable(DATAFLAGS) /\ not withinMaxPosition(advancePos(DATAPOS , sizeOfData(DATA)))
-  .
 
   ceq
     writeObjectData(HANDLE , DATA , TK , TN)

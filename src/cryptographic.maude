@@ -517,12 +517,6 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   if not nullHandle(HANDLE)
   .
 
-  rl [free-operation-not-null-subroutine] :
-    deleteOperationObject(HANDLE, TK)
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | > >
-    =>
-    finishDeleteOperationObject(TK)
-  .
 
   rl [free-operation-top-level-handle] :
     deleteOperationObject(HANDLE, TK)
@@ -572,18 +566,6 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     reqOperationAttr(HANDLE , TK)
   .
 
-  rl [req-operation] :
-    reqOperationAttr(HANDLE , TK)
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : B1 ,
-                                                                       is-key-set : B2 ,
-                                                                       is-extracting : B3 > ,
-                              crypto-keys : KEYS ,
-                              algorithm : ALGO , operation-mode : MODE ,
-                              operation-state : OS >
-    => 
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | > >
-    retOperationAttr(opObjectAttr(ALGO , MODE , OS , KEYS) , opHandleAttr(B1 , B2 , B3) , TK)
-  .
 
   rl [req-operation-top-level-handle] :
     reqOperationAttr(HANDLE , TK)
@@ -668,16 +650,6 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- Model/Implementation Specific Version (2 rules)
 --- This rule resets the message digest operation object pointed by the input handle.
 
-  rl [reset-operation-subroutine] :
-    resetOperation(HANDLE, TK)
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-extracting : true > >
-    => 
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-extracting : false > ,
-                            accumulated-data : nil , 
-                            initialization-vector : nil ,
-                            operation-state : TEE-OPERATION-STATE-INITIAL >
-    finishResetOperation(TK) 
-  .
 
   rl [reset-extracting-operation-top-level-handle] :
     resetOperation(HANDLE, TK)
@@ -693,16 +665,6 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
 --- This rule resets the symmetric cipher, MAC, AE, asymmetric, and key derivation operation object pointed by the input handle.
 
-  rl [reset-operation-subroutine] :
-    resetOperation(HANDLE, TK)
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-key-set : true > >
-    => 
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : false > ,
-                            accumulated-data : nil , 
-                            initialization-vector : nil ,
-                            operation-state : TEE-OPERATION-STATE-INITIAL >
-    finishResetOperation(TK) 
-  .
 
   rl [reset-keyed-operation-top-level-handle] :
     resetOperation(HANDLE, TK)
@@ -764,18 +726,6 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     reqSetOperationKey(HANDLE , OBJTYPE , ATTRS , OBJUSAGES , TK)
   .
 
-  crl [set-operation-key-success] :
-    reqSetOperationKey(HANDLE , OBJTYPE , ATTRS , OBJUSAGES , TK)
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : false > ,
-                             operation-mode : MODE >
-    =>
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | key-material-set : true,
-                                                                      is-key-set : true > ,
-                             crypto-keys : key(ATTRS) ,
-                             operation-state : TEE-OPERATION-STATE-INITIAL >
-    finishSetOperationKey(TK)
-  if typeModeCompatible(OBJTYPE , MODE) /\ modeUsageCompatible(OBJUSAGES , MODE)
-  .
 
   crl [set-operation-key-top-level-handle-success] :
     reqSetOperationKey(HANDLE , OBJTYPE , ATTRS , OBJUSAGES , TK)
@@ -797,15 +747,6 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     finishSetOperationKey(TK)
   .
 
-  crl [set-operation-key-fail] :
-    reqSetOperationKey(HANDLE , OBJTYPE , ATTRS , OBJUSAGES , TK)
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : false > ,
-                             operation-mode : MODE >
-    =>
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | > >
-    failSetOperationKey(TK)
-  if not (typeModeCompatible(OBJTYPE , MODE) and modeUsageCompatible(OBJUSAGES , MODE))
-  .
 
   crl [set-operation-key-top-level-handle-fail] :
     reqSetOperationKey(HANDLE , OBJTYPE , ATTRS , OBJUSAGES , TK)
@@ -904,14 +845,6 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     => < TK : TaKernel | api-state : waitSetOperationKey >
        installOperationKeys(HANDLE , ATTRS , ATTRS2 , TK) .
 
-  rl [set-operation-key2-subroutine] :
-    installOperationKeys(HANDLE , ATTRS , ATTRS2 , TK)
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : false ,
-                                                                      is-key-set : false ,
-                                                                      is-extracting : false > >
-    => < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | key-material-set : true,
-                                                                      is-key-set : true > ,
-                              crypto-keys : key(ATTRS) key(ATTRS2) > finishSetOperationKey2(TK) .
   rl [set-operation-key2-top-level-handle] :
     installOperationKeys(HANDLE , ATTRS , ATTRS2 , TK)
     < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE) >
@@ -967,18 +900,6 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     reqCopyOperation(HANDLE , OPOBJATTR , OPHANDLEATTR , TK)
   .
 
-  rl [copy-operation-subroutine] :
-    reqCopyOperation(HANDLE, opObjectAttr(ALGO , MODE , OS , KEYS) , opHandleAttr(B1 , B2 , B3) , TK)
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | > ,
-                             algorithm : ALGO , operation-mode : MODE >
-    => 
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : B1 ,
-                                                                       key-material-set : B2,
-                                                                       is-key-set : B2 ,
-                                                                       is-extracting : B3 > ,
-                             crypto-keys : KEYS , operation-state : OS >
-    finishCopyOperation(TK)
-  .
 
   rl [copy-operation-top-level-object] :
     reqCopyOperation(HANDLE, opObjectAttr(ALGO , MODE , OS , KEYS) , opHandleAttr(B1 , B2 , B3) , TK)
@@ -1048,20 +969,6 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     digestUpdate(HANDLE , DATA , TK)
   .
 
-  crl [digest-update-subroutine] :
-    digestUpdate(HANDLE , DATA , TK)
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-extracting : false > ,
-                             accumulated-data : DL ,
-                             operation-class : TEE-OPERATION-DIGEST , 
-                             operation-state : OS >
-
-    => 
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | > ,
-                             accumulated-data : DL DATA ,
-                             operation-state : TEE-OPERATION-STATE-ACTIVE >
-    finishDigestUpdate(TK)
-  if not extractingState(OS)
-  .
 
   crl [digest-update-top-level-object] :
     digestUpdate(HANDLE , DATA , TK)
@@ -1112,33 +1019,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     digestDoFinal(HANDLE , DATA , TK)
   .
 
-  crl [digest-do-final-capacity-subroutine] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn, api-state : started,
-                      current-api : DigestDoFinal,
-                      current-params : handle(HANDLE) , data(DATA) , PARAMS >
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | >,
-                             accumulated-data : DL , algorithm : ALGO,
-                             operation-class : TEE-OPERATION-DIGEST >
-    =>
-    < TK : TaKernel | api-state : waitDigestDoFinal >
-    < CI : CryptoOperation | > digestDoFinal(HANDLE , DATA , TK)
-  if hasOutputCapacity(PARAMS) /\ outputCapacityFits(PARAMS , digestResult(ALGO , DL DATA))
-  .
 
-  crl [digest-do-final-short-buffer] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn, api-state : started,
-                      current-api : DigestDoFinal,
-                      current-params : handle(HANDLE) , data(DATA) , PARAMS >
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | >,
-                             accumulated-data : DL , algorithm : ALGO,
-                             operation-class : TEE-OPERATION-DIGEST >
-    =>
-    < TK : TaKernel | api-state : finished,
-                      api-return : apiReturn(DigestDoFinal , TEE-ERROR-SHORT-BUFFER,
-                                             size(outputSize(digestResult(ALGO , DL DATA)))) >
-    < CI : CryptoOperation | >
-  if hasOutputCapacity(PARAMS) /\ not outputCapacityFits(PARAMS , digestResult(ALGO , DL DATA))
-  .
 
   crl [digest-do-final-top-level-capacity] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn, api-state : started,
@@ -1168,17 +1049,6 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   if hasOutputCapacity(PARAMS) /\ not outputCapacityFits(PARAMS , digestResult(ALGO , DL DATA))
   .
 
-  rl [digest-do-final-subroutine] :
-    digestDoFinal(HANDLE , DATA , TK)
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | > ,
-                             accumulated-data : DL , algorithm : ALGO ,
-                             operation-class : TEE-OPERATION-DIGEST >
-    => 
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-extracting : false > ,
-                             accumulated-data : nil ,
-                             operation-state : TEE-OPERATION-STATE-INITIAL >
-    finishDigestDoFinal(digestResult(ALGO , DL DATA) , TK)
-  .
 
   rl [digest-do-final-top-level-object] :
     digestDoFinal(HANDLE , DATA , TK)
@@ -1228,33 +1098,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     digestExtract(HANDLE , TK)
   .
 
-  crl [digest-extract-capacity-subroutine] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn, api-state : started,
-                      current-api : DigestExtract,
-                      current-params : handle(HANDLE) , PARAMS >
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | >,
-                             accumulated-data : DL , algorithm : ALGO,
-                             operation-class : TEE-OPERATION-DIGEST >
-    =>
-    < TK : TaKernel | api-state : waitDigestExtract >
-    < CI : CryptoOperation | > digestExtract(HANDLE , TK)
-  if hasOutputCapacity(PARAMS) /\ outputCapacityFits(PARAMS , digestResult(ALGO , DL))
-  .
 
-  crl [digest-extract-short-buffer] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn, api-state : started,
-                      current-api : DigestExtract,
-                      current-params : handle(HANDLE) , PARAMS >
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | >,
-                             accumulated-data : DL , algorithm : ALGO,
-                             operation-class : TEE-OPERATION-DIGEST >
-    =>
-    < TK : TaKernel | api-state : finished,
-                      api-return : apiReturn(DigestExtract , TEE-ERROR-SHORT-BUFFER,
-                                             size(outputSize(digestResult(ALGO , DL)))) >
-    < CI : CryptoOperation | >
-  if hasOutputCapacity(PARAMS) /\ not outputCapacityFits(PARAMS , digestResult(ALGO , DL))
-  .
 
   crl [digest-extract-top-level-capacity] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn, api-state : started,
@@ -1284,17 +1128,6 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   if hasOutputCapacity(PARAMS) /\ not outputCapacityFits(PARAMS , digestResult(ALGO , DL))
   .
 
-  rl [digest-extract-subroutine] :
-    digestExtract(HANDLE , TK)
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | > ,
-                             accumulated-data : DL , algorithm : ALGO ,
-                             operation-class : TEE-OPERATION-DIGEST >
-    => 
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-extracting : true > ,
-                             accumulated-data : nil ,
-                             operation-state : TEE-OPERATION-STATE-EXTRACTING >
-    finishDigestExtract(digestResult(ALGO , DL) , TK)
-  .
 
   rl [digest-extract-top-level-object] :
     digestExtract(HANDLE , TK)
@@ -1344,28 +1177,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     initOperation(HANDLE , IV , TK) 
   .
 
-  crl [init-operation-subroutine] :
-      initOperation(HANDLE , IV , TK) 
-      < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-key-set : true > ,
-                               algorithm : ALGO , operation-class : OC , operation-state : OS >
-      => 
-      < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : true > ,
-                               operation-state : updateOpState(OS , OC) , initialization-vector : IV >
-      finishInitOperation(TK)
-  if ivRequired(ALGO) and ivLengthValid(ALGO , IV)
-  .
 
-  crl [init-operation-subroutine] :
-    initOperation(HANDLE , IV , TK) 
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | key-material-set : true,
-                                                                      is-key-set : true > ,
-                             algorithm : ALGO , operation-class : OC , operation-state : OS >
-    => 
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : true > ,
-                             operation-state : updateOpState(OS , OC) >
-    finishInitOperation(TK)
-  if not ivRequired(ALGO) and ivLengthValid(ALGO , IV)
-  .
 
   crl [init-operation-top-level-object-with-iv] :
     initOperation(HANDLE , IV , TK)
@@ -1479,27 +1291,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- .
 
 --- Model/Implementation Specific Version (2 rules)
-  crl [cipher-update-subroutine] :
-    cipherUpdate(HANDLE , DATA , TK) 
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : true > ,
-                             crypto-keys : KEYS , algorithm : ALGO , operation-mode : MODE ,
-                             operation-class : TEE-OPERATION-CIPHER ,
-                             operation-state : TEE-OPERATION-STATE-ACTIVE >
-    => 
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | > >
-    finishCipherUpdate(cipherOperation(ALGO , MODE , KEYS , DATA), TK) 
-  if cipherSuccess(ALGO , MODE , KEYS , DATA) .
 
-  crl [cipher-update-subroutine] :
-    cipherUpdate(HANDLE , DATA , TK) 
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : true > ,
-                             crypto-keys : KEYS , algorithm : ALGO , operation-mode : MODE ,
-                             operation-class : TEE-OPERATION-CIPHER ,
-                             operation-state : TEE-OPERATION-STATE-ACTIVE >
-    => 
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | > >
-    failCipherUpdate(TK) 
-  if not cipherSuccess(ALGO , MODE , KEYS , DATA) .
 
   crl [cipher-update-top-level-object-success] :
     cipherUpdate(HANDLE , DATA , TK)
@@ -1621,18 +1413,6 @@ omod CRYPTO-OPERATION-BEHAVIOR is
      not invalidBufferOverlap(PARAMS)
   .
 
-  rl [cipher-do-final-subroutine] :
-    cipherDoFinal(HANDLE , DATA , TK)
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : true > ,
-                             crypto-keys : KEYS , 
-                             algorithm : ALGO , operation-mode : MODE ,
-                             operation-class : TEE-OPERATION-CIPHER ,
-                             operation-state : TEE-OPERATION-STATE-ACTIVE >
-    => 
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : false > ,
-                             operation-state : TEE-OPERATION-STATE-INITIAL >
-    finishCipherDoFinal(cipherOperation(ALGO , MODE , KEYS , DATA) , TK) 
-  .
 
   rl [cipher-do-final-top-level-object] :
     cipherDoFinal(HANDLE , DATA , TK)
@@ -1705,17 +1485,6 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     macUpdate(HANDLE , DATA , TK)
   .
 
-  rl [mac-update-subroutine] :
-    macUpdate(HANDLE , DATA , TK)
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : true > ,
-                             accumulated-data : DL ,
-                             operation-class : TEE-OPERATION-MAC , 
-                             operation-state : TEE-OPERATION-STATE-ACTIVE >
-    => 
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | > ,
-                             accumulated-data : DL DATA >
-    finishMacUpdate(TK)
-  .
 
   rl [mac-update-top-level-object] :
     macUpdate(HANDLE , DATA , TK)
@@ -1764,36 +1533,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     macComputeFinal(HANDLE , DATA , TK)
   .
 
-  crl [mac-compute-final-capacity-subroutine] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn, api-state : started,
-                      current-api : MACComputeFinal,
-                      current-params : handle(HANDLE) , data(DATA) , PARAMS >
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : true >,
-                             crypto-keys : KEYS , accumulated-data : DL , algorithm : ALGO,
-                             operation-class : TEE-OPERATION-MAC,
-                             operation-state : TEE-OPERATION-STATE-ACTIVE >
-    =>
-    < TK : TaKernel | api-state : waitMacComputeFinal >
-    < CI : CryptoOperation | >
-    macComputeFinal(HANDLE , DATA , TK)
-  if hasOutputCapacity(PARAMS) /\ outputCapacityFits(PARAMS , computeMAC(ALGO , KEYS , DL DATA))
-  .
 
-  crl [mac-compute-final-short-buffer] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn, api-state : started,
-                      current-api : MACComputeFinal,
-                      current-params : handle(HANDLE) , data(DATA) , PARAMS >
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : true >,
-                             crypto-keys : KEYS , accumulated-data : DL , algorithm : ALGO,
-                             operation-class : TEE-OPERATION-MAC,
-                             operation-state : TEE-OPERATION-STATE-ACTIVE >
-    =>
-    < TK : TaKernel | api-state : finished,
-                      api-return : apiReturn(MACComputeFinal , TEE-ERROR-SHORT-BUFFER,
-                                             size(outputSize(computeMAC(ALGO , KEYS , DL DATA)))) >
-    < CI : CryptoOperation | >
-  if hasOutputCapacity(PARAMS) /\ not outputCapacityFits(PARAMS , computeMAC(ALGO , KEYS , DL DATA))
-  .
 
   crl [mac-compute-final-top-level-capacity] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn, api-state : started,
@@ -1826,20 +1566,6 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   if hasOutputCapacity(PARAMS) /\ not outputCapacityFits(PARAMS , computeMAC(ALGO , KEYS , DL DATA))
   .
 
-  rl [mac-compute-final-subroutine] :
-    macComputeFinal(HANDLE , DATA , TK)
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : true > ,
-                             crypto-keys : KEYS ,
-                             accumulated-data : DL , 
-                             algorithm : ALGO , 
-                             operation-class : TEE-OPERATION-MAC ,
-                             operation-state : TEE-OPERATION-STATE-ACTIVE >
-    => 
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : false > ,
-                             accumulated-data : nil ,
-                             operation-state : TEE-OPERATION-STATE-INITIAL >
-    finishMacComputeFinal(computeMAC(ALGO , KEYS , DL DATA) , TK)
-  .
 
   rl [mac-compute-final-top-level-object] :
     macComputeFinal(HANDLE , DATA , TK)
@@ -1939,17 +1665,6 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     reqAEUpdateAAD(HANDLE , DATA , TK)
   .
 
-  rl [ae-update-aad-subroutine] :
-    reqAEUpdateAAD(HANDLE , DATA , TK)
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : true > ,
-                             accumulated-data : DL ,
-                             operation-class : TEE-OPERATION-AE ,
-                             operation-state : TEE-OPERATION-STATE-INITIAL >
-    => 
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | > ,
-                             accumulated-data : DL DATA >
-    finishAEUpdateAAD(TK)
-  .
 
   rl [ae-update-aad-top-level-object] :
     reqAEUpdateAAD(HANDLE , DATA , TK)
@@ -1997,38 +1712,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     reqAEUpdate(HANDLE , DATA , TK)
   .
 
-  crl [ae-update-capacity-subroutine] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn, api-state : started,
-                      current-api : AEUpdate,
-                      current-params : handle(HANDLE) , data(DATA) , PARAMS >
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : true >,
-                             crypto-keys : KEYS , accumulated-data : DL, algorithm : ALGO,
-                             operation-mode : MODE , operation-class : TEE-OPERATION-AE >
-    =>
-    < TK : TaKernel | api-state : waitAEUpdate >
-    < CI : CryptoOperation | >
-    reqAEUpdate(HANDLE , DATA , TK)
-  if hasOutputCapacity(PARAMS) /\
-     outputCapacityFits(PARAMS , cipherOperation(ALGO , MODE , KEYS , DL DATA)) /\
-     not invalidBufferOverlap(PARAMS)
-  .
 
-  crl [ae-update-short-buffer] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn, api-state : started,
-                      current-api : AEUpdate,
-                      current-params : handle(HANDLE) , data(DATA) , PARAMS >
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : true >,
-                             crypto-keys : KEYS , accumulated-data : DL, algorithm : ALGO,
-                             operation-mode : MODE , operation-class : TEE-OPERATION-AE >
-    =>
-    < TK : TaKernel | api-state : finished,
-                      api-return : apiReturn(AEUpdate , TEE-ERROR-SHORT-BUFFER,
-                        size(outputSize(cipherOperation(ALGO , MODE , KEYS , DL DATA)))) >
-    < CI : CryptoOperation | >
-  if hasOutputCapacity(PARAMS) /\
-     not outputCapacityFits(PARAMS , cipherOperation(ALGO , MODE , KEYS , DL DATA)) /\
-     not invalidBufferOverlap(PARAMS)
-  .
 
   crl [ae-update-top-level-capacity] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn, api-state : started,
@@ -2062,19 +1746,6 @@ omod CRYPTO-OPERATION-BEHAVIOR is
      not invalidBufferOverlap(PARAMS)
   .
 
-  rl [ae-update-subroutine] :
-    reqAEUpdate(HANDLE , DATA , TK)
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : true > ,
-                             crypto-keys : KEYS , 
-                             accumulated-data : DL ,
-                             algorithm : ALGO , operation-mode : MODE ,
-                             operation-class : TEE-OPERATION-AE >
-    => 
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | > ,
-                             accumulated-data : DL DATA ,
-                             operation-state : TEE-OPERATION-STATE-ACTIVE >
-    finishAEUpdate(cipherOperation(ALGO , MODE , KEYS , DL DATA) , TK)
-  .
 
   rl [ae-update-top-level-object] :
     reqAEUpdate(HANDLE , DATA , TK)
@@ -2115,42 +1786,6 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | api-call : noCall , api-return : noReturn , api-state : started ,
                       current-api : AEEncryptFinal , current-params : handle(HANDLE) , data(DATA) >
     => < TK : TaKernel | api-state : waitAEEncryptFinal > aeEncryptFinal(HANDLE , DATA , TK) .
-  crl [ae-encrypt-final-capacity-subroutine] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn, api-state : started,
-                      current-api : AEEncryptFinal,
-                      current-params : handle(HANDLE) , data(DATA) , PARAMS >
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : true >,
-                             crypto-keys : KEYS , accumulated-data : DL , algorithm : ALGO,
-                             operation-mode : TEE-MODE-ENCRYPT , operation-class : TEE-OPERATION-AE >
-    =>
-    < TK : TaKernel | api-state : waitAEEncryptFinal >
-    < CI : CryptoOperation | > aeEncryptFinal(HANDLE , DATA , TK)
-  if (hasOutputCapacity(PARAMS) or hasTagCapacity(PARAMS)) /\
-     (not hasOutputCapacity(PARAMS) or
-       outputCapacityFits(PARAMS , cipherOperation(ALGO , TEE-MODE-ENCRYPT , KEYS , DL DATA))) /\
-     tagCapacityFits(PARAMS , computeMAC(ALGO , KEYS , DL DATA)) /\
-     not invalidBufferOverlap(PARAMS)
-  .
-  crl [ae-encrypt-final-short-buffer] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn, api-state : started,
-                      current-api : AEEncryptFinal,
-                      current-params : handle(HANDLE) , data(DATA) , PARAMS >
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : true >,
-                             crypto-keys : KEYS , accumulated-data : DL , algorithm : ALGO,
-                             operation-mode : TEE-MODE-ENCRYPT , operation-class : TEE-OPERATION-AE >
-    =>
-    < TK : TaKernel | api-state : finished,
-                      api-return : apiReturn(AEEncryptFinal , TEE-ERROR-SHORT-BUFFER,
-                        (size(outputSize(cipherOperation(ALGO , TEE-MODE-ENCRYPT , KEYS , DL DATA))),
-                         tagSize(outputSize(computeMAC(ALGO , KEYS , DL DATA))))) >
-    < CI : CryptoOperation | >
-  if (hasOutputCapacity(PARAMS) or hasTagCapacity(PARAMS)) /\
-     ((hasOutputCapacity(PARAMS) and
-       not outputCapacityFits(PARAMS , cipherOperation(ALGO , TEE-MODE-ENCRYPT , KEYS , DL DATA))) or
-      (hasTagCapacity(PARAMS) and
-       not tagCapacityFits(PARAMS , computeMAC(ALGO , KEYS , DL DATA)))) /\
-     not invalidBufferOverlap(PARAMS)
-  .
   crl [ae-encrypt-final-top-level-capacity] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn, api-state : started,
                       current-api : AEEncryptFinal,
@@ -2187,15 +1822,6 @@ omod CRYPTO-OPERATION-BEHAVIOR is
        not tagCapacityFits(PARAMS , computeMAC(ALGO , KEYS , DL DATA)))) /\
      not invalidBufferOverlap(PARAMS)
   .
-  rl [ae-encrypt-final-subroutine] :
-    aeEncryptFinal(HANDLE , DATA , TK)
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : true > ,
-                             crypto-keys : KEYS , accumulated-data : DL , algorithm : ALGO ,
-                             operation-mode : TEE-MODE-ENCRYPT , operation-class : TEE-OPERATION-AE >
-    => < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : false > ,
-                              accumulated-data : nil , operation-state : TEE-OPERATION-STATE-INITIAL >
-       finishAEEncryptFinal(cipherOperation(ALGO , TEE-MODE-ENCRYPT , KEYS , DL DATA),
-                            computeMAC(ALGO , KEYS , DL DATA), TK) .
   rl [ae-encrypt-final-top-level-object] :
     aeEncryptFinal(HANDLE , DATA , TK)
     < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE) ,
@@ -2229,36 +1855,6 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | api-call : noCall , api-return : noReturn , api-state : started ,
                       current-api : AEDecryptFinal , current-params : handle(HANDLE) , data(DATA) , mac(MAC) >
     => < TK : TaKernel | api-state : waitAEDecryptFinal > aeDecryptFinal(HANDLE , DATA , MAC , TK) .
-  crl [ae-decrypt-final-capacity-subroutine] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn, api-state : started,
-                      current-api : AEDecryptFinal,
-                      current-params : handle(HANDLE) , data(DATA) , mac(MAC) , PARAMS >
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : true >,
-                             crypto-keys : KEYS , algorithm : ALGO,
-                             operation-mode : TEE-MODE-DECRYPT , operation-class : TEE-OPERATION-AE >
-    =>
-    < TK : TaKernel | api-state : waitAEDecryptFinal >
-    < CI : CryptoOperation | > aeDecryptFinal(HANDLE , DATA , MAC , TK)
-  if hasOutputCapacity(PARAMS) /\
-     outputCapacityFits(PARAMS , cipherOperation(ALGO , TEE-MODE-DECRYPT , KEYS , DATA)) /\
-     not invalidBufferOverlap(PARAMS)
-  .
-  crl [ae-decrypt-final-short-buffer] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn, api-state : started,
-                      current-api : AEDecryptFinal,
-                      current-params : handle(HANDLE) , data(DATA) , mac(MAC) , PARAMS >
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : true >,
-                             crypto-keys : KEYS , algorithm : ALGO,
-                             operation-mode : TEE-MODE-DECRYPT , operation-class : TEE-OPERATION-AE >
-    =>
-    < TK : TaKernel | api-state : finished,
-                      api-return : apiReturn(AEDecryptFinal , TEE-ERROR-SHORT-BUFFER,
-                        size(outputSize(cipherOperation(ALGO , TEE-MODE-DECRYPT , KEYS , DATA)))) >
-    < CI : CryptoOperation | >
-  if hasOutputCapacity(PARAMS) /\
-     not outputCapacityFits(PARAMS , cipherOperation(ALGO , TEE-MODE-DECRYPT , KEYS , DATA)) /\
-     not invalidBufferOverlap(PARAMS)
-  .
   crl [ae-decrypt-final-top-level-capacity] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn, api-state : started,
                       current-api : AEDecryptFinal,
@@ -2289,15 +1885,6 @@ omod CRYPTO-OPERATION-BEHAVIOR is
      not outputCapacityFits(PARAMS , cipherOperation(ALGO , TEE-MODE-DECRYPT , KEYS , DATA)) /\
      not invalidBufferOverlap(PARAMS)
   .
-  rl [ae-decrypt-final-subroutine] :
-    aeDecryptFinal(HANDLE , DATA , MAC , TK)
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : true > ,
-                             crypto-keys : KEYS , accumulated-data : DL , algorithm : ALGO ,
-                             operation-mode : TEE-MODE-DECRYPT , operation-class : TEE-OPERATION-AE >
-    => < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : false > ,
-                              accumulated-data : nil , operation-state : TEE-OPERATION-STATE-INITIAL >
-       finishAEDecryptFinal(cipherOperation(ALGO , TEE-MODE-DECRYPT , KEYS , DATA),
-                            computeMAC(ALGO , KEYS , DL DATA), MAC, TK) .
   rl [ae-decrypt-final-top-level-object] :
     aeDecryptFinal(HANDLE , DATA , MAC , TK)
     < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE) ,
@@ -2345,54 +1932,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     asymEncrypt(HANDLE , DATA , TK)
   .
 
-  crl [asymmetric-encrypt-capacity-subroutine] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn, api-state : started,
-                      current-api : AsymmetricEncrypt,
-                      current-params : handle(HANDLE) , data(DATA) , PARAMS >
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-key-set : true >,
-                             crypto-keys : KEYS , algorithm : ALGO, max-key-size : KEYSIZE,
-                             operation-mode : TEE-MODE-ENCRYPT,
-                             operation-class : TEE-OPERATION-ASYMMETRIC-CIPHER >
-    =>
-    < TK : TaKernel | api-state : waitAsymEncrypt >
-    < CI : CryptoOperation | > asymEncrypt(HANDLE , DATA , TK)
-  if hasOutputCapacity(PARAMS) /\
-     validRsaEncryptInput(ALGO , KEYSIZE , DATA) /\
-     outputCapacityFitsSize(PARAMS , dataSize(rsaKeyBytes(KEYSIZE)))
-  .
 
-  crl [asymmetric-encrypt-short-buffer] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn, api-state : started,
-                      current-api : AsymmetricEncrypt,
-                      current-params : handle(HANDLE) , data(DATA) , PARAMS >
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-key-set : true >,
-                             crypto-keys : KEYS , algorithm : ALGO, max-key-size : KEYSIZE,
-                             operation-mode : TEE-MODE-ENCRYPT,
-                             operation-class : TEE-OPERATION-ASYMMETRIC-CIPHER >
-    =>
-    < TK : TaKernel | api-state : finished,
-                      api-return : apiReturn(AsymmetricEncrypt , TEE-ERROR-SHORT-BUFFER,
-                        size(dataSize(rsaKeyBytes(KEYSIZE)))) >
-    < CI : CryptoOperation | >
-  if hasOutputCapacity(PARAMS) /\
-     validRsaEncryptInput(ALGO , KEYSIZE , DATA) /\
-     not outputCapacityFitsSize(PARAMS , dataSize(rsaKeyBytes(KEYSIZE)))
-  .
 
-  crl [asymmetric-encrypt-bad-parameters] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn, api-state : started,
-                      current-api : AsymmetricEncrypt,
-                      current-params : handle(HANDLE) , data(DATA) , PARAMS >
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-key-set : true >,
-                             algorithm : ALGO , max-key-size : KEYSIZE,
-                             operation-mode : TEE-MODE-ENCRYPT,
-                             operation-class : TEE-OPERATION-ASYMMETRIC-CIPHER >
-    =>
-    < TK : TaKernel | api-state : finished,
-                      api-return : apiReturn(AsymmetricEncrypt , TEE-ERROR-BAD-PARAMETERS) >
-    < CI : CryptoOperation | >
-  if not validRsaEncryptInput(ALGO , KEYSIZE , DATA)
-  .
 
   crl [asymmetric-encrypt-top-level-capacity] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn, api-state : started,
@@ -2443,32 +1984,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   if not validRsaEncryptInput(ALGO , KEYSIZE , DATA)
   .
 
-  crl [asymmetric-encrypt-subroutine] :
-    asymEncrypt(HANDLE , DATA , TK)
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-key-set : true > ,
-                             crypto-keys : KEYS ,
-                             algorithm : ALGO , max-key-size : KEYSIZE,
-                             operation-mode : TEE-MODE-ENCRYPT ,
-                             operation-class : TEE-OPERATION-ASYMMETRIC-CIPHER >
-    => 
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | > >
-    finishAsymEncrypt(cipherOperation(ALGO , TEE-MODE-ENCRYPT , KEYS , DATA) , TK)
-  if validRsaEncryptInput(ALGO , KEYSIZE , DATA)
-  .
 
-  crl [asymmetric-encrypt-message-bad-parameters] :
-    asymEncrypt(HANDLE , DATA , TK)
-    < TK : TaKernel | api-state : waitAsymEncrypt , current-api : AsymmetricEncrypt >
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-key-set : true >,
-                             algorithm : ALGO , max-key-size : KEYSIZE,
-                             operation-mode : TEE-MODE-ENCRYPT,
-                             operation-class : TEE-OPERATION-ASYMMETRIC-CIPHER >
-    =>
-    < TK : TaKernel | api-state : finished,
-                      api-return : apiReturn(AsymmetricEncrypt , TEE-ERROR-BAD-PARAMETERS) >
-    < CI : CryptoOperation | >
-  if not validRsaEncryptInput(ALGO , KEYSIZE , DATA)
-  .
 
   crl [asymmetric-encrypt-top-level-object] :
     asymEncrypt(HANDLE , DATA , TK)
@@ -2525,68 +2041,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     asymDecrypt(HANDLE , DATA , TK)
   .
 
-  crl [asymmetric-decrypt-capacity-subroutine] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn, api-state : started,
-                      current-api : AsymmetricDecrypt,
-                      current-params : handle(HANDLE) , data(DATA) , PARAMS >
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-key-set : true >,
-                             crypto-keys : KEYS , algorithm : ALGO, max-key-size : KEYSIZE,
-                             operation-mode : TEE-MODE-DECRYPT,
-                             operation-class : TEE-OPERATION-ASYMMETRIC-CIPHER >
-    =>
-    < TK : TaKernel | api-state : waitAsymDecrypt >
-    < CI : CryptoOperation | > asymDecrypt(HANDLE , DATA , TK)
-  if hasOutputCapacity(PARAMS) /\
-     validRsaCiphertextSize(KEYSIZE , DATA) /\ validRsaCiphertext(ALGO , KEYS , DATA) /\
-     outputCapacityFits(PARAMS , cipherOperation(ALGO , TEE-MODE-DECRYPT , KEYS , DATA))
-  .
 
-  crl [asymmetric-decrypt-short-buffer] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn, api-state : started,
-                      current-api : AsymmetricDecrypt,
-                      current-params : handle(HANDLE) , data(DATA) , PARAMS >
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-key-set : true >,
-                             crypto-keys : KEYS , algorithm : ALGO, max-key-size : KEYSIZE,
-                             operation-mode : TEE-MODE-DECRYPT,
-                             operation-class : TEE-OPERATION-ASYMMETRIC-CIPHER >
-    =>
-    < TK : TaKernel | api-state : finished,
-                      api-return : apiReturn(AsymmetricDecrypt , TEE-ERROR-SHORT-BUFFER,
-                        size(outputSize(cipherOperation(ALGO , TEE-MODE-DECRYPT , KEYS , DATA)))) >
-    < CI : CryptoOperation | >
-  if hasOutputCapacity(PARAMS) /\
-     validRsaCiphertextSize(KEYSIZE , DATA) /\ validRsaCiphertext(ALGO , KEYS , DATA) /\
-     not outputCapacityFits(PARAMS , cipherOperation(ALGO , TEE-MODE-DECRYPT , KEYS , DATA))
-  .
 
-  crl [asymmetric-decrypt-bad-parameters] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn, api-state : started,
-                      current-api : AsymmetricDecrypt,
-                      current-params : handle(HANDLE) , data(DATA) , PARAMS >
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-key-set : true >,
-                             max-key-size : KEYSIZE , operation-mode : TEE-MODE-DECRYPT,
-                             operation-class : TEE-OPERATION-ASYMMETRIC-CIPHER >
-    =>
-    < TK : TaKernel | api-state : finished,
-                      api-return : apiReturn(AsymmetricDecrypt , TEE-ERROR-BAD-PARAMETERS) >
-    < CI : CryptoOperation | >
-  if not validRsaCiphertextSize(KEYSIZE , DATA)
-  .
 
-  crl [asymmetric-decrypt-invalid-ciphertext] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn, api-state : started,
-                      current-api : AsymmetricDecrypt,
-                      current-params : handle(HANDLE) , data(DATA) , PARAMS >
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-key-set : true >,
-                             crypto-keys : KEYS , algorithm : ALGO, max-key-size : KEYSIZE,
-                             operation-mode : TEE-MODE-DECRYPT,
-                             operation-class : TEE-OPERATION-ASYMMETRIC-CIPHER >
-    =>
-    < TK : TaKernel | api-state : finished,
-                      api-return : apiReturn(AsymmetricDecrypt , TEE-ERROR-CIPHERTEXT-INVALID) >
-    < CI : CryptoOperation | >
-  if validRsaCiphertextSize(KEYSIZE , DATA) /\ not validRsaCiphertext(ALGO , KEYS , DATA)
-  .
 
   crl [asymmetric-decrypt-top-level-capacity] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn, api-state : started,
@@ -2651,45 +2108,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   if validRsaCiphertextSize(KEYSIZE , DATA) /\ not validRsaCiphertext(ALGO , KEYS , DATA)
   .
 
-  crl [asymmetric-decrypt-subroutine] :
-    asymDecrypt(HANDLE , DATA , TK)
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-key-set : true > ,
-                             crypto-keys : KEYS ,
-                             algorithm : ALGO , max-key-size : KEYSIZE,
-                             operation-mode : TEE-MODE-DECRYPT ,
-                             operation-class : TEE-OPERATION-ASYMMETRIC-CIPHER >
-    => 
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | > >
-    finishAsymDecrypt(cipherOperation(ALGO , TEE-MODE-DECRYPT , KEYS , DATA) , TK)
-  if validRsaCiphertextSize(KEYSIZE , DATA) /\ validRsaCiphertext(ALGO , KEYS , DATA)
-  .
 
-  crl [asymmetric-decrypt-message-bad-parameters] :
-    asymDecrypt(HANDLE , DATA , TK)
-    < TK : TaKernel | api-state : waitAsymDecrypt , current-api : AsymmetricDecrypt >
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-key-set : true >,
-                             max-key-size : KEYSIZE , operation-mode : TEE-MODE-DECRYPT,
-                             operation-class : TEE-OPERATION-ASYMMETRIC-CIPHER >
-    =>
-    < TK : TaKernel | api-state : finished,
-                      api-return : apiReturn(AsymmetricDecrypt , TEE-ERROR-BAD-PARAMETERS) >
-    < CI : CryptoOperation | >
-  if not validRsaCiphertextSize(KEYSIZE , DATA)
-  .
 
-  crl [asymmetric-decrypt-message-invalid-ciphertext] :
-    asymDecrypt(HANDLE , DATA , TK)
-    < TK : TaKernel | api-state : waitAsymDecrypt , current-api : AsymmetricDecrypt >
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-key-set : true >,
-                             crypto-keys : KEYS , algorithm : ALGO, max-key-size : KEYSIZE,
-                             operation-mode : TEE-MODE-DECRYPT,
-                             operation-class : TEE-OPERATION-ASYMMETRIC-CIPHER >
-    =>
-    < TK : TaKernel | api-state : finished,
-                      api-return : apiReturn(AsymmetricDecrypt , TEE-ERROR-CIPHERTEXT-INVALID) >
-    < CI : CryptoOperation | >
-  if validRsaCiphertextSize(KEYSIZE , DATA) /\ not validRsaCiphertext(ALGO , KEYS , DATA)
-  .
 
   crl [asymmetric-decrypt-top-level-object] :
     asymDecrypt(HANDLE , DATA , TK)
@@ -2766,33 +2186,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     asymSignDigest(HANDLE , DATA , TK)
   .
 
-  crl [asymmetric-sign-digest-capacity-subroutine] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn, api-state : started,
-                      current-api : AsymmetricSignDigest,
-                      current-params : handle(HANDLE) , data(DATA) , PARAMS >
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-key-set : true >,
-                             max-key-size : KEYSIZE , operation-mode : TEE-MODE-SIGN,
-                             operation-class : TEE-OPERATION-ASYMMETRIC-SIGNATURE >
-    =>
-    < TK : TaKernel | api-state : waitAsymSignDigest >
-    < CI : CryptoOperation | > asymSignDigest(HANDLE , DATA , TK)
-  if hasOutputCapacity(PARAMS) /\ outputCapacityFitsSize(PARAMS , signatureSize(KEYSIZE))
-  .
 
-  crl [asymmetric-sign-digest-short-buffer] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn, api-state : started,
-                      current-api : AsymmetricSignDigest,
-                      current-params : handle(HANDLE) , data(DATA) , PARAMS >
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-key-set : true >,
-                             max-key-size : KEYSIZE , operation-mode : TEE-MODE-SIGN,
-                             operation-class : TEE-OPERATION-ASYMMETRIC-SIGNATURE >
-    =>
-    < TK : TaKernel | api-state : finished,
-                      api-return : apiReturn(AsymmetricSignDigest , TEE-ERROR-SHORT-BUFFER,
-                                             size(signatureSize(KEYSIZE))) >
-    < CI : CryptoOperation | >
-  if hasOutputCapacity(PARAMS) /\ not outputCapacityFitsSize(PARAMS , signatureSize(KEYSIZE))
-  .
 
   crl [asymmetric-sign-digest-top-level-capacity] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn, api-state : started,
@@ -2822,29 +2216,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   if hasOutputCapacity(PARAMS) /\ not outputCapacityFitsSize(PARAMS , signatureSize(KEYSIZE))
   .
 
-  crl [asymmetric-sign-digest-subroutine] :
-    asymSignDigest(HANDLE , DATA , TK)
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-key-set : true > ,
-                             crypto-keys : KEYS ,
-                             algorithm : ALGO ,  operation-mode : TEE-MODE-SIGN ,
-                             operation-class : TEE-OPERATION-ASYMMETRIC-SIGNATURE >
-    => 
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | > >
-    finishAsymSignDigest(signDigest(ALGO , KEYS , DATA) , TK)
-  if validSignatureDigestLength(ALGO , DATA)
-  .
 
-  crl [asymmetric-sign-digest-length-panic] :
-    asymSignDigest(HANDLE , DATA , TK)
-    < TK : TaKernel | api-state : waitAsymSignDigest, current-api : AsymmetricSignDigest >
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-key-set : true >,
-                             algorithm : ALGO , operation-mode : TEE-MODE-SIGN,
-                             operation-class : TEE-OPERATION-ASYMMETRIC-SIGNATURE >
-    =>
-    < TK : TaKernel | api-state : finished , app-status : panic >
-    < CI : CryptoOperation | >
-  if not validSignatureDigestLength(ALGO , DATA)
-  .
 
   crl [asymmetric-sign-digest-top-level-object] :
     asymSignDigest(HANDLE , DATA , TK)
@@ -2906,29 +2278,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     asymVerifyDigest(HANDLE , DATA , TK)
   .
 
-  crl [asymmetric-verify-digest-subroutine] :
-    asymVerifyDigest(HANDLE , DATA , TK)
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-key-set : true > ,
-                             crypto-keys : KEYS ,
-                             algorithm : ALGO ,  operation-mode : TEE-MODE-VERIFY ,
-                             operation-class : TEE-OPERATION-ASYMMETRIC-SIGNATURE >
-    => 
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | > >
-    finishAsymVerifyDigest(signDigest(ALGO , KEYS , DATA) , TK)
-  if validSignatureDigestLength(ALGO , DATA)
-  .
 
-  crl [asymmetric-verify-digest-length-panic] :
-    asymVerifyDigest(HANDLE , DATA , TK)
-    < TK : TaKernel | api-state : waitAsymVerifDigest, current-api : AsymmetricVerifyDigest >
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-key-set : true >,
-                             algorithm : ALGO , operation-mode : TEE-MODE-VERIFY,
-                             operation-class : TEE-OPERATION-ASYMMETRIC-SIGNATURE >
-    =>
-    < TK : TaKernel | api-state : finished , app-status : panic >
-    < CI : CryptoOperation | >
-  if not validSignatureDigestLength(ALGO , DATA)
-  .
 
   crl [asymmetric-verify-digest-top-level-object] :
     asymVerifyDigest(HANDLE , DATA , TK)
@@ -2985,31 +2335,6 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       current-api : DeriveKey ,
                       current-params : handle(HANDLE) , attrs(ATTRS) , trgHandle(DERIVED) >
     => < TK : TaKernel | api-state : waitDeriveKey > deriveKey(HANDLE , ATTRS , DERIVED , TK) .
-  rl [derive-key-subroutine] :
-    deriveKey(HANDLE , ATTRS , DERIVED , TK)
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-key-set : true > ,
-                             crypto-keys : KEYS , operation-mode : TEE-MODE-DERIVE ,
-                             operation-class : TEE-OPERATION-KEY-DERIVATION >
-    < OI : TransientObject | handle-set : < DERIVED : ObjectHandle | is-initialized : false > ,
-                             object-type : TEE-TYPE-GENERIC-SECRET >
-    => < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | > >
-       < OI : TransientObject | initialized : true,
-                              handle-set : < DERIVED : ObjectHandle | is-initialized : true > ,
-                              attribute-set : teeAttribute(TEE-ATTR-SECRET-VALUE , randomAttrVal) >
-       finishDeriveKey(TK) .
-  rl [derive-key-top-level-target-handle] :
-    deriveKey(HANDLE , ATTRS , DERIVED , TK)
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-key-set : true > ,
-                             crypto-keys : KEYS , operation-mode : TEE-MODE-DERIVE ,
-                             operation-class : TEE-OPERATION-KEY-DERIVATION >
-    < OI : TransientObject | handle-id-set : handleIdSet(DERIVED) ,
-                             object-type : TEE-TYPE-GENERIC-SECRET >
-    < DERIVED : ObjectHandle | oid : OI , is-initialized : false >
-    => < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | > >
-       < OI : TransientObject | initialized : true,
-                              attribute-set : teeAttribute(TEE-ATTR-SECRET-VALUE , randomAttrVal) >
-       < DERIVED : ObjectHandle | is-initialized : true >
-       finishDeriveKey(TK) .
   rl [derive-key-top-level-operation] :
     deriveKey(HANDLE , ATTRS , DERIVED , TK)
     < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE) ,
@@ -3149,12 +2474,6 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
   if not nullHandle(HANDLE)
   .
 
-  eq
-    deleteOperationObject(HANDLE, TK)
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | > >
-    =
-    finishDeleteOperationObject(TK)
-  .
 
   eq
     deleteOperationObject(HANDLE, TK)
@@ -3196,15 +2515,6 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     resetOperation(HANDLE, TK) 
   .
 
-  eq
-    resetOperation(HANDLE, TK)
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-extracting : true > >
-    =
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-extracting : false > ,
-                            accumulated-data : nil , initialization-vector : nil ,
-                            operation-state : TEE-OPERATION-STATE-INITIAL >
-    finishResetOperation(TK) 
-  .
 
   eq
     resetOperation(HANDLE, TK)
@@ -3217,15 +2527,6 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     finishResetOperation(TK)
   .
 
-  eq
-    resetOperation(HANDLE, TK)
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-key-set : true > >
-    =
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : false > ,
-                            accumulated-data : nil , initialization-vector : nil ,
-                            operation-state : TEE-OPERATION-STATE-INITIAL >
-    finishResetOperation(TK) 
-  .
 
   eq
     resetOperation(HANDLE, TK)
@@ -3269,18 +2570,6 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     reqSetOperationKey(HANDLE , OBJTYPE , ATTRS , OBJUSAGES , TK)
   .
 
-  ceq
-    reqSetOperationKey(HANDLE , OBJTYPE , ATTRS , OBJUSAGES , TK)
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : false > ,
-                             operation-mode : MODE >
-    =
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | key-material-set : true,
-                                                                      is-key-set : true > ,
-                             crypto-keys : key(ATTRS) ,
-                             operation-state : TEE-OPERATION-STATE-INITIAL >
-    finishSetOperationKey(TK)
-  if typeModeCompatible(OBJTYPE , MODE) /\ modeUsageCompatible(OBJUSAGES , MODE)
-  .
 
   ceq
     reqSetOperationKey(HANDLE , OBJTYPE , ATTRS , OBJUSAGES , TK)
@@ -3302,15 +2591,6 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     finishSetOperationKey(TK)
   .
 
-  ceq
-    reqSetOperationKey(HANDLE , OBJTYPE , ATTRS , OBJUSAGES , TK)
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : false > ,
-                             operation-mode : MODE >
-    =
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | > >
-    failSetOperationKey(TK)
-  if not (typeModeCompatible(OBJTYPE , MODE) and modeUsageCompatible(OBJUSAGES , MODE))
-  .
 
   ceq
     reqSetOperationKey(HANDLE , OBJTYPE , ATTRS , OBJUSAGES , TK)
@@ -3388,27 +2668,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     initOperation(HANDLE , IV , TK) 
   .
 
-  ceq
-      initOperation(HANDLE , IV , TK) 
-      < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-key-set : true > ,
-                               algorithm : ALGO , operation-class : OC , operation-state : OS >
-      =
-      < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : true > ,
-                               operation-state : updateOpState(OS , OC) , initialization-vector : IV >
-      finishInitOperation(TK)
-  if ivRequired(ALGO) and ivLengthValid(ALGO , IV)
-  .
 
-  ceq
-    initOperation(HANDLE , IV , TK) 
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-key-set : true > ,
-                             algorithm : ALGO , operation-class : OC , operation-state : OS >
-    =
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : true > ,
-                             operation-state : updateOpState(OS , OC) >
-    finishInitOperation(TK)
-  if not ivRequired(ALGO) and ivLengthValid(ALGO , IV)
-  .
 
   ceq
     initOperation(HANDLE , IV , TK)
@@ -3485,27 +2745,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
      not invalidBufferOverlap(PARAMS)
   .
 
-  ceq
-    cipherUpdate(HANDLE , DATA , TK) 
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : true > ,
-                             crypto-keys : KEYS , algorithm : ALGO , operation-mode : MODE ,
-                             operation-class : TEE-OPERATION-CIPHER ,
-                             operation-state : TEE-OPERATION-STATE-ACTIVE >
-    = 
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | > >
-    finishCipherUpdate(cipherOperation(ALGO , MODE , KEYS , DATA), TK) 
-  if cipherSuccess(ALGO , MODE , KEYS , DATA) .
 
-  ceq
-    cipherUpdate(HANDLE , DATA , TK) 
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : true > ,
-                             crypto-keys : KEYS , algorithm : ALGO , operation-mode : MODE ,
-                             operation-class : TEE-OPERATION-CIPHER ,
-                             operation-state : TEE-OPERATION-STATE-ACTIVE >
-    =
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | > >
-    failCipherUpdate(TK) 
-  if not cipherSuccess(ALGO , MODE , KEYS , DATA) .
 
   ceq
     cipherUpdate(HANDLE , DATA , TK)

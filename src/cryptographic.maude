@@ -156,6 +156,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   var MODE : OperationMode .
   var OC : OperationClass .
   vars OS OS' : OperationState .
+  var HS : HandleState .
   vars ATTRS ATTRS2 : Set{TeeAttribute} .
   vars KEYSIZE : CryptoKeySize .
   var OBJTYPE : ObjectType .
@@ -651,10 +652,10 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- This rule resets the message digest operation object pointed by the input handle.
 
 
-  rl [reset-extracting-operation-top-level-handle] :
+  crl [reset-extracting-operation-top-level-handle] :
     resetOperation(HANDLE, TK)
     < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE) >
-    < HANDLE : OperationHandle | oid : CI , is-extracting : true >
+    < HANDLE : OperationHandle | oid : CI , state : HS >
     =>
     < CI : CryptoOperation | accumulated-data : nil ,
                             initialization-vector : nil ,
@@ -662,15 +663,16 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < HANDLE : OperationHandle | state : noHandleState,
                                  is-extracting : false >
     finishResetOperation(TK)
+  if hasExtract(HS)
   .
 
 --- This rule resets the symmetric cipher, MAC, AE, asymmetric, and key derivation operation object pointed by the input handle.
 
 
-  rl [reset-keyed-operation-top-level-handle] :
+  crl [reset-keyed-operation-top-level-handle] :
     resetOperation(HANDLE, TK)
     < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE) >
-    < HANDLE : OperationHandle | oid : CI , is-key-set : true >
+    < HANDLE : OperationHandle | oid : CI , state : HS >
     =>
     < CI : CryptoOperation | accumulated-data : nil ,
                             initialization-vector : nil ,
@@ -678,22 +680,23 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < HANDLE : OperationHandle | state : keySet,
                                  is-initialized : false >
     finishResetOperation(TK)
+  if hasKeySet(HS) and not hasExtract(HS)
   .
 
   --- ResetOperation requires key material to have been configured.  Reaching
   --- the reset subroutine without either keyed or extracting state is a GP
   --- programmer error.
-  rl [reset-operation-key-not-set-panic] :
+  crl [reset-operation-key-not-set-panic] :
     resetOperation(HANDLE, TK)
     < TK : TaKernel | app-status : normal , api-state : waitResetOperation ,
                       current-api : ResetOperation >
     < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE) >
-    < HANDLE : OperationHandle | oid : CI , is-extracting : false ,
-                                 is-key-set : false >
+    < HANDLE : OperationHandle | oid : CI , state : HS >
     =>
     < TK : TaKernel | app-status : panic , api-state : finished >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
+  if not hasKeySet(HS) and not hasExtract(HS)
   .
 
 --- Version In Paper
@@ -1225,13 +1228,14 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   if not ivRequired(ALGO) and ivLengthValid(ALGO , IV)
   .
 
-  rl [init-operation-top-level-handle] :
+  crl [init-operation-top-level-handle] :
     initTopOperationHandle(HANDLE , TK)
-    < HANDLE : OperationHandle | is-key-set : true , is-initialized : false >
+    < HANDLE : OperationHandle | state : HS >
     =>
     < HANDLE : OperationHandle | state : init keySet,
                                  is-initialized : true >
     finishInitOperation(TK)
+  if hasKeySet(HS) and not hasInit(HS)
   .
 
   rl [cipher-init-success] :
@@ -2437,6 +2441,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
   var MODE : OperationMode .
   var OC : OperationClass .
   var OS : OperationState .
+  var HS : HandleState .
   var ATTRS : Set{TeeAttribute} .
   vars KEYSIZE : CryptoKeySize .
   var OBJTYPE : ObjectType .
@@ -2544,42 +2549,44 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
   .
 
 
-  eq
+  ceq
     resetOperation(HANDLE, TK)
     < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE) >
-    < HANDLE : OperationHandle | oid : CI , is-extracting : true >
+    < HANDLE : OperationHandle | oid : CI , state : HS >
     =
     < CI : CryptoOperation | accumulated-data : nil , initialization-vector : nil ,
                             operation-state : TEE-OPERATION-STATE-INITIAL >
     < HANDLE : OperationHandle | state : noHandleState,
                                  is-extracting : false >
     finishResetOperation(TK)
+  if hasExtract(HS)
   .
 
-  eq
+  ceq
     resetOperation(HANDLE, TK)
     < TK : TaKernel | app-status : normal , api-state : waitResetOperation ,
                       current-api : ResetOperation >
     < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE) >
-    < HANDLE : OperationHandle | oid : CI , is-extracting : false ,
-                                 is-key-set : false >
+    < HANDLE : OperationHandle | oid : CI , state : HS >
     =
     < TK : TaKernel | app-status : panic , api-state : finished >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
+  if not hasKeySet(HS) and not hasExtract(HS)
   .
 
 
-  eq
+  ceq
     resetOperation(HANDLE, TK)
     < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE) >
-    < HANDLE : OperationHandle | oid : CI , is-key-set : true >
+    < HANDLE : OperationHandle | oid : CI , state : HS >
     =
     < CI : CryptoOperation | accumulated-data : nil , initialization-vector : nil ,
                             operation-state : TEE-OPERATION-STATE-INITIAL >
     < HANDLE : OperationHandle | state : keySet,
                                  is-initialized : false >
     finishResetOperation(TK)
+  if hasKeySet(HS) and not hasExtract(HS)
   .
 
   eq
@@ -2737,13 +2744,14 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
   if not ivRequired(ALGO) and ivLengthValid(ALGO , IV)
   .
 
-  eq
+  ceq
     initTopOperationHandle(HANDLE , TK)
-    < HANDLE : OperationHandle | is-key-set : true , is-initialized : false >
+    < HANDLE : OperationHandle | state : HS >
     =
     < HANDLE : OperationHandle | state : init keySet,
                                  is-initialized : true >
     finishInitOperation(TK)
+  if hasKeySet(HS) and not hasInit(HS)
   .
 
   eq

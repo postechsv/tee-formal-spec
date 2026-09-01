@@ -68,7 +68,6 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 --- then all the object handles SHALL have been opened with the flags TEE_DATA_FLAG_SHARE_READ.
 
   op accessRightCheckingAux : Set{DataFlag} Set{DataFlag} -> Bool .
-  op accessRightChecking : Set{DataFlag} Configuration -> Bool .
   eq accessRightCheckingAux(DATAFLAGS , DATAFLAGS2) =
        not (TEE-DATA-FLAG-ACCESS-WRITE-META in DATAFLAGS)
     and not (TEE-DATA-FLAG-ACCESS-WRITE-META in DATAFLAGS2)
@@ -83,11 +82,6 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
          or ((TEE-DATA-FLAG-SHARE-WRITE in DATAFLAGS)
              and (TEE-DATA-FLAG-SHARE-WRITE in DATAFLAGS2))) .
 
-  eq accessRightChecking(DATAFLAGS , none) = true .
-  eq accessRightChecking(DATAFLAGS ,
-       (< H : ObjectHandle | data-access-flag-set : DATAFLAGS2 > HS)) =
-       accessRightCheckingAux(DATAFLAGS , DATAFLAGS2)
-       and accessRightChecking(DATAFLAGS , HS) .
 
 ------------------------------------------------------------
 --- 'TEE_OpenPersistentObject'
@@ -142,15 +136,6 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     openPersistentHandle(FILE , DATAFLAGS , N , TK)
   .
 
-  crl [open-persistent-subroutine] :
-    openPersistentHandle(FILE , DATAFLAGS , N , TK)
-    < OI : PersistentObject | handle-id-set : noHandleIds, handle-set : HS , file-id : FILE >
-    =>
-    < OI : PersistentObject | handle-set : (freshPersistentHandle(N , TK , DATAFLAGS , OI) HS) >
-    finishOpenPersistentHandle(handleId(N , TK) , TK)
-  if accessRightChecking(DATAFLAGS , HS)
-  .
-
   rl [open-persistent-top-level-check] :
     openPersistentHandle(FILE , DATAFLAGS , N , TK)
     < OI : PersistentObject | handle-id-set : HIDS, handle-set : none, file-id : FILE >
@@ -201,15 +186,6 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
   .
 
 --- The following two rules return TEE_ERROR_ACCESS_CONFLICT if an access right conflict was detected.
-
-  crl [open-persistent-subroutine] :
-    openPersistentHandle(FILE , DATAFLAGS , N , TK)
-    < OI : PersistentObject | handle-id-set : noHandleIds, handle-set : HS , file-id : FILE >
-    =>
-    < OI : PersistentObject | >
-    failOpenPersistentHandle(TK)
-  if not accessRightChecking(DATAFLAGS , HS)
-  .
 
   rl [open-persistent-fail] : 
     failOpenPersistentHandle(TK)
@@ -949,15 +925,6 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
     openPersistentHandle(FILE , DATAFLAGS , N , TK)
   .
 
-  ceq
-    openPersistentHandle(FILE , DATAFLAGS , N , TK)
-    < OI : PersistentObject | handle-id-set : noHandleIds, handle-set : HS , file-id : FILE >
-    =
-    < OI : PersistentObject | handle-set : (freshPersistentHandle(N , TK , DATAFLAGS , OI) HS) >
-    finishOpenPersistentHandle(handleId(N , TK) , TK)
-  if accessRightChecking(DATAFLAGS , HS)
-  .
-
   eq
     openPersistentHandle(FILE , DATAFLAGS , N , TK)
     < OI : PersistentObject | handle-id-set : HIDS, handle-set : none, file-id : FILE >
@@ -997,15 +964,6 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
   eq
     checkPersistentHandles(DATAFLAGS, N, TK, OI, noHandleIds, false)
     = failOpenPersistentHandle(TK)
-  .
-
-  ceq
-    openPersistentHandle(FILE , DATAFLAGS , N , TK)
-    < OI : PersistentObject | handle-id-set : noHandleIds, handle-set : HS , file-id : FILE >
-    =
-    < OI : PersistentObject | >
-    failOpenPersistentHandle(TK)
-  if not accessRightChecking(DATAFLAGS , HS)
   .
 
   eq

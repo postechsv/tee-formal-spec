@@ -433,6 +433,17 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
     retAttributeTr(ATTRS , OBJTYPE , OBJUSAGES , TK)
   .
 
+  --- GP programmer errors: the source must be initialized.
+  rl [copy-object-attributes-uninitialized-source-panic] :
+    reqAttribute(HANDLE , TK)
+    < TK : TaKernel | app-status : normal , api-state : waitReqAttribute ,
+                      current-api : CopyObjectAttributes1 >
+    < HANDLE : ObjectHandle | is-initialized : false >
+    =>
+    < TK : TaKernel | app-status : panic , api-state : finished >
+    < HANDLE : ObjectHandle | >
+  .
+
   rl [copy-object-attributes-subroutine]:
     retAttributeTr(ATTRS , OBJTYPE , OBJUSAGES , TK)
     < TK : TaKernel | api-state : waitReqAttribute , 
@@ -456,6 +467,34 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
     < HANDLE : ObjectHandle | is-initialized : true >
     finishCopyAttribute(TK)
   if typeCompatible(OBJTYPE', OBJTYPE)
+  .
+
+  --- GP programmer errors: the destination must be uninitialized and its
+  --- type must be compatible with the source object type.
+  rl [copy-object-attributes-initialized-destination-panic] :
+    reqCopyAttribute(HANDLE , ATTRS , OBJTYPE , OBJUSAGES , TK)
+    < TK : TaKernel | app-status : normal , api-state : waitCopyAttribute ,
+                      current-api : CopyObjectAttributes1 >
+    < OI : TransientObject | handle-id-set : handleIdSet(HANDLE) >
+    < HANDLE : ObjectHandle | oid : OI , is-initialized : true >
+    =>
+    < TK : TaKernel | app-status : panic , api-state : finished >
+    < OI : TransientObject | >
+    < HANDLE : ObjectHandle | >
+  .
+
+  crl [copy-object-attributes-incompatible-type-panic] :
+    reqCopyAttribute(HANDLE , ATTRS , OBJTYPE , OBJUSAGES , TK)
+    < TK : TaKernel | app-status : normal , api-state : waitCopyAttribute ,
+                      current-api : CopyObjectAttributes1 >
+    < OI : TransientObject | handle-id-set : handleIdSet(HANDLE) ,
+                             object-type : OBJTYPE' >
+    < HANDLE : ObjectHandle | oid : OI , is-initialized : false >
+    =>
+    < TK : TaKernel | app-status : panic , api-state : finished >
+    < OI : TransientObject | >
+    < HANDLE : ObjectHandle | >
+  if not typeCompatible(OBJTYPE', OBJTYPE)
   .
 
   rl [copy-object-attributes-success]:
@@ -759,6 +798,16 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
   .
 
   eq
+    reqAttribute(HANDLE , TK)
+    < TK : TaKernel | app-status : normal , api-state : waitReqAttribute ,
+                      current-api : CopyObjectAttributes1 >
+    < HANDLE : ObjectHandle | is-initialized : false >
+    =
+    < TK : TaKernel | app-status : panic , api-state : finished >
+    < HANDLE : ObjectHandle | >
+  .
+
+  eq
     retAttributeTr(ATTRS , OBJTYPE , OBJUSAGES , TK)
     < TK : TaKernel | api-state : waitReqAttribute , 
                       current-api : CopyObjectAttributes1 ,
@@ -781,6 +830,32 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
     < HANDLE : ObjectHandle | is-initialized : true >
     finishCopyAttribute(TK)
   if typeCompatible(OBJTYPE', OBJTYPE)
+  .
+
+  eq
+    reqCopyAttribute(HANDLE , ATTRS , OBJTYPE , OBJUSAGES , TK)
+    < TK : TaKernel | app-status : normal , api-state : waitCopyAttribute ,
+                      current-api : CopyObjectAttributes1 >
+    < OI : TransientObject | handle-id-set : handleIdSet(HANDLE) >
+    < HANDLE : ObjectHandle | oid : OI , is-initialized : true >
+    =
+    < TK : TaKernel | app-status : panic , api-state : finished >
+    < OI : TransientObject | >
+    < HANDLE : ObjectHandle | >
+  .
+
+  ceq
+    reqCopyAttribute(HANDLE , ATTRS , OBJTYPE , OBJUSAGES , TK)
+    < TK : TaKernel | app-status : normal , api-state : waitCopyAttribute ,
+                      current-api : CopyObjectAttributes1 >
+    < OI : TransientObject | handle-id-set : handleIdSet(HANDLE) ,
+                             object-type : OBJTYPE' >
+    < HANDLE : ObjectHandle | oid : OI , is-initialized : false >
+    =
+    < TK : TaKernel | app-status : panic , api-state : finished >
+    < OI : TransientObject | >
+    < HANDLE : ObjectHandle | >
+  if not typeCompatible(OBJTYPE', OBJTYPE)
   .
 
   eq

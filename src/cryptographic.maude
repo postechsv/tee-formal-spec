@@ -678,6 +678,22 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     finishResetOperation(TK)
   .
 
+  --- ResetOperation requires key material to have been configured.  Reaching
+  --- the reset subroutine without either keyed or extracting state is a GP
+  --- programmer error.
+  rl [reset-operation-key-not-set-panic] :
+    resetOperation(HANDLE, TK)
+    < TK : TaKernel | app-status : normal , api-state : waitResetOperation ,
+                      current-api : ResetOperation >
+    < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE) >
+    < HANDLE : OperationHandle | oid : CI , is-extracting : false ,
+                                 is-key-set : false >
+    =>
+    < TK : TaKernel | app-status : panic , api-state : finished >
+    < CI : CryptoOperation | >
+    < HANDLE : OperationHandle | >
+  .
+
 --- Version In Paper
   --- rl [reset-operation-success] : 
   ---   (msg finishResetOp from CI to TK) 
@@ -2525,6 +2541,19 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
                             operation-state : TEE-OPERATION-STATE-INITIAL >
     < HANDLE : OperationHandle | is-extracting : false >
     finishResetOperation(TK)
+  .
+
+  eq
+    resetOperation(HANDLE, TK)
+    < TK : TaKernel | app-status : normal , api-state : waitResetOperation ,
+                      current-api : ResetOperation >
+    < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE) >
+    < HANDLE : OperationHandle | oid : CI , is-extracting : false ,
+                                 is-key-set : false >
+    =
+    < TK : TaKernel | app-status : panic , api-state : finished >
+    < CI : CryptoOperation | >
+    < HANDLE : OperationHandle | >
   .
 
 

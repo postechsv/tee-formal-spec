@@ -1,0 +1,230 @@
+--- ============================================================
+--- Blackbox tests for transient object API rules
+--- Modules: transient.maude
+--- ============================================================
+
+load ./src/main
+load ./tests/api/aux
+
+set show command off .
+set print attribute off .
+set print color off .
+
+--- ============================================================
+--- AllocateTransientObject
+--- ============================================================
+
+--- [BB-T-AT-1] allocate-transient-success
+search [1] in TEST-AUX :
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : AllocateTransientObject, api-state : started,
+                    current-params : (type(TEE-TYPE-AES), size(128 Bits)),
+                    id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(AllocateTransientObject , TEE-SUCCESS,
+                                           handle(handleId(1, ta))) > .
+
+--- [BB-T-AT-2] allocate-transient-out-of-memory-err
+search [1] in TEST-AUX :
+  < ta : TaKernel | app-status : outOfMemory, api-call : noCall, api-return : noReturn,
+                    current-api : AllocateTransientObject, api-state : started,
+                    current-params : empty, id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(AllocateTransientObject , TEE-ERROR-OUT-OF-MEMORY) > .
+
+--- [BB-T-AT-3] allocate-transient-not-supported-err
+search [1] in TEST-AUX :
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : AllocateTransientObject, api-state : started,
+                    current-params : (type(TEE-TYPE-AES), size(64 Bits)),
+                    id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(AllocateTransientObject , TEE-ERROR-NOT-SUPPORTED) > .
+
+--- ============================================================
+--- FreeTransientObject
+--- ============================================================
+
+--- [BB-T-FT-1] free-transient-not-null-success
+search [1] in TEST-AUX :
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : FreeTransientObject, api-state : started,
+                    current-params : handle(handleId(1, ta)),
+                    id-counter : 0, trust-app-id : TESTTA >
+  < handleId(1, ta) : ObjectHandle | oid : obj,
+                                         is-initialized : false,
+                                         data-access-flag-set : empty,
+                                         data-position : noPos >
+  < obj : TransientObject | handle-id-set : handleIdSet(handleId(1, ta)),
+                            object-type : TEE-TYPE-AES,
+                            max-object-size : 128 Bits,
+                            attribute-set : empty,
+                            object-usage-set : empty,
+                            trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(FreeTransientObject) > .
+
+--- [BB-T-FT-2] free-transient-null-success
+search [1] in TEST-AUX :
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : FreeTransientObject, api-state : started,
+                    current-params : handle(TEE-HANDLE-NULL),
+                    id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(FreeTransientObject , handle(TEE-HANDLE-NULL)) > .
+
+--- ============================================================
+--- ResetTransientObject
+--- ============================================================
+
+--- [BB-T-RT-1] reset-transient-not-null-success
+search [1] in TEST-AUX :
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : ResetTransientObject, api-state : started,
+                    current-params : handle(handleId(2, ta)),
+                    id-counter : 0, trust-app-id : TESTTA >
+  < handleId(2, ta) : ObjectHandle | oid : obj,
+                                         is-initialized : true,
+                                         data-access-flag-set : empty,
+                                         data-position : noPos >
+  < obj : TransientObject | handle-id-set : handleIdSet(handleId(2, ta)),
+                            initialized : true,
+                            object-type : TEE-TYPE-AES,
+                            max-object-size : 128 Bits,
+                            attribute-set : teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal),
+                            object-usage-set : TEE-USAGE-ENCRYPT,
+                            trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(ResetTransientObject) > .
+
+--- [BB-T-RT-2] reset-transient-null-success
+search [1] in TEST-AUX :
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : ResetTransientObject, api-state : started,
+                    current-params : handle(TEE-HANDLE-NULL),
+                    id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(ResetTransientObject) > .
+
+--- ============================================================
+--- PopulateTransientObject
+--- ============================================================
+
+--- [BB-T-PT-1] populate-transient-success
+search [1] in TEST-AUX :
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : PopulateTransientObject, api-state : started,
+                    current-params : (handle(handleId(3, ta)),
+                                      attrs(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal))),
+                    id-counter : 0, trust-app-id : TESTTA >
+  < handleId(3, ta) : ObjectHandle | oid : obj,
+                                         is-initialized : false,
+                                         data-access-flag-set : empty,
+                                         data-position : noPos >
+  < obj : TransientObject | handle-id-set : handleIdSet(handleId(3, ta)),
+                            initialized : false,
+                            object-type : TEE-TYPE-AES,
+                            max-object-size : 128 Bits,
+                            attribute-set : empty,
+                            object-usage-set : empty,
+                            trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(PopulateTransientObject , TEE-SUCCESS) > .
+
+--- ============================================================
+--- InitRefAttribute / InitValueAttribute
+--- ============================================================
+
+--- [BB-T-IR-1] init-ref-attribute
+search [1] in TEST-AUX :
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : InitRefAttribute, api-state : started,
+                    current-params : constId(TEE-ATTR-SECRET-VALUE), constVal(randomAttrVal),
+                    id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(InitRefAttribute,
+                                           attrs(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal))) > .
+
+--- [BB-T-IV-1] init-value-attribute
+search [1] in TEST-AUX :
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : InitValueAttribute, api-state : started,
+                    current-params : constId(TEE-ATTR-DH-X-BITS), constVal(attrValue(TEE-ATTR-DH-X-BITS)),
+                    id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(InitValueAttribute,
+                                           attrs(teeAttribute(TEE-ATTR-DH-X-BITS, attrValue(TEE-ATTR-DH-X-BITS)))) > .
+
+--- ============================================================
+--- CopyObjectAttributes1 (transient source)
+--- ============================================================
+
+--- [BB-T-CO-1] copy-object-attributes-success (transient)
+search [1] in TEST-AUX :
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : CopyObjectAttributes1, api-state : started,
+                    current-params : (srcHandle(handleId(5, ta)),
+                                      trgHandle(handleId(4, ta))),
+                    id-counter : 0, trust-app-id : TESTTA >
+  < handleId(5, ta) : ObjectHandle | oid : src,
+                                         is-initialized : true,
+                                         data-access-flag-set : empty,
+                                         data-position : noPos >
+  < src : TransientObject | handle-id-set : handleIdSet(handleId(5, ta)),
+                            initialized : true,
+                            object-type : TEE-TYPE-AES,
+                            max-object-size : 128 Bits,
+                            attribute-set : teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal),
+                            object-usage-set : TEE-USAGE-ENCRYPT,
+                            trust-app-id : TESTTA >
+  < handleId(4, ta) : ObjectHandle | oid : dst,
+                                         is-initialized : false,
+                                         data-access-flag-set : empty,
+                                         data-position : noPos >
+  < dst : TransientObject | handle-id-set : handleIdSet(handleId(4, ta)),
+                            initialized : false,
+                            object-type : TEE-TYPE-AES,
+                            max-object-size : 128 Bits,
+                            attribute-set : empty,
+                            object-usage-set : empty,
+                            trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(CopyObjectAttributes1 , TEE-SUCCESS) > .
+
+--- ============================================================
+--- GenerateKey
+--- ============================================================
+
+--- [BB-T-GK-1] generate-key-success
+search [1] in TEST-AUX :
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : GenerateKey, api-state : started,
+                    current-params : (handle(handleId(6, ta)),
+                                      size(128 Bits),
+                                      attrs(empty)),
+                    id-counter : 0, trust-app-id : TESTTA >
+  < handleId(6, ta) : ObjectHandle | oid : obj,
+                                         is-initialized : false,
+                                         data-access-flag-set : empty,
+                                         data-position : noPos >
+  < obj : TransientObject | handle-id-set : handleIdSet(handleId(6, ta)),
+                            initialized : false,
+                            object-type : TEE-TYPE-AES,
+                            max-object-size : 128 Bits,
+                            attribute-set : empty,
+                            object-usage-set : empty,
+                            trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(GenerateKey , TEE-SUCCESS) > .

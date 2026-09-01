@@ -1,0 +1,365 @@
+--- ============================================================
+--- Blackbox tests for cryptographic operation API rules
+--- Modules: cryptographic.maude
+--- ============================================================
+
+load ./src/main
+load ./tests/api/aux
+
+set show command off .
+set print attribute off .
+set print color off .
+
+--- ============================================================
+--- AllocateOperation
+--- ============================================================
+
+--- [BB-C-AL-1] allocate-operation-success
+search [1] in TEST-AUX :
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : AllocateOperation, api-state : started,
+                    current-params : (alg(TEE-ALG-AES-CTR), mode(TEE-MODE-ENCRYPT), size(128 Bits)),
+                    id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(AllocateOperation , TEE-SUCCESS,
+                                           handle(handleId(1, ta))) > .
+
+--- [BB-C-AL-2] allocate-operation-not-supported
+search [1] in TEST-AUX :
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : AllocateOperation, api-state : started,
+                    current-params : (alg(TEE-ALG-AES-CTR), mode(TEE-MODE-SIGN), size(128 Bits)),
+                    id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(AllocateOperation , TEE-ERROR-NOT-SUPPORTED) > .
+
+--- [BB-C-AL-3] allocate-operation-out-of-memory
+search [1] in TEST-AUX :
+  < ta : TaKernel | app-status : outOfMemory, api-call : noCall, api-return : noReturn,
+                    current-api : AllocateOperation, api-state : started,
+                    current-params : empty, id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(AllocateOperation , TEE-ERROR-OUT-OF-MEMORY) > .
+
+--- ============================================================
+--- FreeOperation
+--- ============================================================
+
+--- [BB-C-FR-1] free-operation-success
+search [1] in TEST-AUX :
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : FreeOperation, api-state : started,
+                    current-params : handle(handleId(1, ta)),
+                    id-counter : 0, trust-app-id : TESTTA >
+  < handleId(1, ta) : OperationHandle | oid : co,
+                                         is-initialized : false, is-key-set : false,
+                                         is-extracting : false >
+  < co : CryptoOperation | handle-id-set : handleIdSet(handleId(1, ta)),
+                            crypto-keys : nil, max-key-size : 128 Bits,
+                            accumulated-data : nil, algorithm : TEE-ALG-AES-CTR,
+                            initialization-vector : nil,
+                            operation-mode : TEE-MODE-ENCRYPT,
+                            operation-class : TEE-OPERATION-CIPHER,
+                            operation-state : TEE-OPERATION-STATE-INITIAL,
+                            trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(FreeOperation) > .
+
+--- [BB-C-FR-2] free-operation-null
+search [1] in TEST-AUX :
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : FreeOperation, api-state : started,
+                    current-params : handle(TEE-HANDLE-NULL),
+                    id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(FreeOperation , handle(TEE-HANDLE-NULL)) > .
+
+--- ============================================================
+--- GetOperationInfo
+--- ============================================================
+
+--- [BB-C-GI-1] get-operation-info-success
+search [1] in TEST-AUX :
+  retOperationAttr(opObjectAttr(TEE-ALG-AES-CTR, TEE-MODE-ENCRYPT,
+                                TEE-OPERATION-STATE-ACTIVE, empty),
+                   opHandleAttr(true, true, false), ta)
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : GetOperationInfo, api-state : waitOperationAttr,
+                    current-params : empty, id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(GetOperationInfo ,
+                                           teeOpInfo(opObjectAttr(TEE-ALG-AES-CTR,
+                                                                  TEE-MODE-ENCRYPT,
+                                                                  TEE-OPERATION-STATE-ACTIVE,
+                                                                  empty),
+                                                     opHandleAttr(true, true, false))) > .
+
+--- ============================================================
+--- ResetOperation
+--- ============================================================
+
+--- [BB-C-RS-1] reset-operation-success
+search [1] in TEST-AUX :
+  finishResetOperation(ta)
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : ResetOperation, api-state : waitResetOperation,
+                    current-params : empty, id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(ResetOperation) > .
+
+--- ============================================================
+--- SetOperationKey
+--- ============================================================
+
+--- [BB-C-SK-1] set-operation-key-success
+search [1] in TEST-AUX :
+  finishSetOperationKey(ta)
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : SetOperationKey, api-state : waitSetOperationKey,
+                    current-params : empty, id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(SetOperationKey , TEE-SUCCESS) > .
+
+--- [BB-C-SK-2] set-operation-key-storage-error
+search [1] in TEST-AUX :
+  retTrustedOS(storageStatus(storageCorrupt) , ta)
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : SetOperationKey, api-state : waitStorageCheck,
+                    current-params : empty, id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(SetOperationKey , TEE-ERROR-CORRUPT-OBJECT) > .
+
+--- ============================================================
+--- CopyOperation
+--- ============================================================
+
+--- [BB-C-CP-1] copy-operation-success
+search [1] in TEST-AUX :
+  finishCopyOperation(ta)
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : CopyOperation, api-state : waitReqCopyOperation,
+                    current-params : empty, id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(CopyOperation) > .
+
+--- ============================================================
+--- Digest Update / DoFinal / Extract
+--- ============================================================
+
+--- [BB-C-DU-1] digest-update-success
+search [1] in TEST-AUX :
+  finishDigestUpdate(ta)
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : DigestUpdate, api-state : waitDigestUpdate,
+                    current-params : empty, id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(DigestUpdate) > .
+
+--- [BB-C-DF-1] digest-do-final-success
+search [1] in TEST-AUX :
+  finishDigestDoFinal(randomData, ta)
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : DigestDoFinal, api-state : waitDigestDoFinal,
+                    current-params : empty, id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(DigestDoFinal , TEE-SUCCESS , data(randomData)) > .
+
+--- [BB-C-DX-1] digest-extract-success
+search [1] in TEST-AUX :
+  finishDigestExtract(nil, ta)
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : DigestExtract, api-state : waitDigestExtract,
+                    current-params : empty, id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(DigestExtract , TEE-SUCCESS , data(nil)) > .
+
+--- ============================================================
+--- CipherInit / CipherUpdate / CipherDoFinal
+--- ============================================================
+
+--- [BB-C-CI-1] cipher-init-success
+search [1] in TEST-AUX :
+  finishInitOperation(ta)
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : CipherInit, api-state : waitInitOperation,
+                    current-params : empty, id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(CipherInit) > .
+
+--- [BB-C-CU-1] cipher-update-success
+search [1] in TEST-AUX :
+  finishCipherUpdate(randomData, ta)
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : CipherUpdate, api-state : waitCipherUpdate,
+                    current-params : empty, id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(CipherUpdate , TEE-SUCCESS , data(randomData)) > .
+
+--- [BB-C-CU-2] cipher-update-fail
+search [1] in TEST-AUX :
+  failCipherUpdate(ta)
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : CipherUpdate, api-state : waitCipherUpdate,
+                    current-params : empty, id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished, app-status : panic > .
+
+--- [BB-C-CF-1] cipher-do-final-success
+search [1] in TEST-AUX :
+  finishCipherDoFinal(randomData, ta)
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : CipherDoFinal, api-state : waitCipherDoFinal,
+                    current-params : empty, id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(CipherDoFinal , TEE-SUCCESS , data(randomData)) > .
+
+--- ============================================================
+--- MACInit / MACUpdate / MACComputeFinal / MACCompareFinal
+--- ============================================================
+
+--- [BB-C-MI-1] mac-init-success
+search [1] in TEST-AUX :
+  finishInitOperation(ta)
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : MACInit, api-state : waitInitOperation,
+                    current-params : empty, id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(MACInit) > .
+
+--- [BB-C-MU-1] mac-update-success
+search [1] in TEST-AUX :
+  finishMacUpdate(ta)
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : MACUpdate, api-state : waitMacUpdate,
+                    current-params : empty, id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(MACUpdate) > .
+
+--- [BB-C-MF-1] mac-compute-final-success
+search [1] in TEST-AUX :
+  finishMacComputeFinal(randomData, ta)
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : MACComputeFinal, api-state : waitMacComputeFinal,
+                    current-params : empty, id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(MACComputeFinal , TEE-SUCCESS , data(randomData)) > .
+
+--- [BB-C-MC-1] mac-compare-final-success
+search [1] in TEST-AUX :
+  finishMacComputeFinal(randomData, ta)
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : MACCompareFinal, api-state : waitMacComputeFinal,
+                    current-params : mac(randomData), id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(MACCompareFinal , TEE-SUCCESS) > .
+
+--- ============================================================
+--- AEInit / AEUpdateAAD / AEUpdate
+--- ============================================================
+
+--- [BB-C-AI-1] ae-init-success
+search [1] in TEST-AUX :
+  finishInitOperation(ta)
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : AEInit, api-state : waitInitOperation,
+                    current-params : empty, id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(AEInit , TEE-SUCCESS) > .
+
+--- [BB-C-AA-1] ae-update-aad-success
+search [1] in TEST-AUX :
+  finishAEUpdateAAD(ta)
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : AEUpdateAAD, api-state : waitAEUpdateAAD,
+                    current-params : empty, id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(AEUpdateAAD) > .
+
+--- [BB-C-AU-1] ae-update-success
+search [1] in TEST-AUX :
+  finishAEUpdate(randomData, ta)
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : AEUpdate, api-state : waitAEUpdate,
+                    current-params : empty, id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(AEUpdate , TEE-SUCCESS , data(randomData)) > .
+
+--- ============================================================
+--- Asymmetric Encrypt/Decrypt/Sign/Verify
+--- ============================================================
+
+--- [BB-C-AE-1] asymmetric-encrypt-success
+search [1] in TEST-AUX :
+  finishAsymEncrypt(randomData, ta)
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : AsymmetricEncrypt, api-state : waitAsymEncrypt,
+                    current-params : empty, id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(AsymmetricEncrypt , TEE-SUCCESS , data(randomData)) > .
+
+--- [BB-C-AD-1] asymmetric-decrypt-success
+search [1] in TEST-AUX :
+  finishAsymDecrypt(randomData, ta)
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : AsymmetricDecrypt, api-state : waitAsymDecrypt,
+                    current-params : empty, id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(AsymmetricDecrypt , TEE-SUCCESS , data(randomData)) > .
+
+--- [BB-C-AS-1] asymmetric-sign-digest-success
+search [1] in TEST-AUX :
+  finishAsymSignDigest(randomData, ta)
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : AsymmetricSignDigest, api-state : waitAsymSignDigest,
+                    current-params : empty, id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(AsymmetricSignDigest , TEE-SUCCESS , data(randomData)) > .
+
+--- [BB-C-AV-1] asymmetric-verify-digest-success
+search [1] in TEST-AUX :
+  finishAsymVerifyDigest(randomData, ta)
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : AsymmetricVerifyDigest, api-state : waitAsymVerifDigest,
+                    current-params : digest(randomData), id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(AsymmetricVerifyDigest , TEE-SUCCESS) > .
+
+--- ============================================================
+--- GenerateRandom
+--- ============================================================
+
+--- [BB-C-GR-1] generate-random-success
+search [1] in TEST-AUX :
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : GenerateRandom, api-state : started,
+                    current-params : empty, id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(GenerateRandom , data(randomData)) > .

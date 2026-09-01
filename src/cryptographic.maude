@@ -727,13 +727,30 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   msg finishSetOperationKey : TaInstId -> Msg .
   msg failSetOperationKey : TaInstId -> Msg .
 
-  rl [set-operation-key-subroutine] :
+  crl [set-operation-key-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : SetOperationKey ,
                       current-params : keyHandle(KEY) , PARAMS >
     =>
     < TK : TaKernel | api-state : waitReqAttribute >
     reqAttribute(KEY , TK)
+  if not nullHandle(KEY)
+  .
+
+  rl [set-operation-key-clear] :
+    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : SetOperationKey ,
+                      current-params : handle(HANDLE) , keyHandle(TEE-HANDLE-NULL) , PARAMS >
+    < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE) >
+    < HANDLE : OperationHandle | oid : CI , is-initialized : false >
+    =>
+    < TK : TaKernel | api-state : finished ,
+                      api-return : apiReturn(SetOperationKey , TEE-SUCCESS) >
+    < CI : CryptoOperation | crypto-keys : nil ,
+                             operation-state : TEE-OPERATION-STATE-INITIAL >
+    < HANDLE : OperationHandle | state : noHandleState,
+                                 key-material-set : false , is-key-set : false ,
+                                 is-extracting : false >
   .
 
   rl [set-operation-key-subroutine-1] : 
@@ -2606,13 +2623,30 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
 --- TEE_SetOperationKey
 ------------------------------------------------------------
 
-  eq
+  ceq
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : SetOperationKey ,
                       current-params : keyHandle(KEY) , PARAMS >
     =
     < TK : TaKernel | api-state : waitReqAttribute >
     reqAttribute(KEY , TK)
+  if not nullHandle(KEY)
+  .
+
+  eq
+    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : SetOperationKey ,
+                      current-params : handle(HANDLE) , keyHandle(TEE-HANDLE-NULL) , PARAMS >
+    < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE) >
+    < HANDLE : OperationHandle | oid : CI , is-initialized : false >
+    =
+    < TK : TaKernel | api-state : finished ,
+                      api-return : apiReturn(SetOperationKey , TEE-SUCCESS) >
+    < CI : CryptoOperation | crypto-keys : nil ,
+                             operation-state : TEE-OPERATION-STATE-INITIAL >
+    < HANDLE : OperationHandle | state : noHandleState,
+                                 key-material-set : false , is-key-set : false ,
+                                 is-extracting : false >
   .
 
   eq

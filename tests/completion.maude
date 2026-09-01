@@ -869,6 +869,38 @@ search [1] in COMPLETION-TEST :
   < testTa : TaKernel | app-status : panic, api-state : finished,
                         current-api : ResetOperation > C .
 
+--- GP 6.2.6: TEE_HANDLE_NULL clears copied key material.
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | app-status : normal, api-call : noCall,
+                        api-return : noReturn, api-state : started,
+                        current-api : SetOperationKey,
+                        current-params : (handle(handleId(1, testTa)),
+                                          keyHandle(TEE-HANDLE-NULL)) >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)),
+      crypto-keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)),
+      operation-state : TEE-OPERATION-STATE-ACTIVE >
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      state : keySet, key-material-set : true, is-key-set : true,
+      is-extracting : false, is-initialized : false >
+=>1
+  < testTa : TaKernel | app-status : normal, api-state : finished,
+                        current-api : SetOperationKey,
+                        CLEAR-TK-ATTS:AttributeSet > C .
+
+--- GP 6.2.6: an initialized operation rejects key replacement or clearing.
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | app-status : normal, api-call : noCall,
+                        api-return : noReturn, api-state : started,
+                        current-api : SetOperationKey,
+                        current-params : (handle(handleId(1, testTa)),
+                                          keyHandle(TEE-HANDLE-NULL)) >
+  < handleId(1, testTa) : OperationHandle | is-initialized : true >
+=>1
+  < testTa : TaKernel | app-status : panic, api-state : finished,
+                        current-api : SetOperationKey,
+                        SETKEY-PANIC-ATTS:AttributeSet > C .
+
 --- GP 5.6.4: missing or unsupported attributes are programmer errors.
 search [1] in COMPLETION-TEST :
   reqPopulateTransient(handleId(1, testTa), empty, testTa)

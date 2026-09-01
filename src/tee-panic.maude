@@ -35,6 +35,18 @@ omod GENERAL-PANIC is
     < CI : CryptoOperation | >
   if OC =/= OC' .
 
+  --- GP 6.2.6 forbids replacing or clearing a key while the operation is
+  --- initialized.  This also applies when key is TEE_HANDLE_NULL.
+  rl [set-operation-key-initialized-panic] :
+    < TK : TaKernel | app-status : normal, api-state : started,
+                      current-api : SetOperationKey,
+                      current-params : handle(HANDLE), PARAMS >
+    < HANDLE : OperationHandle | is-initialized : true >
+    =>
+    < TK : TaKernel | app-status : panic, api-state : finished >
+    < HANDLE : OperationHandle | >
+  .
+
   --- APIs for which TEE_HANDLE_NULL is a programmer error.  Free-style APIs
   --- explicitly accept NULL and are intentionally excluded.
   op nullHandlePanics : TeeApi -> Bool .

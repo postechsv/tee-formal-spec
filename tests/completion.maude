@@ -866,6 +866,74 @@ search [1] in COMPLETION-TEST :
   < testTa : TaKernel | app-status : panic, api-state : finished,
                         current-api : ResetOperation > C .
 
+--- GP 5.6.4: missing or unsupported attributes are programmer errors.
+search [1] in COMPLETION-TEST :
+  reqPopulateTransient(handleId(1, testTa), empty, testTa)
+  < testTa : TaKernel | app-status : normal, api-state : waitPopulateTransient,
+                        current-api : PopulateTransientObject >
+  < taOid(1, testTa) : TransientObject |
+      handle-id-set : handleIdSet(handleId(1, testTa)), object-type : TEE-TYPE-AES >
+  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa),
+      is-initialized : false >
+=>1
+  < testTa : TaKernel | app-status : panic, api-state : finished,
+                        current-api : PopulateTransientObject > C .
+
+--- GP 5.6.4: the destination object must be uninitialized.
+search [1] in COMPLETION-TEST :
+  reqPopulateTransient(handleId(1, testTa),
+    teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal), testTa)
+  < testTa : TaKernel | app-status : normal, api-state : waitPopulateTransient,
+                        current-api : PopulateTransientObject >
+  < taOid(1, testTa) : TransientObject |
+      handle-id-set : handleIdSet(handleId(1, testTa)), object-type : TEE-TYPE-AES >
+  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa),
+      is-initialized : true >
+=>1
+  < testTa : TaKernel | app-status : panic, api-state : finished,
+                        current-api : PopulateTransientObject > C .
+
+--- GP 5.6.7: an oversized key or missing mandatory generation parameters panic.
+search [1] in COMPLETION-TEST :
+  reqGenerateKey(handleId(1, testTa), 256 Bits, empty, testTa)
+  < testTa : TaKernel | app-status : normal, api-state : waitReqGenerateKey,
+                        current-api : GenerateKey >
+  < taOid(1, testTa) : TransientObject |
+      handle-id-set : handleIdSet(handleId(1, testTa)), object-type : TEE-TYPE-AES,
+      max-object-size : 128 Bits >
+  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa),
+      is-initialized : false >
+=>1
+  < testTa : TaKernel | app-status : panic, api-state : finished,
+                        current-api : GenerateKey > C .
+
+search [1] in COMPLETION-TEST :
+  reqGenerateKey(handleId(1, testTa), 128 Bits, empty, testTa)
+  < testTa : TaKernel | app-status : normal, api-state : waitReqGenerateKey,
+                        current-api : GenerateKey >
+  < taOid(1, testTa) : TransientObject |
+      handle-id-set : handleIdSet(handleId(1, testTa)), object-type : TEE-TYPE-DH-KEYPAIR,
+      max-object-size : 256 Bits >
+  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa),
+      is-initialized : false >
+=>1
+  < testTa : TaKernel | app-status : panic, api-state : finished,
+                        current-api : GenerateKey > C .
+
+--- GP 5.6.7: key generation requires an uninitialized transient object.
+search [1] in COMPLETION-TEST :
+  reqGenerateKey(handleId(1, testTa), 128 Bits, empty, testTa)
+  < testTa : TaKernel | app-status : normal, api-state : waitReqGenerateKey,
+                        current-api : GenerateKey >
+  < taOid(1, testTa) : TransientObject |
+      handle-id-set : handleIdSet(handleId(1, testTa)), object-type : TEE-TYPE-AES,
+      max-object-size : 128 Bits >
+  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa),
+      is-initialized : true >
+=>1
+  < testTa : TaKernel | app-status : panic, api-state : finished,
+                        current-api : GenerateKey > C .
+
 --- The invisible counterparts preserve the same observable panic results.
 search [1] in COMPLETION-INVISIBLE-TEST :
   reqAttribute(handleId(1, testTa), testTa)

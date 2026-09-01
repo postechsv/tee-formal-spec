@@ -353,7 +353,7 @@ mod PERSISTENT-OBJECT-TEE-CALL is
 ------------------------------------------------------------
 
   eq makeCall(OpenPersistentObject , (# STORID , # FILE , # DATAFLAGS)) 
-   = apiCall(OpenPersistentObject , (fileId(FILE) , flags(DATAFLAGS))) . 
+   = apiCall(OpenPersistentObject , (storageId(STORID) , fileId(FILE) , flags(DATAFLAGS))) .
   eq makeReturnStmt(OpenPersistentObject , RET , handle(HANDLE) , E) = 
     auto 'ret := # RET ;
     E := # HANDLE ; .
@@ -373,7 +373,7 @@ mod PERSISTENT-OBJECT-TEE-CALL is
 ------------------------------------------------------------
 
   eq makeCall(CreatePersistentObject , (# STORID , # FILE , # DATAFLAGS , # HANDLE , # DATA , # DATASIZE , # OPTHANDLE)) 
-   = apiCall(CreatePersistentObject , (fileId(FILE) , flags(DATAFLAGS) , handle(HANDLE) , data(DATA) , size(DATASIZE) , opt(OPTHANDLE))) .
+   = apiCall(CreatePersistentObject , (storageId(STORID) , fileId(FILE) , flags(DATAFLAGS) , handle(HANDLE) , data(DATA) , size(DATASIZE) , opt(OPTHANDLE))) .
   eq makeReturnStmt(CreatePersistentObject , RET , handle(HANDLE) , E) = 
     auto 'ret := # RET ;
     E := # HANDLE ; .
@@ -479,7 +479,9 @@ mod GENERIC-OBJECT-TEE-CALL is
 ------------------------------------------------------------
 
   eq makeCall(GetObjectBufferAttribute , (# HANDLE , # ID)) = apiCall(GetObjectBufferAttribute , (handle(HANDLE) , constId(ID))) .
+  eq makeCall(GetObjectBufferAttribute , (# HANDLE , # ID , # DATASIZE)) = apiCall(GetObjectBufferAttribute , (handle(HANDLE) , constId(ID) , capacity(DATASIZE))) .
   eq makeReturnStmt(GetObjectBufferAttribute , RET , constVal(V) , EL) = $assign((# RET , # V) , EL) .
+  eq makeReturnStmt(GetObjectBufferAttribute , RET , size(DATASIZE) , (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
 
 ------------------------------------------------------------
 --- 'TEE_GetObjectValueAttribute' Syscall
@@ -550,7 +552,7 @@ mod ENUMERATOR-OBJECT-TEE-CALL is
 --- 'TEE_StartPersistentObjectEnumerator' Syscall
 ------------------------------------------------------------
 
-  eq makeCall(StartPersistentObjectEnumerator , (# HANDLE , # STORID)) = apiCall(StartPersistentObjectEnumerator , handle(HANDLE)) .
+  eq makeCall(StartPersistentObjectEnumerator , (# HANDLE , # STORID)) = apiCall(StartPersistentObjectEnumerator , (handle(HANDLE) , storageId(STORID))) .
   eq makeReturnStmt(StartPersistentObjectEnumerator , RET , empty , E) = $assign(# RET , E) .
 
 ------------------------------------------------------------
@@ -578,7 +580,8 @@ mod DATA-STREAM-OBJECT-TEE-CALL is
   pr DATA-STREAM-OBJECT-IMP-VALUE .
 
   var HANDLE : HandleId .
-  vars DATASIZE OFST : DataSize .
+  var DATASIZE : DataSize .
+  var OFST : Int .
   var DATA : List{Data} .
   var WHENCE : SeekType .
   var RET : ReturnCode .
@@ -611,7 +614,7 @@ mod DATA-STREAM-OBJECT-TEE-CALL is
 --- 'TEE_SeekObjectData' Syscall
 ------------------------------------------------------------
 
-  eq makeCall(SeekObjectData , (# HANDLE , # OFST , # WHENCE)) = apiCall(SeekObjectData , (handle(HANDLE) , size(OFST) , type(WHENCE))) .
+  eq makeCall(SeekObjectData , (# HANDLE , # OFST , # WHENCE)) = apiCall(SeekObjectData , (handle(HANDLE) , offset(OFST) , type(WHENCE))) .
   eq makeReturnStmt(SeekObjectData , RET , empty , E) = $assign(# RET , E) .
 endm
 
@@ -642,7 +645,10 @@ mod CRYPTO-OPERATION-TEE-CALL is
   var OBJTYPE : ObjectType .
   var OBJUSAGES : Set{ObjectUsage} .
   vars DATA DL IV MAC : List{Data} .
-  --- var ELEM : CryptoElement .
+  vars DATASIZE DATASIZE2 : DataSize .
+  vars SRC DEST : BufferRegion .
+  op #_ : BufferRegion -> Value [ctor] .
+  var ELEM : CryptoElement .
   var RET : ReturnCode .
   vars E E' : Exp .
   var EL : ExpList .
@@ -667,42 +673,52 @@ mod CRYPTO-OPERATION-TEE-CALL is
   --- eq makeReturnStmt(GetOperationInfoReturn(void , teeOperationInfo()) , (E))
   --- = E . 'algorithm = # ALGO ; ... .
 
-  --- eq makeCall(GetOperationInfoMultiple , (# HANDLE)) = GetOperationInfoMultipleCall(HANDLE) .
+  eq makeCall(GetOperationInfoMultiple , (# HANDLE)) = apiCall(GetOperationInfoMultiple , handle(HANDLE)) .
     --- eq makeReturnStmt(GetOperationInfoMultipleReturn(TEE-SUCCESS , teeOperationInfoMultiple()) , (E , E'))
   --- = $assign(# TEE-SUCCESS , E) ;
   ---   E' . 'algorithm = # ALGO ; ... .
   --- eq makeReturnStmt(GetOperationInfoMultipleReturn(RET) , (E , E')) = $assign(# RET , E) .
 
-  --- eq makeCall(SetOperationKey2 , (# HANDLE , # HANDLE1 , # HANDLE2)) = SetOperationKey2Call(HANDLE , HANDLE1 , HANDLE2) .
-  --- eq makeReturnStmt(SetOperationKey2Return(RET) , E) = $assign(# RET , E) .
+  eq makeCall(SetOperationKey2 , (# HANDLE , # HANDLE1 , # HANDLE2)) = apiCall(SetOperationKey2 , (handle(HANDLE) , keyHandle(HANDLE1) , secondKeyHandle(HANDLE2))) .
+  eq makeReturnStmt(SetOperationKey2 , RET , empty , E) = $assign(# RET , E) .
 
   eq makeCall(CopyOperation , (# HANDLE1 , # HANDLE2)) = apiCall(CopyOperation , (trgHandle(HANDLE1) , srcHandle(HANDLE2))) .
   eq makeReturnStmt(CopyOperation , noReturnCode , empty , nil) = skip .
 
-  --- eq makeCall(IsAlgorithmSupported , (# ALGO , # ELEM)) = IsAlgorithmSupportedCall(ALGO , ELEM) .
-  --- eq makeReturnStmt(IsAlgorithmSupportedReturn(RET) , E) = $assign(# RET , E) .
+  eq makeCall(IsAlgorithmSupported , (# ALGO , # ELEM)) = apiCall(IsAlgorithmSupported , (alg(ALGO) , cryptoElement(ELEM))) .
+  eq makeReturnStmt(IsAlgorithmSupported , RET , empty , E) = $assign(# RET , E) .
 
 --- Message Digest
   eq makeCall(DigestUpdate , (# HANDLE , # DATA)) = apiCall(DigestUpdate , (handle(HANDLE) , data(DATA))) .
   eq makeReturnStmt(DigestUpdate , noReturnCode , empty , nil) = skip .
   
   eq makeCall(DigestDoFinal , (# HANDLE , # DATA)) = apiCall(DigestDoFinal , (handle(HANDLE) , data(DATA))) .
+  eq makeCall(DigestDoFinal , (# HANDLE , # DATA , # DATASIZE)) = apiCall(DigestDoFinal , (handle(HANDLE) , data(DATA) , capacity(DATASIZE))) .
   eq makeReturnStmt(DigestDoFinal , TEE-SUCCESS , data(DATA) , EL) = $assign((# TEE-SUCCESS , # DATA) , EL) .
+  eq makeReturnStmt(DigestDoFinal , RET , size(DATASIZE) , (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
   eq makeReturnStmt(DigestDoFinal , RET , empty , (E , E')) = $assign(# RET , E) .
   
   eq makeCall(DigestExtract , (# HANDLE)) = apiCall(DigestExtract , handle(HANDLE)) .
+  eq makeCall(DigestExtract , (# HANDLE , # DATASIZE)) = apiCall(DigestExtract , (handle(HANDLE) , capacity(DATASIZE))) .
   eq makeReturnStmt(DigestExtract , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
+  eq makeReturnStmt(DigestExtract , RET , size(DATASIZE) , (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
 
 --- Symmetric Cipher
   eq makeCall(CipherInit , (# HANDLE , # IV)) = apiCall(CipherInit , (handle(HANDLE) , iv(IV))) .
   eq makeReturnStmt(CipherInit , noReturnCode , empty , nil) = skip .
 
   eq makeCall(CipherUpdate , (# HANDLE , # DL)) = apiCall(CipherUpdate , (handle(HANDLE) , data(DL))) .
+  eq makeCall(CipherUpdate , (# HANDLE , # DL , # DATASIZE)) = apiCall(CipherUpdate , (handle(HANDLE) , data(DL) , capacity(DATASIZE))) .
+  eq makeCall(CipherUpdate , (# HANDLE , # DL , # DATASIZE , # SRC , # DEST)) = apiCall(CipherUpdate , (handle(HANDLE) , data(DL) , capacity(DATASIZE) , srcRegion(SRC) , destRegion(DEST))) .
   eq makeReturnStmt(CipherUpdate , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
+  eq makeReturnStmt(CipherUpdate , RET , size(DATASIZE) , (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
   eq makeReturnStmt(CipherUpdate , RET , empty , (E, E')) = $assign(# RET , E) .
   
   eq makeCall(CipherDoFinal , (# HANDLE , # DL)) = apiCall(CipherDoFinal , (handle(HANDLE) , data(DL))) .
+  eq makeCall(CipherDoFinal , (# HANDLE , # DL , # DATASIZE)) = apiCall(CipherDoFinal , (handle(HANDLE) , data(DL) , capacity(DATASIZE))) .
+  eq makeCall(CipherDoFinal , (# HANDLE , # DL , # DATASIZE , # SRC , # DEST)) = apiCall(CipherDoFinal , (handle(HANDLE) , data(DL) , capacity(DATASIZE) , srcRegion(SRC) , destRegion(DEST))) .
   eq makeReturnStmt(CipherDoFinal , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
+  eq makeReturnStmt(CipherDoFinal , RET , size(DATASIZE) , (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
 
 --- MAC
   eq makeCall(MACInit , (# HANDLE , # IV)) = apiCall(MACInit , (handle(HANDLE) , iv(IV))) .
@@ -712,7 +728,9 @@ mod CRYPTO-OPERATION-TEE-CALL is
   eq makeReturnStmt(MACUpdate , noReturnCode , empty , nil) = skip .
 
   eq makeCall(MACComputeFinal , (# HANDLE , # DL)) = apiCall(MACComputeFinal , (handle(HANDLE) , data(DL))) .
+  eq makeCall(MACComputeFinal , (# HANDLE , # DL , # DATASIZE)) = apiCall(MACComputeFinal , (handle(HANDLE) , data(DL) , capacity(DATASIZE))) .
   eq makeReturnStmt(MACComputeFinal , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
+  eq makeReturnStmt(MACComputeFinal , RET , size(DATASIZE) , (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
 
   eq makeCall(MACCompareFinal , (# HANDLE , # DL , # MAC)) = apiCall(MACCompareFinal , (handle(HANDLE) , data(DL) , mac(MAC))) .
   eq makeReturnStmt(MACCompareFinal , RET , empty , E) = $assign(# RET , E) .
@@ -725,19 +743,45 @@ mod CRYPTO-OPERATION-TEE-CALL is
   eq makeReturnStmt(AEUpdateAAD , noReturnCode , empty , E) = skip .
 
   eq makeCall(AEUpdate , (# HANDLE , # DL)) = apiCall(AEUpdate , (handle(HANDLE) , data(DL))) .
+  eq makeCall(AEUpdate , (# HANDLE , # DL , # DATASIZE)) = apiCall(AEUpdate , (handle(HANDLE) , data(DL) , capacity(DATASIZE))) .
+  eq makeCall(AEUpdate , (# HANDLE , # DL , # DATASIZE , # SRC , # DEST)) = apiCall(AEUpdate , (handle(HANDLE) , data(DL) , capacity(DATASIZE) , srcRegion(SRC) , destRegion(DEST))) .
   eq makeReturnStmt(AEUpdate , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
+  eq makeReturnStmt(AEUpdate , RET , size(DATASIZE) , (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
+
+  eq makeCall(AEEncryptFinal , (# HANDLE , # DL)) = apiCall(AEEncryptFinal , (handle(HANDLE) , data(DL))) .
+  eq makeCall(AEEncryptFinal , (# HANDLE , # DL , # DATASIZE , # DATASIZE2)) = apiCall(AEEncryptFinal , (handle(HANDLE) , data(DL) , capacity(DATASIZE) , tagCapacity(DATASIZE2))) .
+  eq makeCall(AEEncryptFinal , (# HANDLE , # DL , # DATASIZE , # DATASIZE2 , # SRC , # DEST)) = apiCall(AEEncryptFinal , (handle(HANDLE) , data(DL) , capacity(DATASIZE) , tagCapacity(DATASIZE2) , srcRegion(SRC) , destRegion(DEST))) .
+  eq makeReturnStmt(AEEncryptFinal , RET , (data(DL) , mac(MAC)) , EL) = $assign((# RET , # DL , # MAC) , EL) .
+  eq makeReturnStmt(AEEncryptFinal , RET , (size(DATASIZE) , tagSize(DATASIZE2)) , (E , E')) = $assign((# RET , # DATASIZE , # DATASIZE2) , (E , E')) .
+  eq makeCall(AEDecryptFinal , (# HANDLE , # DL , # MAC)) = apiCall(AEDecryptFinal , (handle(HANDLE) , data(DL) , mac(MAC))) .
+  eq makeCall(AEDecryptFinal , (# HANDLE , # DL , # MAC , # DATASIZE)) = apiCall(AEDecryptFinal , (handle(HANDLE) , data(DL) , mac(MAC) , capacity(DATASIZE))) .
+  eq makeCall(AEDecryptFinal , (# HANDLE , # DL , # MAC , # DATASIZE , # SRC , # DEST)) = apiCall(AEDecryptFinal , (handle(HANDLE) , data(DL) , mac(MAC) , capacity(DATASIZE) , srcRegion(SRC) , destRegion(DEST))) .
+  eq makeReturnStmt(AEDecryptFinal , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
+  eq makeReturnStmt(AEDecryptFinal , RET , size(DATASIZE) , (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
+  eq makeReturnStmt(AEDecryptFinal , RET , empty , (E , E')) = $assign(# RET , E) .
 
 --- Asymmetic Cipher
   eq makeCall(AsymmetricEncrypt , (# HANDLE , # DL)) = apiCall(AsymmetricEncrypt , (handle(HANDLE) , data(DL))) .
+  eq makeCall(AsymmetricEncrypt , (# HANDLE , # DL , # DATASIZE)) = apiCall(AsymmetricEncrypt , (handle(HANDLE) , data(DL) , capacity(DATASIZE))) .
   eq makeReturnStmt(AsymmetricEncrypt , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
+  eq makeReturnStmt(AsymmetricEncrypt , RET , size(DATASIZE) , (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
 
   eq makeCall(AsymmetricDecrypt , (# HANDLE , # DL)) = apiCall(AsymmetricDecrypt , (handle(HANDLE) , data(DL))) .
+  eq makeCall(AsymmetricDecrypt , (# HANDLE , # DL , # DATASIZE)) = apiCall(AsymmetricDecrypt , (handle(HANDLE) , data(DL) , capacity(DATASIZE))) .
   eq makeReturnStmt(AsymmetricDecrypt , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
+  eq makeReturnStmt(AsymmetricDecrypt , RET , size(DATASIZE) , (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
+
+  eq makeCall(AsymmetricSignDigest , (# HANDLE , # DL)) = apiCall(AsymmetricSignDigest , (handle(HANDLE) , data(DL))) .
+  eq makeCall(AsymmetricSignDigest , (# HANDLE , # DL , # DATASIZE)) = apiCall(AsymmetricSignDigest , (handle(HANDLE) , data(DL) , capacity(DATASIZE))) .
+  eq makeReturnStmt(AsymmetricSignDigest , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
+  eq makeReturnStmt(AsymmetricSignDigest , RET , size(DATASIZE) , (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
 
   eq makeCall(AsymmetricDecrypt , (# HANDLE , # DL)) = apiCall(AsymmetricDecrypt , (handle(HANDLE) , data(DL))) .
   eq makeReturnStmt(AsymmetricDecrypt , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
 
 --- Misc
+  eq makeCall(DeriveKey , (# HANDLE , # ATTRS , # HANDLE2)) = apiCall(DeriveKey , (handle(HANDLE) , attrs(ATTRS) , trgHandle(HANDLE2))) .
+  eq makeReturnStmt(DeriveKey , noReturnCode , empty , nil) = skip .
   eq makeCall(GenerateRandom , nil) = apiCall(GenerateRandom , empty) .
   eq makeReturnStmt(GenerateRandom , noReturnCode , data(DL) , E) = $assign(# DL , E) .
 endm

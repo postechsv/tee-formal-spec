@@ -6,13 +6,16 @@ fmod TEE-API-PARAM is
   pr HANDLE-ID .
   pr SET{TeeAttribute} .
   pr FILE-ID .
+  pr STORAGE-IDENTIFER .
   pr SET{DataFlag} .
   pr DATA-STREAM-SEEK-TYPE .
   pr LIST{Data} .
   pr DATA-SIZE .
+  pr INT .
   pr SET{ObjectUsage} .
   pr ALGORITHM-IDENTIFIER .
   pr OPERATION-MODE .
+  pr CRYPTO-ELEMENT .
   pr TEE-DATA-TYPE .
   --- pr TEE-UUID .
   pr APP-ID .
@@ -23,6 +26,9 @@ fmod TEE-API-PARAM is
   pr IMP-EXP-LIST .
 
   sort TeeApiParam .
+  sort BufferRegion .
+
+  op bufferRegion : Nat Nat -> BufferRegion [ctor] .
 
 --- generic
   op info : TeeObjectInfo -> TeeApiParam [ctor] .
@@ -39,6 +45,7 @@ fmod TEE-API-PARAM is
   op trgHandle : HandleId -> TeeApiParam [ctor] .
 
 --- persistent
+  op storageId : StorageIdentifier -> TeeApiParam [ctor] .
   op fileId : FileId -> TeeApiParam [ctor] .
   op flags : Set{DataFlag} -> TeeApiParam [ctor] .
   op opt : HandleId -> TeeApiParam [ctor] .
@@ -47,14 +54,25 @@ fmod TEE-API-PARAM is
   op openedHandle : HandleId -> TeeApiParam [ctor] .
   op usages : Set{ObjectUsage} -> TeeApiParam [ctor] .
 
+
 --- data stream
   op type : SeekType -> TeeApiParam [ctor] .
+  op offset : Int -> TeeApiParam [ctor] .
+
+--- output buffer capacity (in abstract data units)
+  op capacity : DataSize -> TeeApiParam [ctor] .
+  op tagCapacity : DataSize -> TeeApiParam [ctor] .
+  op tagSize : DataSize -> TeeApiParam [ctor] .
+  op srcRegion : BufferRegion -> TeeApiParam [ctor] .
+  op destRegion : BufferRegion -> TeeApiParam [ctor] .
 
 --- crypto
   op alg : AlgorithmIdentifier -> TeeApiParam [ctor] .
   op mode : OperationMode -> TeeApiParam [ctor] .
   op teeOpInfo : OpObjectAttr OpHandleAttr -> TeeApiParam [ctor] .
   op keyHandle : HandleId -> TeeApiParam [ctor] .
+  op secondKeyHandle : HandleId -> TeeApiParam [ctor] .
+  op cryptoElement : CryptoElement -> TeeApiParam [ctor] .
   op iv : List{Data} -> TeeApiParam [ctor] .
   op mac : List{Data} -> TeeApiParam [ctor] .
   op digest : List{Data} -> TeeApiParam [ctor] .
@@ -229,6 +247,8 @@ fmod CRYPTO-OPERATION-FUNC-STATE is
   op waitAEUpdateAAD : -> TeeApiState [ctor] .
   op waitAEUpdate : -> TeeApiState [ctor] .
   op waitAEEncryptFinal : -> TeeApiState [ctor] .
+  op waitAEDecryptFinal : -> TeeApiState [ctor] .
+  op waitDeriveKey : -> TeeApiState [ctor] .
   op waitAsymEncrypt : -> TeeApiState [ctor] .
   op waitAsymDecrypt : -> TeeApiState [ctor] .
   op waitAsymSignDigest : -> TeeApiState [ctor] .

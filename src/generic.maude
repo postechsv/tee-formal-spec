@@ -20,6 +20,7 @@ omod GENERIC-OBJECT-BEHAVIOR is
   pr TEE-OS-BEHAVIOR .
 
   var TK : TaInstId .
+  var N : Nat .
   var TN : AppId .
   var HANDLE : HandleId .
   vars OI DI : TaObjectId .
@@ -62,6 +63,18 @@ omod GENERIC-OBJECT-BEHAVIOR is
 
   op bufferType : AttrId -> Bool .
   eq bufferType(ID) = ID :: AttrRef .
+
+  --- AttrContent is atomic in this model, so every buffer attribute occupies one abstract unit.
+  op attrContentSize : AttrContent -> DataSize .
+  eq attrContentSize(V) = dataSize(1) .
+
+  op hasCapacity : Set{TeeApiParam} -> Bool .
+  eq hasCapacity((capacity(DATASIZE) , PARAMS)) = true .
+  eq hasCapacity(PARAMS) = false [owise] .
+
+  op capacityFitsAttr : Set{TeeApiParam} -> Bool .
+  eq capacityFitsAttr((capacity(dataSize(0)) , PARAMS)) = false .
+  eq capacityFitsAttr((capacity(dataSize(N)) , PARAMS)) = true [owise] .
 
 --- For TEE_GetObjectValueAttribute
 
@@ -276,7 +289,29 @@ omod GENERIC-OBJECT-BEHAVIOR is
     =>
     < TK : TaKernel | api-state : finished , 
                       api-return : apiReturn(GetObjectBufferAttribute , TEE-SUCCESS , constVal(getAttrContent(ID , ATTRS))) >
-  if ID in getAttrIds(ATTRS) /\ canAcquireAttr(ID , OBJUSAGES)
+  if ID in getAttrIds(ATTRS) /\ canAcquireAttr(ID , OBJUSAGES) /\ not hasCapacity(PARAMS)
+  .
+
+  crl [get-object-buffer-attribute-capacity-success] :
+    < TK : TaKernel | api-state : waitGetBufferAttribute , current-api : GetObjectBufferAttribute ,
+                      current-params : constId(ID) , attrs(ATTRS) , usages(OBJUSAGES) , PARAMS >
+    =>
+    < TK : TaKernel | api-state : finished,
+                      api-return : apiReturn(GetObjectBufferAttribute , TEE-SUCCESS,
+                                             (constVal(getAttrContent(ID , ATTRS)),
+                                              size(attrContentSize(getAttrContent(ID , ATTRS))))) >
+  if ID in getAttrIds(ATTRS) /\ canAcquireAttr(ID , OBJUSAGES) /\ capacityFitsAttr(PARAMS)
+  .
+
+  crl [get-object-buffer-attribute-short-buffer] :
+    < TK : TaKernel | api-state : waitGetBufferAttribute , current-api : GetObjectBufferAttribute ,
+                      current-params : constId(ID) , attrs(ATTRS) , usages(OBJUSAGES) , PARAMS >
+    =>
+    < TK : TaKernel | api-state : finished,
+                      api-return : apiReturn(GetObjectBufferAttribute , TEE-ERROR-SHORT-BUFFER,
+                                             size(attrContentSize(getAttrContent(ID , ATTRS)))) >
+  if ID in getAttrIds(ATTRS) /\ canAcquireAttr(ID , OBJUSAGES) /\
+     hasCapacity(PARAMS) /\ not capacityFitsAttr(PARAMS)
   .
 
 --- The following two rules check storage status before extracting one buffer attribute from the persistent object.
@@ -323,17 +358,7 @@ omod GENERIC-OBJECT-BEHAVIOR is
   if not (ID in getAttrIds(ATTRS))
   .
 
---- TODO: NEED TO UPDATE
 --- This rule returns TEE_ERROR_SHORT_BUFFER if buffer is NULL or too small to contain the key part.
-
-  --- op isBufferNull : TeeAttrContent -> Bool .
-  --- eq isBufferNull(BUFFER) = false .
-
-  --- op smallBuffer : TeeAttrContent -> Bool .
-  --- eq smallBuffer(BUFFER) = false .
-
-  --- op sufficientBuffer : TeeAttrContent -> Bool .
-  --- eq sufficientBuffer(BUFFER) = (not isBufferNull(BUFFER)) and (not smallBuffer(BUFFER)) .
 
 ------------------------------------------------------------
 --- 'TEE_GetObjectValueAttribute'

@@ -1,0 +1,147 @@
+--- Focused checks derived from GlobalPlatform TEE Internal Core API v1.3.1.
+load ../src/main
+
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  mandatory(TEE-TYPE-DES) == TEE-ATTR-SECRET-VALUE .
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  mandatory(TEE-TYPE-ECDH-KEYPAIR) ==
+    (TEE-ATTR-ECC-PRIVATE-VALUE, TEE-ATTR-ECC-PUBLIC-VALUE-X,
+     TEE-ATTR-ECC-PUBLIC-VALUE-Y, TEE-ATTR-ECC-CURVE) .
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  checkCompatible(TEE-TYPE-DH-KEYPAIR,
+    (teeAttribute(TEE-ATTR-DH-PRIME, randomAttrVal),
+     teeAttribute(TEE-ATTR-DH-BASE, randomAttrVal),
+     teeAttribute(TEE-ATTR-DH-PUBLIC-VALUE, randomAttrVal),
+     teeAttribute(TEE-ATTR-DH-PRIVATE-VALUE, randomAttrVal),
+     teeAttribute(TEE-ATTR-DH-X-BITS, randomAttrVal))) .
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  not checkCompatible(TEE-TYPE-AES,
+    (teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal),
+     teeAttribute(TEE-ATTR-RSA-MODULUS, randomAttrVal))) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  mandatoryParamsForKeyGen(TEE-TYPE-AES, empty) .
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  mandatoryParamsForKeyGen(TEE-TYPE-RSA-KEYPAIR,
+    teeAttribute(TEE-ATTR-RSA-PUBLIC-EXPONENT, randomAttrVal)) .
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  mandatoryParamsForKeyGen(TEE-TYPE-DH-KEYPAIR,
+    (teeAttribute(TEE-ATTR-DH-PRIME, randomAttrVal),
+     teeAttribute(TEE-ATTR-DH-BASE, randomAttrVal),
+     teeAttribute(TEE-ATTR-DH-X-BITS, randomAttrVal))) .
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  not mandatoryParamsForKeyGen(TEE-TYPE-DH-KEYPAIR,
+    teeAttribute(TEE-ATTR-DH-BASE, randomAttrVal)) .
+
+red in TRUSTED-STORAGE-OBJECT-AUX :
+  typeCompatible(TEE-TYPE-ECDSA-KEYPAIR, TEE-TYPE-ECDSA-PUBLIC-KEY) .
+red in TRUSTED-STORAGE-OBJECT-AUX :
+  not typeCompatible(TEE-TYPE-ECDSA-PUBLIC-KEY, TEE-TYPE-ECDSA-KEYPAIR) .
+
+--- An additional reader requires SHARE_READ on every handle.
+red in UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR :
+  accessRightCheckingAux(
+    (TEE-DATA-FLAG-ACCESS-READ, TEE-DATA-FLAG-SHARE-READ),
+    (TEE-DATA-FLAG-ACCESS-READ, TEE-DATA-FLAG-SHARE-READ)) .
+red in UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR :
+  not accessRightCheckingAux(
+    (TEE-DATA-FLAG-ACCESS-READ, TEE-DATA-FLAG-SHARE-READ),
+    TEE-DATA-FLAG-ACCESS-READ) .
+red in UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR :
+  not accessRightCheckingAux(TEE-DATA-FLAG-ACCESS-WRITE-META, empty) .
+
+--- GP 6.2.6 requires key usage to agree with the operation mode.
+red in CRYPTO-OPERATION-BEHAVIOR :
+  modeUsageCompatible((TEE-USAGE-ENCRYPT, TEE-USAGE-DECRYPT), TEE-MODE-ENCRYPT) .
+red in CRYPTO-OPERATION-BEHAVIOR :
+  not modeUsageCompatible(TEE-USAGE-VERIFY, TEE-MODE-SIGN) .
+
+--- GP Table 6-6b IV requirements and AE initialization state.
+red in CRYPTO-OPERATION-BEHAVIOR :
+  ivLengthValid(TEE-ALG-AES-CBC-NOPAD,
+    randomData randomData randomData randomData randomData randomData randomData randomData
+    randomData randomData randomData randomData randomData randomData randomData randomData) .
+red in CRYPTO-OPERATION-BEHAVIOR :
+  not ivLengthValid(TEE-ALG-AES-CBC-NOPAD, nil) .
+red in CRYPTO-OPERATION-BEHAVIOR :
+  ivLengthValid(TEE-ALG-AES-GCM, randomData) .
+red in CRYPTO-OPERATION-BEHAVIOR :
+  updateOpState(TEE-OPERATION-STATE-ACTIVE, TEE-OPERATION-AE)
+    == TEE-OPERATION-STATE-INITIAL .
+
+--- GP 5.9: stream positions use the 0xFFFFFFFF maximum and whence-specific bases.
+red in DATA-STREAM-OBJECT-BEHAVIOR :
+  withinMaxPosition(pos(4294967295)) .
+red in DATA-STREAM-OBJECT-BEHAVIOR :
+  not withinMaxPosition(pos(4294967296)) .
+red in DATA-STREAM-OBJECT-BEHAVIOR :
+  advancePos(pos(8), dataSize(5)) == pos(13) .
+red in DATA-STREAM-OBJECT-BEHAVIOR :
+  seekPos(TEE-DATA-SEEK-SET, pos(8), 5, dataSize(20)) == pos(5) .
+red in DATA-STREAM-OBJECT-BEHAVIOR :
+  seekPos(TEE-DATA-SEEK-CUR, pos(8), 5, dataSize(20)) == pos(13) .
+red in DATA-STREAM-OBJECT-BEHAVIOR :
+  seekPos(TEE-DATA-SEEK-END, pos(8), 5, dataSize(20)) == pos(25) .
+red in DATA-STREAM-OBJECT-BEHAVIOR :
+  seekPos(TEE-DATA-SEEK-CUR, pos(8), -10, dataSize(20)) == pos(0) .
+red in DATA-STREAM-OBJECT-BEHAVIOR :
+  seekPos(TEE-DATA-SEEK-END, pos(8), -5, dataSize(20)) == pos(15) .
+red in DATA-STREAM-OBJECT-BEHAVIOR :
+  read(pos(0), dataSize(4),
+    writeStream(randomData, pos(3), dataSize(1), newContent(randomData))) ==
+      (randomData zeroData zeroData randomData) .
+red in DATA-STREAM-OBJECT-BEHAVIOR :
+  read(pos(0), dataSize(4),
+    resizeContent(dataSize(1), dataSize(4), newContent(randomData))) ==
+      (randomData zeroData zeroData zeroData) .
+red in DATA-STREAM-OBJECT-BEHAVIOR :
+  read(pos(0), dataSize(4),
+    resizeContent(dataSize(4), dataSize(2),
+      newContent(randomData zeroData zeroData randomData))) ==
+      (randomData zeroData) .
+
+--- GP SHA-256 and RSA/SHA-256 operation metadata and output sizes.
+red in CRYPTO-OPERATION-BEHAVIOR :
+  determineOpClass(TEE-ALG-SHA256) == TEE-OPERATION-DIGEST .
+red in CRYPTO-OPERATION-BEHAVIOR :
+  compatibleMode(TEE-ALG-SHA256, TEE-MODE-DIGEST) .
+red in CRYPTO-OPERATION-BEHAVIOR :
+  outputSize(digestResult(TEE-ALG-SHA256, randomData)) == dataSize(32) .
+red in CRYPTO-OPERATION-BEHAVIOR :
+  signatureSize(2048 Bits) == dataSize(256) .
+red in CRYPTO-OPERATION-BEHAVIOR :
+  validParams(TEE-ALG-RSASSA-PKCS1-V1-5-SHA256, TEE-MODE-SIGN, 2048 Bits) .
+red in CRYPTO-OPERATION-BEHAVIOR :
+  outputSize(computeMAC(TEE-ALG-HMAC-SHA256, nil, randomData)) == dataSize(32) .
+
+--- GP permits exact in-place buffers, but rejects partial overlap.
+red in CRYPTO-OPERATION-BEHAVIOR :
+  not invalidBufferOverlap((srcRegion(bufferRegion(100, 16)),
+                            destRegion(bufferRegion(100, 16)))) .
+red in CRYPTO-OPERATION-BEHAVIOR :
+  not invalidBufferOverlap((srcRegion(bufferRegion(100, 16)),
+                            destRegion(bufferRegion(116, 16)))) .
+red in CRYPTO-OPERATION-BEHAVIOR :
+  invalidBufferOverlap((srcRegion(bufferRegion(100, 16)),
+                        destRegion(bufferRegion(108, 16)))) .
+red in CRYPTO-OPERATION-BEHAVIOR :
+  validSignatureDigestLength(TEE-ALG-RSASSA-PKCS1-V1-5-SHA256,
+                             repeatDigestByte(randomData, 32)) .
+red in CRYPTO-OPERATION-BEHAVIOR :
+  not validSignatureDigestLength(TEE-ALG-RSASSA-PKCS1-V1-5-SHA256, randomData) .
+
+--- RSA-OAEP input bounds: k - 2*hLen - 2, with k in bytes.
+red in CRYPTO-OPERATION-BEHAVIOR :
+  validRsaEncryptInput(TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA1, 2048 Bits,
+                       repeatDigestByte(randomData, 214)) .
+red in CRYPTO-OPERATION-BEHAVIOR :
+  not validRsaEncryptInput(TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA1, 2048 Bits,
+                           repeatDigestByte(randomData, 215)) .
+red in CRYPTO-OPERATION-BEHAVIOR :
+  validRsaCiphertextSize(2048 Bits, repeatDigestByte(randomData, 256)) .
+
+--- GP Table 5-2: PRIVATE is implemented; optional and illegal storage IDs are unavailable.
+red in STORAGE-IDENTIFER : supportedStorage(TEE-STORAGE-PRIVATE) .
+red in STORAGE-IDENTIFER : not supportedStorage(TEE-STORAGE-PERSO) .
+red in STORAGE-IDENTIFER : not supportedStorage(TEE-STORAGE-PROTECTED) .
+red in STORAGE-IDENTIFER : not supportedStorage(TEE-STORAGE-ILLEGAL-VALUE) .

@@ -43,6 +43,7 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
   var INFO : TeeObjectInfo .
   var EXISTENCE : ServiceReturn .
   var PARAMS : Set{TeeApiParam} .
+  var STORID : StorageIdentifier .
 
 ------------------------------------------------------------
 --- TEE_AllocatePersistentObjectEnumerator
@@ -185,20 +186,39 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
   msg startEnumerator : HandleId Set{FileId} TaInstId -> Msg .
   msg finishStartEnumerator : TaInstId -> Msg .
 
-  rl [start-enumerator-subroutine] :
+  rl [start-enumerator-default-private-storage] :
+    < TK : TaKernel | api-state : started , current-api : StartPersistentObjectEnumerator ,
+                      current-params : handle(HANDLE) >
+    =>
+    < TK : TaKernel | current-params : (storageId(TEE-STORAGE-PRIVATE) , handle(HANDLE)) >
+  .
+
+  crl [start-enumerator-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : StartPersistentObjectEnumerator ,
+                      current-params : (storageId(STORID) , PARAMS) ,
                       trust-app-id : TN >
     => 
     < TK : TaKernel | api-state : waitStorageCheck >
     reqTrustedOS(getStorageStatus getPersistentList(TN) , TK , TN)
+  if supportedStorage(STORID)
+  .
+
+  crl [start-enumerator-storage-id-not-found] :
+    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : StartPersistentObjectEnumerator ,
+                      current-params : (storageId(STORID) , PARAMS) >
+    =>
+    < TK : TaKernel | api-state : finished ,
+                      api-return : apiReturn(StartPersistentObjectEnumerator , TEE-ERROR-ITEM-NOT-FOUND) >
+  if not supportedStorage(STORID)
   .
 
   rl [start-enumerator-subroutine] :
     retTrustedOS(storageStatus(storageNormal) filesInStorage(FILES) , TK)
     < TK : TaKernel | api-state : waitStorageCheck , 
                       current-api : StartPersistentObjectEnumerator ,
-                      current-params : handle(HANDLE) >
+                      current-params : storageId(STORID) , handle(HANDLE) >
     =>
     < TK : TaKernel | api-state : waitStartEnumerator >
     startEnumerator(HANDLE , FILES , TK)

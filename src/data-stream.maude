@@ -20,7 +20,8 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   vars OI DI : TaObjectId .
   var HANDLE : HandleId .
   var DATAPOS : DataPosition .
-  vars DS DATASIZE OFST : DataSize .
+  vars DS DATASIZE : DataSize .
+  var OFST : Int .
   var WHENCE : SeekType .
   var DATA : List{Data} .
   var DM : Map{DataPosition,Data} .
@@ -186,12 +187,11 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
     < DI : DataStreamObject | data-size : DS , content : DM >
     =>  
     none
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-position : updatePos(DATAPOS , sizeOfData(DATA) , DS) > HS) >
+    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-position : advancePos(DATAPOS , sizeOfData(DATA)) > HS) >
     < DI : DataStreamObject | data-size : updateSize(DS , DATAPOS , sizeOfData(DATA)) , 
-                              content : write(DATA , DATAPOS , DM) > 
+                              content : writeStream(DATA , DATAPOS , DS , DM) >
     finishWriteData(TK)
-  if isWritable(DATAFLAGS)
-  --- if DATAPOS <= TEE-DATA-MAX-POSITION 
+  if isWritable(DATAFLAGS) /\ withinMaxPosition(advancePos(DATAPOS , sizeOfData(DATA)))
   .
 
   rl [write-object-data-success] :
@@ -202,8 +202,19 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
     < TK : TaKernel | api-state : finished , api-return : apiReturn(WriteObjectData , TEE-SUCCESS) >
   .
 
---- TODO: NEED TO UPDATE
 --- This rule returns TEE_ERROR_OVERFLOW if the value of the data position indicator resulting from this operation would be greater than TEE_DATA_MAX_POSITION.
+
+  crl [write-object-data-overflow] :
+    writeObjectData(HANDLE , DATA , TK , TN)
+    < TK : TaKernel | api-state : waitWriteObjectData , current-api : WriteObjectData >
+    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-access-flag-set : DATAFLAGS , data-position : DATAPOS > HS) ,
+                              trust-app-id : TN >
+    =>
+    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS) >
+    < TK : TaKernel | api-state : finished , current-api : WriteObjectData ,
+                      api-return : apiReturn(WriteObjectData , TEE-ERROR-OVERFLOW) >
+  if isWritable(DATAFLAGS) /\ not withinMaxPosition(advancePos(DATAPOS , sizeOfData(DATA)))
+  .
 
 --- This rule returns TEE_ERROR_STORAGE_NO_SPACE if insufficient storage space is available.
 --- This rule returns TEE_ERROR_CORRUPT_OBJECT if the object is corrupt.
@@ -255,10 +266,10 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
     truncateObjectData(HANDLE , DATASIZE , TK , TN)
     < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-access-flag-set : DATAFLAGS > HS) ,
                               data-stream-id : DI , trust-app-id : TN >
-    < DI : DataStreamObject | data-size : DS >
+    < DI : DataStreamObject | data-size : DS , content : DM >
     =>  
     < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS) >
-    < DI : DataStreamObject | data-size : DATASIZE >
+    < DI : DataStreamObject | data-size : DATASIZE , content : resizeContent(DS , DATASIZE , DM) >
     finishTruncateData(TK)
   if isWritable(DATAFLAGS)
   .
@@ -291,7 +302,7 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 --- The 'TEE_SeekObjectData' function sets the data position indicator associated with the object handle.
 --- See page 176 of the G.P. documentation for more details.
 
-  msg seekObjectData : HandleId DataSize SeekType TaInstId AppId -> Msg .
+  msg seekObjectData : HandleId Int SeekType TaInstId AppId -> Msg .
   msg finishSeekData : TaInstId -> Msg .
 
   rl [seek-object-data-subroutine] :
@@ -307,7 +318,7 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
     retTrustedOS(storageStatus(storageNormal) , TK)
     < TK : TaKernel | api-state : waitStorageCheck , 
                       current-api : SeekObjectData ,
-                      current-params : handle(HANDLE) , size(OFST) , type(WHENCE) ,
+                      current-params : handle(HANDLE) , offset(OFST) , type(WHENCE) ,
                       trust-app-id : TN >
     =>
     < TK : TaKernel | api-state : waitSeekObjectData >
@@ -318,7 +329,7 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 --- This rule sets the data position to its current position plus input offset when 'whence' is TEE_DATA_SEEK_CUR.
 --- The following three rules define 'TEE_SeekObjectData' when 'whence' in TEE_DATA_SEEK_END.
 
-  rl [seek-object-data-subroutine] :
+  crl [seek-object-data-subroutine] :
     seekObjectData(HANDLE , OFST , WHENCE , TK , TN)
     < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-position : DATAPOS > HS) ,
                               data-stream-id : DI , trust-app-id : TN >
@@ -327,7 +338,7 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
     < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-position : seekPos(WHENCE , DATAPOS , OFST , DATASIZE) > HS) >
     < DI : DataStreamObject | >
     finishSeekData(TK)
-  --- if seekDataPosition(WHENCE , DATAPOS , OFST , DATASIZE) <= TEE-DATA-MAX-POSITION
+  if withinMaxPosition(seekPos(WHENCE , DATAPOS , OFST , DATASIZE))
   .
 
   rl [seek-object-data-success] :
@@ -338,8 +349,21 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
     < TK : TaKernel | api-state : finished , api-return : apiReturn(SeekObjectData , TEE-SUCCESS) >
   .
 
---- TODO: NEED TO UPDATE
 --- This rule returns TEE_ERROR_OVERFLOW if the value of the data position indicator resulting from this operation would be greater than TEE_DATA_MAX_POSITION.
+
+  crl [seek-object-data-overflow] :
+    seekObjectData(HANDLE , OFST , WHENCE , TK , TN)
+    < TK : TaKernel | api-state : waitSeekObjectData , current-api : SeekObjectData >
+    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-position : DATAPOS > HS) ,
+                              data-stream-id : DI , trust-app-id : TN >
+    < DI : DataStreamObject | data-size : DATASIZE >
+    =>
+    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS) >
+    < DI : DataStreamObject | >
+    < TK : TaKernel | api-state : finished , current-api : SeekObjectData ,
+                      api-return : apiReturn(SeekObjectData , TEE-ERROR-OVERFLOW) >
+  if not withinMaxPosition(seekPos(WHENCE , DATAPOS , OFST , DATASIZE))
+  .
 
 --- This rule returns TEE_ERROR_CORRUPT_OBJECT if the object is corrupt.
 --- This rule returns TEE_ERROR_STORAGE_NOT_AVAILABLE if the persistent object is stored in a storage area which is currently inaccessible.
@@ -455,11 +479,23 @@ omod DATA-STREAM-OBJECT-BEHAVIOR-INVISIBLE is
                               data-stream-id : DI , trust-app-id : TN >
     < DI : DataStreamObject | data-size : DS , content : DM >
     =
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-position : updatePos(DATAPOS , sizeOfData(DATA) , DS) > HS) >
+    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-position : advancePos(DATAPOS , sizeOfData(DATA)) > HS) >
     < DI : DataStreamObject | data-size : updateSize(DS , DATAPOS , sizeOfData(DATA)) , 
-                              content : write(DATA , DATAPOS , DM) > 
+                              content : writeStream(DATA , DATAPOS , DS , DM) >
     finishWriteData(TK)
-  if isWritable(DATAFLAGS)
+  if isWritable(DATAFLAGS) /\ withinMaxPosition(advancePos(DATAPOS , sizeOfData(DATA)))
+  .
+
+  ceq
+    writeObjectData(HANDLE , DATA , TK , TN)
+    < TK : TaKernel | api-state : waitWriteObjectData , current-api : WriteObjectData >
+    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-access-flag-set : DATAFLAGS , data-position : DATAPOS > HS) ,
+                              trust-app-id : TN >
+    =
+    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS) >
+    < TK : TaKernel | api-state : finished , current-api : WriteObjectData ,
+                      api-return : apiReturn(WriteObjectData , TEE-ERROR-OVERFLOW) >
+  if isWritable(DATAFLAGS) /\ not withinMaxPosition(advancePos(DATAPOS , sizeOfData(DATA)))
   .
 
   eq

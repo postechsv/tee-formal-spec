@@ -17,6 +17,7 @@ fmod DATA-POSITION is
   subsort DataPosition < DataPosition? .
 
   var POS : DataPosition .
+  var P : Nat .
 
   op pos : Nat -> DataPosition [ctor] .
   op noPos : -> DataPosition? [ctor] .
@@ -24,6 +25,10 @@ fmod DATA-POSITION is
 
   op _<=_ : DataPosition DataPosition -> Bool .
   eq POS <= TEE-DATA-MAX-POSITION = true .
+
+  --- GP v1.3.1, Table 5-2: TEE_DATA_MAX_POSITION is 0xFFFFFFFF.
+  op withinMaxPosition : DataPosition -> Bool .
+  eq withinMaxPosition(pos(P)) = P <= 4294967295 .
 endfm
 
 view DataPosition from TRIV to DATA-POSITION is
@@ -49,19 +54,23 @@ fmod BASIC-DATA is
   pr TEE-ATTRIBUTE .
 
   op randomData : -> Data [ctor] .
+  op zeroData : -> Data [ctor] .
   op attrContentData : AttrContent -> Data [ctor] .
 endfm
 
 --- This module defines auxiliary operators for data stream.
 
 fmod DATA-STREAM-OPERATOR is
+  pr BASIC-DATA .
   pr DATA-SIZE .
   pr DATA-POSITION .
   pr LIST{Data} .
   pr MAP{DataPosition,Data} .
   pr DATA-STREAM-SEEK-TYPE .
+  pr INT .
 
   vars N M P : Nat .
+  var I : Int .
   vars D DATA : Data .
   vars DL DATALIST : List{Data} .
   var DATAPOS : DataPosition .
@@ -102,10 +111,35 @@ fmod DATA-STREAM-OPERATOR is
   op write : List{Data} DataPosition Map{DataPosition,Data} -> Map{DataPosition,Data} .
   eq write(DATALIST , pos(N) , DM) = writeAux(DATALIST , N , DM) .
 
+--- Fill a hole when a write begins beyond the current end-of-stream.
+  op fillZeroAux : Nat Nat Map{DataPosition,Data} -> Map{DataPosition,Data} .
+  eq fillZeroAux(N , 0 , DM) = DM .
+  eq fillZeroAux(N , s(M) , DM) = fillZeroAux(N + 1 , M , writeAt(zeroData , pos(N) , DM)) .
+
+  op writeStream : List{Data} DataPosition DataSize Map{DataPosition,Data} -> Map{DataPosition,Data} .
+  ceq writeStream(DATALIST , pos(P) , dataSize(M) , DM) =
+        write(DATALIST , pos(P) , fillZeroAux(M , sd(P , M) , DM)) if P > M .
+  eq writeStream(DATALIST , pos(P) , dataSize(M) , DM) = write(DATALIST , pos(P) , DM) [owise] .
+
+--- Resize stream content atomically: discard bytes past the new end or append zero bytes.
+  op keepBefore : Nat Map{DataPosition,Data} -> Map{DataPosition,Data} .
+  eq keepBefore(N , empty) = empty .
+  ceq keepBefore(N , (pos(P) |-> D , DM)) = (pos(P) |-> D , keepBefore(N , DM)) if P < N .
+  eq keepBefore(N , (pos(P) |-> D , DM)) = keepBefore(N , DM) [owise] .
+
+  op resizeContent : DataSize DataSize Map{DataPosition,Data} -> Map{DataPosition,Data} .
+  ceq resizeContent(dataSize(M) , dataSize(N) , DM) = keepBefore(N , DM) if N < M .
+  ceq resizeContent(dataSize(M) , dataSize(N) , DM) = fillZeroAux(M , sd(N , M) , DM) if M < N .
+  eq resizeContent(dataSize(M) , dataSize(M) , DM) = DM .
+
 --- This operator updates data position indicator by input data size.
   op updatePos : DataPosition DataSize DataSize -> DataPosition .
   ceq updatePos(pos(P) , dataSize(N) , dataSize(M)) = pos(M) if P + N > M .
    eq updatePos(pos(P) , dataSize(N) , dataSize(M)) = pos(P + N) [owise] .
+
+--- Unlike reads, successful writes always advance by the complete input size.
+  op advancePos : DataPosition DataSize -> DataPosition .
+  eq advancePos(pos(P) , dataSize(N)) = pos(P + N) .
 
 --- This operator updates data size by input data size.
   op updateSize : DataSize DataPosition DataSize -> DataSize .
@@ -121,9 +155,12 @@ fmod DATA-STREAM-OPERATOR is
   eq dataSize(N) + dataSize(M) = dataSize(N + M) .
 
 --- This operator seeks data position indicator.
-  op seekPos : SeekType DataPosition DataSize DataSize -> DataPosition .
-  eq seekPos(TEE-DATA-SEEK-SET , pos(P) , dataSize(N) , dataSize(M)) = pos(N) .
-  eq seekPos(TEE-DATA-SEEK-SET , pos(P) , dataSize(N) , dataSize(M)) = pos(P + N) .
-  eq seekPos(TEE-DATA-SEEK-SET , pos(P) , dataSize(N) , dataSize(M)) = pos(N + M) .
+  op seekPos : SeekType DataPosition Int DataSize -> DataPosition .
+  ceq seekPos(TEE-DATA-SEEK-SET , pos(P) , I , dataSize(M)) = pos(0) if I < 0 .
+  ceq seekPos(TEE-DATA-SEEK-CUR , pos(P) , I , dataSize(M)) = pos(0) if P + I < 0 .
+  ceq seekPos(TEE-DATA-SEEK-END , pos(P) , I , dataSize(M)) = pos(0) if M + I < 0 .
+  eq seekPos(TEE-DATA-SEEK-SET , pos(P) , I , dataSize(M)) = pos(abs(I)) [owise] .
+  eq seekPos(TEE-DATA-SEEK-CUR , pos(P) , I , dataSize(M)) = pos(abs(P + I)) [owise] .
+  eq seekPos(TEE-DATA-SEEK-END , pos(P) , I , dataSize(M)) = pos(abs(M + I)) [owise] .
 
 endfm

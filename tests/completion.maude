@@ -1,0 +1,427 @@
+--- Regression checks for API paths completed from GlobalPlatform v1.3.1.
+load ../src/main
+load ./cases/aux
+
+mod COMPLETION-TEST is
+  pr TEE-BEHAVIOR .
+  pr TEST-AUX .
+endm
+
+mod COMPLETION-INVISIBLE-TEST is
+  pr INVISIBLE-REDUCTION .
+  pr TEST-AUX .
+endm
+
+--- TEE_CipherDoFinal must leave waitCipherDoFinal and return CipherDoFinal.
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | api-call : noCall, api-return : noReturn,
+                        api-state : waitCipherDoFinal, current-api : CipherDoFinal >
+  finishCipherDoFinal(randomData, testTa)
+=>*
+  < testTa : TaKernel | api-state : finished,
+                        api-call : noCall, current-api : CipherDoFinal,
+                        api-return : apiReturn(CipherDoFinal, TEE-SUCCESS, data(randomData)) > .
+
+--- TEE_IsAlgorithmSupported distinguishes supported and unsupported elements.
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | api-call : noCall, api-return : noReturn,
+                        api-state : started, current-api : IsAlgorithmSupported,
+                        current-params : (alg(TEE-ALG-AES-CTR),
+                                          cryptoElement(TEE-CRYPTO-ELEMENT-NONE)) >
+=>*
+  < testTa : TaKernel | api-state : finished,
+                        api-call : noCall, current-api : IsAlgorithmSupported,
+                        current-params : (alg(TEE-ALG-AES-CTR), cryptoElement(TEE-CRYPTO-ELEMENT-NONE)),
+                        api-return : apiReturn(IsAlgorithmSupported, TEE-SUCCESS, empty) > .
+
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | api-call : noCall, api-return : noReturn,
+                        api-state : started, current-api : IsAlgorithmSupported,
+                        current-params : (alg(TEE-ALG-AES-CTR),
+                                          cryptoElement(TEE-ECC-CURVE-NIST-P192)) >
+=>*
+  < testTa : TaKernel | api-state : finished,
+                        api-call : noCall, current-api : IsAlgorithmSupported,
+                        current-params : (alg(TEE-ALG-AES-CTR), cryptoElement(TEE-ECC-CURVE-NIST-P192)),
+                        api-return : apiReturn(IsAlgorithmSupported, TEE-ERROR-NOT-SUPPORTED, empty) > .
+
+--- TEE_InitValueAttribute is also available in the invisible reduction.
+search [1] in COMPLETION-INVISIBLE-TEST :
+  < testTa : TaKernel | api-call : noCall, api-return : noReturn,
+                        api-state : started, current-api : InitValueAttribute,
+                        current-params : (constId(TEE-ATTR-DH-X-BITS),
+                                          constVal(randomAttrVal)) >
+=>*
+  < testTa : TaKernel | api-state : finished,
+                        api-call : noCall, current-api : InitValueAttribute,
+                        current-params : (constId(TEE-ATTR-DH-X-BITS), constVal(randomAttrVal)),
+                        api-return : apiReturn(InitValueAttribute, noReturnCode,
+                          attrs(teeAttribute(TEE-ATTR-DH-X-BITS, randomAttrVal))) > .
+
+--- AE final calls return both ciphertext and tag and use their own wait state.
+search [1] in COMPLETION-TEST :
+  finishAEEncryptFinal(randomData, macValue(randomData, TEE-ALG-AES-GCM, nil), testTa)
+  < testTa : TaKernel | api-call : noCall, api-return : noReturn,
+                        api-state : waitAEEncryptFinal, current-api : AEEncryptFinal >
+=>*
+  < testTa : TaKernel | api-call : noCall, current-api : AEEncryptFinal,
+                        api-state : finished,
+                        api-return : apiReturn(AEEncryptFinal, TEE-SUCCESS,
+                          (data(randomData), mac(macValue(randomData, TEE-ALG-AES-GCM, nil)))) > .
+
+--- A matching AE tag succeeds; a mismatching tag returns MAC_INVALID.
+search [1] in COMPLETION-TEST :
+  finishAEDecryptFinal(randomData, randomData, randomData, testTa)
+  < testTa : TaKernel | api-call : noCall, api-return : noReturn,
+                        api-state : waitAEDecryptFinal, current-api : AEDecryptFinal >
+=>*
+  < testTa : TaKernel | api-call : noCall, current-api : AEDecryptFinal,
+                        api-state : finished,
+                        api-return : apiReturn(AEDecryptFinal, TEE-SUCCESS, data(randomData)) > .
+
+search [1] in COMPLETION-TEST :
+  finishAEDecryptFinal(randomData, randomData, nil, testTa)
+  < testTa : TaKernel | api-call : noCall, api-return : noReturn,
+                        api-state : waitAEDecryptFinal, current-api : AEDecryptFinal >
+=>*
+  < testTa : TaKernel | api-call : noCall, current-api : AEDecryptFinal,
+                        api-state : finished,
+                        api-return : apiReturn(AEDecryptFinal, TEE-ERROR-MAC-INVALID, empty) > .
+
+--- GP short-buffer paths return the required size without invoking the operation.
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | api-call : noCall, api-return : noReturn,
+                        api-state : started, current-api : CipherUpdate,
+                        current-params : (handle(handleId(1, testTa)), data(randomData),
+                                          capacity(dataSize(0))) >
+=>*
+  < testTa : TaKernel | api-call : noCall, api-state : finished,
+                        current-api : CipherUpdate,
+                        current-params : (handle(handleId(1, testTa)), data(randomData),
+                                          capacity(dataSize(0))),
+                        api-return : apiReturn(CipherUpdate, TEE-ERROR-SHORT-BUFFER,
+                                               size(dataSize(1))) > .
+
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | api-call : noCall, api-return : noReturn,
+                        api-state : started, current-api : CipherDoFinal,
+                        current-params : (handle(handleId(1, testTa)), data(randomData),
+                                          capacity(dataSize(0))) >
+=>*
+  < testTa : TaKernel | api-call : noCall, api-state : finished,
+                        current-api : CipherDoFinal,
+                        current-params : (handle(handleId(1, testTa)), data(randomData),
+                                          capacity(dataSize(0))),
+                        api-return : apiReturn(CipherDoFinal, TEE-ERROR-SHORT-BUFFER,
+                                               size(dataSize(1))) > .
+
+search [1] in COMPLETION-INVISIBLE-TEST :
+  < testTa : TaKernel | api-call : noCall, api-return : noReturn,
+                        api-state : started, current-api : CipherUpdate,
+                        current-params : (handle(handleId(1, testTa)), data(randomData),
+                                          capacity(dataSize(0))) >
+=>*
+  < testTa : TaKernel | api-call : noCall, api-state : finished,
+                        current-api : CipherUpdate,
+                        current-params : (handle(handleId(1, testTa)), data(randomData),
+                                          capacity(dataSize(0))),
+                        api-return : apiReturn(CipherUpdate, TEE-ERROR-SHORT-BUFFER,
+                                               size(dataSize(1))) > .
+
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | api-call : noCall, api-return : noReturn,
+                        api-state : waitGetBufferAttribute,
+                        current-api : GetObjectBufferAttribute,
+                        current-params : (constId(TEE-ATTR-RSA-MODULUS),
+                          attrs(teeAttribute(TEE-ATTR-RSA-MODULUS, randomAttrVal)),
+                          usages(TEE-USAGE-EXTRACTABLE), capacity(dataSize(0))) >
+=>*
+  < testTa : TaKernel | api-call : noCall, api-state : finished,
+                        current-api : GetObjectBufferAttribute,
+                        current-params : (constId(TEE-ATTR-RSA-MODULUS),
+                          attrs(teeAttribute(TEE-ATTR-RSA-MODULUS, randomAttrVal)),
+                          usages(TEE-USAGE-EXTRACTABLE), capacity(dataSize(0))),
+                        api-return : apiReturn(GetObjectBufferAttribute,
+                          TEE-ERROR-SHORT-BUFFER, size(dataSize(1))) > .
+
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | api-call : noCall, api-return : noReturn,
+                        api-state : waitGetBufferAttribute,
+                        current-api : GetObjectBufferAttribute,
+                        current-params : (constId(TEE-ATTR-RSA-MODULUS),
+                          attrs(teeAttribute(TEE-ATTR-RSA-MODULUS, randomAttrVal)),
+                          usages(TEE-USAGE-EXTRACTABLE), capacity(dataSize(1))) >
+=>*
+  < testTa : TaKernel | api-call : noCall, api-state : finished,
+                        current-api : GetObjectBufferAttribute,
+                        current-params : (constId(TEE-ATTR-RSA-MODULUS),
+                          attrs(teeAttribute(TEE-ATTR-RSA-MODULUS, randomAttrVal)),
+                          usages(TEE-USAGE-EXTRACTABLE), capacity(dataSize(1))),
+                        api-return : apiReturn(GetObjectBufferAttribute, TEE-SUCCESS,
+                          (constVal(randomAttrVal), size(dataSize(1)))) > .
+
+--- MAC, AE tag, and asymmetric short-buffer failures preserve operation state.
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | api-call : noCall, api-return : noReturn, api-state : started,
+                        current-api : MACComputeFinal,
+                        current-params : (handle(handleId(1, testTa)), data(randomData),
+                                          capacity(dataSize(0))) >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-set : < handleId(1, testTa) : OperationHandle | is-initialized : true >,
+      crypto-keys : nil, accumulated-data : nil, algorithm : TEE-ALG-HMAC-SHA256,
+      operation-class : TEE-OPERATION-MAC, operation-state : TEE-OPERATION-STATE-ACTIVE >
+=>*
+  < testTa : TaKernel | api-call : noCall, api-state : finished,
+                        current-api : MACComputeFinal,
+                        api-return : apiReturn(MACComputeFinal, TEE-ERROR-SHORT-BUFFER,
+                                               size(dataSize(32))),
+                        current-params : (handle(handleId(1, testTa)), data(randomData),
+                                          capacity(dataSize(0))) >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-set : < handleId(1, testTa) : OperationHandle | is-initialized : true >,
+      crypto-keys : nil, accumulated-data : nil, algorithm : TEE-ALG-HMAC-SHA256,
+      operation-class : TEE-OPERATION-MAC, operation-state : TEE-OPERATION-STATE-ACTIVE > .
+
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | api-call : noCall, api-return : noReturn, api-state : started,
+                        current-api : AEEncryptFinal,
+                        current-params : (handle(handleId(1, testTa)), data(randomData),
+                                          tagCapacity(dataSize(0))) >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-set : < handleId(1, testTa) : OperationHandle | is-initialized : true >,
+      crypto-keys : nil, accumulated-data : nil, algorithm : TEE-ALG-AES-GCM,
+      operation-mode : TEE-MODE-ENCRYPT, operation-class : TEE-OPERATION-AE >
+=>*
+  < testTa : TaKernel | api-call : noCall, api-state : finished,
+                        current-api : AEEncryptFinal,
+                        api-return : apiReturn(AEEncryptFinal, TEE-ERROR-SHORT-BUFFER,
+                          (size(dataSize(1)), tagSize(dataSize(1)))),
+                        current-params : (handle(handleId(1, testTa)), data(randomData),
+                                          tagCapacity(dataSize(0))) >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-set : < handleId(1, testTa) : OperationHandle | is-initialized : true >,
+      crypto-keys : nil, accumulated-data : nil, algorithm : TEE-ALG-AES-GCM,
+      operation-mode : TEE-MODE-ENCRYPT, operation-class : TEE-OPERATION-AE > .
+
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | api-call : noCall, api-return : noReturn, api-state : started,
+                        current-api : AsymmetricEncrypt,
+                        current-params : (handle(handleId(1, testTa)), data(randomData),
+                                          capacity(dataSize(0))) >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-set : < handleId(1, testTa) : OperationHandle | is-key-set : true >,
+      crypto-keys : nil, algorithm : TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA1,
+      max-key-size : 2048 Bits,
+      operation-mode : TEE-MODE-ENCRYPT,
+      operation-class : TEE-OPERATION-ASYMMETRIC-CIPHER >
+=>*
+  < testTa : TaKernel | api-call : noCall, api-state : finished,
+                        current-api : AsymmetricEncrypt,
+                        api-return : apiReturn(AsymmetricEncrypt, TEE-ERROR-SHORT-BUFFER,
+                                               size(dataSize(256))),
+                        current-params : (handle(handleId(1, testTa)), data(randomData),
+                                          capacity(dataSize(0))) >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-set : < handleId(1, testTa) : OperationHandle | is-key-set : true >,
+      crypto-keys : nil, algorithm : TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA1,
+      max-key-size : 2048 Bits,
+      operation-mode : TEE-MODE-ENCRYPT,
+      operation-class : TEE-OPERATION-ASYMMETRIC-CIPHER > .
+
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | api-call : noCall, api-return : noReturn, api-state : started,
+                        current-api : AsymmetricEncrypt,
+                        current-params : (handle(handleId(1, testTa)), data(randomData)) >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-set : < handleId(1, testTa) : OperationHandle | is-key-set : true >,
+      max-key-size : 336 Bits, algorithm : TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA1,
+      operation-mode : TEE-MODE-ENCRYPT,
+      operation-class : TEE-OPERATION-ASYMMETRIC-CIPHER >
+=>*
+  < testTa : TaKernel | api-call : noCall, api-state : finished,
+                        current-api : AsymmetricEncrypt,
+                        api-return : apiReturn(AsymmetricEncrypt, TEE-ERROR-BAD-PARAMETERS, empty),
+                        current-params : (handle(handleId(1, testTa)), data(randomData)) >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-set : < handleId(1, testTa) : OperationHandle | is-key-set : true >,
+      max-key-size : 336 Bits, algorithm : TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA1,
+      operation-mode : TEE-MODE-ENCRYPT,
+      operation-class : TEE-OPERATION-ASYMMETRIC-CIPHER > .
+
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | api-call : noCall, api-return : noReturn, api-state : started,
+                        current-api : AsymmetricDecrypt,
+                        current-params : (handle(handleId(1, testTa)),
+                          data(encrypted(randomData, TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA1,
+                            key(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal))))) >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-set : < handleId(1, testTa) : OperationHandle | is-key-set : true >,
+      crypto-keys : nil, max-key-size : 2048 Bits,
+      algorithm : TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA1,
+      operation-mode : TEE-MODE-DECRYPT,
+      operation-class : TEE-OPERATION-ASYMMETRIC-CIPHER >
+=>*
+  < testTa : TaKernel | api-call : noCall, api-state : finished,
+                        current-api : AsymmetricDecrypt,
+                        api-return : apiReturn(AsymmetricDecrypt, TEE-ERROR-CIPHERTEXT-INVALID, empty),
+                        current-params : (handle(handleId(1, testTa)),
+                          data(encrypted(randomData, TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA1,
+                            key(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal))))) >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-set : < handleId(1, testTa) : OperationHandle | is-key-set : true >,
+      crypto-keys : nil, max-key-size : 2048 Bits,
+      algorithm : TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA1,
+      operation-mode : TEE-MODE-DECRYPT,
+      operation-class : TEE-OPERATION-ASYMMETRIC-CIPHER > .
+
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | api-call : noCall, api-return : noReturn, api-state : started,
+                        current-api : DigestDoFinal,
+                        current-params : (handle(handleId(1, testTa)), data(randomData),
+                                          capacity(dataSize(31))) >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-set : < handleId(1, testTa) : OperationHandle | >,
+      accumulated-data : nil, algorithm : TEE-ALG-SHA256,
+      operation-class : TEE-OPERATION-DIGEST >
+=>*
+  < testTa : TaKernel | api-call : noCall, api-state : finished,
+                        current-api : DigestDoFinal,
+                        api-return : apiReturn(DigestDoFinal, TEE-ERROR-SHORT-BUFFER,
+                                               size(dataSize(32))),
+                        current-params : (handle(handleId(1, testTa)), data(randomData),
+                                          capacity(dataSize(31))) >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-set : < handleId(1, testTa) : OperationHandle | >,
+      accumulated-data : nil, algorithm : TEE-ALG-SHA256,
+      operation-class : TEE-OPERATION-DIGEST > .
+
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | api-call : noCall, api-return : noReturn, api-state : started,
+                        current-api : AsymmetricSignDigest,
+                        current-params : (handle(handleId(1, testTa)), data(randomData),
+                                          capacity(dataSize(255))) >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-set : < handleId(1, testTa) : OperationHandle | is-key-set : true >,
+      max-key-size : 2048 Bits, operation-mode : TEE-MODE-SIGN,
+      operation-class : TEE-OPERATION-ASYMMETRIC-SIGNATURE >
+=>*
+  < testTa : TaKernel | api-call : noCall, api-state : finished,
+                        current-api : AsymmetricSignDigest,
+                        api-return : apiReturn(AsymmetricSignDigest, TEE-ERROR-SHORT-BUFFER,
+                                               size(dataSize(256))),
+                        current-params : (handle(handleId(1, testTa)), data(randomData),
+                                          capacity(dataSize(255))) >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-set : < handleId(1, testTa) : OperationHandle | is-key-set : true >,
+      max-key-size : 2048 Bits, operation-mode : TEE-MODE-SIGN,
+      operation-class : TEE-OPERATION-ASYMMETRIC-SIGNATURE > .
+
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                        api-state : started, current-api : CipherDoFinal,
+                        current-params : (handle(handleId(1, testTa)), data(randomData),
+                          capacity(dataSize(0)), srcRegion(bufferRegion(100, 16)),
+                          destRegion(bufferRegion(108, 16))) >
+=>*
+  < testTa : TaKernel | app-status : panic, api-call : noCall, api-return : noReturn,
+                        api-state : finished, current-api : CipherDoFinal,
+                        current-params : (handle(handleId(1, testTa)), data(randomData),
+                          capacity(dataSize(0)), srcRegion(bufferRegion(100, 16)),
+                          destRegion(bufferRegion(108, 16))) > .
+
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                        api-state : started, current-api : AsymmetricSignDigest,
+                        current-params : (handle(handleId(1, testTa)), data(randomData)) >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-set : < handleId(1, testTa) : OperationHandle | is-key-set : true >,
+      crypto-keys : nil, algorithm : TEE-ALG-RSASSA-PKCS1-V1-5-SHA256,
+      operation-mode : TEE-MODE-SIGN,
+      operation-class : TEE-OPERATION-ASYMMETRIC-SIGNATURE >
+=>*
+  < testTa : TaKernel | app-status : panic, api-call : noCall, api-return : noReturn,
+                        api-state : finished, current-api : AsymmetricSignDigest,
+                        current-params : (handle(handleId(1, testTa)), data(randomData)) >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-set : < handleId(1, testTa) : OperationHandle | is-key-set : true >,
+      crypto-keys : nil, algorithm : TEE-ALG-RSASSA-PKCS1-V1-5-SHA256,
+      operation-mode : TEE-MODE-SIGN,
+      operation-class : TEE-OPERATION-ASYMMETRIC-SIGNATURE > .
+
+--- TEE_SetOperationKey2 installs both initialized keys for a derivation operation.
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | api-call : noCall, api-return : noReturn, api-state : started,
+                        current-api : SetOperationKey2,
+                        current-params : (handle(handleId(1, testTa)),
+                          keyHandle(handleId(2, testTa)), secondKeyHandle(handleId(3, testTa))) >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-set : < handleId(1, testTa) : OperationHandle |
+        is-initialized : false, is-key-set : false, is-extracting : false >,
+      crypto-keys : nil, max-key-size : 256 Bits, accumulated-data : nil,
+      algorithm : TEE-ALG-SM2-KEP, initialization-vector : nil,
+      operation-mode : TEE-MODE-DERIVE, operation-class : TEE-OPERATION-KEY-DERIVATION,
+      operation-state : TEE-OPERATION-STATE-INITIAL >
+  < taOid(2, testTa) : TransientObject |
+      handle-set : < handleId(2, testTa) : ObjectHandle | is-initialized : true >,
+      object-type : TEE-TYPE-ECDSA-KEYPAIR, object-usage-set : TEE-USAGE-DERIVE,
+      attribute-set : teeAttribute(TEE-ATTR-ECC-PRIVATE-VALUE, randomAttrVal) >
+  < taOid(3, testTa) : TransientObject |
+      handle-set : < handleId(3, testTa) : ObjectHandle | is-initialized : true >,
+      object-type : TEE-TYPE-ECDSA-KEYPAIR, object-usage-set : TEE-USAGE-DERIVE,
+      attribute-set : teeAttribute(TEE-ATTR-ECC-PRIVATE-VALUE, attrValue(TEE-ATTR-ECC-PRIVATE-VALUE)) >
+=>*
+  < testTa : TaKernel | api-call : noCall, current-api : SetOperationKey2, api-state : finished,
+                        api-return : apiReturn(SetOperationKey2, TEE-SUCCESS, empty),
+                        current-params : (handle(handleId(1, testTa)), keyHandle(handleId(2, testTa)),
+                          secondKeyHandle(handleId(3, testTa)),
+                          attrs(teeAttribute(TEE-ATTR-ECC-PRIVATE-VALUE, randomAttrVal))) >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-set : < handleId(1, testTa) : OperationHandle |
+        is-initialized : false, is-key-set : true, is-extracting : false >,
+      operation-mode : TEE-MODE-DERIVE, operation-class : TEE-OPERATION-KEY-DERIVATION,
+      crypto-keys : key(teeAttribute(TEE-ATTR-ECC-PRIVATE-VALUE, randomAttrVal))
+                    key(teeAttribute(TEE-ATTR-ECC-PRIVATE-VALUE, attrValue(TEE-ATTR-ECC-PRIVATE-VALUE))),
+      max-key-size : 256 Bits, accumulated-data : nil, algorithm : TEE-ALG-SM2-KEP,
+      initialization-vector : nil, operation-state : TEE-OPERATION-STATE-INITIAL >
+  < taOid(2, testTa) : TransientObject |
+      handle-set : < handleId(2, testTa) : ObjectHandle | is-initialized : true >,
+      object-type : TEE-TYPE-ECDSA-KEYPAIR, object-usage-set : TEE-USAGE-DERIVE,
+      attribute-set : teeAttribute(TEE-ATTR-ECC-PRIVATE-VALUE, randomAttrVal) >
+  < taOid(3, testTa) : TransientObject |
+      handle-set : < handleId(3, testTa) : ObjectHandle | is-initialized : true >,
+      object-type : TEE-TYPE-ECDSA-KEYPAIR, object-usage-set : TEE-USAGE-DERIVE,
+      attribute-set : teeAttribute(TEE-ATTR-ECC-PRIVATE-VALUE, attrValue(TEE-ATTR-ECC-PRIVATE-VALUE)) > .
+
+--- Unimplemented and illegal trusted-storage identifiers report ITEM_NOT_FOUND.
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                        api-state : started, current-api : OpenPersistentObject,
+                        current-params : storageId(TEE-STORAGE-PERSO) >
+=>*
+  < testTa : TaKernel | app-status : normal, api-call : noCall,
+                        api-state : finished, current-api : OpenPersistentObject,
+                        current-params : storageId(TEE-STORAGE-PERSO),
+                        api-return : apiReturn(OpenPersistentObject, TEE-ERROR-ITEM-NOT-FOUND,
+                                               handle(TEE-HANDLE-NULL)) > .
+
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                        api-state : started, current-api : CreatePersistentObject,
+                        current-params : storageId(TEE-STORAGE-PROTECTED) >
+=>*
+  < testTa : TaKernel | app-status : normal, api-call : noCall,
+                        api-state : finished, current-api : CreatePersistentObject,
+                        current-params : storageId(TEE-STORAGE-PROTECTED),
+                        api-return : apiReturn(CreatePersistentObject, TEE-ERROR-ITEM-NOT-FOUND,
+                                               handle(TEE-HANDLE-NULL)) > .
+
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | api-call : noCall, api-return : noReturn,
+                        api-state : started, current-api : StartPersistentObjectEnumerator,
+                        current-params : storageId(TEE-STORAGE-ILLEGAL-VALUE) >
+=>*
+  < testTa : TaKernel | api-call : noCall,
+                        api-state : finished, current-api : StartPersistentObjectEnumerator,
+                        current-params : storageId(TEE-STORAGE-ILLEGAL-VALUE),
+                        api-return : apiReturn(StartPersistentObjectEnumerator,
+                                               TEE-ERROR-ITEM-NOT-FOUND, empty) > .

@@ -7,6 +7,7 @@ omod PERSISTENT-OBJECT is
   pr TRUSTED-STORAGE-OBJECT .
   pr OPENABLE-OBJECT .
   pr FILE-ID .
+  pr STORAGE-IDENTIFER .
 
 --- Version In Paper
   --- class PersistObj | file-name : FileName, data-stream : List{Data} .
@@ -43,7 +44,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
   vars FILE FILE' : FileId .
   var TN : AppId .
   var TK : TaInstId .
-  var DATAFLAGS : Set{DataFlag} .
+  vars DATAFLAGS DATAFLAGS2 : Set{DataFlag} .
   var HS : Configuration .
   var OBJUSAGES : Set{ObjectUsage} .
   var ATTRS : Set{TeeAttribute} .
@@ -53,6 +54,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
   var STATUS : StorageStatus .
   var EXISTENCE : ServiceReturn .
   var PARAMS : Set{TeeApiParam} .
+  var STORID : StorageIdentifier .
 
 ------------------------------------------------------------
 --- 'TEE_OpenPersistentObject' Sharing Rules
@@ -61,24 +63,27 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 --- If more than one handle is opened on the same object, and if any of these object handles wa opned with the flag TEE_DATA_FLAG_ACCESS_READ,
 --- then all the object handles SHALL have been opened with the flags TEE_DATA_FLAG_SHARE_READ.
 
---- TODO: NEED TO UPDATE
   op accessRightCheckingAux : Set{DataFlag} Set{DataFlag} -> Bool .
   op accessRightChecking : Set{DataFlag} Configuration -> Bool .
-  eq accessRightChecking(DATAFLAGS , HS) = true .
+  eq accessRightCheckingAux(DATAFLAGS , DATAFLAGS2) =
+       not (TEE-DATA-FLAG-ACCESS-WRITE-META in DATAFLAGS)
+    and not (TEE-DATA-FLAG-ACCESS-WRITE-META in DATAFLAGS2)
+    and not (TEE-DATA-FLAG-EXCLUSIVE in DATAFLAGS)
+    and not (TEE-DATA-FLAG-EXCLUSIVE in DATAFLAGS2)
+    and (not ((TEE-DATA-FLAG-ACCESS-READ in DATAFLAGS)
+              or (TEE-DATA-FLAG-ACCESS-READ in DATAFLAGS2))
+         or ((TEE-DATA-FLAG-SHARE-READ in DATAFLAGS)
+             and (TEE-DATA-FLAG-SHARE-READ in DATAFLAGS2)))
+    and (not ((TEE-DATA-FLAG-ACCESS-WRITE in DATAFLAGS)
+              or (TEE-DATA-FLAG-ACCESS-WRITE in DATAFLAGS2))
+         or ((TEE-DATA-FLAG-SHARE-WRITE in DATAFLAGS)
+             and (TEE-DATA-FLAG-SHARE-WRITE in DATAFLAGS2))) .
 
-  --- eq accessRightCheckingAux(DATAFLAGS1 , empty , B1 , B2) = true .
-  --- eq accessRightCheckingAux(DATAFLAGS1 , (TEE-DATA-FLAG-OVERWRITE , DATAFLAGS2) , B1 , B2) = accessRightCheckingAux(DATAFLAGS1 , DATAFLAGS2 , B1 , B2) .
-  --- eq accessRightCheckingAux(DATAFLAGS1 , (TEE-DATA-FLAG-ACCESS-READ , DATAFLAGS2) , true , B2) = accessRightCheckingAux(DATAFLAGS1 , DATAFLAGS2 , true , B2) .
-  --- eq accessRightCheckingAux(DATAFLAGS1 , (TEE-DATA-FLAG-ACCESS-WRITE , DATAFLAGS2) , B1 , true) = accessRightCheckingAux(DATAFLAGS1 , DATAFLAGS2 , B1 , true) .
-  --- eq accessRightCheckingAux((TEE-DATA-FLAG-SHARE-READ , DATAFLAGS1) , (TEE-DATA-FLAG-SHARE-READ , DATAFLAGS2) , B1 , B2) = accessRightCheckingAux(DATAFLAGS1 , DATAFLAGS2 , true , B2) .
-  --- eq accessRightCheckingAux((TEE-DATA-FLAG-SHARE-WRITE , DATAFLAGS1) , (TEE-DATA-FLAG-SHARE-WRITE , DATAFLAGS2) , B1 , B2) = accessRightCheckingAux(DATAFLAGS1 , DATAFLAGS2 , B1 , true) .
-  --- eq accessRightCheckingAux((TEE-DATA-FLAG-ACCESS-WRITE-META , DATAFLAGS1) , DATAFLAGS2 , B1 , B2) = false .
-  --- eq accessRightCheckingAux(DATAFLAGS1 , DATAFLAGS2 , B1 , B2) = false [owise] .
-
-  --- eq accessRightChecking(DATAFLAGS1 , (< HANDLE : ObjectHandle | data-access-flag-set : DATAFLAGS2 > HS)) = accessRightCheckingAux(DATAFLAGS1 , DATAFLAGS2 , false , false) .
-  --- eq accessRightChecking(DATAFLAGS , none) = true .
-
-  --- eq accessRightConflict(DATAFLAGS , HS) = not accessRightChecking(DATAFLAGS , HS) .
+  eq accessRightChecking(DATAFLAGS , none) = true .
+  eq accessRightChecking(DATAFLAGS ,
+       (< H : ObjectHandle | data-access-flag-set : DATAFLAGS2 > HS)) =
+       accessRightCheckingAux(DATAFLAGS , DATAFLAGS2)
+       and accessRightChecking(DATAFLAGS , HS) .
 
 ------------------------------------------------------------
 --- 'TEE_OpenPersistentObject'
@@ -93,21 +98,39 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
   msg finishOpenPersistentHandle : HandleId TaInstId -> Msg .
   msg failOpenPersistentHandle : TaInstId -> Msg .
 
-  rl [open-persistent-subroutine] : 
+  rl [open-persistent-default-private-storage] :
+    < TK : TaKernel | api-state : started , current-api : OpenPersistentObject ,
+                      current-params : (fileId(FILE) , flags(DATAFLAGS)) >
+    =>
+    < TK : TaKernel | current-params : (storageId(TEE-STORAGE-PRIVATE) , fileId(FILE) , flags(DATAFLAGS)) >
+  .
+
+  crl [open-persistent-subroutine] :
     < TK : TaKernel | app-status : normal , api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : OpenPersistentObject ,
-                      current-params : (fileId(FILE) , PARAMS) ,
+                      current-params : (storageId(STORID) , fileId(FILE) , PARAMS) ,
                       trust-app-id : TN >
     =>
     < TK : TaKernel | api-state : waitStorageCheck >
     reqTrustedOS(getStorageStatus checkFileExist(FILE) , TK , TN)
+  if supportedStorage(STORID)
+  .
+
+  crl [open-persistent-storage-id-not-found] :
+    < TK : TaKernel | app-status : normal , api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : OpenPersistentObject ,
+                      current-params : (storageId(STORID) , PARAMS) >
+    =>
+    < TK : TaKernel | api-state : finished ,
+                      api-return : apiReturn(OpenPersistentObject , TEE-ERROR-ITEM-NOT-FOUND , handle(TEE-HANDLE-NULL)) >
+  if not supportedStorage(STORID)
   .
 
   rl [open-persistent-subroutine] :
     retTrustedOS(storageStatus(storageNormal) fileExist , TK)
     < TK : TaKernel | app-status : normal ,
                       api-state : waitStorageCheck , current-api : OpenPersistentObject ,
-                      current-params : fileId(FILE) , flags(DATAFLAGS) ,
+                      current-params : storageId(STORID) , fileId(FILE) , flags(DATAFLAGS) ,
                       id-counter : N >
     =>
     < TK : TaKernel | api-state : waitOpenPersistent , id-counter : N + 1 >
@@ -222,14 +245,34 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
   --- .
 
 --- Model/Implementation Specific Version (2 rules)
-  rl [create-persistent-subroutine] : 
+  rl [create-persistent-default-private-storage] :
+    < TK : TaKernel | api-state : started , current-api : CreatePersistentObject ,
+                      current-params : (fileId(FILE) , flags(DATAFLAGS) , handle(HANDLE) ,
+                                        data(DATALIST) , size(DATASIZE) , opt(OPTHANDLE)) >
+    =>
+    < TK : TaKernel | current-params : (storageId(TEE-STORAGE-PRIVATE) , fileId(FILE) , flags(DATAFLAGS) ,
+                                        handle(HANDLE) , data(DATALIST) , size(DATASIZE) , opt(OPTHANDLE)) >
+  .
+
+  crl [create-persistent-subroutine] :
     < TK : TaKernel | app-status : normal , api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : CreatePersistentObject ,
-                      current-params : fileId(FILE) , PARAMS ,
+                      current-params : storageId(STORID) , fileId(FILE) , PARAMS ,
                       trust-app-id : TN >
     =>
     < TK : TaKernel | api-state : waitStorageCheck >
     reqTrustedOS(getStorageStatus checkFileExist(FILE) , TK , TN)
+  if supportedStorage(STORID)
+  .
+
+  crl [create-persistent-storage-id-not-found] :
+    < TK : TaKernel | app-status : normal , api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : CreatePersistentObject ,
+                      current-params : (storageId(STORID) , PARAMS) >
+    =>
+    < TK : TaKernel | api-state : finished ,
+                      api-return : apiReturn(CreatePersistentObject , TEE-ERROR-ITEM-NOT-FOUND , handle(TEE-HANDLE-NULL)) >
+  if not supportedStorage(STORID)
   .
 
   op nextState : ServiceReturn Set{DataFlag} -> TeeApiState .
@@ -767,26 +810,38 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
   var STATUS : StorageStatus .
   var EXISTENCE : ServiceReturn .
   var PARAMS : Set{TeeApiParam} .
+  var STORID : StorageIdentifier .
 
 ------------------------------------------------------------
 --- 'TEE_OpenPersistentObject'
 ------------------------------------------------------------
 
-  eq
+  ceq
     < TK : TaKernel | app-status : normal , api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : OpenPersistentObject ,
-                      current-params : (fileId(FILE) , PARAMS) ,
+                      current-params : (storageId(STORID) , fileId(FILE) , PARAMS) ,
                       trust-app-id : TN >
     =
     < TK : TaKernel | api-state : waitStorageCheck >
     reqTrustedOS(getStorageStatus checkFileExist(FILE) , TK , TN)
+  if supportedStorage(STORID)
+  .
+
+  ceq
+    < TK : TaKernel | app-status : normal , api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : OpenPersistentObject ,
+                      current-params : (storageId(STORID) , PARAMS) >
+    =
+    < TK : TaKernel | api-state : finished ,
+                      api-return : apiReturn(OpenPersistentObject , TEE-ERROR-ITEM-NOT-FOUND , handle(TEE-HANDLE-NULL)) >
+  if not supportedStorage(STORID)
   .
 
   eq
     retTrustedOS(storageStatus(storageNormal) fileExist , TK)
     < TK : TaKernel | app-status : normal ,
                       api-state : waitStorageCheck , current-api : OpenPersistentObject ,
-                      current-params : fileId(FILE) , flags(DATAFLAGS) ,
+                      current-params : storageId(STORID) , fileId(FILE) , flags(DATAFLAGS) ,
                       id-counter : N >
     =
     < TK : TaKernel | api-state : waitOpenPersistent , id-counter : N + 1 >
@@ -855,14 +910,25 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
 --- 'TEE_CreatePersistenObject'
 ------------------------------------------------------------
 
-  eq
+  ceq
     < TK : TaKernel | app-status : normal , api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : CreatePersistentObject ,
-                      current-params : fileId(FILE) , PARAMS ,
+                      current-params : storageId(STORID) , fileId(FILE) , PARAMS ,
                       trust-app-id : TN >
     =
     < TK : TaKernel | api-state : waitStorageCheck >
     reqTrustedOS(getStorageStatus checkFileExist(FILE) , TK , TN)
+  if supportedStorage(STORID)
+  .
+
+  ceq
+    < TK : TaKernel | app-status : normal , api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : CreatePersistentObject ,
+                      current-params : (storageId(STORID) , PARAMS) >
+    =
+    < TK : TaKernel | api-state : finished ,
+                      api-return : apiReturn(CreatePersistentObject , TEE-ERROR-ITEM-NOT-FOUND , handle(TEE-HANDLE-NULL)) >
+  if not supportedStorage(STORID)
   .
 
   eq

@@ -144,17 +144,19 @@ omod TEE-OS is
   pr LIST{Service} .
   pr LIST{ServiceReturn} .
   
---- Version In Paper
-  --- class Storage | status : StorageStatus, files : Set{FileName}, counter : Nat .
-  --- class TrustedOS | sess : Map{SessionId,Oid} .
+--- Paper-level classes. TeeOSKernel refines TrustedOS with executable service
+--- queues and per-application storage maps.
+  class Storage | status : StorageStatus, files : Set{FileId}, counter : Nat .
+  class TrustedOS | opened-session : Map{SessionId,TaInstId} .
 
 --- Actual Implemenation
-  class TeeOSKernel | opened-session : Map{SessionId,TaInstId}, session-counter : Nat,
-                      storage : Map{AppId,Set{FileId}}, storage-status : Map{AppId,StorageStatus}, 
+  class TeeOSKernel | session-counter : Nat,
+                      storage : Map{AppId,Set{FileId}}, storage-status : Map{AppId,StorageStatus},
                       service-request-ta : AppId?, service-request-ta-inst : TaInstId?,
                       service-in : List{Service}, service-out : List{ServiceReturn},
                       temporary-objects : Map{AppId,Set{TaObjectId}},
                       ta-prog-map : Map{AppId,ProgramCell} .
+  subclass TeeOSKernel < TrustedOS .
 endom
 
 fmod TEE-OS-SERVICE is

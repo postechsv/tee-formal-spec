@@ -7,13 +7,14 @@ omod TRANSIENT-OBJECT is
   pr TRUSTED-STORAGE-OBJECT .
   pr OPENABLE-OBJECT .
 
---- Version In Paper
-  --- class TransObj | initialized : Bool .
-  --- subclass TransObj < CryptoObj .
+--- Paper-level class. The implementation continues to keep the operational
+--- initialization bit on each handle, while exposing its paper counterpart.
+  class TransObj | initialized : Bool .
+  subclass TransObj < CryptoObj .
 
 --- Model/Implementation Specific Version
   class TransientObject .
-  subclass TransientObject < TaObject TrustedStorageObject OpenableObject .
+  subclass TransientObject < TransObj TaObject OpenableObject .
 endom
 
 --- This module defines the transient object APIs, defined in chapter 5 section 6 of G.P. documentation.
@@ -179,7 +180,8 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
                       api-return : apiReturn(AllocateTransientObject , TEE-SUCCESS, handle(handleId(N + 1 , TK))) >
     < taOid(N , TK) : TransientObject | object-type : OBJTYPE , max-object-size : MAXOBJSIZE , 
                                         attribute-set : empty , object-usage-set : empty , 
-                                        handle-set : freshTransientHandle(N + 1 , TK) , 
+                                        initialized : false,
+                                        handle-set : freshTransientHandle(N + 1 , TK , taOid(N , TK)) ,
                                         trust-app-id : TN >
   if supported(OBJTYPE, MAXOBJSIZE)
   .
@@ -280,7 +282,8 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
     reqResetTransient(HANDLE , TK)
     < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | > >
     =>
-    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | is-initialized : false > , 
+    < OI : TransientObject | initialized : false,
+                             handle-set : < HANDLE : ObjectHandle | is-initialized : false > ,
                              attribute-set : empty , object-usage-set : empty >
     retResetTransient(TK)
   .
@@ -328,10 +331,11 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 
   crl [populate-transient-subroutine] :
     reqPopulateTransient(HANDLE , ATTRS , TK)
-    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | is-initialized : false > , 
+    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | is-initialized : false > ,
                              object-type : OBJTYPE >
     =>
-    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | is-initialized : true > , 
+    < OI : TransientObject | initialized : true,
+                             handle-set : < HANDLE : ObjectHandle | is-initialized : true > ,
                              attribute-set : ATTRS >
     retPopulateTransient(TK)
   if checkCompatible(OBJTYPE , ATTRS)
@@ -435,7 +439,8 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
     < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | is-initialized : false > ,
                              object-type : OBJTYPE' , object-usage-set : OBJUSAGES' >
     => 
-    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | is-initialized : true > ,
+    < OI : TransientObject | initialized : true,
+                             handle-set : < HANDLE : ObjectHandle | is-initialized : true > ,
                              object-usage-set : updateObjectUsage(OBJUSAGES' , OBJUSAGES) ,
                              attribute-set : ATTRS >
     finishCopyAttribute(TK)
@@ -476,7 +481,8 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
     < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | is-initialized : false > ,
                              object-type : OBJTYPE , max-object-size : MAXOBJSIZE >
     => 
-    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | is-initialized : true > ,
+    < OI : TransientObject | initialized : true,
+                             handle-set : < HANDLE : ObjectHandle | is-initialized : true > ,
                              attribute-set : randomAttributes(OBJTYPE , ATTRS) >
     retGenerateKey(TK)
   if KEYSIZE <= MAXOBJSIZE /\ mandatoryParamsForKeyGen(OBJTYPE , ATTRS) 
@@ -549,7 +555,8 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
                       api-return : apiReturn(AllocateTransientObject, TEE-SUCCESS, handle(handleId(N + 1 , TK))) >
     < taOid(N , TK) : TransientObject | object-type : OBJTYPE , max-object-size : MAXOBJSIZE , 
                                         attribute-set : empty , object-usage-set : empty , 
-                                        handle-set : freshTransientHandle(N + 1 , TK) , 
+                                        initialized : false,
+                                        handle-set : freshTransientHandle(N + 1 , TK , taOid(N , TK)) ,
                                         trust-app-id : TN >
   if supported(OBJTYPE, MAXOBJSIZE)
   .
@@ -627,7 +634,8 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
     reqResetTransient(HANDLE , TK)
     < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | > >
     =
-    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | is-initialized : false > , 
+    < OI : TransientObject | initialized : false,
+                             handle-set : < HANDLE : ObjectHandle | is-initialized : false > ,
                              attribute-set : empty , object-usage-set : empty >
     retResetTransient(TK)
   .
@@ -664,10 +672,11 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
 
   ceq
     reqPopulateTransient(HANDLE , ATTRS , TK)
-    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | is-initialized : false > , 
+    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | is-initialized : false > ,
                              object-type : OBJTYPE >
     =
-    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | is-initialized : true > , 
+    < OI : TransientObject | initialized : true,
+                             handle-set : < HANDLE : ObjectHandle | is-initialized : true > ,
                              attribute-set : ATTRS >
     retPopulateTransient(TK)
   if checkCompatible(OBJTYPE , ATTRS)
@@ -742,7 +751,8 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
     < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | is-initialized : false > ,
                              object-type : OBJTYPE' , object-usage-set : OBJUSAGES' >
     =
-    < OI : TransientObject | handle-set : < HANDLE : ObjectHandle | is-initialized : true > ,
+    < OI : TransientObject | initialized : true,
+                             handle-set : < HANDLE : ObjectHandle | is-initialized : true > ,
                              object-usage-set : updateObjectUsage(OBJUSAGES' , OBJUSAGES) ,
                              attribute-set : ATTRS >
     finishCopyAttribute(TK)

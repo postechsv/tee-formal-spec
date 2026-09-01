@@ -11,12 +11,8 @@ omod HANDLE is
   pr HANDLE-ID .
   pr TA-OBJECT .
 
---- Version In Paper
-  --- class Handle | oid : Oid .
-
---- Model/Implementation Specific Version
   subsort HandleId < TaObjectId .
-  class Handle | is-initialized : Bool .
+  class Handle | oid : Oid, is-initialized : Bool .
 endom
 
 view Handle from TRIV to HANDLE is
@@ -58,14 +54,13 @@ omod OBJECT-HANDLE is
   pr SET{DataFlag} .
   pr DATA-POSITION .
 
---- Version In Paper
-  --- class ObjHandle | flags : Set{DataAccessFlag} .
-  --- subclass ObjHandle < Handle .
+  class ObjHandle | flags : Set{DataFlag} .
+  subclass ObjHandle < Handle .
 
 --- Model/Implementation Specific Version
   class ObjectHandle | data-access-flag-set : Set{DataFlag},
                        data-position : DataPosition? .
-  subclass ObjectHandle < Handle .
+  subclass ObjectHandle < ObjHandle .
 endom
 
 --- This module defines object enumerator handle, a subclass of handle.
@@ -82,14 +77,13 @@ endom
 omod OPERATION-HANDLE is
   pr HANDLE .
 
---- Version In Paper
-  --- class OpHandle | state : HandleState, key-material-set : Bool . 
-  --- subclass OpHandle < Handle .
+  class OpHandle | key-material-set : Bool .
+  subclass OpHandle < Handle .
 
 --- Model/Implementation Specific Version
   class OperationHandle | is-key-set : Bool,
                           is-extracting : Bool .
-  subclass OperationHandle < Handle .
+  subclass OperationHandle < OpHandle .
 endom
 
 ------------------------------------------------------------
@@ -122,31 +116,35 @@ omod HANDLE-AUX is
   var TK : TaInstId .
   var DATAFLAGS : Set{DataFlag} .
   var HANDLE : HandleId .
+  var OI : Oid .
 
-  op freshTransientHandle : Nat TaInstId -> Configuration .
-  op freshPersistentHandle : Nat TaInstId Set{DataFlag} -> Configuration .
-  op freshEnumeratorHandle : Nat TaInstId -> Configuration .
-  op freshOperationHandle : Nat TaInstId -> Configuration .
+  op freshTransientHandle : Nat TaInstId Oid -> Configuration .
+  op freshPersistentHandle : Nat TaInstId Set{DataFlag} Oid -> Configuration .
+  op freshEnumeratorHandle : Nat TaInstId Oid -> Configuration .
+  op freshOperationHandle : Nat TaInstId Oid -> Configuration .
   op freshSessionHandle : Nat TaInstId -> Configuration . 
   
   op nullHandle : HandleId -> Bool .
   eq nullHandle(TEE-HANDLE-NULL) = true .
   eq nullHandle(HANDLE) = false [owise] .
 
-  eq freshTransientHandle(N , TK) 
-   = < handleId(N , TK) : ObjectHandle | is-initialized : false , 
-                                         data-access-flag-set : empty , data-position : noPos > .
+  eq freshTransientHandle(N , TK , OI)
+   = < handleId(N , TK) : ObjectHandle | oid : OI, is-initialized : false,
+                                         flags : empty,
+                                         data-access-flag-set : empty, data-position : noPos > .
 
-  eq freshPersistentHandle(N , TK , DATAFLAGS) 
-   = < handleId(N , TK) : ObjectHandle | is-initialized : true , 
-                                         data-access-flag-set : DATAFLAGS , data-position : pos(0) > .
+  eq freshPersistentHandle(N , TK , DATAFLAGS , OI)
+   = < handleId(N , TK) : ObjectHandle | oid : OI, is-initialized : true,
+                                         flags : DATAFLAGS,
+                                         data-access-flag-set : DATAFLAGS, data-position : pos(0) > .
   
-  eq freshEnumeratorHandle(N , TK) 
-   = < handleId(N , TK) : ObjectEnumHandle | is-initialized : false > .
+  eq freshEnumeratorHandle(N , TK , OI)
+   = < handleId(N , TK) : ObjectEnumHandle | oid : OI, is-initialized : false > .
 
-  eq freshOperationHandle(N , TK) 
-   = < handleId(N , TK) : OperationHandle | is-initialized : false ,
-                                            is-key-set : false , is-extracting : false > .
+  eq freshOperationHandle(N , TK , OI)
+   = < handleId(N , TK) : OperationHandle | oid : OI, is-initialized : false,
+                                            key-material-set : false,
+                                            is-key-set : false, is-extracting : false > .
 
   eq freshSessionHandle(N, TK)
   = < handleId(N, TK) : TaSessionHandle | is-initialized : true > .

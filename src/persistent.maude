@@ -8,14 +8,16 @@ omod PERSISTENT-OBJECT is
   pr OPENABLE-OBJECT .
   pr FILE-ID .
   pr STORAGE-IDENTIFER .
+  pr LIST{Data} .
 
---- Version In Paper
-  --- class PersistObj | file-name : FileName, data-stream : List{Data} .
-  --- subclass PersistObj < CryptoObj .
+--- Paper-level class. PersistentObject refines its embedded data stream into
+--- a separately addressable DataStreamObject through data-stream-id.
+  class PersistObj | file-name : FileId , data-stream : List{Data} .
+  subclass PersistObj < CryptoObj .
 
 --- Model/Implementation Specific Version
   class PersistentObject | data-stream-id : TaObjectId , file-id : FileId .
-  subclass PersistentObject < TaObject TrustedStorageObject OpenableObject .
+  subclass PersistentObject < PersistObj TaObject OpenableObject .
 endom
 
 --- This module defines the persistent object APIs, defined in chapter 5 section 7 of the G.P. documentation.
@@ -141,7 +143,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     openPersistentHandle(FILE , DATAFLAGS , N , TK)
     < OI : PersistentObject | handle-set : HS , file-id : FILE >
     =>
-    < OI : PersistentObject | handle-set : (freshPersistentHandle(N , TK , DATAFLAGS) HS) >
+    < OI : PersistentObject | handle-set : (freshPersistentHandle(N , TK , DATAFLAGS , OI) HS) >
     finishOpenPersistentHandle(handleId(N , TK) , TK)
   if accessRightChecking(DATAFLAGS , HS)
   .
@@ -334,8 +336,9 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     < TK : TaKernel | api-state : finished , id-counter : N + 3 ,
                       current-params : (fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) , PARAMS , openedHandle(handleId(N + 1 , TK))) ,
                       api-return : apiReturn(CreatePersistentObject , TEE-SUCCESS , handle(handleId(N + 1 , TK))) >
-    < taOid(N , TK) : PersistentObject | handle-set : freshPersistentHandle(N + 1 , TK , DATAFLAGS) ,
-                                         file-id : FILE , object-type : OBJTYPE , max-object-size : keySize(ATTRS) , 
+    < taOid(N , TK) : PersistentObject | handle-set : freshPersistentHandle(N + 1 , TK , DATAFLAGS , taOid(N , TK)) ,
+                                         file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
+                                         file-id : FILE , object-type : OBJTYPE , max-object-size : keySize(ATTRS) ,
                                          attribute-set : ATTRS , object-usage-set : OBJUSAGES ,
                                          data-stream-id : taOid(N + 2, TK) ,
                                          trust-app-id : TN >
@@ -449,8 +452,9 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     < TK : TaKernel | api-state : waitNotifyFileCreation , id-counter : N + 3 ,
                       current-params : (fileId(FILE) , data(DATALIST) , size(DATASIZE) , flags(DATAFLAGS) , 
                                         PARAMS , openedHandle(handleId(N + 1 , TK))) >
-    < taOid(N , TK) : PersistentObject | handle-set : freshPersistentHandle(N + 1 , TK , DATAFLAGS) ,
-                                         file-id : FILE , object-type : TEE-TYPE-DATA , max-object-size : 0 Bits , 
+    < taOid(N , TK) : PersistentObject | handle-set : freshPersistentHandle(N + 1 , TK , DATAFLAGS , taOid(N , TK)) ,
+                                         file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
+                                         file-id : FILE , object-type : TEE-TYPE-DATA , max-object-size : 0 Bits ,
                                          attribute-set : empty , object-usage-set : empty ,
                                          data-stream-id : taOid(N + 2, TK) ,
                                          trust-app-id : TN >
@@ -500,8 +504,9 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     < TK : TaKernel | api-state : waitNotifyFileCreation , id-counter : N + 3 ,
                       current-params : fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) ,
                                        attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) , PARAMS , openedHandle(handleId(N + 1 , TK)) >
-    < taOid(N , TK) : PersistentObject | handle-set : freshPersistentHandle(N + 1 , TK , DATAFLAGS) ,
-                                         file-id : FILE , object-type : OBJTYPE , max-object-size : keySize(ATTRS) , 
+    < taOid(N , TK) : PersistentObject | handle-set : freshPersistentHandle(N + 1 , TK , DATAFLAGS , taOid(N , TK)) ,
+                                         file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
+                                         file-id : FILE , object-type : OBJTYPE , max-object-size : keySize(ATTRS) ,
                                          attribute-set : ATTRS , object-usage-set : OBJUSAGES ,
                                          data-stream-id : taOid(N + 2, TK) ,
                                          trust-app-id : TN >
@@ -670,13 +675,13 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     renamePersistent(HANDLE , FILE , TK , TN)
   .
 
-  crl [rename-persistent-subroutine] : 
+  crl [rename-persistent-subroutine] :
     renamePersistent(HANDLE , FILE , TK , TN)
     < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | data-access-flag-set : DATAFLAGS > HS) ,
                               file-id : FILE' , trust-app-id : TN >
     =>
-    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS) , 
-                              file-id : FILE >
+    < OI : PersistentObject | handle-set : (< HANDLE : ObjectHandle | > HS),
+                              file-name : FILE, file-id : FILE >
     finishRenamePersistent(FILE' , TK)
   if hasWriteMeta(DATAFLAGS) 
   .
@@ -852,7 +857,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
     openPersistentHandle(FILE , DATAFLAGS , N , TK)
     < OI : PersistentObject | handle-set : HS , file-id : FILE >
     =
-    < OI : PersistentObject | handle-set : (freshPersistentHandle(N , TK , DATAFLAGS) HS) >
+    < OI : PersistentObject | handle-set : (freshPersistentHandle(N , TK , DATAFLAGS , OI) HS) >
     finishOpenPersistentHandle(handleId(N , TK) , TK)
   if accessRightChecking(DATAFLAGS , HS)
   .
@@ -995,8 +1000,9 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | api-state : waitNotifyFileCreation , id-counter : N + 3 ,
                       current-params : (fileId(FILE) , data(DATALIST) , size(DATASIZE) , flags(DATAFLAGS) , 
                                         PARAMS , openedHandle(handleId(N + 1 , TK))) >
-    < taOid(N , TK) : PersistentObject | handle-set : freshPersistentHandle(N + 1 , TK , DATAFLAGS) ,
-                                         file-id : FILE , object-type : TEE-TYPE-DATA , max-object-size : 0 Bits , 
+    < taOid(N , TK) : PersistentObject | handle-set : freshPersistentHandle(N + 1 , TK , DATAFLAGS , taOid(N , TK)) ,
+                                         file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
+                                         file-id : FILE , object-type : TEE-TYPE-DATA , max-object-size : 0 Bits ,
                                          attribute-set : empty , object-usage-set : empty ,
                                          data-stream-id : taOid(N + 2, TK) ,
                                          trust-app-id : TN >
@@ -1026,8 +1032,9 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | api-state : finished , id-counter : N + 3 ,
                       current-params : (fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) , PARAMS , openedHandle(handleId(N + 1 , TK))) ,
                       api-return : apiReturn(CreatePersistentObject , TEE-SUCCESS , handle(handleId(N + 1 , TK))) >
-    < taOid(N , TK) : PersistentObject | handle-set : freshPersistentHandle(N + 1 , TK , DATAFLAGS) ,
-                                         file-id : FILE , object-type : OBJTYPE , max-object-size : keySize(ATTRS) , 
+    < taOid(N , TK) : PersistentObject | handle-set : freshPersistentHandle(N + 1 , TK , DATAFLAGS , taOid(N , TK)) ,
+                                         file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
+                                         file-id : FILE , object-type : OBJTYPE , max-object-size : keySize(ATTRS) ,
                                          attribute-set : ATTRS , object-usage-set : OBJUSAGES ,
                                          data-stream-id : taOid(N + 2, TK) ,
                                          trust-app-id : TN >
@@ -1076,8 +1083,9 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | api-state : waitNotifyFileCreation , id-counter : N + 3 ,
                       current-params : fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) ,
                                        attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) , PARAMS , openedHandle(handleId(N + 1 , TK)) >
-    < taOid(N , TK) : PersistentObject | handle-set : freshPersistentHandle(N + 1 , TK , DATAFLAGS) ,
-                                         file-id : FILE , object-type : OBJTYPE , max-object-size : keySize(ATTRS) , 
+    < taOid(N , TK) : PersistentObject | handle-set : freshPersistentHandle(N + 1 , TK , DATAFLAGS , taOid(N , TK)) ,
+                                         file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
+                                         file-id : FILE , object-type : OBJTYPE , max-object-size : keySize(ATTRS) ,
                                          attribute-set : ATTRS , object-usage-set : OBJUSAGES ,
                                          data-stream-id : taOid(N + 2, TK) ,
                                          trust-app-id : TN >

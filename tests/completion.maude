@@ -356,7 +356,8 @@ search [1] in COMPLETION-TEST :
                           keyHandle(handleId(2, testTa)), secondKeyHandle(handleId(3, testTa))) >
   < taOid(1, testTa) : CryptoOperation |
       handle-set : < handleId(1, testTa) : OperationHandle |
-        is-initialized : false, is-key-set : false, is-extracting : false >,
+        is-initialized : false, key-material-set : false,
+        is-key-set : false, is-extracting : false >,
       crypto-keys : nil, max-key-size : 256 Bits, accumulated-data : nil,
       algorithm : TEE-ALG-SM2-KEP, initialization-vector : nil,
       operation-mode : TEE-MODE-DERIVE, operation-class : TEE-OPERATION-KEY-DERIVATION,
@@ -377,7 +378,8 @@ search [1] in COMPLETION-TEST :
                           attrs(teeAttribute(TEE-ATTR-ECC-PRIVATE-VALUE, randomAttrVal))) >
   < taOid(1, testTa) : CryptoOperation |
       handle-set : < handleId(1, testTa) : OperationHandle |
-        is-initialized : false, is-key-set : true, is-extracting : false >,
+        is-initialized : false, key-material-set : true,
+        is-key-set : true, is-extracting : false >,
       operation-mode : TEE-MODE-DERIVE, operation-class : TEE-OPERATION-KEY-DERIVATION,
       crypto-keys : key(teeAttribute(TEE-ATTR-ECC-PRIVATE-VALUE, randomAttrVal))
                     key(teeAttribute(TEE-ATTR-ECC-PRIVATE-VALUE, attrValue(TEE-ATTR-ECC-PRIVATE-VALUE))),
@@ -425,3 +427,21 @@ search [1] in COMPLETION-TEST :
                         current-params : storageId(TEE-STORAGE-ILLEGAL-VALUE),
                         api-return : apiReturn(StartPersistentObjectEnumerator,
                                                TEE-ERROR-ITEM-NOT-FOUND, empty) > .
+
+--- The paper-level TransObj.initialized state follows handle reset semantics.
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | api-call : noCall, api-return : noReturn,
+                        api-state : started, current-api : ResetTransientObject,
+                        current-params : handle(handleId(1, testTa)) >
+  < taOid(1, testTa) : TransientObject | initialized : true,
+      handle-set : < handleId(1, testTa) : ObjectHandle | is-initialized : true >,
+      attribute-set : teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal),
+      object-usage-set : TEE-USAGE-ENCRYPT >
+=>*
+  < testTa : TaKernel | api-call : noCall, api-state : finished,
+                        current-api : ResetTransientObject,
+                        current-params : handle(handleId(1, testTa)),
+                        api-return : apiReturn(ResetTransientObject, noReturnCode, empty) >
+  < taOid(1, testTa) : TransientObject | initialized : false,
+      handle-set : < handleId(1, testTa) : ObjectHandle | is-initialized : false >,
+      attribute-set : empty, object-usage-set : empty > .

@@ -13,21 +13,20 @@ omod CRYPTO-OPERATION is
   pr OPERATION-CLASS .
   pr OPERATION-STATE .
 
---- Version In Paper
-  --- class CryptoOp | attributes : Set{CryptoAttribute}, max-size : Nat,
-  ---                  algorithm : Algorithm, mode : Mode, state : State, class : Class,
-  ---                  acc-data : List{Data}, handle : Configuration .
+--- Paper-level class, represented with the concrete GP datatypes used by the
+--- executable model.
+  class CryptoOp | crypto-keys : List{CryptoKey},
+                   max-key-size : CryptoKeySize,
+                   accumulated-data : List{Data},
+                   algorithm : AlgorithmIdentifier,
+                   initialization-vector : List{Data},
+                   operation-mode : OperationMode,
+                   operation-class : OperationClass,
+                   operation-state : OperationState .
 
 --- Model/Implementation Specific Version
-  class CryptoOperation | crypto-keys : List{CryptoKey},
-                          max-key-size : CryptoKeySize,
-                          accumulated-data : List{Data},
-                          algorithm : AlgorithmIdentifier,
-                          initialization-vector : List{Data},
-                          operation-mode : OperationMode,
-                          operation-class : OperationClass,
-                          operation-state : OperationState .
-  subclass CryptoOperation < TaObject OpenableObject .
+  class CryptoOperation .
+  subclass CryptoOperation < CryptoOp TaObject OpenableObject .
 
 endom
 
@@ -442,7 +441,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     =>
     < TK : TaKernel | api-state : finished , id-counter : N + 2 ,
                       api-return : apiReturn(AllocateOperation , TEE-SUCCESS , handle(handleId(N + 1 , TK))) >
-    < taOid(N , TK) : CryptoOperation | handle-set : freshOperationHandle(N + 1 , TK) ,
+    < taOid(N , TK) : CryptoOperation | handle-set : freshOperationHandle(N + 1 , TK , taOid(N , TK)) ,
                                         crypto-keys : nil , max-key-size : KEYSIZE ,
                                         accumulated-data : nil ,
                                         algorithm : ALGO , operation-mode : MODE ,
@@ -721,7 +720,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : false > ,
                              operation-mode : MODE >
     =>
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-key-set : true > ,
+    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | key-material-set : true,
+                                                                      is-key-set : true > ,
                              crypto-keys : key(ATTRS) ,
                              operation-state : TEE-OPERATION-STATE-INITIAL >
     finishSetOperationKey(TK)
@@ -822,7 +822,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : false ,
                                                                       is-key-set : false ,
                                                                       is-extracting : false > >
-    => < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-key-set : true > ,
+    => < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | key-material-set : true,
+                                                                      is-key-set : true > ,
                               crypto-keys : key(ATTRS) key(ATTRS2) > finishSetOperationKey2(TK) .
   rl [set-operation-key2-success] :
     finishSetOperationKey2(TK)
@@ -872,6 +873,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                              algorithm : ALGO , operation-mode : MODE >
     => 
     < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : B1 ,
+                                                                       key-material-set : B2,
                                                                        is-key-set : B2 ,
                                                                        is-extracting : B3 > ,
                              crypto-keys : KEYS , operation-state : OS >
@@ -1114,7 +1116,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   crl [init-operation-subroutine] :
     initOperation(HANDLE , IV , TK) 
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-key-set : true > ,
+    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | key-material-set : true,
+                                                                      is-key-set : true > ,
                              algorithm : ALGO , operation-class : OC , operation-state : OS >
     => 
     < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : true > ,
@@ -2120,7 +2123,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < OI : TransientObject | handle-set : < DERIVED : ObjectHandle | is-initialized : false > ,
                              object-type : TEE-TYPE-GENERIC-SECRET >
     => < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | > >
-       < OI : TransientObject | handle-set : < DERIVED : ObjectHandle | is-initialized : true > ,
+       < OI : TransientObject | initialized : true,
+                              handle-set : < DERIVED : ObjectHandle | is-initialized : true > ,
                               attribute-set : teeAttribute(TEE-ATTR-SECRET-VALUE , randomAttrVal) >
        finishDeriveKey(TK) .
   rl [derive-key-success] :
@@ -2187,7 +2191,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     =
     < TK : TaKernel | api-state : finished , id-counter : N + 2 ,
                       api-return : apiReturn(AllocateOperation , TEE-SUCCESS , handle(handleId(N + 1 , TK))) >
-    < taOid(N , TK) : CryptoOperation | handle-set : freshOperationHandle(N + 1 , TK) ,
+    < taOid(N , TK) : CryptoOperation | handle-set : freshOperationHandle(N + 1 , TK , taOid(N , TK)) ,
                                         crypto-keys : nil , max-key-size : KEYSIZE ,
                                         accumulated-data : nil ,
                                         algorithm : ALGO , operation-mode : MODE ,
@@ -2325,7 +2329,8 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-initialized : false > ,
                              operation-mode : MODE >
     =
-    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | is-key-set : true > ,
+    < CI : CryptoOperation | handle-set : < HANDLE : OperationHandle | key-material-set : true,
+                                                                      is-key-set : true > ,
                              crypto-keys : key(ATTRS) ,
                              operation-state : TEE-OPERATION-STATE-INITIAL >
     finishSetOperationKey(TK)

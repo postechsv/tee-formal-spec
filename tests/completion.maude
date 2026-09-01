@@ -365,11 +365,27 @@ search [1] in COMPLETION-TEST :
       operation-class : TEE-OPERATION-DIGEST,
       operation-state : TEE-OPERATION-STATE-ACTIVE >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
-      is-extracting : true >
+      state : extract, is-extracting : true >
 =>*
   finishDigestDoFinal(TESTDIGEST, testTa)
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
-      is-extracting : false >
+      state : noHandleState, is-extracting : false >
+  C .
+
+--- DigestExtract enters the paper-level extracting handle state.
+search [1] in COMPLETION-TEST :
+  digestExtract(handleId(1, testTa), testTa)
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)), handle-set : none,
+      accumulated-data : randomData, algorithm : TEE-ALG-SHA256,
+      operation-class : TEE-OPERATION-DIGEST,
+      operation-state : TEE-OPERATION-STATE-ACTIVE >
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      state : noHandleState, is-extracting : false >
+=>*
+  finishDigestExtract(TESTDIGEST, testTa)
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      state : extract, is-extracting : true >
   C .
 
 --- CipherDoFinal resets the operation and its top-level initialized flag.
@@ -382,11 +398,11 @@ search [1] in COMPLETION-TEST :
       operation-class : TEE-OPERATION-CIPHER,
       operation-state : TEE-OPERATION-STATE-ACTIVE >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
-      is-initialized : true >
+      state : init keySet, is-initialized : true >
 =>*
   finishCipherDoFinal(CIPHERRESULT, testTa)
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
-      is-initialized : false >
+      state : keySet, is-initialized : false >
   C .
 
 --- Asymmetric encryption resolves a top-level key-set operation handle.
@@ -486,11 +502,11 @@ search [1] in COMPLETION-TEST :
       operation-mode : TEE-MODE-ENCRYPT, operation-class : TEE-OPERATION-AE,
       operation-state : TEE-OPERATION-STATE-INITIAL >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
-      is-initialized : true >
+      state : init keySet, is-initialized : true >
 =>*
   finishAEUpdate(CIPHERRESULT, testTa)
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
-      is-initialized : true >
+      state : init keySet, is-initialized : true >
   C .
 
 --- AEEncryptFinal produces ciphertext/tag and resets the top-level handle.
@@ -503,11 +519,11 @@ search [1] in COMPLETION-TEST :
       operation-mode : TEE-MODE-ENCRYPT, operation-class : TEE-OPERATION-AE,
       operation-state : TEE-OPERATION-STATE-ACTIVE >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
-      is-initialized : true >
+      state : init keySet, is-initialized : true >
 =>*
   finishAEEncryptFinal(CIPHERRESULT, TESTMAC, testTa)
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
-      is-initialized : false >
+      state : keySet, is-initialized : false >
   C .
 
 --- MAC finalization resets both operation state and the top-level handle.
@@ -520,11 +536,11 @@ search [1] in COMPLETION-TEST :
       operation-class : TEE-OPERATION-MAC,
       operation-state : TEE-OPERATION-STATE-ACTIVE >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
-      is-initialized : true >
+      state : init keySet, is-initialized : true >
 =>*
   finishMacComputeFinal(CIPHERRESULT, testTa)
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
-      is-initialized : false >
+      state : keySet, is-initialized : false >
   C .
 
 --- Closing one persistent handle removes only that ID and its top-level object.

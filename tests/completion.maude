@@ -421,11 +421,12 @@ search [1] in COMPLETION-TEST :
   reqCopyOperation(handleId(1, testTa),
     opObjectAttr(TEE-ALG-AES-GCM, TEE-MODE-ENCRYPT,
                  TEE-OPERATION-STATE-ACTIVE,
-                 key(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal))),
+                 key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1)))),
     opHandleAttr(true, true, false), testTa)
   < taOid(1, testTa) : CryptoOperation |
       handle-id-set : handleIdSet(handleId(1, testTa)),
       algorithm : TEE-ALG-AES-GCM, operation-mode : TEE-MODE-ENCRYPT,
+      max-key-size : 256 Bits,
       operation-state : TEE-OPERATION-STATE-INITIAL, crypto-keys : nil >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       state : noHandleState, is-initialized : false, key-material-set : false,
@@ -435,11 +436,49 @@ search [1] in COMPLETION-TEST :
   < taOid(1, testTa) : CryptoOperation |
       handle-id-set : handleIdSet(handleId(1, testTa)),
       algorithm : TEE-ALG-AES-GCM, operation-mode : TEE-MODE-ENCRYPT,
+      max-key-size : 256 Bits,
       operation-state : TEE-OPERATION-STATE-ACTIVE,
-      crypto-keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)) >
+      crypto-keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1))) >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       state : init keySet, is-initialized : true, key-material-set : true,
       is-key-set : true, is-extracting : false > .
+
+--- CopyOperation panics when source and destination algorithms differ.
+search [1] in COMPLETION-TEST :
+  reqCopyOperation(handleId(1, testTa),
+    opObjectAttr(TEE-ALG-AES-GCM, TEE-MODE-ENCRYPT,
+      TEE-OPERATION-STATE-ACTIVE, nil),
+    opHandleAttr(false, false, false), testTa)
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)),
+      algorithm : TEE-ALG-AES-CTR, operation-mode : TEE-MODE-ENCRYPT,
+      max-key-size : 256 Bits >
+  < testTa : TaKernel | app-status : normal, api-call : noCall,
+      api-return : noReturn, api-state : waitReqCopyOperation,
+      current-api : CopyOperation >
+=>*
+  < testTa : TaKernel | app-status : panic, api-call : noCall,
+      api-return : noReturn, api-state : finished,
+      current-api : CopyOperation > C .
+
+--- CopyOperation panics when a source key exceeds the destination maximum.
+search [1] in COMPLETION-TEST :
+  reqCopyOperation(handleId(1, testTa),
+    opObjectAttr(TEE-ALG-AES-GCM, TEE-MODE-ENCRYPT,
+      TEE-OPERATION-STATE-ACTIVE,
+      key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(256, 1)))),
+    opHandleAttr(false, true, false), testTa)
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)),
+      algorithm : TEE-ALG-AES-GCM, operation-mode : TEE-MODE-ENCRYPT,
+      max-key-size : 128 Bits >
+  < testTa : TaKernel | app-status : normal, api-call : noCall,
+      api-return : noReturn, api-state : waitReqCopyOperation,
+      current-api : CopyOperation >
+=>*
+  < testTa : TaKernel | app-status : panic, api-call : noCall,
+      api-return : noReturn, api-state : finished,
+      current-api : CopyOperation > C .
 
 --- DigestDoFinal resets digest state through a top-level operation handle.
 search [1] in COMPLETION-TEST :

@@ -152,9 +152,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   vars CI OI OI2 : TaObjectId .
   vars HANDLE KEY : HandleId .
   vars KEY1 KEY2 DERIVED : HandleId .
-  var ALGO : AlgorithmIdentifier .
+  vars ALGO ALGO2 : AlgorithmIdentifier .
   vars KEYS KEYS' : List{CryptoKey} .
-  var MODE : OperationMode .
+  vars MODE MODE2 : OperationMode .
   var OC : OperationClass .
   vars OS OS' : OperationState .
   var HS : HandleState .
@@ -438,6 +438,11 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   eq operationInfoRequiredSize(teeOperationInfoMultiple(ALGO , OC , MODE ,
        DATASIZE , KEYSIZE , B1 , B2 , B3 , B1' , OS , N , OPINFOKEYS)) =
     dataSize(N) .
+
+  op operationKeysFit : List{CryptoKey} CryptoKeySize -> Bool .
+  eq operationKeysFit(nil , KEYSIZE) = true .
+  eq operationKeysFit(key(ATTRS) KEYS , KEYSIZE) =
+    keySize(ATTRS) <= KEYSIZE and operationKeysFit(KEYS , KEYSIZE) .
 
 --- For a public key object, the allowed operation modes depend on the type of key and are specified in Table 6-5.
   op typeModeCompatible : ObjectType OperationMode -> Bool .
@@ -1345,6 +1350,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   msg reqCopyOperation : HandleId OpObjectAttr OpHandleAttr TaInstId -> Msg .
   msg applyCopiedOperationHandle : HandleId Bool Bool Bool TaInstId -> Msg .
   msg finishCopyOperation : TaInstId -> Msg .
+  msg failCopyOperation : TaInstId -> Msg .
 
   rl [copy-operation-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -1366,15 +1372,28 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   .
 
 
-  rl [copy-operation-top-level-object] :
+  crl [copy-operation-top-level-object] :
     reqCopyOperation(HANDLE, opObjectAttr(ALGO , MODE , OS , KEYS) , opHandleAttr(B1 , B2 , B3) , TK)
     < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE) ,
                              algorithm : ALGO , operation-mode : MODE ,
-                             crypto-keys : KEYS' , operation-state : OS' >
+                             crypto-keys : KEYS' , max-key-size : KEYSIZE ,
+                             operation-state : OS' >
     =>
     < CI : CryptoOperation | crypto-keys : KEYS , operation-state : OS >
     applyCopiedOperationHandle(HANDLE , B1 , B2 , B3 , TK)
+  if operationKeysFit(KEYS , KEYSIZE)
   .
+
+  crl [copy-operation-incompatible-panic] :
+    reqCopyOperation(HANDLE, opObjectAttr(ALGO , MODE , OS , KEYS) ,
+                     opHandleAttr(B1 , B2 , B3) , TK)
+    < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE) ,
+                             algorithm : ALGO2 , operation-mode : MODE2 ,
+                             max-key-size : KEYSIZE >
+    =>
+    < CI : CryptoOperation | >
+    failCopyOperation(TK)
+  if ALGO =/= ALGO2 or MODE =/= MODE2 or not operationKeysFit(KEYS , KEYSIZE) .
 
   rl [copy-operation-top-level-handle] :
     applyCopiedOperationHandle(HANDLE , B1 , B2 , B3 , TK)
@@ -1394,6 +1413,13 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     => 
     < TK : TaKernel | api-state : finished , api-return : apiReturn(CopyOperation) >
   .
+
+  rl [copy-operation-panic] :
+    failCopyOperation(TK)
+    < TK : TaKernel | app-status : normal , api-state : waitReqCopyOperation ,
+                      current-api : CopyOperation >
+    =>
+    < TK : TaKernel | app-status : panic , api-state : finished > .
 
 ------------------------------------------------------------
 --- TEE_IsAlgorithmSupported

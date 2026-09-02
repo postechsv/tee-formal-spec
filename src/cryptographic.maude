@@ -315,7 +315,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   eq validKeySize(TEE-ALG-AES-GCM , 192 Bits) = true .
   eq validKeySize(TEE-ALG-AES-GCM , 256 Bits) = true .
   ceq validKeySize(TEE-ALG-DH-DERIVE-SHARED-SECRET , N Bits) = true if N > 0 .
-  ceq validKeySize(TEE-ALG-SM2-KEP , N Bits) = true if N > 0 .
+  eq validKeySize(TEE-ALG-SM2-KEP , 256 Bits) = true .
   ceq validKeySize(TEE-ALG-HMAC-SHA256 , N Bits) = true if 192 <= N and N <= 1024 .
   eq validKeySize(TEE-ALG-SHA256 , 0 Bits) = true .
   ceq validKeySize(TEE-ALG-RSASSA-PKCS1-V1-5-SHA256 , N Bits) = true
@@ -440,6 +440,15 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     keySize(ATTRS) == keySize(ATTRS2) and ATTRS =/= ATTRS2 .
   eq twoKeyMaterialCompatible(TEE-ALG-SM2-KEP , ATTRS , ATTRS2) = true .
   eq twoKeyMaterialCompatible(ALGO , ATTRS , ATTRS2) = false [owise] .
+
+  --- For multiple-key algorithms maxKeySize is the largest individual key,
+  --- not the sum of the keys (GP 6.2.1).
+  op twoKeyOperationSizeCompatible : AlgorithmIdentifier CryptoKeySize
+                                     Set{TeeAttribute} Set{TeeAttribute} -> Bool .
+  eq twoKeyOperationSizeCompatible(TEE-ALG-AES-XTS , KEYSIZE , ATTRS , ATTRS2) =
+    keySize(ATTRS) <= KEYSIZE and keySize(ATTRS2) <= KEYSIZE .
+  eq twoKeyOperationSizeCompatible(TEE-ALG-SM2-KEP , 256 Bits , ATTRS , ATTRS2) = true .
+  eq twoKeyOperationSizeCompatible(ALGO , KEYSIZE , ATTRS , ATTRS2) = false [owise] .
 
 --- For TEE_DigestUpdate
 
@@ -1090,20 +1099,24 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     installOperationKeys(HANDLE , OBJTYPE , OBJUSAGES , ATTRS,
                          OBJTYPE2 , OBJUSAGES2 , ATTRS2 , TK)
     < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE),
-                             algorithm : ALGO, operation-mode : MODE >
+                             algorithm : ALGO, operation-mode : MODE,
+                             max-key-size : KEYSIZE >
     => < CI : CryptoOperation | crypto-keys : key(ATTRS) key(ATTRS2) >
        finishInstallTopOperationKeys(HANDLE , TK)
   if twoKeyCompatible(ALGO , MODE, OBJTYPE , OBJUSAGES, OBJTYPE2 , OBJUSAGES2) /\
-     twoKeyMaterialCompatible(ALGO , ATTRS , ATTRS2) .
+     twoKeyMaterialCompatible(ALGO , ATTRS , ATTRS2) /\
+     twoKeyOperationSizeCompatible(ALGO , KEYSIZE , ATTRS , ATTRS2) .
 
   crl [set-operation-key2-incompatible-key-panic] :
     installOperationKeys(HANDLE , OBJTYPE , OBJUSAGES , ATTRS,
                          OBJTYPE2 , OBJUSAGES2 , ATTRS2 , TK)
     < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE),
-                             algorithm : ALGO, operation-mode : MODE >
+                             algorithm : ALGO, operation-mode : MODE,
+                             max-key-size : KEYSIZE >
     => < CI : CryptoOperation | > failSetOperationKey2(TK)
   if not (twoKeyCompatible(ALGO , MODE, OBJTYPE , OBJUSAGES, OBJTYPE2 , OBJUSAGES2) and
-          twoKeyMaterialCompatible(ALGO , ATTRS , ATTRS2)) .
+          twoKeyMaterialCompatible(ALGO , ATTRS , ATTRS2) and
+          twoKeyOperationSizeCompatible(ALGO , KEYSIZE , ATTRS , ATTRS2)) .
   rl [finish-set-operation-key2-top-level-handle] :
     finishInstallTopOperationKeys(HANDLE , TK)
     < HANDLE : OperationHandle | is-initialized : false , key-material-set : false ,

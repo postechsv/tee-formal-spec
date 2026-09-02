@@ -1047,10 +1047,24 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       current-api : SetOperationKey2 ,
                       current-params : handle(HANDLE) , keyHandle(KEY1) , secondKeyHandle(KEY2) >
     < HANDLE : OperationHandle | is-initialized : false >
+    < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE), algorithm : ALGO >
     => < TK : TaKernel | api-state : waitReqAttribute >
        < HANDLE : OperationHandle | >
+       < CI : CryptoOperation | >
        reqAttribute(KEY1 , TK)
-  if not nullHandle(KEY1) /\ not nullHandle(KEY2) /\ KEY1 =/= KEY2 .
+  if expectsTwoKeys(ALGO) /\ not nullHandle(KEY1) /\
+     not nullHandle(KEY2) /\ KEY1 =/= KEY2 .
+
+  crl [set-operation-key2-wrong-algorithm-panic] :
+    < TK : TaKernel | app-status : normal, api-state : started,
+                      current-api : SetOperationKey2,
+                      current-params : handle(HANDLE), PARAMS >
+    < HANDLE : OperationHandle | oid : CI, is-initialized : false >
+    < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE), algorithm : ALGO >
+    => < TK : TaKernel | app-status : panic, api-state : finished >
+       < HANDLE : OperationHandle | >
+       < CI : CryptoOperation | >
+  if not expectsTwoKeys(ALGO) .
 
   crl [set-operation-key2-clear] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn , api-state : started ,
@@ -1068,18 +1082,6 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                                   is-extracting : false >
   if expectsTwoKeys(ALGO) .
 
-  crl [set-operation-key2-clear-wrong-algorithm-panic] :
-    < TK : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
-                      api-state : started, current-api : SetOperationKey2,
-                      current-params : handle(HANDLE), keyHandle(TEE-HANDLE-NULL),
-                                       secondKeyHandle(TEE-HANDLE-NULL) >
-    < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE), algorithm : ALGO >
-    < HANDLE : OperationHandle | oid : CI, is-initialized : false >
-    => < TK : TaKernel | app-status : panic, api-state : finished >
-       < CI : CryptoOperation | >
-       < HANDLE : OperationHandle | >
-  if not expectsTwoKeys(ALGO) .
-
   crl [set-operation-key2-mixed-null-panic] :
     < TK : TaKernel | app-status : normal , api-state : started ,
                       current-api : SetOperationKey2 ,
@@ -1091,11 +1093,13 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   crl [set-operation-key2-same-key-security-error] :
     < TK : TaKernel | api-state : started , current-api : SetOperationKey2 ,
                       current-params : handle(HANDLE) , keyHandle(KEY1) , secondKeyHandle(KEY1) >
-    < HANDLE : OperationHandle | is-initialized : false >
+    < HANDLE : OperationHandle | oid : CI, is-initialized : false >
+    < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE), algorithm : ALGO >
     => < TK : TaKernel | api-state : finished ,
                       api-return : apiReturn(SetOperationKey2 , TEE-ERROR-SECURITY) >
        < HANDLE : OperationHandle | >
-  if not nullHandle(KEY1) .
+       < CI : CryptoOperation | >
+  if expectsTwoKeys(ALGO) /\ not nullHandle(KEY1) .
 
   rl [set-operation-key2-subroutine] :
     retAttributeTr(ATTRS , OBJTYPE , OBJUSAGES , TK)

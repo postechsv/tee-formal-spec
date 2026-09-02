@@ -167,6 +167,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   var OPOBJATTR : OpObjectAttr .
   var OPHANDLEATTR : OpHandleAttr .
   var OPINFOMULTI : TeeOperationInfoMultiple .
+  var OPINFO : TeeOperationInfo .
+  var OPINFOKEYS : TeeOperationInfoKeyList .
   var STATUS : StorageStatus .
   var PARAMS : Set{TeeApiParam} .
   var ELEM : CryptoElement .
@@ -415,6 +417,21 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   eq operationKeyInformation(key(ATTRS) KEYS , OBJUSAGES , s(N)) =
     teeOperationInfoKey(keySize(ATTRS) , OBJUSAGES) ;
     operationKeyInformation(KEYS , OBJUSAGES , N) .
+
+  op singleInfoKeySize : Nat TeeOperationInfoKeyList -> CryptoKeySize .
+  eq singleInfoKeySize(1 , teeOperationInfoKey(KEYSIZE , OBJUSAGES) ; OPINFOKEYS) = KEYSIZE .
+  eq singleInfoKeySize(N , OPINFOKEYS) = 0 Bits [owise] .
+
+  op singleInfoKeyUsage : Nat TeeOperationInfoKeyList -> Set{ObjectUsage} .
+  eq singleInfoKeyUsage(1 , teeOperationInfoKey(KEYSIZE , OBJUSAGES) ; OPINFOKEYS) = OBJUSAGES .
+  eq singleInfoKeyUsage(N , OPINFOKEYS) = empty [owise] .
+
+  op singleOperationInfo : TeeOperationInfoMultiple -> TeeOperationInfo .
+  eq singleOperationInfo(teeOperationInfoMultiple(ALGO , OC , MODE , DATASIZE ,
+       KEYSIZE , B1 , B2 , B3 , B1' , OS , N , OPINFOKEYS)) =
+    teeOperationInfo(ALGO , OC , MODE , DATASIZE , KEYSIZE ,
+      singleInfoKeySize(N , OPINFOKEYS) , singleInfoKeyUsage(N , OPINFOKEYS) ,
+      B1 , B2 , B3 , B1') .
 
 --- For a public key object, the allowed operation modes depend on the type of key and are specified in Table 6-5.
   op typeModeCompatible : ObjectType OperationMode -> Bool .
@@ -752,6 +769,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   msg reqOperationAttr : HandleId TaInstId -> Msg .
   msg retOperationAttr : OpObjectAttr OpHandleAttr TaInstId -> Msg .
+  msg reqOperationInfoMultiple : HandleId TaInstId -> Msg .
+  msg retOperationInfoMultiple : TeeOperationInfoMultiple TaInstId -> Msg .
 
   rl [get-operation-info-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -759,7 +778,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       current-params : handle(HANDLE) >
     => 
     < TK : TaKernel | api-state : waitOperationAttr >
-    reqOperationAttr(HANDLE , TK)
+    reqOperationInfoMultiple(HANDLE , TK)
   .
 
 
@@ -777,19 +796,18 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   .
 
   rl [get-operation-info-success] :
-    retOperationAttr(OPOBJATTR, OPHANDLEATTR , TK)
+    retOperationInfoMultiple(OPINFOMULTI , TK)
     < TK : TaKernel | api-state : waitOperationAttr ,
                       current-api : GetOperationInfo >
     =>
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(GetOperationInfo , teeOpInfo(OPOBJATTR , OPHANDLEATTR)) >
+    < TK : TaKernel | api-state : finished ,
+                      api-return : apiReturn(GetOperationInfo ,
+                                             teeOpInfo(singleOperationInfo(OPINFOMULTI))) >
   .
 
 ------------------------------------------------------------
 --- TEE_GetOperationInfoMultiple
 ------------------------------------------------------------
-
-  msg reqOperationInfoMultiple : HandleId TaInstId -> Msg .
-  msg retOperationInfoMultiple : TeeOperationInfoMultiple TaInstId -> Msg .
 
   rl [get-operation-info-multiple-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn , api-state : started ,
@@ -2861,6 +2879,26 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
   var STATUS : StorageStatus .
   var PARAMS : Set{TeeApiParam} .
   var OPINFOMULTI : TeeOperationInfoMultiple .
+
+------------------------------------------------------------
+--- TEE_GetOperationInfo
+------------------------------------------------------------
+
+  eq
+    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : GetOperationInfo ,
+                      current-params : handle(HANDLE) >
+    =
+    < TK : TaKernel | api-state : waitOperationAttr >
+    reqOperationInfoMultiple(HANDLE , TK) .
+
+  eq
+    retOperationInfoMultiple(OPINFOMULTI , TK)
+    < TK : TaKernel | api-state : waitOperationAttr , current-api : GetOperationInfo >
+    =
+    < TK : TaKernel | api-state : finished ,
+                      api-return : apiReturn(GetOperationInfo ,
+                        teeOpInfo(singleOperationInfo(OPINFOMULTI))) > .
 
 ------------------------------------------------------------
 --- TEE_GetOperationInfoMultiple

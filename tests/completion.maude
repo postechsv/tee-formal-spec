@@ -303,7 +303,7 @@ search [1] in COMPLETION-TEST :
   < taOid(1, testTa) : CryptoOperation |
       handle-id-set : handleIdSet(handleId(1, testTa)),
       algorithm : TEE-ALG-AES-CTR,
-      operation-mode : TEE-MODE-ENCRYPT, crypto-keys : nil,
+      operation-mode : TEE-MODE-ENCRYPT, max-key-size : 256 Bits, crypto-keys : nil,
       operation-state : TEE-OPERATION-STATE-INITIAL >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       state : noHandleState, is-initialized : false,
@@ -314,6 +314,48 @@ search [1] in COMPLETION-TEST :
       state : keySet, is-initialized : false,
       is-key-set : true, key-material-set : true >
   C .
+
+--- GP 6.2.6 rejects a key larger than the allocated operation bound.
+search [1] in COMPLETION-TEST :
+  reqSetOperationKey(handleId(1, testTa), TEE-TYPE-AES,
+    teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(256, 1)),
+    TEE-USAGE-ENCRYPT, testTa)
+  < testTa : TaKernel | app-status : normal, api-state : waitSetOperationKey,
+                        current-api : SetOperationKey >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)),
+      algorithm : TEE-ALG-AES-CTR, operation-mode : TEE-MODE-ENCRYPT,
+      max-key-size : 128 Bits >
+  < handleId(1, testTa) : OperationHandle | is-initialized : false >
+=>*
+  < testTa : TaKernel | app-status : panic, api-state : finished,
+                        current-api : SetOperationKey >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)),
+      algorithm : TEE-ALG-AES-CTR, operation-mode : TEE-MODE-ENCRYPT,
+      max-key-size : 128 Bits >
+  < handleId(1, testTa) : OperationHandle | is-initialized : false > C .
+
+--- Algorithms that expect two keys cannot be programmed by SetOperationKey.
+search [1] in COMPLETION-TEST :
+  reqSetOperationKey(handleId(1, testTa), TEE-TYPE-AES,
+    teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1)),
+    TEE-USAGE-ENCRYPT, testTa)
+  < testTa : TaKernel | app-status : normal, api-state : waitSetOperationKey,
+                        current-api : SetOperationKey >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)),
+      algorithm : TEE-ALG-AES-XTS, operation-mode : TEE-MODE-ENCRYPT,
+      max-key-size : 128 Bits >
+  < handleId(1, testTa) : OperationHandle | is-initialized : false >
+=>*
+  < testTa : TaKernel | app-status : panic, api-state : finished,
+                        current-api : SetOperationKey >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)),
+      algorithm : TEE-ALG-AES-XTS, operation-mode : TEE-MODE-ENCRYPT,
+      max-key-size : 128 Bits >
+  < handleId(1, testTa) : OperationHandle | is-initialized : false > C .
 
 --- CipherInit updates the operation object and top-level handle in two steps.
 search [1] in COMPLETION-TEST :

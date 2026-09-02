@@ -1056,6 +1056,24 @@ search [1] in COMPLETION-TEST :
   < testTa : TaKernel | app-status : panic, api-state : finished,
                         current-api : SetOperationKey2 > C .
 
+--- Equal-sized, distinct AES-XTS key material reaches handle installation.
+search [1] in COMPLETION-TEST :
+  installOperationKeys(handleId(1, testTa), TEE-TYPE-AES, TEE-USAGE-ENCRYPT,
+    teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1)),
+    TEE-TYPE-AES, TEE-USAGE-ENCRYPT,
+    teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 2)), testTa)
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)),
+      algorithm : TEE-ALG-AES-XTS, operation-mode : TEE-MODE-ENCRYPT,
+      crypto-keys : nil >
+=>1
+  finishInstallTopOperationKeys(handleId(1, testTa), testTa)
+  < taOid(1, testTa) : CryptoOperation |
+    handle-id-set : handleIdSet(handleId(1, testTa)),
+    algorithm : TEE-ALG-AES-XTS, operation-mode : TEE-MODE-ENCRYPT,
+    crypto-keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1)))
+                  key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 2))) > C .
+
 --- GP 6.2.7: a persistent first key resumes with the second-key lookup only
 --- after trusted storage reports a normal state.
 search [1] in COMPLETION-TEST :

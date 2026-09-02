@@ -104,6 +104,7 @@ endfm
 --- This module defines four types of TEE attributes, explained in the Table 6-15 of the G.P. documentation (page 246).
 
 fmod TEE-ATTRIBUTE is
+  pr NAT .
   sorts AttrId AttrContent TeeAttribute .
   sorts AttrPublicRef AttrProtectedRef AttrPublicVal AttrProtectedVal .
   sorts AttrPublic AttrProtected AttrVal AttrRef .
@@ -115,6 +116,9 @@ fmod TEE-ATTRIBUTE is
 
   op teeAttribute : AttrId AttrContent -> TeeAttribute [ctor] .
   op randomAttrVal : -> AttrContent [ctor] .
+  --- Symbolic key material with an explicit bit length and identity.  The
+  --- identity distinguishes equal-sized keys without exposing their bytes.
+  op sizedAttrVal : Nat Nat -> AttrContent [ctor] .
   op attrValue : AttrId -> AttrContent [ctor] .
 
 --- Table 6-15
@@ -216,10 +220,14 @@ fmod CRYPTO-KEY-SIZE is
 
   sort CryptoKeySize .
 
-  vars N N' : Nat .
+  vars N N' MATERIAL : Nat .
+  var ATTRS : Set{TeeAttribute} .
 
   op keySize : Set{TeeAttribute} -> CryptoKeySize [ctor] .
   op _Bits : Nat -> CryptoKeySize [ctor] .
+
+  eq keySize((teeAttribute(TEE-ATTR-SECRET-VALUE,
+                           sizedAttrVal(N, MATERIAL)), ATTRS)) = N Bits .
 
   op _<=_ : CryptoKeySize CryptoKeySize -> Bool .
   eq N Bits <= N' Bits = N <= N' .

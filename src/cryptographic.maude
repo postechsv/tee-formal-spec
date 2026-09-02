@@ -431,6 +431,16 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   eq twoKeyCompatible(ALGO , MODE, OBJTYPE , OBJUSAGES,
                       OBJTYPE2 , OBJUSAGES2) = false [owise] .
 
+  --- Key metadata alone is insufficient for AES-XTS: GP 6.2.7 also requires
+  --- two distinct 128- or 256-bit keys of equal size.
+  op twoKeyMaterialCompatible : AlgorithmIdentifier Set{TeeAttribute}
+                                Set{TeeAttribute} -> Bool .
+  eq twoKeyMaterialCompatible(TEE-ALG-AES-XTS , ATTRS , ATTRS2) =
+    validKeySize(TEE-ALG-AES-XTS , keySize(ATTRS)) and
+    keySize(ATTRS) == keySize(ATTRS2) and ATTRS =/= ATTRS2 .
+  eq twoKeyMaterialCompatible(TEE-ALG-SM2-KEP , ATTRS , ATTRS2) = true .
+  eq twoKeyMaterialCompatible(ALGO , ATTRS , ATTRS2) = false [owise] .
+
 --- For TEE_DigestUpdate
 
   op extractingState : OperationState -> Bool .
@@ -1083,7 +1093,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                              algorithm : ALGO, operation-mode : MODE >
     => < CI : CryptoOperation | crypto-keys : key(ATTRS) key(ATTRS2) >
        finishInstallTopOperationKeys(HANDLE , TK)
-  if twoKeyCompatible(ALGO , MODE, OBJTYPE , OBJUSAGES, OBJTYPE2 , OBJUSAGES2) .
+  if twoKeyCompatible(ALGO , MODE, OBJTYPE , OBJUSAGES, OBJTYPE2 , OBJUSAGES2) /\
+     twoKeyMaterialCompatible(ALGO , ATTRS , ATTRS2) .
 
   crl [set-operation-key2-incompatible-key-panic] :
     installOperationKeys(HANDLE , OBJTYPE , OBJUSAGES , ATTRS,
@@ -1091,7 +1102,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE),
                              algorithm : ALGO, operation-mode : MODE >
     => < CI : CryptoOperation | > failSetOperationKey2(TK)
-  if not twoKeyCompatible(ALGO , MODE, OBJTYPE , OBJUSAGES, OBJTYPE2 , OBJUSAGES2) .
+  if not (twoKeyCompatible(ALGO , MODE, OBJTYPE , OBJUSAGES, OBJTYPE2 , OBJUSAGES2) and
+          twoKeyMaterialCompatible(ALGO , ATTRS , ATTRS2)) .
   rl [finish-set-operation-key2-top-level-handle] :
     finishInstallTopOperationKeys(HANDLE , TK)
     < HANDLE : OperationHandle | is-initialized : false , key-material-set : false ,

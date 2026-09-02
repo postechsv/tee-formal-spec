@@ -100,6 +100,34 @@ search [1] in TEST-AUX :
                                                                   empty),
                                                      opHandleAttr(true, true, false))) > .
 
+--- [BB-C-GIM-1] get-operation-info-multiple reports both configured XTS keys
+search [1] in TEST-AUX :
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : GetOperationInfoMultiple, api-state : started,
+                    current-params : handle(handleId(1, ta)), id-counter : 0,
+                    trust-app-id : TESTTA >
+  < co : CryptoOperation | handle-id-set : handleIdSet(handleId(1, ta)),
+                           crypto-keys :
+                             key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1)))
+                             key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 2))),
+                           max-key-size : 256 Bits, accumulated-data : nil,
+                           algorithm : TEE-ALG-AES-XTS, initialization-vector : nil,
+                           operation-mode : TEE-MODE-ENCRYPT,
+                           operation-class : TEE-OPERATION-CIPHER,
+                           operation-state : TEE-OPERATION-STATE-INITIAL,
+                           trust-app-id : TESTTA >
+  < handleId(1, ta) : OperationHandle | oid : co, is-initialized : false,
+                                         is-key-set : true, is-extracting : false >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(GetOperationInfoMultiple, TEE-SUCCESS,
+                      teeOpInfoMultiple(teeOperationInfoMultiple(TEE-ALG-AES-XTS,
+                        TEE-OPERATION-CIPHER, TEE-MODE-ENCRYPT, dataSize(0), 256 Bits,
+                        false, true, false, TEE-OPERATION-STATE-INITIAL, 2,
+                        teeOperationInfoKey(128 Bits, TEE-USAGE-ENCRYPT) ;
+                        teeOperationInfoKey(128 Bits, TEE-USAGE-ENCRYPT) ;
+                        noKeyInformation))) > .
+
 --- ============================================================
 --- ResetOperation
 --- ============================================================

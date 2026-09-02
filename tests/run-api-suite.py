@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the paper's 90 API-level black-box tests."""
+"""Run the paper-derived API-level black-box tests."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ MAUDE_RELATIVE = (
     Path("Darwin64/maude.darwin64") if platform.system() == "Darwin"
     else Path("Linux64/maude.linux64")
 )
-EXPECTED_API_TESTS = 90
+EXPECTED_API_TESTS = 91
 SEARCH_START = re.compile(r"^search\s+\[1\]\s+in\s+TEST-AUX\s*:", re.MULTILINE)
 TEST_ID = re.compile(r"---\s*\[([^]]+)]")
 

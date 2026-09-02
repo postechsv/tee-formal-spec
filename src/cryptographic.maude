@@ -166,6 +166,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   var MAC : List{Data} .
   var OPOBJATTR : OpObjectAttr .
   var OPHANDLEATTR : OpHandleAttr .
+  var OPINFOMULTI : TeeOperationInfoMultiple .
   var STATUS : StorageStatus .
   var PARAMS : Set{TeeApiParam} .
   var ELEM : CryptoElement .
@@ -374,6 +375,37 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     TEE-USAGE-DECRYPT in OBJUSAGES and TEE-USAGE-SIGN in OBJUSAGES .
   eq operationUsageCompatible(ALGO , OBJUSAGES , MODE) =
     modeUsageCompatible(OBJUSAGES , MODE) [owise] .
+
+  op requiredOperationUsage : AlgorithmIdentifier OperationMode -> Set{ObjectUsage} .
+  eq requiredOperationUsage(TEE-ALG-RSA-NOPAD , TEE-MODE-ENCRYPT) =
+    (TEE-USAGE-ENCRYPT , TEE-USAGE-VERIFY) .
+  eq requiredOperationUsage(TEE-ALG-RSA-NOPAD , TEE-MODE-DECRYPT) =
+    (TEE-USAGE-DECRYPT , TEE-USAGE-SIGN) .
+  eq requiredOperationUsage(ALGO , TEE-MODE-ENCRYPT) = TEE-USAGE-ENCRYPT [owise] .
+  eq requiredOperationUsage(ALGO , TEE-MODE-DECRYPT) = TEE-USAGE-DECRYPT [owise] .
+  eq requiredOperationUsage(ALGO , TEE-MODE-MAC) = TEE-USAGE-MAC [owise] .
+  eq requiredOperationUsage(ALGO , TEE-MODE-SIGN) = TEE-USAGE-SIGN [owise] .
+  eq requiredOperationUsage(ALGO , TEE-MODE-VERIFY) = TEE-USAGE-VERIFY [owise] .
+  eq requiredOperationUsage(ALGO , TEE-MODE-DERIVE) = TEE-USAGE-DERIVE [owise] .
+
+  op operationDigestLength : AlgorithmIdentifier -> DataSize .
+  eq operationDigestLength(TEE-ALG-SHA256) = dataSize(32) .
+  eq operationDigestLength(TEE-ALG-HMAC-SHA256) = dataSize(32) .
+  eq operationDigestLength(TEE-ALG-RSASSA-PKCS1-V1-5-SHA256) = dataSize(32) .
+  eq operationDigestLength(TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA1) = dataSize(20) .
+  eq operationDigestLength(TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA224) = dataSize(28) .
+  eq operationDigestLength(ALGO) = dataSize(0) [owise] .
+
+  op operationKeyCount : AlgorithmIdentifier OperationClass -> Nat .
+  eq operationKeyCount(ALGO , TEE-OPERATION-DIGEST) = 0 .
+  ceq operationKeyCount(ALGO , OC) = 2 if expectsTwoKeys(ALGO) .
+  eq operationKeyCount(ALGO , OC) = 1 [owise] .
+
+  op operationKeyInformation : List{CryptoKey} Set{ObjectUsage} -> TeeOperationInfoKeyList .
+  eq operationKeyInformation(nil , OBJUSAGES) = noKeyInformation .
+  eq operationKeyInformation(key(ATTRS) KEYS , OBJUSAGES) =
+    teeOperationInfoKey(keySize(ATTRS) , OBJUSAGES) ;
+    operationKeyInformation(KEYS , OBJUSAGES) .
 
 --- For a public key object, the allowed operation modes depend on the type of key and are specified in Table 6-5.
   op typeModeCompatible : ObjectType OperationMode -> Bool .
@@ -743,21 +775,41 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | api-state : finished , api-return : apiReturn(GetOperationInfo , teeOpInfo(OPOBJATTR , OPHANDLEATTR)) >
   .
 
---- TODO: NEED TO UPDATE
 ------------------------------------------------------------
 --- TEE_GetOperationInfoMultiple
 ------------------------------------------------------------
 
+  msg reqOperationInfoMultiple : HandleId TaInstId -> Msg .
+  msg retOperationInfoMultiple : TeeOperationInfoMultiple TaInstId -> Msg .
+
   rl [get-operation-info-multiple-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn , api-state : started ,
                       current-api : GetOperationInfoMultiple , current-params : handle(HANDLE) >
-    => < TK : TaKernel | api-state : waitOperationAttr > reqOperationAttr(HANDLE , TK) .
+    => < TK : TaKernel | api-state : waitOperationAttr >
+       reqOperationInfoMultiple(HANDLE , TK) .
+
+  rl [req-operation-info-multiple] :
+    reqOperationInfoMultiple(HANDLE , TK)
+    < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE) ,
+                             crypto-keys : KEYS , max-key-size : KEYSIZE ,
+                             algorithm : ALGO , operation-mode : MODE ,
+                             operation-class : OC , operation-state : OS >
+    < HANDLE : OperationHandle | oid : CI , is-initialized : B1 ,
+                                 is-key-set : B2 , is-extracting : B3 >
+    =>
+    < CI : CryptoOperation | >
+    < HANDLE : OperationHandle | >
+    retOperationInfoMultiple(
+      teeOperationInfoMultiple(ALGO , OC , MODE , operationDigestLength(ALGO) ,
+        KEYSIZE , B1 , B2 , B3 , OS , operationKeyCount(ALGO , OC) ,
+        operationKeyInformation(KEYS , requiredOperationUsage(ALGO , MODE))) , TK) .
 
   rl [get-operation-info-multiple-success] :
-    retOperationAttr(OPOBJATTR, OPHANDLEATTR , TK)
+    retOperationInfoMultiple(OPINFOMULTI , TK)
     < TK : TaKernel | api-state : waitOperationAttr , current-api : GetOperationInfoMultiple >
     => < TK : TaKernel | api-state : finished ,
-                      api-return : apiReturn(GetOperationInfoMultiple , TEE-SUCCESS , teeOpInfo(OPOBJATTR , OPHANDLEATTR)) > .
+                      api-return : apiReturn(GetOperationInfoMultiple , TEE-SUCCESS ,
+                                             teeOpInfoMultiple(OPINFOMULTI)) > .
 
 ------------------------------------------------------------
 --- TEE_ResetOperation

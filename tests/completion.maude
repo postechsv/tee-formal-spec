@@ -1224,3 +1224,45 @@ search [1] in COMPLETION-TEST :
       handle-id-set : handleIdSet(handleId(1, testTa)), algorithm : TEE-ALG-AES-CTR >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       is-initialized : false > C .
+
+--- GP 6.2.6 replaces an existing single key while the operation is initial.
+search [1] in COMPLETION-TEST :
+  reqSetOperationKey(handleId(1, testTa), TEE-TYPE-AES,
+    teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 2)),
+    TEE-USAGE-ENCRYPT, testTa)
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)),
+      algorithm : TEE-ALG-AES-CTR, operation-mode : TEE-MODE-ENCRYPT,
+      max-key-size : 128 Bits,
+      crypto-keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1))),
+      operation-state : TEE-OPERATION-STATE-INITIAL >
+=>1
+  installTopOperationKey(handleId(1, testTa), taOid(1, testTa),
+    teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 2)), testTa)
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)),
+      algorithm : TEE-ALG-AES-CTR, operation-mode : TEE-MODE-ENCRYPT,
+      max-key-size : 128 Bits,
+      crypto-keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 2))),
+      operation-state : TEE-OPERATION-STATE-INITIAL > .
+
+search [1] in COMPLETION-TEST :
+  installTopOperationKey(handleId(1, testTa), taOid(1, testTa), empty, testTa)
+  < handleId(1, testTa) : OperationHandle | state : keySet,
+      is-initialized : false, key-material-set : true, is-key-set : true >
+=>1
+  finishSetOperationKey(testTa)
+  < handleId(1, testTa) : OperationHandle | state : keySet,
+      is-initialized : false, key-material-set : true, is-key-set : true > .
+
+--- GP 6.2.7 applies the same replacement behavior to a two-key operation.
+search [1] in COMPLETION-TEST :
+  finishInstallTopOperationKeys(handleId(1, testTa), testTa)
+  < handleId(1, testTa) : OperationHandle | state : keySet,
+      is-initialized : false, key-material-set : true, is-key-set : true,
+      is-extracting : false >
+=>1
+  finishSetOperationKey2(testTa)
+  < handleId(1, testTa) : OperationHandle | state : keySet,
+      is-initialized : false, key-material-set : true, is-key-set : true,
+      is-extracting : false > .

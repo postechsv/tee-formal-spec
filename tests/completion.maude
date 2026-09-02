@@ -1224,6 +1224,37 @@ search [1] in COMPLETION-TEST :
   < testTa : TaKernel | api-state : waitSetOperationKey,
                         current-api : SetOperationKey2 > C .
 
+--- Invisible reduction preserves the first persistent-key storage barrier.
+search [1] in COMPLETION-INVISIBLE-TEST :
+  retTrustedOS(storageStatus(storageNormal), testTa)
+  resumeSetOperationKey2(handleId(2, testTa), TEE-TYPE-AES,
+    TEE-USAGE-ENCRYPT, teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal), testTa)
+  < testTa : TaKernel | api-state : waitStorageCheck,
+      current-api : SetOperationKey2,
+      current-params : (handle(handleId(1, testTa)), keyHandle(handleId(3, testTa)),
+                        secondKeyHandle(handleId(2, testTa))) >
+=>*
+  reqAttribute(handleId(2, testTa), testTa)
+  < testTa : TaKernel | api-state : waitReqAttribute,
+      current-api : SetOperationKey2,
+      current-params : (handle(handleId(1, testTa)), keyHandle(handleId(3, testTa)),
+        secondKeyHandle(handleId(2, testTa)),
+        attrs(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)),
+        type(TEE-TYPE-AES), usages(TEE-USAGE-ENCRYPT)) > C .
+
+--- Invisible reduction also resumes after validating persistent key2.
+search [1] in COMPLETION-INVISIBLE-TEST :
+  retTrustedOS(storageStatus(storageNormal), testTa)
+  installStoredOperationKeys(handleId(1, testTa), TEE-TYPE-AES,
+    TEE-USAGE-ENCRYPT, empty, TEE-TYPE-AES, TEE-USAGE-ENCRYPT, empty, testTa)
+  < testTa : TaKernel | api-state : waitStorageCheck,
+                        current-api : SetOperationKey2 >
+=>*
+  installOperationKeys(handleId(1, testTa), TEE-TYPE-AES,
+    TEE-USAGE-ENCRYPT, empty, TEE-TYPE-AES, TEE-USAGE-ENCRYPT, empty, testTa)
+  < testTa : TaKernel | api-state : waitSetOperationKey,
+                        current-api : SetOperationKey2 > C .
+
 --- Clearing two keys is valid only for an operation that expects two keys.
 search [1] in COMPLETION-TEST :
   < testTa : TaKernel | app-status : normal, api-call : noCall,

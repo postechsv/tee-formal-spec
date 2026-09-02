@@ -3168,6 +3168,29 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     reqAttribute(KEY2 , TK) .
 
   eq
+    retAttributePr(ATTRS, OBJTYPE, OBJUSAGES, TK)
+    < TK : TaKernel | api-state : waitReqAttribute, current-api : SetOperationKey2,
+                      current-params : handle(HANDLE), keyHandle(KEY1),
+                                       secondKeyHandle(KEY2), trust-app-id : TN >
+    =
+    < TK : TaKernel | api-state : waitStorageCheck >
+    resumeSetOperationKey2(KEY2, OBJTYPE, OBJUSAGES, ATTRS, TK)
+    reqTrustedOS(getStorageStatus, TK, TN) .
+
+  eq
+    retTrustedOS(storageStatus(storageNormal), TK)
+    resumeSetOperationKey2(KEY2, OBJTYPE, OBJUSAGES, ATTRS, TK)
+    < TK : TaKernel | api-state : waitStorageCheck, current-api : SetOperationKey2,
+                      current-params : handle(HANDLE), keyHandle(KEY1),
+                                       secondKeyHandle(KEY2) >
+    =
+    < TK : TaKernel | api-state : waitReqAttribute,
+                      current-params : (handle(HANDLE), keyHandle(KEY1),
+                        secondKeyHandle(KEY2), attrs(ATTRS), type(OBJTYPE),
+                        usages(OBJUSAGES)) >
+    reqAttribute(KEY2, TK) .
+
+  eq
     retAttributeTr(ATTRS2, OBJTYPE2, OBJUSAGES2, TK)
     < TK : TaKernel | api-state : waitReqAttribute, current-api : SetOperationKey2,
                       current-params : (handle(HANDLE), keyHandle(KEY1),
@@ -3177,6 +3200,47 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | api-state : waitSetOperationKey >
     installOperationKeys(HANDLE, OBJTYPE, OBJUSAGES, ATTRS,
                          OBJTYPE2, OBJUSAGES2, ATTRS2, TK) .
+
+  eq
+    retAttributePr(ATTRS2, OBJTYPE2, OBJUSAGES2, TK)
+    < TK : TaKernel | api-state : waitReqAttribute, current-api : SetOperationKey2,
+                      current-params : (handle(HANDLE), keyHandle(KEY1),
+                        secondKeyHandle(KEY2), attrs(ATTRS), type(OBJTYPE),
+                        usages(OBJUSAGES)), trust-app-id : TN >
+    =
+    < TK : TaKernel | api-state : waitStorageCheck >
+    installStoredOperationKeys(HANDLE, OBJTYPE, OBJUSAGES, ATTRS,
+                               OBJTYPE2, OBJUSAGES2, ATTRS2, TK)
+    reqTrustedOS(getStorageStatus, TK, TN) .
+
+  eq
+    retTrustedOS(storageStatus(storageNormal), TK)
+    installStoredOperationKeys(HANDLE, OBJTYPE, OBJUSAGES, ATTRS,
+                               OBJTYPE2, OBJUSAGES2, ATTRS2, TK)
+    < TK : TaKernel | api-state : waitStorageCheck, current-api : SetOperationKey2 >
+    =
+    < TK : TaKernel | api-state : waitSetOperationKey >
+    installOperationKeys(HANDLE, OBJTYPE, OBJUSAGES, ATTRS,
+                         OBJTYPE2, OBJUSAGES2, ATTRS2, TK) .
+
+  ceq
+    retTrustedOS(storageStatus(STATUS), TK)
+    resumeSetOperationKey2(KEY2, OBJTYPE, OBJUSAGES, ATTRS, TK)
+    < TK : TaKernel | api-state : waitStorageCheck, current-api : SetOperationKey2 >
+    =
+    < TK : TaKernel | api-state : finished,
+                      api-return : apiReturn(SetOperationKey2, storageErrCode(STATUS)) >
+  if abnormalStorage(STATUS) .
+
+  ceq
+    retTrustedOS(storageStatus(STATUS), TK)
+    installStoredOperationKeys(HANDLE, OBJTYPE, OBJUSAGES, ATTRS,
+                               OBJTYPE2, OBJUSAGES2, ATTRS2, TK)
+    < TK : TaKernel | api-state : waitStorageCheck, current-api : SetOperationKey2 >
+    =
+    < TK : TaKernel | api-state : finished,
+                      api-return : apiReturn(SetOperationKey2, storageErrCode2(STATUS)) >
+  if abnormalStorage(STATUS) .
 
   eq
     reqAttribute(KEY, TK)

@@ -433,6 +433,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
       singleInfoKeySize(N , OPINFOKEYS) , singleInfoKeyUsage(N , OPINFOKEYS) ,
       B1 , B2 , B3 , B1') .
 
+  --- Abstract operation-info buffer size, measured in keyInformation slots.
+  op operationInfoRequiredSize : TeeOperationInfoMultiple -> DataSize .
+  eq operationInfoRequiredSize(teeOperationInfoMultiple(ALGO , OC , MODE ,
+       DATASIZE , KEYSIZE , B1 , B2 , B3 , B1' , OS , N , OPINFOKEYS)) =
+    dataSize(N) .
+
 --- For a public key object, the allowed operation modes depend on the type of key and are specified in Table 6-5.
   op typeModeCompatible : ObjectType OperationMode -> Bool .
   eq typeModeCompatible(TEE-TYPE-AES , TEE-MODE-ENCRYPT) = true .
@@ -811,7 +817,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   rl [get-operation-info-multiple-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn , api-state : started ,
-                      current-api : GetOperationInfoMultiple , current-params : handle(HANDLE) >
+                      current-api : GetOperationInfoMultiple ,
+                      current-params : (handle(HANDLE) , PARAMS) >
     => < TK : TaKernel | api-state : waitOperationAttr >
        reqOperationInfoMultiple(HANDLE , TK) .
 
@@ -833,12 +840,26 @@ omod CRYPTO-OPERATION-BEHAVIOR is
         operationKeyInformation(KEYS , requiredOperationUsage(ALGO , MODE) ,
                                 operationKeyCount(ALGO , OC))) , TK) .
 
-  rl [get-operation-info-multiple-success] :
+  crl [get-operation-info-multiple-success] :
     retOperationInfoMultiple(OPINFOMULTI , TK)
-    < TK : TaKernel | api-state : waitOperationAttr , current-api : GetOperationInfoMultiple >
+    < TK : TaKernel | api-state : waitOperationAttr , current-api : GetOperationInfoMultiple ,
+                      current-params : PARAMS >
     => < TK : TaKernel | api-state : finished ,
                       api-return : apiReturn(GetOperationInfoMultiple , TEE-SUCCESS ,
-                                             teeOpInfoMultiple(OPINFOMULTI)) > .
+                                             teeOpInfoMultiple(OPINFOMULTI)) >
+    if not hasOutputCapacity(PARAMS) or
+       outputCapacityFitsSize(PARAMS , operationInfoRequiredSize(OPINFOMULTI)) .
+
+  crl [get-operation-info-multiple-short-buffer] :
+    retOperationInfoMultiple(OPINFOMULTI , TK)
+    < TK : TaKernel | api-state : waitOperationAttr , current-api : GetOperationInfoMultiple ,
+                      current-params : PARAMS >
+    => < TK : TaKernel | api-state : finished ,
+                      api-return : apiReturn(GetOperationInfoMultiple ,
+                        TEE-ERROR-SHORT-BUFFER ,
+                        size(operationInfoRequiredSize(OPINFOMULTI))) >
+    if hasOutputCapacity(PARAMS) and
+       not outputCapacityFitsSize(PARAMS , operationInfoRequiredSize(OPINFOMULTI)) .
 
 ------------------------------------------------------------
 --- TEE_ResetOperation
@@ -2907,7 +2928,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
   eq
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : GetOperationInfoMultiple ,
-                      current-params : handle(HANDLE) >
+                      current-params : (handle(HANDLE) , PARAMS) >
     =
     < TK : TaKernel | api-state : waitOperationAttr >
     reqOperationInfoMultiple(HANDLE , TK) .
@@ -2930,14 +2951,28 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
         operationKeyInformation(KEYS , requiredOperationUsage(ALGO , MODE) ,
                                 operationKeyCount(ALGO , OC))) , TK) .
 
-  eq
+  ceq
     retOperationInfoMultiple(OPINFOMULTI , TK)
     < TK : TaKernel | api-state : waitOperationAttr ,
-                      current-api : GetOperationInfoMultiple >
+                      current-api : GetOperationInfoMultiple , current-params : PARAMS >
     =
     < TK : TaKernel | api-state : finished ,
                       api-return : apiReturn(GetOperationInfoMultiple , TEE-SUCCESS ,
-                                             teeOpInfoMultiple(OPINFOMULTI)) > .
+                                             teeOpInfoMultiple(OPINFOMULTI)) >
+    if not hasOutputCapacity(PARAMS) or
+       outputCapacityFitsSize(PARAMS , operationInfoRequiredSize(OPINFOMULTI)) .
+
+  ceq
+    retOperationInfoMultiple(OPINFOMULTI , TK)
+    < TK : TaKernel | api-state : waitOperationAttr ,
+                      current-api : GetOperationInfoMultiple , current-params : PARAMS >
+    =
+    < TK : TaKernel | api-state : finished ,
+                      api-return : apiReturn(GetOperationInfoMultiple ,
+                        TEE-ERROR-SHORT-BUFFER ,
+                        size(operationInfoRequiredSize(OPINFOMULTI))) >
+    if hasOutputCapacity(PARAMS) and
+       not outputCapacityFitsSize(PARAMS , operationInfoRequiredSize(OPINFOMULTI)) .
 
 ------------------------------------------------------------
 --- TEE_AllocateOperation

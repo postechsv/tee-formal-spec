@@ -1390,3 +1390,20 @@ search [1] in COMPLETION-INVISIBLE-TEST :
         teeOpInfo(teeOperationInfo(TEE-ALG-AES-CTR, TEE-OPERATION-CIPHER,
           TEE-MODE-ENCRYPT, dataSize(0), 256 Bits, 128 Bits,
           TEE-USAGE-ENCRYPT, false, true, false, false))) > C .
+
+--- Invisible GetOperationInfoMultiple reports a two-slot short buffer.
+search [1] in COMPLETION-INVISIBLE-TEST :
+  retOperationInfoMultiple(teeOperationInfoMultiple(TEE-ALG-AES-XTS,
+    TEE-OPERATION-CIPHER, TEE-MODE-ENCRYPT, dataSize(0), 256 Bits,
+    true, true, false, false, TEE-OPERATION-STATE-INITIAL, 2,
+    teeOperationInfoKey(128 Bits, TEE-USAGE-ENCRYPT) ;
+    teeOperationInfoKey(128 Bits, TEE-USAGE-ENCRYPT) ; noKeyInformation), testTa)
+  < testTa : TaKernel | api-call : noCall, api-return : noReturn,
+      api-state : waitOperationAttr, current-api : GetOperationInfoMultiple,
+      current-params : (handle(handleId(1, testTa)), capacity(dataSize(1))) >
+=>*
+  < testTa : TaKernel | api-call : noCall, api-state : finished,
+      current-api : GetOperationInfoMultiple,
+      current-params : (handle(handleId(1, testTa)), capacity(dataSize(1))),
+      api-return : apiReturn(GetOperationInfoMultiple, TEE-ERROR-SHORT-BUFFER,
+        size(dataSize(2))) > C .

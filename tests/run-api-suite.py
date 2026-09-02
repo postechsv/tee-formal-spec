@@ -19,7 +19,7 @@ MAUDE_RELATIVE = (
     Path("Darwin64/maude.darwin64") if platform.system() == "Darwin"
     else Path("Linux64/maude.linux64")
 )
-EXPECTED_API_TESTS = 91
+EXPECTED_API_TESTS = 92
 SEARCH_START = re.compile(r"^search\s+\[1\]\s+in\s+TEST-AUX\s*:", re.MULTILINE)
 TEST_ID = re.compile(r"---\s*\[([^]]+)]")
 

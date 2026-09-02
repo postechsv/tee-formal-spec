@@ -128,6 +128,23 @@ search [1] in TEST-AUX :
                         teeOperationInfoKey(128 Bits, TEE-USAGE-ENCRYPT) ;
                         noKeyInformation))) > .
 
+--- [BB-C-GIM-2] get-operation-info-multiple reports required key slots
+search [1] in TEST-AUX :
+  retOperationInfoMultiple(teeOperationInfoMultiple(TEE-ALG-AES-XTS,
+    TEE-OPERATION-CIPHER, TEE-MODE-ENCRYPT, dataSize(0), 256 Bits,
+    true, true, false, false, TEE-OPERATION-STATE-INITIAL, 2,
+    teeOperationInfoKey(128 Bits, TEE-USAGE-ENCRYPT) ;
+    teeOperationInfoKey(128 Bits, TEE-USAGE-ENCRYPT) ; noKeyInformation), ta)
+  < ta : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                    current-api : GetOperationInfoMultiple,
+                    api-state : waitOperationAttr,
+                    current-params : (handle(handleId(1, ta)), capacity(dataSize(1))),
+                    id-counter : 0, trust-app-id : TESTTA >
+=>*
+  < ta : TaKernel | api-state : finished,
+                    api-return : apiReturn(GetOperationInfoMultiple,
+                      TEE-ERROR-SHORT-BUFFER, size(dataSize(2))) > .
+
 --- ============================================================
 --- ResetOperation
 --- ============================================================

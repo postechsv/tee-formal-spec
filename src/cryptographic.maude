@@ -159,8 +159,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   var HS : HandleState .
   vars ATTRS ATTRS2 : Set{TeeAttribute} .
   vars KEYSIZE : CryptoKeySize .
-  var OBJTYPE : ObjectType .
-  var OBJUSAGES : Set{ObjectUsage} .
+  vars OBJTYPE OBJTYPE2 : ObjectType .
+  vars OBJUSAGES OBJUSAGES2 : Set{ObjectUsage} .
   vars DL DATA IV DIGEST : List{Data} .
   var MAC : List{Data} .
   var OPOBJATTR : OpObjectAttr .
@@ -414,6 +414,22 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   eq typeModeCompatible(TEE-TYPE-SM2-PKE-KEYPAIR , TEE-MODE-ENCRYPT) = true .
   eq typeModeCompatible(TEE-TYPE-SM2-PKE-KEYPAIR , TEE-MODE-DECRYPT) = true .
   eq typeModeCompatible(OBJTYPE , MODE) = false [owise] .
+
+  --- GP 6.2.7 restricts two-key operations to AES-XTS and SM2-KEP.  Both
+  --- component keys must independently authorize the operation mode.
+  op twoKeyCompatible : AlgorithmIdentifier OperationMode ObjectType Set{ObjectUsage}
+                        ObjectType Set{ObjectUsage} -> Bool .
+  eq twoKeyCompatible(TEE-ALG-AES-XTS , MODE,
+                      TEE-TYPE-AES , OBJUSAGES,
+                      TEE-TYPE-AES , OBJUSAGES2) =
+    operationUsageCompatible(TEE-ALG-AES-XTS , OBJUSAGES , MODE) and
+    operationUsageCompatible(TEE-ALG-AES-XTS , OBJUSAGES2 , MODE) .
+  eq twoKeyCompatible(TEE-ALG-SM2-KEP , TEE-MODE-DERIVE,
+                      TEE-TYPE-SM2-KEP-KEYPAIR , OBJUSAGES,
+                      TEE-TYPE-SM2-KEP-KEYPAIR , OBJUSAGES2) =
+    TEE-USAGE-DERIVE in OBJUSAGES and TEE-USAGE-DERIVE in OBJUSAGES2 .
+  eq twoKeyCompatible(ALGO , MODE, OBJTYPE , OBJUSAGES,
+                      OBJTYPE2 , OBJUSAGES2) = false [owise] .
 
 --- For TEE_DigestUpdate
 
@@ -922,35 +938,95 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- TEE_SetOperationKey2
 ------------------------------------------------------------
 
-  msg installOperationKeys : HandleId Set{TeeAttribute} Set{TeeAttribute} TaInstId -> Msg .
+  msg installOperationKeys : HandleId ObjectType Set{ObjectUsage} Set{TeeAttribute}
+                             ObjectType Set{ObjectUsage} Set{TeeAttribute} TaInstId -> Msg .
   msg finishInstallTopOperationKeys : HandleId TaInstId -> Msg .
   msg finishSetOperationKey2 : TaInstId -> Msg .
+  msg failSetOperationKey2 : TaInstId -> Msg .
 
-  rl [set-operation-key2-subroutine] :
+  crl [set-operation-key2-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn , api-state : started ,
                       current-api : SetOperationKey2 ,
                       current-params : handle(HANDLE) , keyHandle(KEY1) , secondKeyHandle(KEY2) >
-    => < TK : TaKernel | api-state : waitReqAttribute > reqAttribute(KEY1 , TK) .
+    < HANDLE : OperationHandle | is-initialized : false >
+    => < TK : TaKernel | api-state : waitReqAttribute >
+       < HANDLE : OperationHandle | >
+       reqAttribute(KEY1 , TK)
+  if not nullHandle(KEY1) /\ not nullHandle(KEY2) /\ KEY1 =/= KEY2 .
+
+  rl [set-operation-key2-clear] :
+    < TK : TaKernel | api-call : noCall , api-return : noReturn , api-state : started ,
+                      current-api : SetOperationKey2 ,
+                      current-params : handle(HANDLE) , keyHandle(TEE-HANDLE-NULL) ,
+                                       secondKeyHandle(TEE-HANDLE-NULL) >
+    < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE) >
+    < HANDLE : OperationHandle | oid : CI , is-initialized : false >
+    => < TK : TaKernel | api-state : finished ,
+                      api-return : apiReturn(SetOperationKey2 , TEE-SUCCESS) >
+       < CI : CryptoOperation | crypto-keys : nil ,
+                              operation-state : TEE-OPERATION-STATE-INITIAL >
+       < HANDLE : OperationHandle | state : noHandleState,
+                                  key-material-set : false , is-key-set : false,
+                                  is-extracting : false > .
+
+  crl [set-operation-key2-mixed-null-panic] :
+    < TK : TaKernel | app-status : normal , api-state : started ,
+                      current-api : SetOperationKey2 ,
+                      current-params : handle(HANDLE) , keyHandle(KEY1) , secondKeyHandle(KEY2) >
+    => < TK : TaKernel | app-status : panic , api-state : finished >
+  if (nullHandle(KEY1) and not nullHandle(KEY2)) or
+     (not nullHandle(KEY1) and nullHandle(KEY2)) .
+
+  crl [set-operation-key2-same-key-security-error] :
+    < TK : TaKernel | api-state : started , current-api : SetOperationKey2 ,
+                      current-params : handle(HANDLE) , keyHandle(KEY1) , secondKeyHandle(KEY1) >
+    < HANDLE : OperationHandle | is-initialized : false >
+    => < TK : TaKernel | api-state : finished ,
+                      api-return : apiReturn(SetOperationKey2 , TEE-ERROR-SECURITY) >
+       < HANDLE : OperationHandle | >
+  if not nullHandle(KEY1) .
 
   rl [set-operation-key2-subroutine] :
     retAttributeTr(ATTRS , OBJTYPE , OBJUSAGES , TK)
     < TK : TaKernel | api-state : waitReqAttribute , current-api : SetOperationKey2 ,
                       current-params : handle(HANDLE) , keyHandle(KEY1) , secondKeyHandle(KEY2) >
     => < TK : TaKernel | current-params : (handle(HANDLE) , keyHandle(KEY1) ,
-                          secondKeyHandle(KEY2) , attrs(ATTRS)) > reqAttribute(KEY2 , TK) .
+                          secondKeyHandle(KEY2) , attrs(ATTRS), type(OBJTYPE),
+                          usages(OBJUSAGES)) > reqAttribute(KEY2 , TK) .
 
   rl [set-operation-key2-subroutine] :
-    retAttributeTr(ATTRS2 , OBJTYPE , OBJUSAGES , TK)
+    retAttributeTr(ATTRS2 , OBJTYPE2 , OBJUSAGES2 , TK)
     < TK : TaKernel | api-state : waitReqAttribute , current-api : SetOperationKey2 ,
-                      current-params : (handle(HANDLE) , keyHandle(KEY1) , secondKeyHandle(KEY2) , attrs(ATTRS)) >
+                      current-params : (handle(HANDLE) , keyHandle(KEY1) , secondKeyHandle(KEY2),
+                                        attrs(ATTRS), type(OBJTYPE), usages(OBJUSAGES)) >
     => < TK : TaKernel | api-state : waitSetOperationKey >
-       installOperationKeys(HANDLE , ATTRS , ATTRS2 , TK) .
+       installOperationKeys(HANDLE , OBJTYPE , OBJUSAGES , ATTRS,
+                            OBJTYPE2 , OBJUSAGES2 , ATTRS2 , TK) .
 
-  rl [set-operation-key2-top-level-handle] :
-    installOperationKeys(HANDLE , ATTRS , ATTRS2 , TK)
-    < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE) >
+  rl [set-operation-key2-uninitialized-key-panic] :
+    reqAttribute(KEY , TK)
+    < TK : TaKernel | app-status : normal , api-state : waitReqAttribute,
+                      current-api : SetOperationKey2 >
+    < KEY : ObjectHandle | is-initialized : false >
+    => < TK : TaKernel | app-status : panic , api-state : finished >
+       < KEY : ObjectHandle | > .
+
+  crl [set-operation-key2-top-level-handle] :
+    installOperationKeys(HANDLE , OBJTYPE , OBJUSAGES , ATTRS,
+                         OBJTYPE2 , OBJUSAGES2 , ATTRS2 , TK)
+    < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE),
+                             algorithm : ALGO, operation-mode : MODE >
     => < CI : CryptoOperation | crypto-keys : key(ATTRS) key(ATTRS2) >
-       finishInstallTopOperationKeys(HANDLE , TK) .
+       finishInstallTopOperationKeys(HANDLE , TK)
+  if twoKeyCompatible(ALGO , MODE, OBJTYPE , OBJUSAGES, OBJTYPE2 , OBJUSAGES2) .
+
+  crl [set-operation-key2-incompatible-key-panic] :
+    installOperationKeys(HANDLE , OBJTYPE , OBJUSAGES , ATTRS,
+                         OBJTYPE2 , OBJUSAGES2 , ATTRS2 , TK)
+    < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE),
+                             algorithm : ALGO, operation-mode : MODE >
+    => < CI : CryptoOperation | > failSetOperationKey2(TK)
+  if not twoKeyCompatible(ALGO , MODE, OBJTYPE , OBJUSAGES, OBJTYPE2 , OBJUSAGES2) .
   rl [finish-set-operation-key2-top-level-handle] :
     finishInstallTopOperationKeys(HANDLE , TK)
     < HANDLE : OperationHandle | is-initialized : false , key-material-set : false ,
@@ -963,6 +1039,11 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     finishSetOperationKey2(TK)
     < TK : TaKernel | api-state : waitSetOperationKey , current-api : SetOperationKey2 >
     => < TK : TaKernel | api-state : finished , api-return : apiReturn(SetOperationKey2 , TEE-SUCCESS) > .
+
+  rl [set-operation-key2-panic] :
+    failSetOperationKey2(TK)
+    < TK : TaKernel | api-state : waitSetOperationKey , current-api : SetOperationKey2 >
+    => < TK : TaKernel | app-status : panic , api-state : finished > .
 
 ---   rl [set-operation-key2-security-err] :
 ---     apiCall(SetOperationKey2Call(HANDLE , HANDLE1 , HANDLE1) , TI)

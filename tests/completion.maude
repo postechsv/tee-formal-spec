@@ -1055,3 +1055,35 @@ search [1] in COMPLETION-TEST :
 =>*
   < testTa : TaKernel | app-status : panic, api-state : finished,
                         current-api : SetOperationKey2 > C .
+
+--- GP 6.2.7: a persistent first key resumes with the second-key lookup only
+--- after trusted storage reports a normal state.
+search [1] in COMPLETION-TEST :
+  retTrustedOS(storageStatus(storageNormal), testTa)
+  resumeSetOperationKey2(handleId(2, testTa), TEE-TYPE-AES,
+    TEE-USAGE-ENCRYPT, teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal), testTa)
+  < testTa : TaKernel | api-state : waitStorageCheck,
+      current-api : SetOperationKey2,
+      current-params : (handle(handleId(1, testTa)), keyHandle(handleId(3, testTa)),
+                        secondKeyHandle(handleId(2, testTa))) >
+=>1
+  reqAttribute(handleId(2, testTa), testTa)
+  < testTa : TaKernel | api-state : waitReqAttribute,
+      current-api : SetOperationKey2,
+      current-params : (handle(handleId(1, testTa)), keyHandle(handleId(3, testTa)),
+        secondKeyHandle(handleId(2, testTa)),
+        attrs(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)),
+        type(TEE-TYPE-AES), usages(TEE-USAGE-ENCRYPT)) > C .
+
+--- A persistent second key continues into the common two-key validator.
+search [1] in COMPLETION-TEST :
+  retTrustedOS(storageStatus(storageNormal), testTa)
+  installStoredOperationKeys(handleId(1, testTa), TEE-TYPE-AES,
+    TEE-USAGE-ENCRYPT, empty, TEE-TYPE-AES, TEE-USAGE-ENCRYPT, empty, testTa)
+  < testTa : TaKernel | api-state : waitStorageCheck,
+                        current-api : SetOperationKey2 >
+=>1
+  installOperationKeys(handleId(1, testTa), TEE-TYPE-AES,
+    TEE-USAGE-ENCRYPT, empty, TEE-TYPE-AES, TEE-USAGE-ENCRYPT, empty, testTa)
+  < testTa : TaKernel | api-state : waitSetOperationKey,
+                        current-api : SetOperationKey2 > C .

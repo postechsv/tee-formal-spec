@@ -943,6 +943,11 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   msg finishInstallTopOperationKeys : HandleId TaInstId -> Msg .
   msg finishSetOperationKey2 : TaInstId -> Msg .
   msg failSetOperationKey2 : TaInstId -> Msg .
+  msg resumeSetOperationKey2 : HandleId ObjectType Set{ObjectUsage}
+                               Set{TeeAttribute} TaInstId -> Msg .
+  msg installStoredOperationKeys : HandleId ObjectType Set{ObjectUsage}
+                                   Set{TeeAttribute} ObjectType Set{ObjectUsage}
+                                   Set{TeeAttribute} TaInstId -> Msg .
 
   crl [set-operation-key2-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn , api-state : started ,
@@ -994,6 +999,29 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                           secondKeyHandle(KEY2) , attrs(ATTRS), type(OBJTYPE),
                           usages(OBJUSAGES)) > reqAttribute(KEY2 , TK) .
 
+  --- Persistent keys are checked for corruption and storage availability
+  --- before their attributes can participate in the two-key installation.
+  rl [set-operation-key2-first-persistent-key] :
+    retAttributePr(ATTRS , OBJTYPE , OBJUSAGES , TK)
+    < TK : TaKernel | api-state : waitReqAttribute , current-api : SetOperationKey2,
+                      current-params : handle(HANDLE) , keyHandle(KEY1),
+                                       secondKeyHandle(KEY2), trust-app-id : TN >
+    => < TK : TaKernel | api-state : waitStorageCheck >
+       resumeSetOperationKey2(KEY2 , OBJTYPE , OBJUSAGES , ATTRS , TK)
+       reqTrustedOS(getStorageStatus , TK , TN) .
+
+  rl [set-operation-key2-first-persistent-key-ready] :
+    retTrustedOS(storageStatus(storageNormal) , TK)
+    resumeSetOperationKey2(KEY2 , OBJTYPE , OBJUSAGES , ATTRS , TK)
+    < TK : TaKernel | api-state : waitStorageCheck , current-api : SetOperationKey2,
+                      current-params : handle(HANDLE) , keyHandle(KEY1),
+                                       secondKeyHandle(KEY2) >
+    => < TK : TaKernel | api-state : waitReqAttribute,
+                      current-params : (handle(HANDLE), keyHandle(KEY1),
+                        secondKeyHandle(KEY2), attrs(ATTRS), type(OBJTYPE),
+                        usages(OBJUSAGES)) >
+       reqAttribute(KEY2 , TK) .
+
   rl [set-operation-key2-subroutine] :
     retAttributeTr(ATTRS2 , OBJTYPE2 , OBJUSAGES2 , TK)
     < TK : TaKernel | api-state : waitReqAttribute , current-api : SetOperationKey2 ,
@@ -1002,6 +1030,43 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     => < TK : TaKernel | api-state : waitSetOperationKey >
        installOperationKeys(HANDLE , OBJTYPE , OBJUSAGES , ATTRS,
                             OBJTYPE2 , OBJUSAGES2 , ATTRS2 , TK) .
+
+  rl [set-operation-key2-second-persistent-key] :
+    retAttributePr(ATTRS2 , OBJTYPE2 , OBJUSAGES2 , TK)
+    < TK : TaKernel | api-state : waitReqAttribute , current-api : SetOperationKey2,
+                      current-params : (handle(HANDLE), keyHandle(KEY1),
+                        secondKeyHandle(KEY2), attrs(ATTRS), type(OBJTYPE),
+                        usages(OBJUSAGES)), trust-app-id : TN >
+    => < TK : TaKernel | api-state : waitStorageCheck >
+       installStoredOperationKeys(HANDLE , OBJTYPE , OBJUSAGES , ATTRS,
+                                  OBJTYPE2 , OBJUSAGES2 , ATTRS2 , TK)
+       reqTrustedOS(getStorageStatus , TK , TN) .
+
+  rl [set-operation-key2-second-persistent-key-ready] :
+    retTrustedOS(storageStatus(storageNormal) , TK)
+    installStoredOperationKeys(HANDLE , OBJTYPE , OBJUSAGES , ATTRS,
+                               OBJTYPE2 , OBJUSAGES2 , ATTRS2 , TK)
+    < TK : TaKernel | api-state : waitStorageCheck , current-api : SetOperationKey2 >
+    => < TK : TaKernel | api-state : waitSetOperationKey >
+       installOperationKeys(HANDLE , OBJTYPE , OBJUSAGES , ATTRS,
+                            OBJTYPE2 , OBJUSAGES2 , ATTRS2 , TK) .
+
+  crl [set-operation-key2-first-persistent-storage-error] :
+    retTrustedOS(storageStatus(STATUS) , TK)
+    resumeSetOperationKey2(KEY2 , OBJTYPE , OBJUSAGES , ATTRS , TK)
+    < TK : TaKernel | api-state : waitStorageCheck , current-api : SetOperationKey2 >
+    => < TK : TaKernel | api-state : finished,
+                      api-return : apiReturn(SetOperationKey2 , storageErrCode(STATUS)) >
+  if abnormalStorage(STATUS) .
+
+  crl [set-operation-key2-second-persistent-storage-error] :
+    retTrustedOS(storageStatus(STATUS) , TK)
+    installStoredOperationKeys(HANDLE , OBJTYPE , OBJUSAGES , ATTRS,
+                               OBJTYPE2 , OBJUSAGES2 , ATTRS2 , TK)
+    < TK : TaKernel | api-state : waitStorageCheck , current-api : SetOperationKey2 >
+    => < TK : TaKernel | api-state : finished,
+                      api-return : apiReturn(SetOperationKey2 , storageErrCode(STATUS)) >
+  if abnormalStorage(STATUS) .
 
   rl [set-operation-key2-uninitialized-key-panic] :
     reqAttribute(KEY , TK)

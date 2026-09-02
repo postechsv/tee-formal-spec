@@ -480,6 +480,48 @@ search [1] in COMPLETION-TEST :
       api-return : noReturn, api-state : finished,
       current-api : CopyOperation > C .
 
+--- Invisible CopyOperation atomically copies object and handle state.
+search [1] in COMPLETION-INVISIBLE-TEST :
+  < testTa : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+      api-state : started, current-api : CopyOperation,
+      current-params : (trgHandle(handleId(1, testTa)),
+                        srcHandle(handleId(2, testTa))) >
+  < taOid(2, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(2, testTa)),
+      algorithm : TEE-ALG-AES-GCM, operation-mode : TEE-MODE-ENCRYPT,
+      crypto-keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1))),
+      operation-state : TEE-OPERATION-STATE-ACTIVE >
+  < handleId(2, testTa) : OperationHandle | oid : taOid(2, testTa),
+      is-initialized : true, is-key-set : true, is-extracting : false >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)),
+      algorithm : TEE-ALG-AES-GCM, operation-mode : TEE-MODE-ENCRYPT,
+      crypto-keys : nil, max-key-size : 256 Bits,
+      operation-state : TEE-OPERATION-STATE-INITIAL >
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      state : noHandleState, is-initialized : false, key-material-set : false,
+      is-key-set : false, is-extracting : false >
+=>*
+  < testTa : TaKernel | app-status : normal, api-call : noCall, api-state : finished,
+      current-api : CopyOperation,
+      current-params : (trgHandle(handleId(1, testTa)),
+                        srcHandle(handleId(2, testTa))),
+      api-return : apiReturn(CopyOperation, noReturnCode, empty) > C .
+
+--- Invisible CopyOperation also panics on incompatible algorithms.
+search [1] in COMPLETION-INVISIBLE-TEST :
+  failCopyOperation(testTa)
+  < testTa : TaKernel | app-status : normal, api-call : noCall,
+      api-return : noReturn, api-state : waitReqCopyOperation,
+      current-api : CopyOperation,
+      current-params : (trgHandle(handleId(1, testTa)),
+                        srcHandle(handleId(2, testTa))) >
+=>*
+  < testTa : TaKernel | app-status : panic, api-call : noCall,
+      api-return : noReturn, api-state : finished, current-api : CopyOperation,
+      current-params : (trgHandle(handleId(1, testTa)),
+                        srcHandle(handleId(2, testTa))) > C .
+
 --- DigestDoFinal resets digest state through a top-level operation handle.
 search [1] in COMPLETION-TEST :
   digestDoFinal(handleId(1, testTa), randomData, testTa)

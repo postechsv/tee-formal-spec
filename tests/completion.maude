@@ -1316,3 +1316,31 @@ search [1] in COMPLETION-TEST :
   < handleId(1, testTa) : OperationHandle | state : keySet,
       is-initialized : false, key-material-set : true, is-key-set : true,
       is-extracting : false > .
+
+--- Invisible reduction returns the complete GP multi-key information structure.
+search [1] in COMPLETION-INVISIBLE-TEST :
+  < testTa : TaKernel | api-call : noCall, api-return : noReturn,
+      api-state : started, current-api : GetOperationInfoMultiple,
+      current-params : handle(handleId(1, testTa)) >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)),
+      crypto-keys :
+        key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1)))
+        key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 2))),
+      max-key-size : 256 Bits, algorithm : TEE-ALG-AES-XTS,
+      operation-mode : TEE-MODE-ENCRYPT,
+      operation-class : TEE-OPERATION-CIPHER,
+      operation-state : TEE-OPERATION-STATE-INITIAL >
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      is-initialized : false, is-key-set : true, is-extracting : false >
+=>*
+  < testTa : TaKernel | api-call : noCall,
+      api-state : finished, current-api : GetOperationInfoMultiple,
+      current-params : handle(handleId(1, testTa)),
+      api-return : apiReturn(GetOperationInfoMultiple, TEE-SUCCESS,
+        teeOpInfoMultiple(teeOperationInfoMultiple(TEE-ALG-AES-XTS,
+          TEE-OPERATION-CIPHER, TEE-MODE-ENCRYPT, dataSize(0), 256 Bits,
+          false, true, false, TEE-OPERATION-STATE-INITIAL, 2,
+          teeOperationInfoKey(128 Bits, TEE-USAGE-ENCRYPT) ;
+          teeOperationInfoKey(128 Bits, TEE-USAGE-ENCRYPT) ;
+          noKeyInformation))) > C .

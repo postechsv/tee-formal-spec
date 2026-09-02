@@ -2830,6 +2830,7 @@ endom
 omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
   pr CRYPTO-OPERATION-BEHAVIOR .
 
+  vars B1 B2 B3 : Bool .
   var N : Nat .
   var TN : AppId .
   var TK : TaInstId .
@@ -2848,6 +2849,44 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
   vars DL DATA IV : List{Data} .
   var STATUS : StorageStatus .
   var PARAMS : Set{TeeApiParam} .
+  var OPINFOMULTI : TeeOperationInfoMultiple .
+
+------------------------------------------------------------
+--- TEE_GetOperationInfoMultiple
+------------------------------------------------------------
+
+  eq
+    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+                      api-state : started , current-api : GetOperationInfoMultiple ,
+                      current-params : handle(HANDLE) >
+    =
+    < TK : TaKernel | api-state : waitOperationAttr >
+    reqOperationInfoMultiple(HANDLE , TK) .
+
+  eq
+    reqOperationInfoMultiple(HANDLE , TK)
+    < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE) ,
+                             crypto-keys : KEYS , max-key-size : KEYSIZE ,
+                             algorithm : ALGO , operation-mode : MODE ,
+                             operation-class : OC , operation-state : OS >
+    < HANDLE : OperationHandle | oid : CI , is-initialized : B1 ,
+                                 is-key-set : B2 , is-extracting : B3 >
+    =
+    < CI : CryptoOperation | >
+    < HANDLE : OperationHandle | >
+    retOperationInfoMultiple(
+      teeOperationInfoMultiple(ALGO , OC , MODE , operationDigestLength(ALGO) ,
+        KEYSIZE , B1 , B2 , B3 , OS , operationKeyCount(ALGO , OC) ,
+        operationKeyInformation(KEYS , requiredOperationUsage(ALGO , MODE))) , TK) .
+
+  eq
+    retOperationInfoMultiple(OPINFOMULTI , TK)
+    < TK : TaKernel | api-state : waitOperationAttr ,
+                      current-api : GetOperationInfoMultiple >
+    =
+    < TK : TaKernel | api-state : finished ,
+                      api-return : apiReturn(GetOperationInfoMultiple , TEE-SUCCESS ,
+                                             teeOpInfoMultiple(OPINFOMULTI)) > .
 
 ------------------------------------------------------------
 --- TEE_AllocateOperation

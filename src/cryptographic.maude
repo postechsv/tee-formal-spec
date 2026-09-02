@@ -8,6 +8,7 @@ omod CRYPTO-OPERATION is
   pr LIST{Data} .
   pr LIST{CryptoKey} .
   pr CRYPTO-KEY-SIZE .
+  pr POSSIBLE-CRYPTO-KEY-SIZE .
   pr ALGORITHM-IDENTIFIER .
   pr OPERATION-MODE .
   pr OPERATION-CLASS .
@@ -325,18 +326,20 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   eq validKeySize(TEE-ALG-AES-GCM , 128 Bits) = true .
   eq validKeySize(TEE-ALG-AES-GCM , 192 Bits) = true .
   eq validKeySize(TEE-ALG-AES-GCM , 256 Bits) = true .
-  ceq validKeySize(TEE-ALG-DH-DERIVE-SHARED-SECRET , N Bits) = true if N > 0 .
+  eq validKeySize(TEE-ALG-DH-DERIVE-SHARED-SECRET , KEYSIZE) =
+    supported(TEE-TYPE-DH-KEYPAIR , KEYSIZE) .
   eq validKeySize(TEE-ALG-SM2-KEP , 256 Bits) = true .
-  ceq validKeySize(TEE-ALG-HMAC-SHA256 , N Bits) = true if 192 <= N and N <= 1024 .
+  eq validKeySize(TEE-ALG-HMAC-SHA256 , KEYSIZE) =
+    supported(TEE-TYPE-HMAC-SHA256 , KEYSIZE) .
   eq validKeySize(TEE-ALG-SHA256 , 0 Bits) = true .
-  ceq validKeySize(TEE-ALG-RSASSA-PKCS1-V1-5-SHA256 , N Bits) = true
-    if 1024 <= N and N <= 4096 and N rem 8 == 0 .
-  ceq validKeySize(TEE-ALG-RSA-NOPAD , N Bits) = true
-    if 256 <= N and N <= 4096 and N rem 8 == 0 .
-  ceq validKeySize(TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA1 , N Bits) = true
-    if 256 <= N and N <= 4096 and N rem 8 == 0 .
-  ceq validKeySize(TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA224 , N Bits) = true
-    if 256 <= N and N <= 4096 and N rem 8 == 0 .
+  eq validKeySize(TEE-ALG-RSASSA-PKCS1-V1-5-SHA256 , KEYSIZE) =
+    supported(TEE-TYPE-RSA-PUBLIC-KEY , KEYSIZE) .
+  eq validKeySize(TEE-ALG-RSA-NOPAD , KEYSIZE) =
+    supported(TEE-TYPE-RSA-PUBLIC-KEY , KEYSIZE) .
+  eq validKeySize(TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA1 , KEYSIZE) =
+    supported(TEE-TYPE-RSA-PUBLIC-KEY , KEYSIZE) .
+  eq validKeySize(TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA224 , KEYSIZE) =
+    supported(TEE-TYPE-RSA-PUBLIC-KEY , KEYSIZE) .
   eq validKeySize(ALGO , KEYSIZE) = false [owise] .  
 
   op validParams : AlgorithmIdentifier OperationMode CryptoKeySize -> Bool .

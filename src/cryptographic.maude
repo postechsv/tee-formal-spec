@@ -2782,17 +2782,17 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
   var TN : AppId .
   var TK : TaInstId .
   var CI : TaObjectId .
-  vars HANDLE KEY : HandleId .
+  vars HANDLE KEY KEY1 KEY2 : HandleId .
   var ALGO : AlgorithmIdentifier .
   var KEYS : List{CryptoKey} .
   var MODE : OperationMode .
   var OC : OperationClass .
   var OS : OperationState .
   var HS : HandleState .
-  var ATTRS : Set{TeeAttribute} .
+  vars ATTRS ATTRS2 : Set{TeeAttribute} .
   vars KEYSIZE : CryptoKeySize .
-  var OBJTYPE : ObjectType .
-  var OBJUSAGES : Set{ObjectUsage} .
+  vars OBJTYPE OBJTYPE2 : ObjectType .
+  vars OBJUSAGES OBJUSAGES2 : Set{ObjectUsage} .
   vars DL DATA IV : List{Data} .
   var STATUS : StorageStatus .
   var PARAMS : Set{TeeApiParam} .
@@ -3085,6 +3085,155 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | api-state : finished , api-return : apiReturn(SetOperationKey , storageErrCode(STATUS)) > 
   if abnormalStorage(STATUS)
   .
+
+------------------------------------------------------------
+--- TEE_SetOperationKey2
+------------------------------------------------------------
+
+  ceq
+    < TK : TaKernel | api-call : noCall , api-return : noReturn,
+                      api-state : started , current-api : SetOperationKey2,
+                      current-params : handle(HANDLE), keyHandle(KEY1),
+                                       secondKeyHandle(KEY2) >
+    < HANDLE : OperationHandle | is-initialized : false >
+    < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE), algorithm : ALGO >
+    =
+    < TK : TaKernel | api-state : waitReqAttribute >
+    < HANDLE : OperationHandle | >
+    < CI : CryptoOperation | >
+    reqAttribute(KEY1 , TK)
+  if expectsTwoKeys(ALGO) /\ not nullHandle(KEY1) /\
+     not nullHandle(KEY2) /\ KEY1 =/= KEY2 .
+
+  ceq
+    < TK : TaKernel | app-status : normal, api-state : started,
+                      current-api : SetOperationKey2,
+                      current-params : handle(HANDLE), PARAMS >
+    < HANDLE : OperationHandle | oid : CI, is-initialized : false >
+    < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE), algorithm : ALGO >
+    =
+    < TK : TaKernel | app-status : panic, api-state : finished >
+    < HANDLE : OperationHandle | >
+    < CI : CryptoOperation | >
+  if not expectsTwoKeys(ALGO) .
+
+  ceq
+    < TK : TaKernel | api-call : noCall, api-return : noReturn,
+                      api-state : started, current-api : SetOperationKey2,
+                      current-params : handle(HANDLE), keyHandle(TEE-HANDLE-NULL),
+                                       secondKeyHandle(TEE-HANDLE-NULL) >
+    < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE), algorithm : ALGO >
+    < HANDLE : OperationHandle | oid : CI, is-initialized : false >
+    =
+    < TK : TaKernel | api-state : finished,
+                      api-return : apiReturn(SetOperationKey2, TEE-SUCCESS) >
+    < CI : CryptoOperation | crypto-keys : nil,
+                             operation-state : TEE-OPERATION-STATE-INITIAL >
+    < HANDLE : OperationHandle | state : noHandleState,
+                                 key-material-set : false, is-key-set : false,
+                                 is-extracting : false >
+  if expectsTwoKeys(ALGO) .
+
+  ceq
+    < TK : TaKernel | app-status : normal, api-state : started,
+                      current-api : SetOperationKey2,
+                      current-params : handle(HANDLE), keyHandle(KEY1),
+                                       secondKeyHandle(KEY2) >
+    =
+    < TK : TaKernel | app-status : panic, api-state : finished >
+  if (nullHandle(KEY1) and not nullHandle(KEY2)) or
+     (not nullHandle(KEY1) and nullHandle(KEY2)) .
+
+  ceq
+    < TK : TaKernel | api-state : started, current-api : SetOperationKey2,
+                      current-params : handle(HANDLE), keyHandle(KEY1),
+                                       secondKeyHandle(KEY1) >
+    < HANDLE : OperationHandle | oid : CI, is-initialized : false >
+    < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE), algorithm : ALGO >
+    =
+    < TK : TaKernel | api-state : finished,
+                      api-return : apiReturn(SetOperationKey2, TEE-ERROR-SECURITY) >
+    < HANDLE : OperationHandle | >
+    < CI : CryptoOperation | >
+  if expectsTwoKeys(ALGO) /\ not nullHandle(KEY1) .
+
+  eq
+    retAttributeTr(ATTRS, OBJTYPE, OBJUSAGES, TK)
+    < TK : TaKernel | api-state : waitReqAttribute, current-api : SetOperationKey2,
+                      current-params : handle(HANDLE), keyHandle(KEY1),
+                                       secondKeyHandle(KEY2) >
+    =
+    < TK : TaKernel | current-params : (handle(HANDLE), keyHandle(KEY1),
+        secondKeyHandle(KEY2), attrs(ATTRS), type(OBJTYPE), usages(OBJUSAGES)) >
+    reqAttribute(KEY2 , TK) .
+
+  eq
+    retAttributeTr(ATTRS2, OBJTYPE2, OBJUSAGES2, TK)
+    < TK : TaKernel | api-state : waitReqAttribute, current-api : SetOperationKey2,
+                      current-params : (handle(HANDLE), keyHandle(KEY1),
+                        secondKeyHandle(KEY2), attrs(ATTRS), type(OBJTYPE),
+                        usages(OBJUSAGES)) >
+    =
+    < TK : TaKernel | api-state : waitSetOperationKey >
+    installOperationKeys(HANDLE, OBJTYPE, OBJUSAGES, ATTRS,
+                         OBJTYPE2, OBJUSAGES2, ATTRS2, TK) .
+
+  eq
+    reqAttribute(KEY, TK)
+    < TK : TaKernel | app-status : normal, api-state : waitReqAttribute,
+                      current-api : SetOperationKey2 >
+    < KEY : ObjectHandle | is-initialized : false >
+    =
+    < TK : TaKernel | app-status : panic, api-state : finished >
+    < KEY : ObjectHandle | > .
+
+  ceq
+    installOperationKeys(HANDLE, OBJTYPE, OBJUSAGES, ATTRS,
+                         OBJTYPE2, OBJUSAGES2, ATTRS2, TK)
+    < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE),
+                             algorithm : ALGO, operation-mode : MODE,
+                             max-key-size : KEYSIZE >
+    =
+    < CI : CryptoOperation | crypto-keys : key(ATTRS) key(ATTRS2) >
+    finishInstallTopOperationKeys(HANDLE, TK)
+  if twoKeyCompatible(ALGO, MODE, OBJTYPE, OBJUSAGES, OBJTYPE2, OBJUSAGES2) /\
+     twoKeyMaterialCompatible(ALGO, ATTRS, ATTRS2) /\
+     twoKeyOperationSizeCompatible(ALGO, KEYSIZE, ATTRS, ATTRS2) .
+
+  ceq
+    installOperationKeys(HANDLE, OBJTYPE, OBJUSAGES, ATTRS,
+                         OBJTYPE2, OBJUSAGES2, ATTRS2, TK)
+    < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE),
+                             algorithm : ALGO, operation-mode : MODE,
+                             max-key-size : KEYSIZE >
+    =
+    < CI : CryptoOperation | > failSetOperationKey2(TK)
+  if not (twoKeyCompatible(ALGO, MODE, OBJTYPE, OBJUSAGES, OBJTYPE2, OBJUSAGES2) and
+          twoKeyMaterialCompatible(ALGO, ATTRS, ATTRS2) and
+          twoKeyOperationSizeCompatible(ALGO, KEYSIZE, ATTRS, ATTRS2)) .
+
+  eq
+    finishInstallTopOperationKeys(HANDLE, TK)
+    < HANDLE : OperationHandle | is-initialized : false, is-extracting : false >
+    =
+    < HANDLE : OperationHandle | state : keySet,
+                                 key-material-set : true, is-key-set : true >
+    finishSetOperationKey2(TK) .
+
+  eq
+    finishSetOperationKey2(TK)
+    < TK : TaKernel | api-state : waitSetOperationKey,
+                      current-api : SetOperationKey2 >
+    =
+    < TK : TaKernel | api-state : finished,
+                      api-return : apiReturn(SetOperationKey2, TEE-SUCCESS) > .
+
+  eq
+    failSetOperationKey2(TK)
+    < TK : TaKernel | api-state : waitSetOperationKey,
+                      current-api : SetOperationKey2 >
+    =
+    < TK : TaKernel | app-status : panic, api-state : finished > .
 
 ------------------------------------------------------------
 --- TEE_CipherInit

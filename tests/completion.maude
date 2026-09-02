@@ -1123,3 +1123,23 @@ search [1] in COMPLETION-TEST :
     TEE-USAGE-ENCRYPT, empty, TEE-TYPE-AES, TEE-USAGE-ENCRYPT, empty, testTa)
   < testTa : TaKernel | api-state : waitSetOperationKey,
                         current-api : SetOperationKey2 > C .
+
+--- Clearing two keys is valid only for an operation that expects two keys.
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | app-status : normal, api-call : noCall,
+      api-return : noReturn, api-state : started, current-api : SetOperationKey2,
+      current-params : (handle(handleId(1, testTa)), keyHandle(TEE-HANDLE-NULL),
+                        secondKeyHandle(TEE-HANDLE-NULL)) >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)), algorithm : TEE-ALG-AES-CTR >
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      is-initialized : false >
+=>1
+  < testTa : TaKernel | app-status : panic, api-call : noCall,
+      api-return : noReturn, api-state : finished, current-api : SetOperationKey2,
+      current-params : (handle(handleId(1, testTa)), keyHandle(TEE-HANDLE-NULL),
+                        secondKeyHandle(TEE-HANDLE-NULL)) >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)), algorithm : TEE-ALG-AES-CTR >
+  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      is-initialized : false > C .

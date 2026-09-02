@@ -417,6 +417,11 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- GP 6.2.7 restricts two-key operations to AES-XTS and SM2-KEP.  Both
   --- component keys must independently authorize the operation mode.
+  op expectsTwoKeys : AlgorithmIdentifier -> Bool .
+  eq expectsTwoKeys(TEE-ALG-AES-XTS) = true .
+  eq expectsTwoKeys(TEE-ALG-SM2-KEP) = true .
+  eq expectsTwoKeys(ALGO) = false [owise] .
+
   op twoKeyCompatible : AlgorithmIdentifier OperationMode ObjectType Set{ObjectUsage}
                         ObjectType Set{ObjectUsage} -> Bool .
   eq twoKeyCompatible(TEE-ALG-AES-XTS , MODE,
@@ -978,12 +983,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
        reqAttribute(KEY1 , TK)
   if not nullHandle(KEY1) /\ not nullHandle(KEY2) /\ KEY1 =/= KEY2 .
 
-  rl [set-operation-key2-clear] :
+  crl [set-operation-key2-clear] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn , api-state : started ,
                       current-api : SetOperationKey2 ,
                       current-params : handle(HANDLE) , keyHandle(TEE-HANDLE-NULL) ,
                                        secondKeyHandle(TEE-HANDLE-NULL) >
-    < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE) >
+    < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE), algorithm : ALGO >
     < HANDLE : OperationHandle | oid : CI , is-initialized : false >
     => < TK : TaKernel | api-state : finished ,
                       api-return : apiReturn(SetOperationKey2 , TEE-SUCCESS) >
@@ -991,7 +996,20 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                               operation-state : TEE-OPERATION-STATE-INITIAL >
        < HANDLE : OperationHandle | state : noHandleState,
                                   key-material-set : false , is-key-set : false,
-                                  is-extracting : false > .
+                                  is-extracting : false >
+  if expectsTwoKeys(ALGO) .
+
+  crl [set-operation-key2-clear-wrong-algorithm-panic] :
+    < TK : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+                      api-state : started, current-api : SetOperationKey2,
+                      current-params : handle(HANDLE), keyHandle(TEE-HANDLE-NULL),
+                                       secondKeyHandle(TEE-HANDLE-NULL) >
+    < CI : CryptoOperation | handle-id-set : handleIdSet(HANDLE), algorithm : ALGO >
+    < HANDLE : OperationHandle | oid : CI, is-initialized : false >
+    => < TK : TaKernel | app-status : panic, api-state : finished >
+       < CI : CryptoOperation | >
+       < HANDLE : OperationHandle | >
+  if not expectsTwoKeys(ALGO) .
 
   crl [set-operation-key2-mixed-null-panic] :
     < TK : TaKernel | app-status : normal , api-state : started ,

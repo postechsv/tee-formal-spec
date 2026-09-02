@@ -357,6 +357,27 @@ search [1] in COMPLETION-TEST :
       max-key-size : 128 Bits >
   < handleId(1, testTa) : OperationHandle | is-initialized : false > C .
 
+--- Matching mode and usage do not permit an object type from another family.
+search [1] in COMPLETION-TEST :
+  reqSetOperationKey(handleId(1, testTa), TEE-TYPE-AES,
+    teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal),
+    (TEE-USAGE-ENCRYPT, TEE-USAGE-VERIFY), testTa)
+  < testTa : TaKernel | app-status : normal, api-state : waitSetOperationKey,
+                        current-api : SetOperationKey >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)),
+      algorithm : TEE-ALG-RSA-NOPAD, operation-mode : TEE-MODE-ENCRYPT,
+      max-key-size : 2048 Bits >
+  < handleId(1, testTa) : OperationHandle | is-initialized : false >
+=>*
+  < testTa : TaKernel | app-status : panic, api-state : finished,
+                        current-api : SetOperationKey >
+  < taOid(1, testTa) : CryptoOperation |
+      handle-id-set : handleIdSet(handleId(1, testTa)),
+      algorithm : TEE-ALG-RSA-NOPAD, operation-mode : TEE-MODE-ENCRYPT,
+      max-key-size : 2048 Bits >
+  < handleId(1, testTa) : OperationHandle | is-initialized : false > C .
+
 --- CipherInit updates the operation object and top-level handle in two steps.
 search [1] in COMPLETION-TEST :
   initOperation(handleId(1, testTa), randomData, testTa)

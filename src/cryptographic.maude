@@ -415,6 +415,40 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   eq typeModeCompatible(TEE-TYPE-SM2-PKE-KEYPAIR , TEE-MODE-DECRYPT) = true .
   eq typeModeCompatible(OBJTYPE , MODE) = false [owise] .
 
+  --- Table 6-4 binds each algorithm family to its key object type.  Mode
+  --- compatibility alone is not sufficient (for example, AES and RSA both
+  --- support ENCRYPT).
+  op algorithmObjectTypeCompatible : AlgorithmIdentifier ObjectType -> Bool .
+  eq algorithmObjectTypeCompatible(TEE-ALG-AES-CBC-NOPAD , TEE-TYPE-AES) = true .
+  eq algorithmObjectTypeCompatible(TEE-ALG-AES-CCM , TEE-TYPE-AES) = true .
+  eq algorithmObjectTypeCompatible(TEE-ALG-AES-CTR , TEE-TYPE-AES) = true .
+  eq algorithmObjectTypeCompatible(TEE-ALG-AES-CTS , TEE-TYPE-AES) = true .
+  eq algorithmObjectTypeCompatible(TEE-ALG-AES-ECB-NOPAD , TEE-TYPE-AES) = true .
+  eq algorithmObjectTypeCompatible(TEE-ALG-AES-GCM , TEE-TYPE-AES) = true .
+  eq algorithmObjectTypeCompatible(TEE-ALG-AES-XTS , TEE-TYPE-AES) = true .
+  eq algorithmObjectTypeCompatible(TEE-ALG-HMAC-SHA256 , TEE-TYPE-HMAC-SHA256) = true .
+  eq algorithmObjectTypeCompatible(TEE-ALG-DH-DERIVE-SHARED-SECRET,
+                                   TEE-TYPE-DH-KEYPAIR) = true .
+  eq algorithmObjectTypeCompatible(TEE-ALG-SM2-KEP,
+                                   TEE-TYPE-SM2-KEP-KEYPAIR) = true .
+  eq algorithmObjectTypeCompatible(TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA1,
+                                   TEE-TYPE-RSA-PUBLIC-KEY) = true .
+  eq algorithmObjectTypeCompatible(TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA1,
+                                   TEE-TYPE-RSA-KEYPAIR) = true .
+  eq algorithmObjectTypeCompatible(TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA224,
+                                   TEE-TYPE-RSA-PUBLIC-KEY) = true .
+  eq algorithmObjectTypeCompatible(TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA224,
+                                   TEE-TYPE-RSA-KEYPAIR) = true .
+  eq algorithmObjectTypeCompatible(TEE-ALG-RSA-NOPAD,
+                                   TEE-TYPE-RSA-PUBLIC-KEY) = true .
+  eq algorithmObjectTypeCompatible(TEE-ALG-RSA-NOPAD,
+                                   TEE-TYPE-RSA-KEYPAIR) = true .
+  eq algorithmObjectTypeCompatible(TEE-ALG-RSASSA-PKCS1-V1-5-SHA256,
+                                   TEE-TYPE-RSA-PUBLIC-KEY) = true .
+  eq algorithmObjectTypeCompatible(TEE-ALG-RSASSA-PKCS1-V1-5-SHA256,
+                                   TEE-TYPE-RSA-KEYPAIR) = true .
+  eq algorithmObjectTypeCompatible(ALGO , OBJTYPE) = false [owise] .
+
   --- GP 6.2.7 restricts two-key operations to AES-XTS and SM2-KEP.  Both
   --- component keys must independently authorize the operation mode.
   op expectsTwoKeys : AlgorithmIdentifier -> Bool .
@@ -886,7 +920,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < CI : CryptoOperation | crypto-keys : key(ATTRS) ,
                              operation-state : TEE-OPERATION-STATE-INITIAL >
     installTopOperationKey(HANDLE , CI , ATTRS , TK)
-  if not expectsTwoKeys(ALGO) /\ typeModeCompatible(OBJTYPE , MODE) /\
+  if not expectsTwoKeys(ALGO) /\ algorithmObjectTypeCompatible(ALGO , OBJTYPE) /\
+     typeModeCompatible(OBJTYPE , MODE) /\
      operationUsageCompatible(ALGO , OBJUSAGES , MODE) /\
      singleKeyMaterialCompatible(ALGO , KEYSIZE , ATTRS)
   .
@@ -909,7 +944,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     =>
     < CI : CryptoOperation | >
     rejectTopOperationKey(HANDLE , TK)
-  if not (not expectsTwoKeys(ALGO) and typeModeCompatible(OBJTYPE , MODE) and
+  if not (not expectsTwoKeys(ALGO) and algorithmObjectTypeCompatible(ALGO , OBJTYPE) and
+          typeModeCompatible(OBJTYPE , MODE) and
           operationUsageCompatible(ALGO , OBJUSAGES , MODE) and
           singleKeyMaterialCompatible(ALGO , KEYSIZE , ATTRS))
   .
@@ -2947,7 +2983,8 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     < CI : CryptoOperation | crypto-keys : key(ATTRS) ,
                              operation-state : TEE-OPERATION-STATE-INITIAL >
     installTopOperationKey(HANDLE , CI , ATTRS , TK)
-  if not expectsTwoKeys(ALGO) /\ typeModeCompatible(OBJTYPE , MODE) /\
+  if not expectsTwoKeys(ALGO) /\ algorithmObjectTypeCompatible(ALGO , OBJTYPE) /\
+     typeModeCompatible(OBJTYPE , MODE) /\
      operationUsageCompatible(ALGO , OBJUSAGES , MODE) /\
      singleKeyMaterialCompatible(ALGO , KEYSIZE , ATTRS)
   .
@@ -2970,7 +3007,8 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     =
     < CI : CryptoOperation | >
     rejectTopOperationKey(HANDLE , TK)
-  if not (not expectsTwoKeys(ALGO) and typeModeCompatible(OBJTYPE , MODE) and
+  if not (not expectsTwoKeys(ALGO) and algorithmObjectTypeCompatible(ALGO , OBJTYPE) and
+          typeModeCompatible(OBJTYPE , MODE) and
           operationUsageCompatible(ALGO , OBJUSAGES , MODE) and
           singleKeyMaterialCompatible(ALGO , KEYSIZE , ATTRS))
   .

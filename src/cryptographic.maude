@@ -391,9 +391,6 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   op operationDigestLength : AlgorithmIdentifier -> DataSize .
   eq operationDigestLength(TEE-ALG-SHA256) = dataSize(32) .
   eq operationDigestLength(TEE-ALG-HMAC-SHA256) = dataSize(32) .
-  eq operationDigestLength(TEE-ALG-RSASSA-PKCS1-V1-5-SHA256) = dataSize(32) .
-  eq operationDigestLength(TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA1) = dataSize(20) .
-  eq operationDigestLength(TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA224) = dataSize(28) .
   eq operationDigestLength(ALGO) = dataSize(0) [owise] .
 
   op operationKeyCount : AlgorithmIdentifier OperationClass -> Nat .
@@ -401,11 +398,23 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   ceq operationKeyCount(ALGO , OC) = 2 if expectsTwoKeys(ALGO) .
   eq operationKeyCount(ALGO , OC) = 1 [owise] .
 
-  op operationKeyInformation : List{CryptoKey} Set{ObjectUsage} -> TeeOperationInfoKeyList .
-  eq operationKeyInformation(nil , OBJUSAGES) = noKeyInformation .
-  eq operationKeyInformation(key(ATTRS) KEYS , OBJUSAGES) =
+  op operationInfoKeySet : OperationClass Bool -> Bool .
+  eq operationInfoKeySet(TEE-OPERATION-DIGEST , B1) = true .
+  eq operationInfoKeySet(OC , B1) = B1 [owise] .
+
+  op operationInfoInitialized : OperationClass Bool -> Bool .
+  eq operationInfoInitialized(TEE-OPERATION-DIGEST , B1) = true .
+  eq operationInfoInitialized(OC , B1) = B1 [owise] .
+
+  op operationKeyInformation : List{CryptoKey} Set{ObjectUsage} Nat
+                               -> TeeOperationInfoKeyList .
+  eq operationKeyInformation(KEYS , OBJUSAGES , 0) = noKeyInformation .
+  eq operationKeyInformation(nil , OBJUSAGES , s(N)) =
+    teeOperationInfoKey(0 Bits , OBJUSAGES) ;
+    operationKeyInformation(nil , OBJUSAGES , N) .
+  eq operationKeyInformation(key(ATTRS) KEYS , OBJUSAGES , s(N)) =
     teeOperationInfoKey(keySize(ATTRS) , OBJUSAGES) ;
-    operationKeyInformation(KEYS , OBJUSAGES) .
+    operationKeyInformation(KEYS , OBJUSAGES , N) .
 
 --- For a public key object, the allowed operation modes depend on the type of key and are specified in Table 6-5.
   op typeModeCompatible : ObjectType OperationMode -> Bool .
@@ -801,8 +810,10 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < HANDLE : OperationHandle | >
     retOperationInfoMultiple(
       teeOperationInfoMultiple(ALGO , OC , MODE , operationDigestLength(ALGO) ,
-        KEYSIZE , B1 , B2 , B3 , OS , operationKeyCount(ALGO , OC) ,
-        operationKeyInformation(KEYS , requiredOperationUsage(ALGO , MODE))) , TK) .
+        KEYSIZE , expectsTwoKeys(ALGO) , operationInfoKeySet(OC , B2) ,
+        operationInfoInitialized(OC , B1) , B3 , OS , operationKeyCount(ALGO , OC) ,
+        operationKeyInformation(KEYS , requiredOperationUsage(ALGO , MODE) ,
+                                operationKeyCount(ALGO , OC))) , TK) .
 
   rl [get-operation-info-multiple-success] :
     retOperationInfoMultiple(OPINFOMULTI , TK)
@@ -2876,8 +2887,10 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     < HANDLE : OperationHandle | >
     retOperationInfoMultiple(
       teeOperationInfoMultiple(ALGO , OC , MODE , operationDigestLength(ALGO) ,
-        KEYSIZE , B1 , B2 , B3 , OS , operationKeyCount(ALGO , OC) ,
-        operationKeyInformation(KEYS , requiredOperationUsage(ALGO , MODE))) , TK) .
+        KEYSIZE , expectsTwoKeys(ALGO) , operationInfoKeySet(OC , B2) ,
+        operationInfoInitialized(OC , B1) , B3 , OS , operationKeyCount(ALGO , OC) ,
+        operationKeyInformation(KEYS , requiredOperationUsage(ALGO , MODE) ,
+                                operationKeyCount(ALGO , OC))) , TK) .
 
   eq
     retOperationInfoMultiple(OPINFOMULTI , TK)

@@ -9,6 +9,7 @@ mod COMPLETION-TEST is
   var TESTDIGEST : List{Data} .
   var CIPHERRESULT : List{Data} .
   var TESTMAC : List{Data} .
+  var P : Program .
 endm
 
 mod COMPLETION-INVISIBLE-TEST is
@@ -852,6 +853,22 @@ search [1] in COMPLETION-TEST :
 =>1
   < taOid(1, testTa) : Session |
       req : noReq, ret : noRet, ta-id : testTa >
+  C .
+
+--- The trusted OS records itself on each TA kernel that it creates.
+search [1] in COMPLETION-TEST :
+  < osId : TeeOSKernel |
+      service-in : openTASession(TESTTA) nil, service-out : nil,
+      ta-prog-map : TESTTA |-> [P],
+      storage : empty, storage-status : empty,
+      opened-session : empty, session-counter : 0 >
+=>1
+  < trustAppId(0) : TrustApp |
+      trust-app-id : TESTTA, app-status : normal, os-kernel : osId,
+      id-counter : 0, api-call : noCall, api-return : noReturn,
+      current-api : noApi, api-state : noState, current-params : empty,
+      prog : P, proc : none, running : false,
+      task : noTask, task-counter : 0 >
   C .
 
 --- TeeInvokeTACommand resolves a top-level session handle in both directions.

@@ -2741,11 +2741,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       current-api : AsymmetricSignDigest,
                       current-params : handle(HANDLE) , data(DATA) , PARAMS >
     < CI : CryptoOperation |
-                             max-key-size : KEYSIZE , operation-mode : TEE-MODE-SIGN,
-                             operation-class : TEE-OPERATION-ASYMMETRIC-SIGNATURE >
+                             max-key-size : KEYSIZE , operation-mode : TEE-MODE-SIGN >
+    < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-ASYMMETRIC-SIGNATURE >
     =>
     < TK : TaKernel | api-state : waitAsymSignDigest >
-    < CI : CryptoOperation | > asymSignDigest(HANDLE , DATA , TK)
+    < CI : CryptoOperation | >
+    < HANDLE : OperationHandle | > asymSignDigest(HANDLE , DATA , TK)
   if hasOutputCapacity(PARAMS) /\ outputCapacityFitsSize(PARAMS , signatureSize(KEYSIZE))
   .
 
@@ -2754,13 +2755,14 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       current-api : AsymmetricSignDigest,
                       current-params : handle(HANDLE) , data(DATA) , PARAMS >
     < CI : CryptoOperation |
-                             max-key-size : KEYSIZE , operation-mode : TEE-MODE-SIGN,
-                             operation-class : TEE-OPERATION-ASYMMETRIC-SIGNATURE >
+                             max-key-size : KEYSIZE , operation-mode : TEE-MODE-SIGN >
+    < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-ASYMMETRIC-SIGNATURE >
     =>
     < TK : TaKernel | api-state : finished,
                       api-return : apiReturn(AsymmetricSignDigest , TEE-ERROR-SHORT-BUFFER,
                                              size(signatureSize(KEYSIZE))) >
     < CI : CryptoOperation | >
+    < HANDLE : OperationHandle | >
   if hasOutputCapacity(PARAMS) /\ not outputCapacityFitsSize(PARAMS , signatureSize(KEYSIZE))
   .
 
@@ -2770,10 +2772,11 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     asymSignDigest(HANDLE , DATA , TK)
     < CI : CryptoOperation |
                              crypto-keys : KEYS , algorithm : ALGO ,
-                             operation-mode : TEE-MODE-SIGN ,
-                             operation-class : TEE-OPERATION-ASYMMETRIC-SIGNATURE >
+                             operation-mode : TEE-MODE-SIGN >
+    < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-ASYMMETRIC-SIGNATURE >
     =>
     < CI : CryptoOperation | >
+    < HANDLE : OperationHandle | >
     finishTopAsymSignDigest(HANDLE , signDigest(ALGO , KEYS , DATA) , TK)
   if validSignatureDigestLength(ALGO , DATA)
   .
@@ -2791,11 +2794,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     asymSignDigest(HANDLE , DATA , TK)
     < TK : TaKernel | api-state : waitAsymSignDigest, current-api : AsymmetricSignDigest >
     < CI : CryptoOperation |
-                             algorithm : ALGO , operation-mode : TEE-MODE-SIGN,
-                             operation-class : TEE-OPERATION-ASYMMETRIC-SIGNATURE >
+                             algorithm : ALGO , operation-mode : TEE-MODE-SIGN >
+    < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-ASYMMETRIC-SIGNATURE >
     =>
     < TK : TaKernel | api-state : finished , app-status : panic >
     < CI : CryptoOperation | >
+    < HANDLE : OperationHandle | >
   if not validSignatureDigestLength(ALGO , DATA)
   .
 
@@ -2833,10 +2837,11 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     asymVerifyDigest(HANDLE , DATA , TK)
     < CI : CryptoOperation |
                              crypto-keys : KEYS , algorithm : ALGO ,
-                             operation-mode : TEE-MODE-VERIFY ,
-                             operation-class : TEE-OPERATION-ASYMMETRIC-SIGNATURE >
+                             operation-mode : TEE-MODE-VERIFY >
+    < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-ASYMMETRIC-SIGNATURE >
     =>
     < CI : CryptoOperation | >
+    < HANDLE : OperationHandle | >
     finishTopAsymVerifyDigest(HANDLE , signDigest(ALGO , KEYS , DATA) , TK)
   if validSignatureDigestLength(ALGO , DATA)
   .
@@ -2854,11 +2859,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     asymVerifyDigest(HANDLE , DATA , TK)
     < TK : TaKernel | api-state : waitAsymVerifDigest, current-api : AsymmetricVerifyDigest >
     < CI : CryptoOperation |
-                             algorithm : ALGO , operation-mode : TEE-MODE-VERIFY,
-                             operation-class : TEE-OPERATION-ASYMMETRIC-SIGNATURE >
+                             algorithm : ALGO , operation-mode : TEE-MODE-VERIFY >
+    < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-ASYMMETRIC-SIGNATURE >
     =>
     < TK : TaKernel | api-state : finished , app-status : panic >
     < CI : CryptoOperation | >
+    < HANDLE : OperationHandle | >
   if not validSignatureDigestLength(ALGO , DATA)
   .
 

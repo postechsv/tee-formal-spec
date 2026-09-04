@@ -4,12 +4,11 @@
 
 omod ENUMERATOR-OBJECT is
   pr TA-OBJECT .
-  pr OPENABLE-OBJECT .
   pr SET{FileId} .
 
   class EnumeratorObject | persistent-objects : Set{FileId},
                            enumerating : Bool .
-  subclass EnumeratorObject < TaObject OpenableObject .
+  subclass EnumeratorObject < TaObject .
 endom
 
 --- This module defines the persistent object enumeration APIs, defined in chapter 5 section 8 of G.P. documentation.
@@ -61,7 +60,7 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
     =>
     < TK : TaKernel | api-state : finished , id-counter : N + 2 ,
                       api-return : apiReturn(AllocatePersistentObjectEnumerator , TEE-SUCCESS, handle(handleId(N + 1 , TK))) >
-    < taOid(N , TK) : EnumeratorObject | handle-id-set : handleIdSet(handleId(N + 1 , TK)),
+    < taOid(N , TK) : EnumeratorObject |
                                          persistent-objects : empty , enumerating : false ,
                                          trust-app-id : TN >
     freshEnumeratorHandle(N + 1 , TK , taOid(N , TK))
@@ -101,7 +100,7 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
 
   rl [free-enumerator-top-level-handle] :
     deleteEnumerator(HANDLE , TK)
-    < EI : EnumeratorObject | handle-id-set : handleIdSet(HANDLE) >
+    < EI : EnumeratorObject | >
     < HANDLE : ObjectEnumHandle | oid : EI >
     =>
     finishDeleteEnumerator(TK)
@@ -152,7 +151,7 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
 
   rl [reset-enumerator-top-level-handle] :
     reqResetEnumerator(HANDLE , TK)
-    < EI : EnumeratorObject | handle-id-set : handleIdSet(HANDLE) >
+    < EI : EnumeratorObject | >
     < HANDLE : ObjectEnumHandle | oid : EI >
     =>
     < EI : EnumeratorObject | persistent-objects : empty , enumerating : false >
@@ -232,7 +231,7 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
 
   rl [start-enumerator-top-level-handle] :
     startEnumerator(HANDLE , FILES , TK)
-    < EI : EnumeratorObject | handle-id-set : handleIdSet(HANDLE) >
+    < EI : EnumeratorObject | >
     < HANDLE : ObjectEnumHandle | oid : EI >
     =>
     < EI : EnumeratorObject | persistent-objects : FILES , enumerating : true >
@@ -305,7 +304,7 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
 
   rl [get-next-persistent-top-level-handle] :
     reqNextObjectId(HANDLE , TK)
-    < EI : EnumeratorObject | handle-id-set : handleIdSet(HANDLE) ,
+    < EI : EnumeratorObject |
                               persistent-objects : (FILE , FILES) , enumerating : true >
     < HANDLE : ObjectEnumHandle | oid : EI >
     =>

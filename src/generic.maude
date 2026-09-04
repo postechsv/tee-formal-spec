@@ -34,7 +34,6 @@ omod GENERIC-OBJECT-BEHAVIOR is
   var DATAPOS : DataPosition .
   var DATASIZE : DataSize .
   var HS : Configuration .
-  var HIDS : HandleIdSet .
   var STATUS : StorageStatus .
   var INFO : TeeObjectInfo .
   var PARAMS : Set{TeeApiParam} .
@@ -108,7 +107,7 @@ omod GENERIC-OBJECT-BEHAVIOR is
 
   rl [get-obj-info-transient-top-level-handle] :
     reqObjectInfo(HANDLE , TK , TN)
-    < OI : TransientObject | handle-id-set : handleIdSet(HANDLE) ,
+    < OI : TransientObject |
                              object-type : OBJTYPE , max-object-size : MAXOBJSIZE ,
                              attribute-set : ATTRS , object-usage-set : OBJUSAGES ,
                              trust-app-id : TN >
@@ -213,7 +212,7 @@ omod GENERIC-OBJECT-BEHAVIOR is
 
   rl [restrict-object-usage-top-level-handle] :
     restrictUsage(HANDLE , OBJUSAGES , TK)
-    < OI : TransientObject | handle-id-set : handleIdSet(HANDLE) >
+    < OI : TransientObject | >
     < HANDLE : ObjectHandle | oid : OI >
     =>
     < OI : TransientObject | object-usage-set : OBJUSAGES >
@@ -491,18 +490,15 @@ omod GENERIC-OBJECT-BEHAVIOR is
   rl [close-persistent-top-level-handle] :
     closeObject(HANDLE , TK)
     < OI : PersistentObject | >
-    < handleIndex(OI) : PersistentHandleIndex | handle-id-set : HIDS >
     < HANDLE : ObjectHandle | oid : OI >
     =>
     < OI : PersistentObject | >
-    < handleIndex(OI) : PersistentHandleIndex |
-        handle-id-set : removeHandleId(HANDLE, HIDS) >
     finishCloseObject(TK)
   .
 
   rl [close-transient-top-level-handle] :
     closeObject(HANDLE , TK)
-    < OI : TransientObject | handle-id-set : handleIdSet(HANDLE) >
+    < OI : TransientObject | >
     < HANDLE : ObjectHandle | oid : OI >
     =>
     finishCloseObject(TK)
@@ -548,7 +544,6 @@ omod GENERIC-OBJECT-BEHAVIOR-INVISIBLE is
   var DATAPOS : DataPosition .
   var DATASIZE : DataSize .
   var HS : Configuration .
-  var HIDS : HandleIdSet .
   var STATUS : StorageStatus .
   var INFO : TeeObjectInfo .
   var PARAMS : Set{TeeApiParam} .
@@ -570,7 +565,7 @@ omod GENERIC-OBJECT-BEHAVIOR-INVISIBLE is
 
   eq
     reqObjectInfo(HANDLE , TK , TN)
-    < OI : TransientObject | handle-id-set : handleIdSet(HANDLE) ,
+    < OI : TransientObject |
                              object-type : OBJTYPE , max-object-size : MAXOBJSIZE ,
                              attribute-set : ATTRS , object-usage-set : OBJUSAGES ,
                              trust-app-id : TN >
@@ -654,7 +649,7 @@ omod GENERIC-OBJECT-BEHAVIOR-INVISIBLE is
 
   eq
     closeObject(HANDLE , TK)
-    < OI : TransientObject | handle-id-set : handleIdSet(HANDLE) >
+    < OI : TransientObject | >
     < HANDLE : ObjectHandle | oid : OI >
     =
     finishCloseObject(TK)
@@ -664,12 +659,9 @@ omod GENERIC-OBJECT-BEHAVIOR-INVISIBLE is
   eq
     closeObject(HANDLE , TK)
     < OI : PersistentObject | >
-    < handleIndex(OI) : PersistentHandleIndex | handle-id-set : HIDS >
     < HANDLE : ObjectHandle | oid : OI >
     =
     < OI : PersistentObject | >
-    < handleIndex(OI) : PersistentHandleIndex |
-        handle-id-set : removeHandleId(HANDLE, HIDS) >
     finishCloseObject(TK)
   .
 

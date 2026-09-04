@@ -264,8 +264,7 @@ search [1] in COMPLETION-TEST :
                                                handle(handleId(1, testTa))) >
   < handleId(1, testTa) : OperationHandle | oid : taOid(0, testTa),
       state : noHandleState, opclass : TEE-OPERATION-AE,
-      key-material-set : false,
-      is-extracting : false, is-initialized : false > C .
+      key-material-set : false, is-initialized : false > C .
 
 --- AES-CTS is a supported cipher allocation, including its 192-bit key size.
 search [1] in COMPLETION-TEST :
@@ -282,7 +281,7 @@ search [1] in COMPLETION-TEST :
                              handle(handleId(1, testTa))) >
   < handleId(1, testTa) : OperationHandle | oid : taOid(0, testTa),
       opclass : TEE-OPERATION-CIPHER, state : noHandleState,
-      key-material-set : false, is-extracting : false,
+      key-material-set : false,
       is-initialized : false > C .
 
 search [1] in COMPLETION-TEST :
@@ -411,8 +410,7 @@ search [1] in COMPLETION-TEST :
       max-key-size : 256 Bits,
       operation-state : TEE-OPERATION-STATE-INITIAL, crypto-keys : nil >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
-      state : noHandleState, is-initialized : false, key-material-set : false,
-      is-extracting : false >
+      state : noHandleState, is-initialized : false, key-material-set : false >
 =>*
   finishCopyOperation(testTa)
   < taOid(1, testTa) : CryptoOperation |
@@ -421,8 +419,7 @@ search [1] in COMPLETION-TEST :
       operation-state : TEE-OPERATION-STATE-ACTIVE,
       crypto-keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1))) >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
-      state : init keySet, is-initialized : true, key-material-set : true,
-      is-extracting : false > .
+      state : init keySet, is-initialized : true, key-material-set : true > .
 
 --- CopyOperation panics when source and destination algorithms differ.
 search [1] in COMPLETION-TEST :
@@ -470,14 +467,13 @@ search [1] in COMPLETION-INVISIBLE-TEST :
       crypto-keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1))),
       operation-state : TEE-OPERATION-STATE-ACTIVE >
   < handleId(2, testTa) : OperationHandle | oid : taOid(2, testTa),
-      is-initialized : true, key-material-set : true, is-extracting : false >
+      state : init keySet, is-initialized : true, key-material-set : true >
   < taOid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-AES-GCM, operation-mode : TEE-MODE-ENCRYPT,
       crypto-keys : nil, max-key-size : 256 Bits,
       operation-state : TEE-OPERATION-STATE-INITIAL >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
-      state : noHandleState, is-initialized : false, key-material-set : false,
-      is-extracting : false >
+      state : noHandleState, is-initialized : false, key-material-set : false >
 =>*
   < testTa : TaKernel | app-status : normal, api-call : noCall, api-state : finished,
       current-api : CopyOperation,
@@ -507,11 +503,11 @@ search [1] in COMPLETION-TEST :
       operation-class : TEE-OPERATION-DIGEST,
       operation-state : TEE-OPERATION-STATE-ACTIVE >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
-      state : extract, is-extracting : true >
+      state : extract >
 =>*
   finishDigestDoFinal(TESTDIGEST, testTa)
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
-      state : noHandleState, is-extracting : false >
+      state : noHandleState >
   C .
 
 --- DigestExtract enters the paper-level extracting handle state.
@@ -522,11 +518,11 @@ search [1] in COMPLETION-TEST :
       operation-class : TEE-OPERATION-DIGEST,
       operation-state : TEE-OPERATION-STATE-ACTIVE >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
-      state : noHandleState, is-extracting : false >
+      state : noHandleState >
 =>*
   finishDigestExtract(TESTDIGEST, testTa)
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
-      state : extract, is-extracting : true >
+      state : extract >
   C .
 
 --- CipherDoFinal resets the operation and its top-level initialized flag.
@@ -970,7 +966,7 @@ search [1] in COMPLETION-TEST :
                         current-api : ResetOperation >
   < taOid(1, testTa) : CryptoOperation | >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
-      state : noHandleState, is-extracting : false >
+      state : noHandleState >
 =>1
   < testTa : TaKernel | app-status : panic, api-state : finished,
                         current-api : ResetOperation > C .
@@ -986,8 +982,7 @@ search [1] in COMPLETION-TEST :
       crypto-keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)),
       operation-state : TEE-OPERATION-STATE-ACTIVE >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
-      state : keySet, key-material-set : true,
-      is-extracting : false, is-initialized : false >
+      state : keySet, key-material-set : true, is-initialized : false >
 =>1
   < testTa : TaKernel | app-status : normal, api-state : finished,
                         current-api : SetOperationKey,
@@ -1104,7 +1099,7 @@ search [1] in COMPLETION-INVISIBLE-TEST :
                         current-api : ResetOperation >
   < taOid(1, testTa) : CryptoOperation | >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
-      state : noHandleState, is-extracting : false >
+      state : noHandleState >
 =>*
   < testTa : TaKernel | app-status : panic, api-state : finished,
                         current-api : ResetOperation > C .
@@ -1307,13 +1302,11 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   finishInstallTopOperationKeys(handleId(1, testTa), testTa)
   < handleId(1, testTa) : OperationHandle | state : keySet,
-      is-initialized : false, key-material-set : true,
-      is-extracting : false >
+      is-initialized : false, key-material-set : true >
 =>1
   finishSetOperationKey2(testTa)
   < handleId(1, testTa) : OperationHandle | state : keySet,
-      is-initialized : false, key-material-set : true,
-      is-extracting : false > .
+      is-initialized : false, key-material-set : true > .
 
 --- Invisible reduction returns the complete GP multi-key information structure.
 search [1] in COMPLETION-INVISIBLE-TEST :
@@ -1329,7 +1322,7 @@ search [1] in COMPLETION-INVISIBLE-TEST :
       operation-class : TEE-OPERATION-CIPHER,
       operation-state : TEE-OPERATION-STATE-INITIAL >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
-      is-initialized : false, key-material-set : true, is-extracting : false >
+      state : keySet, is-initialized : false, key-material-set : true >
 =>*
   < testTa : TaKernel | api-call : noCall,
       api-state : finished, current-api : GetOperationInfoMultiple,
@@ -1354,7 +1347,7 @@ search [1] in COMPLETION-TEST :
       operation-class : TEE-OPERATION-CIPHER,
       operation-state : TEE-OPERATION-STATE-INITIAL >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
-      is-initialized : false, key-material-set : true, is-extracting : false >
+      state : keySet, is-initialized : false, key-material-set : true >
 =>*
   < testTa : TaKernel | api-call : noCall, api-state : finished,
       current-api : GetOperationInfo,
@@ -1376,7 +1369,7 @@ search [1] in COMPLETION-INVISIBLE-TEST :
       operation-class : TEE-OPERATION-CIPHER,
       operation-state : TEE-OPERATION-STATE-INITIAL >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
-      is-initialized : false, key-material-set : true, is-extracting : false >
+      state : keySet, is-initialized : false, key-material-set : true >
 =>*
   < testTa : TaKernel | api-call : noCall, api-state : finished,
       current-api : GetOperationInfo,

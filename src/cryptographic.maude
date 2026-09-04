@@ -797,12 +797,13 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < CI : CryptoOperation |
                               crypto-keys : KEYS , algorithm : ALGO ,
                               operation-mode : MODE , operation-state : OS >
-    < HANDLE : OperationHandle | oid : CI , is-initialized : B1 ,
-                                 key-material-set : B2 , is-extracting : B3 >
+    < HANDLE : OperationHandle | oid : CI , state : HS,
+                                 is-initialized : B1 , key-material-set : B2 >
     =>
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-    retOperationAttr(opObjectAttr(ALGO , MODE , OS , KEYS) , opHandleAttr(B1 , B2 , B3) , TK)
+    retOperationAttr(opObjectAttr(ALGO , MODE , OS , KEYS) ,
+                     opHandleAttr(B1 , B2 , hasExtract(HS)) , TK)
   .
 
   rl [get-operation-info-success] :
@@ -832,15 +833,15 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                              crypto-keys : KEYS , max-key-size : KEYSIZE ,
                              algorithm : ALGO , operation-mode : MODE ,
                              operation-class : OC , operation-state : OS >
-    < HANDLE : OperationHandle | oid : CI , is-initialized : B1 ,
-                                 key-material-set : B2 , is-extracting : B3 >
+    < HANDLE : OperationHandle | oid : CI , state : HS,
+                                 is-initialized : B1 , key-material-set : B2 >
     =>
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
     retOperationInfoMultiple(
       teeOperationInfoMultiple(ALGO , OC , MODE , operationDigestLength(ALGO) ,
         KEYSIZE , expectsTwoKeys(ALGO) , operationInfoKeySet(OC , B2) ,
-        operationInfoInitialized(OC , B1) , B3 , OS , operationKeyCount(ALGO , OC) ,
+        operationInfoInitialized(OC , B1) , hasExtract(HS) , OS , operationKeyCount(ALGO , OC) ,
         operationKeyInformation(KEYS , requiredOperationUsage(ALGO , MODE) ,
                                 operationKeyCount(ALGO , OC))) , TK) .
 
@@ -920,8 +921,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < CI : CryptoOperation | accumulated-data : nil ,
                             initialization-vector : nil ,
                             operation-state : TEE-OPERATION-STATE-INITIAL >
-    < HANDLE : OperationHandle | state : noHandleState,
-                                 is-extracting : false >
+    < HANDLE : OperationHandle | state : noHandleState >
     finishResetOperation(TK)
   if hasExtract(HS)
   .
@@ -1010,8 +1010,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < CI : CryptoOperation | crypto-keys : nil ,
                              operation-state : TEE-OPERATION-STATE-INITIAL >
     < HANDLE : OperationHandle | state : noHandleState,
-                                 key-material-set : false ,
-                                 is-extracting : false >
+                                 key-material-set : false >
   .
 
   rl [set-operation-key-subroutine-1] : 
@@ -1186,8 +1185,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
        < CI : CryptoOperation | crypto-keys : nil ,
                               operation-state : TEE-OPERATION-STATE-INITIAL >
        < HANDLE : OperationHandle | state : noHandleState,
-                                  key-material-set : false,
-                                  is-extracting : false >
+                                  key-material-set : false >
   if expectsTwoKeys(ALGO) .
 
   crl [set-operation-key2-mixed-null-panic] :
@@ -1317,13 +1315,14 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   if not (twoKeyCompatible(ALGO , MODE, OBJTYPE , OBJUSAGES, OBJTYPE2 , OBJUSAGES2) and
           twoKeyMaterialCompatible(ALGO , ATTRS , ATTRS2) and
           twoKeyOperationSizeCompatible(ALGO , KEYSIZE , ATTRS , ATTRS2)) .
-  rl [finish-set-operation-key2-top-level-handle] :
+  crl [finish-set-operation-key2-top-level-handle] :
     finishInstallTopOperationKeys(HANDLE , TK)
-    < HANDLE : OperationHandle | is-initialized : false , is-extracting : false >
+    < HANDLE : OperationHandle | state : HS, is-initialized : false >
     =>
        < HANDLE : OperationHandle | state : keySet,
                                     key-material-set : true >
-       finishSetOperationKey2(TK) .
+       finishSetOperationKey2(TK)
+  if not hasExtract(HS) .
   rl [set-operation-key2-success] :
     finishSetOperationKey2(TK)
     < TK : TaKernel | api-state : waitSetOperationKey , current-api : SetOperationKey2 >
@@ -1399,12 +1398,11 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   rl [copy-operation-top-level-handle] :
     applyCopiedOperationHandle(HANDLE , B1 , B2 , B3 , TK)
-    < HANDLE : OperationHandle | is-initialized : B1' , key-material-set : B2' ,
-                                 is-extracting : B3' >
+    < HANDLE : OperationHandle | state : HS, is-initialized : B1' ,
+                                 key-material-set : B2' >
     =>
     < HANDLE : OperationHandle | state : handleState(B1, B2, B3),
-                                 is-initialized : B1 , key-material-set : B2 ,
-                                 is-extracting : B3 >
+                                 is-initialized : B1 , key-material-set : B2 >
     finishCopyOperation(TK)
   .
 
@@ -1561,8 +1559,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     resetTopDigestHandle(HANDLE , DATA , TK)
     < HANDLE : OperationHandle | state : HS >
     =>
-    < HANDLE : OperationHandle | state : noHandleState,
-                                 is-extracting : false >
+    < HANDLE : OperationHandle | state : noHandleState >
     finishDigestDoFinal(DATA , TK)
   .
 
@@ -1641,8 +1638,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     extractTopDigestHandle(HANDLE , DATA , TK)
     < HANDLE : OperationHandle | state : HS >
     =>
-    < HANDLE : OperationHandle | state : extract,
-                                 is-extracting : true >
+    < HANDLE : OperationHandle | state : extract >
     finishDigestExtract(DATA , TK)
   .
 
@@ -2969,15 +2965,15 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
                              crypto-keys : KEYS , max-key-size : KEYSIZE ,
                              algorithm : ALGO , operation-mode : MODE ,
                              operation-class : OC , operation-state : OS >
-    < HANDLE : OperationHandle | oid : CI , is-initialized : B1 ,
-                                 key-material-set : B2 , is-extracting : B3 >
+    < HANDLE : OperationHandle | oid : CI , state : HS,
+                                 is-initialized : B1 , key-material-set : B2 >
     =
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
     retOperationInfoMultiple(
       teeOperationInfoMultiple(ALGO , OC , MODE , operationDigestLength(ALGO) ,
         KEYSIZE , expectsTwoKeys(ALGO) , operationInfoKeySet(OC , B2) ,
-        operationInfoInitialized(OC , B1) , B3 , OS , operationKeyCount(ALGO , OC) ,
+        operationInfoInitialized(OC , B1) , hasExtract(HS) , OS , operationKeyCount(ALGO , OC) ,
         operationKeyInformation(KEYS , requiredOperationUsage(ALGO , MODE) ,
                                 operationKeyCount(ALGO , OC))) , TK) .
 
@@ -3021,13 +3017,13 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     < CI : CryptoOperation |
                              algorithm : ALGO , operation-mode : MODE ,
                              crypto-keys : KEYS , operation-state : OS >
-    < KEY : OperationHandle | oid : CI , is-initialized : B1 ,
-                            key-material-set : B2 , is-extracting : B3 >
+    < KEY : OperationHandle | oid : CI , state : HS,
+                            is-initialized : B1 , key-material-set : B2 >
     =
     < CI : CryptoOperation | >
     < KEY : OperationHandle | >
     retOperationAttr(opObjectAttr(ALGO , MODE , OS , KEYS) ,
-                     opHandleAttr(B1 , B2 , B3) , TK) .
+                     opHandleAttr(B1 , B2 , hasExtract(HS)) , TK) .
 
   eq
     retOperationAttr(OPOBJATTR , OPHANDLEATTR , TK)
@@ -3066,12 +3062,10 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
   eq
     applyCopiedOperationHandle(HANDLE , B1 , B2 , B3 , TK)
     < HANDLE : OperationHandle | oid : CI2 , state : HS , is-initialized : B1' ,
-                               key-material-set : B2' ,
-                               is-extracting : B3' >
+                               key-material-set : B2' >
     =
     < HANDLE : OperationHandle | oid : CI2 , state : handleState(B1 , B2 , B3) ,
-                               is-initialized : B1 , key-material-set : B2 ,
-                               is-extracting : B3 >
+                               is-initialized : B1 , key-material-set : B2 >
     finishCopyOperation(TK) .
 
   eq
@@ -3195,8 +3189,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     =
     < CI : CryptoOperation | accumulated-data : nil , initialization-vector : nil ,
                             operation-state : TEE-OPERATION-STATE-INITIAL >
-    < HANDLE : OperationHandle | state : noHandleState,
-                                 is-extracting : false >
+    < HANDLE : OperationHandle | state : noHandleState >
     finishResetOperation(TK)
   if hasExtract(HS)
   .
@@ -3262,8 +3255,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     < CI : CryptoOperation | crypto-keys : nil ,
                              operation-state : TEE-OPERATION-STATE-INITIAL >
     < HANDLE : OperationHandle | state : noHandleState,
-                                 key-material-set : false ,
-                                 is-extracting : false >
+                                 key-material-set : false >
   .
 
   eq
@@ -3425,8 +3417,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     < CI : CryptoOperation | crypto-keys : nil,
                              operation-state : TEE-OPERATION-STATE-INITIAL >
     < HANDLE : OperationHandle | state : noHandleState,
-                                 key-material-set : false,
-                                 is-extracting : false >
+                                 key-material-set : false >
   if expectsTwoKeys(ALGO) .
 
   ceq
@@ -3572,13 +3563,14 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
           twoKeyMaterialCompatible(ALGO, ATTRS, ATTRS2) and
           twoKeyOperationSizeCompatible(ALGO, KEYSIZE, ATTRS, ATTRS2)) .
 
-  eq
+  ceq
     finishInstallTopOperationKeys(HANDLE, TK)
-    < HANDLE : OperationHandle | is-initialized : false, is-extracting : false >
+    < HANDLE : OperationHandle | state : HS, is-initialized : false >
     =
     < HANDLE : OperationHandle | state : keySet,
                                  key-material-set : true >
-    finishSetOperationKey2(TK) .
+    finishSetOperationKey2(TK)
+  if not hasExtract(HS) .
 
   eq
     finishSetOperationKey2(TK)

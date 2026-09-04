@@ -21,7 +21,6 @@ omod CRYPTO-OPERATION is
                    algorithm : AlgorithmIdentifier,
                    initialization-vector : List{Data},
                    operation-mode : OperationMode,
-                   operation-class : OperationClass,
                    operation-state : OperationState .
 
 --- Model/Implementation Specific Version
@@ -670,7 +669,6 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                                         accumulated-data : nil ,
                                         algorithm : ALGO , operation-mode : MODE ,
                                         initialization-vector : nil ,
-                                        operation-class : determineOpClass(ALGO) , 
                                         operation-state : TEE-OPERATION-STATE-INITIAL ,
                                         trust-app-id : TN >
     freshOperationHandle(N + 1 , TK , taOid(N , TK), determineOpClass(ALGO))
@@ -2893,11 +2891,11 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     => < TK : TaKernel | api-state : waitDeriveKey > deriveKey(HANDLE , ATTRS , DERIVED , TK) .
   rl [derive-key-top-level-operation] :
     deriveKey(HANDLE , ATTRS , DERIVED , TK)
-    < CI : CryptoOperation |
-                             operation-mode : TEE-MODE-DERIVE ,
-                             operation-class : TEE-OPERATION-KEY-DERIVATION >
+    < CI : CryptoOperation | operation-mode : TEE-MODE-DERIVE >
+    < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-KEY-DERIVATION >
     =>
     < CI : CryptoOperation | >
+    < HANDLE : OperationHandle | >
     deriveTopTransient(HANDLE , DERIVED , TK) .
   rl [derive-key-top-level-transient] :
     deriveTopTransient(HANDLE , DERIVED , TK)
@@ -3154,7 +3152,6 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
                                         accumulated-data : nil ,
                                         algorithm : ALGO , operation-mode : MODE ,
                                         initialization-vector : nil ,
-                                        operation-class : determineOpClass(ALGO) , 
                                         operation-state : TEE-OPERATION-STATE-INITIAL ,
                                         trust-app-id : TN >
     freshOperationHandle(N + 1 , TK , taOid(N , TK), determineOpClass(ALGO))

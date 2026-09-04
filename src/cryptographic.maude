@@ -1999,10 +1999,11 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     macUpdate(HANDLE , DATA , TK)
     < CI : CryptoOperation |
                              accumulated-data : DL ,
-                             operation-class : TEE-OPERATION-MAC ,
                              operation-state : TEE-OPERATION-STATE-ACTIVE >
+    < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-MAC >
     =>
     < CI : CryptoOperation | accumulated-data : DL DATA >
+    < HANDLE : OperationHandle | >
     finishTopMacUpdate(HANDLE , TK)
   .
 
@@ -2050,11 +2051,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       current-params : handle(HANDLE) , data(DATA) , PARAMS >
     < CI : CryptoOperation |
                              crypto-keys : KEYS , accumulated-data : DL , algorithm : ALGO,
-                             operation-class : TEE-OPERATION-MAC,
                              operation-state : TEE-OPERATION-STATE-ACTIVE >
+    < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-MAC >
     =>
     < TK : TaKernel | api-state : waitMacComputeFinal >
     < CI : CryptoOperation | >
+    < HANDLE : OperationHandle | >
     macComputeFinal(HANDLE , DATA , TK)
   if hasOutputCapacity(PARAMS) /\ outputCapacityFits(PARAMS , computeMAC(ALGO , KEYS , DL DATA))
   .
@@ -2065,13 +2067,14 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       current-params : handle(HANDLE) , data(DATA) , PARAMS >
     < CI : CryptoOperation |
                              crypto-keys : KEYS , accumulated-data : DL , algorithm : ALGO,
-                             operation-class : TEE-OPERATION-MAC,
                              operation-state : TEE-OPERATION-STATE-ACTIVE >
+    < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-MAC >
     =>
     < TK : TaKernel | api-state : finished,
                       api-return : apiReturn(MACComputeFinal , TEE-ERROR-SHORT-BUFFER,
                                              size(outputSize(computeMAC(ALGO , KEYS , DL DATA)))) >
     < CI : CryptoOperation | >
+    < HANDLE : OperationHandle | >
   if hasOutputCapacity(PARAMS) /\ not outputCapacityFits(PARAMS , computeMAC(ALGO , KEYS , DL DATA))
   .
 
@@ -2080,11 +2083,13 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     macComputeFinal(HANDLE , DATA , TK)
     < CI : CryptoOperation |
                              crypto-keys : KEYS , accumulated-data : DL ,
-                             algorithm : ALGO , operation-class : TEE-OPERATION-MAC ,
+                             algorithm : ALGO ,
                              operation-state : TEE-OPERATION-STATE-ACTIVE >
+    < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-MAC >
     =>
     < CI : CryptoOperation | accumulated-data : nil ,
                              operation-state : TEE-OPERATION-STATE-INITIAL >
+    < HANDLE : OperationHandle | >
     finishTopMacFinal(HANDLE , computeMAC(ALGO , KEYS , DL DATA) , TK)
   .
 

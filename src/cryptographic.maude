@@ -2183,10 +2183,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   rl [ae-update-aad-top-level-object] :
     reqAEUpdateAAD(HANDLE , DATA , TK)
     < CI : CryptoOperation |
-                             accumulated-data : DL , operation-class : TEE-OPERATION-AE ,
+                             accumulated-data : DL ,
                              operation-state : TEE-OPERATION-STATE-INITIAL >
+    < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-AE >
     =>
     < CI : CryptoOperation | accumulated-data : DL DATA >
+    < HANDLE : OperationHandle | >
     finishTopAEUpdateAAD(HANDLE , TK)
   .
 
@@ -2234,10 +2236,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       current-params : handle(HANDLE) , data(DATA) , PARAMS >
     < CI : CryptoOperation |
                              crypto-keys : KEYS , accumulated-data : DL, algorithm : ALGO,
-                             operation-mode : MODE , operation-class : TEE-OPERATION-AE >
+                             operation-mode : MODE >
+    < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-AE >
     =>
     < TK : TaKernel | api-state : waitAEUpdate >
-    < CI : CryptoOperation | > reqAEUpdate(HANDLE , DATA , TK)
+    < CI : CryptoOperation | >
+    < HANDLE : OperationHandle | > reqAEUpdate(HANDLE , DATA , TK)
   if hasOutputCapacity(PARAMS) /\
      outputCapacityFits(PARAMS , cipherOperation(ALGO , MODE , KEYS , DL DATA)) /\
      not invalidBufferOverlap(PARAMS)
@@ -2249,12 +2253,14 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       current-params : handle(HANDLE) , data(DATA) , PARAMS >
     < CI : CryptoOperation |
                              crypto-keys : KEYS , accumulated-data : DL, algorithm : ALGO,
-                             operation-mode : MODE , operation-class : TEE-OPERATION-AE >
+                             operation-mode : MODE >
+    < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-AE >
     =>
     < TK : TaKernel | api-state : finished,
                       api-return : apiReturn(AEUpdate , TEE-ERROR-SHORT-BUFFER,
                         size(outputSize(cipherOperation(ALGO , MODE , KEYS , DL DATA)))) >
     < CI : CryptoOperation | >
+    < HANDLE : OperationHandle | >
   if hasOutputCapacity(PARAMS) /\
      not outputCapacityFits(PARAMS , cipherOperation(ALGO , MODE , KEYS , DL DATA)) /\
      not invalidBufferOverlap(PARAMS)
@@ -2265,11 +2271,13 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     reqAEUpdate(HANDLE , DATA , TK)
     < CI : CryptoOperation |
                              crypto-keys : KEYS , accumulated-data : DL , algorithm : ALGO ,
-                             operation-mode : MODE , operation-class : TEE-OPERATION-AE ,
+                             operation-mode : MODE ,
                              operation-state : OS >
+    < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-AE >
     =>
     < CI : CryptoOperation | accumulated-data : DL DATA ,
                              operation-state : TEE-OPERATION-STATE-ACTIVE >
+    < HANDLE : OperationHandle | >
     finishTopAEUpdate(HANDLE , cipherOperation(ALGO , MODE , KEYS , DL DATA) , TK)
   .
 
@@ -2306,10 +2314,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       current-params : handle(HANDLE) , data(DATA) , PARAMS >
     < CI : CryptoOperation |
                              crypto-keys : KEYS , accumulated-data : DL , algorithm : ALGO,
-                             operation-mode : TEE-MODE-ENCRYPT , operation-class : TEE-OPERATION-AE >
+                             operation-mode : TEE-MODE-ENCRYPT >
+    < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-AE >
     =>
     < TK : TaKernel | api-state : waitAEEncryptFinal >
-    < CI : CryptoOperation | > aeEncryptFinal(HANDLE , DATA , TK)
+    < CI : CryptoOperation | >
+    < HANDLE : OperationHandle | > aeEncryptFinal(HANDLE , DATA , TK)
   if (hasOutputCapacity(PARAMS) or hasTagCapacity(PARAMS)) /\
      (not hasOutputCapacity(PARAMS) or
        outputCapacityFits(PARAMS , cipherOperation(ALGO , TEE-MODE-ENCRYPT , KEYS , DL DATA))) /\
@@ -2322,13 +2332,15 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       current-params : handle(HANDLE) , data(DATA) , PARAMS >
     < CI : CryptoOperation |
                              crypto-keys : KEYS , accumulated-data : DL , algorithm : ALGO,
-                             operation-mode : TEE-MODE-ENCRYPT , operation-class : TEE-OPERATION-AE >
+                             operation-mode : TEE-MODE-ENCRYPT >
+    < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-AE >
     =>
     < TK : TaKernel | api-state : finished,
                       api-return : apiReturn(AEEncryptFinal , TEE-ERROR-SHORT-BUFFER,
                         (size(outputSize(cipherOperation(ALGO , TEE-MODE-ENCRYPT , KEYS , DL DATA))),
                          tagSize(outputSize(computeMAC(ALGO , KEYS , DL DATA))))) >
     < CI : CryptoOperation | >
+    < HANDLE : OperationHandle | >
   if (hasOutputCapacity(PARAMS) or hasTagCapacity(PARAMS)) /\
      ((hasOutputCapacity(PARAMS) and
        not outputCapacityFits(PARAMS , cipherOperation(ALGO , TEE-MODE-ENCRYPT , KEYS , DL DATA))) or
@@ -2340,10 +2352,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     aeEncryptFinal(HANDLE , DATA , TK)
     < CI : CryptoOperation |
                              crypto-keys : KEYS , accumulated-data : DL , algorithm : ALGO ,
-                             operation-mode : TEE-MODE-ENCRYPT , operation-class : TEE-OPERATION-AE ,
+                             operation-mode : TEE-MODE-ENCRYPT ,
                              operation-state : OS >
+    < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-AE >
     => < CI : CryptoOperation | accumulated-data : nil ,
                               operation-state : TEE-OPERATION-STATE-INITIAL >
+       < HANDLE : OperationHandle | >
        finishTopAEEncryptFinal(HANDLE ,
          cipherOperation(ALGO , TEE-MODE-ENCRYPT , KEYS , DL DATA),
          computeMAC(ALGO , KEYS , DL DATA), TK) .
@@ -2375,10 +2389,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       current-params : handle(HANDLE) , data(DATA) , mac(MAC) , PARAMS >
     < CI : CryptoOperation |
                              crypto-keys : KEYS , algorithm : ALGO,
-                             operation-mode : TEE-MODE-DECRYPT , operation-class : TEE-OPERATION-AE >
+                             operation-mode : TEE-MODE-DECRYPT >
+    < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-AE >
     =>
     < TK : TaKernel | api-state : waitAEDecryptFinal >
-    < CI : CryptoOperation | > aeDecryptFinal(HANDLE , DATA , MAC , TK)
+    < CI : CryptoOperation | >
+    < HANDLE : OperationHandle | > aeDecryptFinal(HANDLE , DATA , MAC , TK)
   if hasOutputCapacity(PARAMS) /\
      outputCapacityFits(PARAMS , cipherOperation(ALGO , TEE-MODE-DECRYPT , KEYS , DATA)) /\
      not invalidBufferOverlap(PARAMS)
@@ -2389,12 +2405,14 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       current-params : handle(HANDLE) , data(DATA) , mac(MAC) , PARAMS >
     < CI : CryptoOperation |
                              crypto-keys : KEYS , algorithm : ALGO,
-                             operation-mode : TEE-MODE-DECRYPT , operation-class : TEE-OPERATION-AE >
+                             operation-mode : TEE-MODE-DECRYPT >
+    < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-AE >
     =>
     < TK : TaKernel | api-state : finished,
                       api-return : apiReturn(AEDecryptFinal , TEE-ERROR-SHORT-BUFFER,
                         size(outputSize(cipherOperation(ALGO , TEE-MODE-DECRYPT , KEYS , DATA)))) >
     < CI : CryptoOperation | >
+    < HANDLE : OperationHandle | >
   if hasOutputCapacity(PARAMS) /\
      not outputCapacityFits(PARAMS , cipherOperation(ALGO , TEE-MODE-DECRYPT , KEYS , DATA)) /\
      not invalidBufferOverlap(PARAMS)
@@ -2403,10 +2421,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     aeDecryptFinal(HANDLE , DATA , MAC , TK)
     < CI : CryptoOperation |
                              crypto-keys : KEYS , accumulated-data : DL , algorithm : ALGO ,
-                             operation-mode : TEE-MODE-DECRYPT , operation-class : TEE-OPERATION-AE ,
+                             operation-mode : TEE-MODE-DECRYPT ,
                              operation-state : OS >
+    < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-AE >
     => < CI : CryptoOperation | accumulated-data : nil ,
                               operation-state : TEE-OPERATION-STATE-INITIAL >
+       < HANDLE : OperationHandle | >
        finishTopAEDecryptFinal(HANDLE ,
          cipherOperation(ALGO , TEE-MODE-DECRYPT , KEYS , DATA),
          computeMAC(ALGO , KEYS , DL DATA), MAC, TK) .

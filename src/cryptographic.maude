@@ -1464,11 +1464,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     digestUpdate(HANDLE , DATA , TK)
     < CI : CryptoOperation |
                              accumulated-data : DL ,
-                             operation-class : TEE-OPERATION-DIGEST ,
                              operation-state : OS >
+    < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-DIGEST >
     =>
     < CI : CryptoOperation | accumulated-data : DL DATA ,
                              operation-state : TEE-OPERATION-STATE-ACTIVE >
+    < HANDLE : OperationHandle | >
     finishTopDigestUpdate(HANDLE , TK)
   if not extractingState(OS)
   .
@@ -1517,11 +1518,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       current-api : DigestDoFinal,
                       current-params : handle(HANDLE) , data(DATA) , PARAMS >
     < CI : CryptoOperation |
-                             accumulated-data : DL , algorithm : ALGO,
-                             operation-class : TEE-OPERATION-DIGEST >
+                             accumulated-data : DL , algorithm : ALGO >
+    < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-DIGEST >
     =>
     < TK : TaKernel | api-state : waitDigestDoFinal >
-    < CI : CryptoOperation | > digestDoFinal(HANDLE , DATA , TK)
+    < CI : CryptoOperation | >
+    < HANDLE : OperationHandle | > digestDoFinal(HANDLE , DATA , TK)
   if hasOutputCapacity(PARAMS) /\ outputCapacityFits(PARAMS , digestResult(ALGO , DL DATA))
   .
 
@@ -1530,13 +1532,14 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       current-api : DigestDoFinal,
                       current-params : handle(HANDLE) , data(DATA) , PARAMS >
     < CI : CryptoOperation |
-                             accumulated-data : DL , algorithm : ALGO,
-                             operation-class : TEE-OPERATION-DIGEST >
+                             accumulated-data : DL , algorithm : ALGO >
+    < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-DIGEST >
     =>
     < TK : TaKernel | api-state : finished,
                       api-return : apiReturn(DigestDoFinal , TEE-ERROR-SHORT-BUFFER,
                                              size(outputSize(digestResult(ALGO , DL DATA)))) >
     < CI : CryptoOperation | >
+    < HANDLE : OperationHandle | >
   if hasOutputCapacity(PARAMS) /\ not outputCapacityFits(PARAMS , digestResult(ALGO , DL DATA))
   .
 
@@ -1545,11 +1548,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     digestDoFinal(HANDLE , DATA , TK)
     < CI : CryptoOperation |
                              accumulated-data : DL , algorithm : ALGO ,
-                             operation-class : TEE-OPERATION-DIGEST ,
                              operation-state : OS >
+    < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-DIGEST >
     =>
     < CI : CryptoOperation | accumulated-data : nil ,
                              operation-state : TEE-OPERATION-STATE-INITIAL >
+    < HANDLE : OperationHandle | >
     resetTopDigestHandle(HANDLE , digestResult(ALGO , DL DATA) , TK)
   .
 
@@ -1596,11 +1600,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       current-api : DigestExtract,
                       current-params : handle(HANDLE) , PARAMS >
     < CI : CryptoOperation |
-                             accumulated-data : DL , algorithm : ALGO,
-                             operation-class : TEE-OPERATION-DIGEST >
+                             accumulated-data : DL , algorithm : ALGO >
+    < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-DIGEST >
     =>
     < TK : TaKernel | api-state : waitDigestExtract >
-    < CI : CryptoOperation | > digestExtract(HANDLE , TK)
+    < CI : CryptoOperation | >
+    < HANDLE : OperationHandle | > digestExtract(HANDLE , TK)
   if hasOutputCapacity(PARAMS) /\ outputCapacityFits(PARAMS , digestResult(ALGO , DL))
   .
 
@@ -1609,13 +1614,14 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       current-api : DigestExtract,
                       current-params : handle(HANDLE) , PARAMS >
     < CI : CryptoOperation |
-                             accumulated-data : DL , algorithm : ALGO,
-                             operation-class : TEE-OPERATION-DIGEST >
+                             accumulated-data : DL , algorithm : ALGO >
+    < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-DIGEST >
     =>
     < TK : TaKernel | api-state : finished,
                       api-return : apiReturn(DigestExtract , TEE-ERROR-SHORT-BUFFER,
                                              size(outputSize(digestResult(ALGO , DL)))) >
     < CI : CryptoOperation | >
+    < HANDLE : OperationHandle | >
   if hasOutputCapacity(PARAMS) /\ not outputCapacityFits(PARAMS , digestResult(ALGO , DL))
   .
 
@@ -1624,11 +1630,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     digestExtract(HANDLE , TK)
     < CI : CryptoOperation |
                              accumulated-data : DL , algorithm : ALGO ,
-                             operation-class : TEE-OPERATION-DIGEST ,
                              operation-state : OS >
+    < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-DIGEST >
     =>
     < CI : CryptoOperation | accumulated-data : nil ,
                              operation-state : TEE-OPERATION-STATE-EXTRACTING >
+    < HANDLE : OperationHandle | >
     extractTopDigestHandle(HANDLE , digestResult(ALGO , DL) , TK)
   .
 

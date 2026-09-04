@@ -57,6 +57,9 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
   var EXISTENCE : ServiceReturn .
   var PARAMS : Set{TeeApiParam} .
   var STORID : StorageIdentifier .
+  var OBJ : Object .
+  var MSG : Msg .
+  var PORTAL : Portal .
 
 ------------------------------------------------------------
 --- 'TEE_OpenPersistentObject' Sharing Rules
@@ -79,6 +82,33 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
               or (TEE-DATA-FLAG-ACCESS-WRITE in DATAFLAGS2))
          or ((TEE-DATA-FLAG-SHARE-WRITE in DATAFLAGS)
              and (TEE-DATA-FLAG-SHARE-WRITE in DATAFLAGS2))) .
+
+  --- The paper models only Handle.oid -> resource links.  These functions
+  --- inspect a whole configuration instead of storing a reverse handle set
+  --- on the resource object.
+  op persistentHandlesCompatible : TaObjectId Set{DataFlag} Configuration -> Bool .
+  eq persistentHandlesCompatible(OI, DATAFLAGS, none) = true .
+  eq persistentHandlesCompatible(OI, DATAFLAGS,
+       < H : ObjectHandle | oid : OI, data-access-flag-set : DATAFLAGS2 > HS) =
+     accessRightCheckingAux(DATAFLAGS, DATAFLAGS2)
+     and persistentHandlesCompatible(OI, DATAFLAGS, HS) .
+  eq persistentHandlesCompatible(OI, DATAFLAGS, OBJ HS) =
+     persistentHandlesCompatible(OI, DATAFLAGS, HS) [owise] .
+  eq persistentHandlesCompatible(OI, DATAFLAGS, MSG HS) =
+     persistentHandlesCompatible(OI, DATAFLAGS, HS) .
+  eq persistentHandlesCompatible(OI, DATAFLAGS, PORTAL HS) =
+     persistentHandlesCompatible(OI, DATAFLAGS, HS) .
+
+  op removePersistentHandles : TaObjectId Configuration -> Configuration .
+  eq removePersistentHandles(OI, none) = none .
+  eq removePersistentHandles(OI, < H : ObjectHandle | oid : OI > HS) =
+     removePersistentHandles(OI, HS) .
+  eq removePersistentHandles(OI, OBJ HS) =
+     OBJ removePersistentHandles(OI, HS) [owise] .
+  eq removePersistentHandles(OI, MSG HS) =
+     MSG removePersistentHandles(OI, HS) .
+  eq removePersistentHandles(OI, PORTAL HS) =
+     PORTAL removePersistentHandles(OI, HS) .
 
 
 ------------------------------------------------------------
@@ -133,13 +163,27 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     openPersistentHandle(FILE , DATAFLAGS , N , TK)
   .
 
-  rl [open-persistent-top-level-handle] :
+  crl [open-persistent-top-level-handle] :
     openPersistentHandle(FILE , DATAFLAGS , N , TK)
     < OI : PersistentObject | file-id : FILE >
+    HS
     =>
     < OI : PersistentObject | >
+    HS
     freshPersistentHandle(N, TK, DATAFLAGS, OI)
     finishOpenPersistentHandle(handleId(N, TK), TK)
+  if persistentHandlesCompatible(OI, DATAFLAGS, HS)
+  .
+
+  crl [open-persistent-top-level-conflict] :
+    openPersistentHandle(FILE , DATAFLAGS , N , TK)
+    < OI : PersistentObject | file-id : FILE >
+    HS
+    =>
+    < OI : PersistentObject | >
+    HS
+    failOpenPersistentHandle(TK)
+  if not persistentHandlesCompatible(OI, DATAFLAGS, HS)
   .
 
   rl [open-persistent-success] : 
@@ -404,7 +448,9 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     deleteOldPersistent(FILE , TK , TN)
     < OI : PersistentObject | file-id : FILE , data-stream-id : DI , trust-app-id : TN >
     < DI : DataStreamObject | persistent-owner-id : OI >
+    HS
     =>
+    removePersistentHandles(OI, HS)
     finishDeleteOldPersistent(TK)
   .
 
@@ -418,6 +464,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 
   op determineCreation : HandleId HandleId -> TeeApiState .
   ceq determineCreation(H, OPT) = createPureData if nullHandle(H) /\ not nullHandle(OPT) .
+  ceq determineCreation(H, OPT) = createPureData if nullHandle(H) /\ nullHandle(OPT) .
   ceq determineCreation(H, OPT) = transformTransient if not nullHandle(H) /\ nullHandle(OPT) .
   ceq determineCreation(H, OPT) = createPersistent if not nullHandle(H) /\ not nullHandle(OPT) .
 
@@ -556,6 +603,16 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     deletePersistent(HANDLE , TK , TN)
   .
 
+  rl [close-and-delete-persistent-corrupt-subroutine] :
+    retTrustedOS(storageStatus(storageCorrupt) , TK)
+    < TK : TaKernel | api-state : waitStorageCheck,
+                      current-api : CloseAndDeletePersistentObject1,
+                      current-params : handle(HANDLE), trust-app-id : TN >
+    =>
+    < TK : TaKernel | api-state : waitDeletePersistent >
+    deletePersistent(HANDLE, TK, TN)
+  .
+
   op hasWriteMeta : Set{DataFlag} -> Bool .
   eq hasWriteMeta((TEE-DATA-FLAG-ACCESS-WRITE-META , DATAFLAGS)) = true .
 
@@ -566,7 +623,9 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
                               trust-app-id : TN >
     < DI : DataStreamObject | persistent-owner-id : OI >
     < HANDLE : ObjectHandle | oid : OI, data-access-flag-set : DATAFLAGS >
+    HS
     =>
+    removePersistentHandles(OI, HS)
     finishDeletePersistent(FILE, TK)
   if hasWriteMeta(DATAFLAGS)
   .
@@ -867,13 +926,27 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
     openPersistentHandle(FILE , DATAFLAGS , N , TK)
   .
 
-  eq
+  ceq
     openPersistentHandle(FILE , DATAFLAGS , N , TK)
     < OI : PersistentObject | file-id : FILE >
+    HS
     =
     < OI : PersistentObject | >
+    HS
     freshPersistentHandle(N, TK, DATAFLAGS, OI)
     finishOpenPersistentHandle(handleId(N, TK), TK)
+  if persistentHandlesCompatible(OI, DATAFLAGS, HS)
+  .
+
+  ceq
+    openPersistentHandle(FILE , DATAFLAGS , N , TK)
+    < OI : PersistentObject | file-id : FILE >
+    HS
+    =
+    < OI : PersistentObject | >
+    HS
+    failOpenPersistentHandle(TK)
+  if not persistentHandlesCompatible(OI, DATAFLAGS, HS)
   .
 
   eq
@@ -974,7 +1047,9 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
     deleteOldPersistent(FILE , TK , TN)
     < OI : PersistentObject | file-id : FILE , data-stream-id : DI , trust-app-id : TN >
     < DI : DataStreamObject | persistent-owner-id : OI >
+    HS
     =
+    removePersistentHandles(OI, HS)
     finishDeleteOldPersistent(TK)
   .
 
@@ -1167,6 +1242,17 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
 
 
   eq
+    retTrustedOS(storageStatus(storageCorrupt) , TK)
+    < TK : TaKernel | app-status : normal,
+                      api-state : waitStorageCheck,
+                      current-api : CloseAndDeletePersistentObject1,
+                      current-params : handle(HANDLE), trust-app-id : TN >
+    =
+    < TK : TaKernel | api-state : waitDeletePersistent >
+    deletePersistent(HANDLE, TK, TN)
+  .
+
+  eq
     finishDeletePersistent(FILE , TK)
     < TK : TaKernel | api-state : waitDeletePersistent ,
                       trust-app-id : TN >
@@ -1208,7 +1294,9 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
                               trust-app-id : TN >
     < DI : DataStreamObject | persistent-owner-id : OI >
     < HANDLE : ObjectHandle | oid : OI, data-access-flag-set : DATAFLAGS >
+    HS
     =
+    removePersistentHandles(OI, HS)
     finishDeletePersistent(FILE, TK)
   if hasWriteMeta(DATAFLAGS)
   .

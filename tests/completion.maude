@@ -708,14 +708,20 @@ search [1] in COMPLETION-TEST :
   finishOpenPersistentHandle(handleId(3, testTa), testTa)
   C .
 
---- A second open creates another independent top-level handle.
+--- A second open conflicts when an existing reader did not share read access.
 search [1] in COMPLETION-TEST :
-  openPersistentHandle(testFileId, TEE-DATA-FLAG-ACCESS-WRITE,
+  openPersistentHandle(testFileId,
+                       (TEE-DATA-FLAG-ACCESS-READ,
+                        TEE-DATA-FLAG-SHARE-READ),
                        2, testTa)
   < taOid(1, testTa) : PersistentObject | file-id : testFileId >
+  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa),
+      data-access-flag-set : TEE-DATA-FLAG-ACCESS-READ >
 =>*
-  finishOpenPersistentHandle(handleId(2, testTa), testTa)
-  C .
+  failOpenPersistentHandle(testTa)
+  < taOid(1, testTa) : PersistentObject | file-id : testFileId >
+  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa),
+      data-access-flag-set : TEE-DATA-FLAG-ACCESS-READ > .
 
 --- ReadObjectData resolves and advances a top-level persistent handle.
 search [1] in COMPLETION-TEST :
@@ -792,8 +798,7 @@ search [1] in COMPLETION-TEST :
                           TEE-ERROR-OVERFLOW, empty) >
   C .
 
---- CloseAndDelete removes the supplied handle and its owner/stream.  Handles
---- are independent top-level references in the paper model.
+--- CloseAndDelete invalidates every top-level handle that references the owner.
 search [1] in COMPLETION-TEST :
   deletePersistent(handleId(1, testTa), testTa, TESTTA)
   < taOid(1, testTa) : PersistentObject |
@@ -804,7 +809,7 @@ search [1] in COMPLETION-TEST :
   < handleId(2, testTa) : ObjectHandle | oid : taOid(1, testTa) >
   < taOid(2, testTa) : DataStreamObject | persistent-owner-id : taOid(1, testTa) >
 =>*
-  finishDeletePersistent(testFileId, testTa) C .
+  finishDeletePersistent(testFileId, testTa) .
 
 --- RenamePersistentObject authorizes through a top-level write-meta handle.
 search [1] in COMPLETION-TEST :

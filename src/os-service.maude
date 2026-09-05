@@ -30,18 +30,18 @@ omod TEE-OS-BEHAVIOR is
 
   rl [service-receive] :
     reqTrustedOS(SIL , TK , TN)
-    < KI : TeeOSKernel | service-in : nil , service-out : nil , 
+    < KI : TeeOSKernel | service-in : nil , service-out : nil ,
                          service-request-ta : noAppId , service-request-ta-inst : noInstId >
     =>
-    < KI : TeeOSKernel | service-in : SIL , 
+    < KI : TeeOSKernel | service-in : SIL ,
                          service-request-ta : TN , service-request-ta-inst : TK >
   .
 
   rl [service-finish] :
-    < KI : TeeOSKernel | service-in : nil , service-out : NESOL , 
+    < KI : TeeOSKernel | service-in : nil , service-out : NESOL ,
                          service-request-ta : TN , service-request-ta-inst : TK >
     =>
-    < KI : TeeOSKernel | service-out : nil , 
+    < KI : TeeOSKernel | service-out : nil ,
                          service-request-ta : noAppId , service-request-ta-inst : noInstId >
     retTrustedOS(NESOL , TK)
   .
@@ -62,9 +62,9 @@ omod TEE-OS-BEHAVIOR is
   eq storageErrCode2(outOfSpace) = TEE-ERROR-STORAGE-NO-SPACE .
 
   rl [get-storage-status] :
-    < KI : TeeOSKernel | service-in : (getStorageStatus SIL) , service-out : SOL , 
+    < KI : TeeOSKernel | service-in : (getStorageStatus SIL) , service-out : SOL ,
                          service-request-ta : TN , service-request-ta-inst : TK >
-    < TK : TaKernel | storage-object : SI >
+    < TK : TaKernel | storage : SI >
     < SI : Storage | status : STATUS >
     =>
     < KI : TeeOSKernel | service-in : SIL , service-out : (SOL storageStatus(STATUS)) >
@@ -77,9 +77,9 @@ omod TEE-OS-BEHAVIOR is
   eq exist(FILE , FL) = noFileExist [owise] .
 
   rl [check-file-exist] :
-    < KI : TeeOSKernel | service-in : (checkFileExist(FILE) SIL) , service-out : SOL , 
+    < KI : TeeOSKernel | service-in : (checkFileExist(FILE) SIL) , service-out : SOL ,
                          service-request-ta : TN , service-request-ta-inst : TK >
-    < TK : TaKernel | storage-object : SI >
+    < TK : TaKernel | storage : SI >
     < SI : Storage | files : FL >
     =>
     < KI : TeeOSKernel | service-in : SIL , service-out : (SOL exist(FILE , FL)) >
@@ -105,9 +105,9 @@ omod TEE-OS-BEHAVIOR is
   eq updateStorageCounter(S , N) = N [owise] .
 
   crl [notify-file-manipulation] :
-    < KI : TeeOSKernel | service-in : (S SIL) , service-out : SOL , 
+    < KI : TeeOSKernel | service-in : (S SIL) , service-out : SOL ,
                          service-request-ta : TN , service-request-ta-inst : TK >
-    < TK : TaKernel | storage-object : SI >
+    < TK : TaKernel | storage : SI >
     < SI : Storage | files : FL , counter : N >
     =>
     < KI : TeeOSKernel | service-in : SIL , service-out : (SOL acceptNotification) >
@@ -124,7 +124,7 @@ omod TEE-OS-BEHAVIOR is
   rl [get-persistent-list] :
     < KI : TeeOSKernel | service-in : (getPersistentList(TN) SIL) , service-out : SOL ,
                          service-request-ta : TN , service-request-ta-inst : TK >
-    < TK : TaKernel | storage-object : SI >
+    < TK : TaKernel | storage : SI >
     < SI : Storage | files : FL >
     =>
     < KI : TeeOSKernel | service-in : SIL , service-out : (SOL acquire(FL)) >
@@ -139,9 +139,9 @@ omod TEE-OS-BEHAVIOR is
     < KI : TeeOSKernel | service-in : SIL , service-out : (SOL openSessionSuccess(trustAppId(N))) ,
                          opened-session : (sessionId(N) |-> trustAppId(N) , SESS) , session-counter : N + 1 >
     < trustAppId(N) : TrustApp | proc : none , prog : P , running : false ,
-                                 app-status : normal , api-call : noCall , api-return : noReturn ,
-                                 current-api : noApi , api-state : noState , current-params : empty , id-counter : 0 ,
-                                 storage-object : storageId(N) , os-kernel : KI ,
+                                 status : normal , api-call : noCall , api-return : noReturn ,
+                                 current-api : noApi , api-state : noState , current-params : empty , counter : 0 ,
+                                 storage : storageId(N) , os-kernel : KI ,
                                  trust-app-id : TN ,
                                  task : noTask , task-counter : 0 >
     < storageId(N) : Storage | status : storageNormal , files : empty , counter : 0 >

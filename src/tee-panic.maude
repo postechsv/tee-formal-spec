@@ -53,35 +53,35 @@ omod GENERAL-PANIC is
   --- The paper assigns the operation class to OpHandle.  A class mismatch is
   --- a programmer error and must panic before an operation-specific rule runs.
   ceq [operation-api-class-mismatch-panic] :
-    < TK : TaKernel | app-status : normal, api-state : started,
+    < TK : TaKernel | status : normal, api-state : started,
                       current-api : API,
                       current-params : handle(HANDLE), PARAMS >
     < HANDLE : OperationHandle | oid : CI, opclass : OC >
     =
-    < TK : TaKernel | app-status : panic, api-state : finished >
+    < TK : TaKernel | status : panic, api-state : finished >
     < HANDLE : OperationHandle | >
   if not operationClassCompatible(API, OC) .
 
   --- GP 6.2.6 forbids replacing or clearing a key while the operation is
   --- initialized.  This also applies when key is TEE_HANDLE_NULL.
   rl [set-operation-key-initialized-panic] :
-    < TK : TaKernel | app-status : normal, api-state : started,
+    < TK : TaKernel | status : normal, api-state : started,
                       current-api : SetOperationKey,
                       current-params : handle(HANDLE), PARAMS >
     < HANDLE : OperationHandle | state : init HS >
     =>
-    < TK : TaKernel | app-status : panic, api-state : finished >
+    < TK : TaKernel | status : panic, api-state : finished >
     < HANDLE : OperationHandle | >
   .
 
   --- GP 6.2.7 applies the same initial-state precondition to the two-key API.
   rl [set-operation-key2-initialized-panic] :
-    < TK : TaKernel | app-status : normal, api-state : started,
+    < TK : TaKernel | status : normal, api-state : started,
                       current-api : SetOperationKey2,
                       current-params : handle(HANDLE), PARAMS >
     < HANDLE : OperationHandle | state : init HS >
     =>
-    < TK : TaKernel | app-status : panic, api-state : finished >
+    < TK : TaKernel | status : panic, api-state : finished >
     < HANDLE : OperationHandle | >
   .
 
@@ -133,62 +133,62 @@ omod GENERAL-PANIC is
   eq nullHandlePanics(API) = false [owise] .
 
   crl [null-handle-panic] :
-    < TK : TaKernel | app-status : normal, api-state : started,
+    < TK : TaKernel | status : normal, api-state : started,
                       current-api : API,
                       current-params : handle(HANDLE), PARAMS >
     =>
-    < TK : TaKernel | app-status : panic, api-state : finished >
+    < TK : TaKernel | status : panic, api-state : finished >
   if nullHandle(HANDLE) and nullHandlePanics(API) .
 
   --- Persistent data-stream access rights are preconditions.  Violating them
   --- panics before the normal storage request can be issued.
   crl [read-access-panic] :
-    < TK : TaKernel | app-status : normal, api-state : started,
+    < TK : TaKernel | status : normal, api-state : started,
                       current-api : ReadObjectData,
                       current-params : handle(HANDLE), PARAMS >
     < HANDLE : ObjectHandle | flags : DATAFLAGS >
     =>
-    < TK : TaKernel | app-status : panic, api-state : finished >
+    < TK : TaKernel | status : panic, api-state : finished >
     < HANDLE : ObjectHandle | >
   if not (TEE-DATA-FLAG-ACCESS-READ in DATAFLAGS) .
 
   crl [write-access-panic] :
-    < TK : TaKernel | app-status : normal, api-state : started,
+    < TK : TaKernel | status : normal, api-state : started,
                       current-api : WriteObjectData,
                       current-params : handle(HANDLE), PARAMS >
     < HANDLE : ObjectHandle | flags : DATAFLAGS >
     =>
-    < TK : TaKernel | app-status : panic, api-state : finished >
+    < TK : TaKernel | status : panic, api-state : finished >
     < HANDLE : ObjectHandle | >
   if not (TEE-DATA-FLAG-ACCESS-WRITE in DATAFLAGS) .
 
   crl [truncate-access-panic] :
-    < TK : TaKernel | app-status : normal, api-state : started,
+    < TK : TaKernel | status : normal, api-state : started,
                       current-api : TruncateObjectData,
                       current-params : handle(HANDLE), PARAMS >
     < HANDLE : ObjectHandle | flags : DATAFLAGS >
     =>
-    < TK : TaKernel | app-status : panic, api-state : finished >
+    < TK : TaKernel | status : panic, api-state : finished >
     < HANDLE : ObjectHandle | >
   if not (TEE-DATA-FLAG-ACCESS-WRITE in DATAFLAGS) .
 
   crl [delete-access-panic] :
-    < TK : TaKernel | app-status : normal, api-state : started,
+    < TK : TaKernel | status : normal, api-state : started,
                       current-api : CloseAndDeletePersistentObject1,
                       current-params : handle(HANDLE), PARAMS >
     < HANDLE : ObjectHandle | flags : DATAFLAGS >
     =>
-    < TK : TaKernel | app-status : panic, api-state : finished >
+    < TK : TaKernel | status : panic, api-state : finished >
     < HANDLE : ObjectHandle | >
   if not (TEE-DATA-FLAG-ACCESS-WRITE-META in DATAFLAGS) .
 
   crl [rename-access-panic] :
-    < TK : TaKernel | app-status : normal, api-state : started,
+    < TK : TaKernel | status : normal, api-state : started,
                       current-api : RenamePersistentObject,
                       current-params : handle(HANDLE), PARAMS >
     < HANDLE : ObjectHandle | flags : DATAFLAGS >
     =>
-    < TK : TaKernel | app-status : panic, api-state : finished >
+    < TK : TaKernel | status : panic, api-state : finished >
     < HANDLE : ObjectHandle | >
   if not (TEE-DATA-FLAG-ACCESS-WRITE-META in DATAFLAGS) .
 endom

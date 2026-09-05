@@ -170,22 +170,22 @@ search [1] in COMPLETION-TEST :
 
 --- Unimplemented and illegal trusted-storage identifiers report ITEM_NOT_FOUND.
 search [1] in COMPLETION-TEST :
-  < testTa : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+  < testTa : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
                         api-state : started, current-api : OpenPersistentObject,
                         current-params : storageId(TEE-STORAGE-PERSO) >
 =>*
-  < testTa : TaKernel | app-status : normal, api-call : noCall,
+  < testTa : TaKernel | status : normal, api-call : noCall,
                         api-state : finished, current-api : OpenPersistentObject,
                         current-params : storageId(TEE-STORAGE-PERSO),
                         api-return : apiReturn(OpenPersistentObject, TEE-ERROR-ITEM-NOT-FOUND,
                                                handle(TEE-HANDLE-NULL)) > .
 
 search [1] in COMPLETION-TEST :
-  < testTa : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+  < testTa : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
                         api-state : started, current-api : CreatePersistentObject,
                         current-params : storageId(TEE-STORAGE-PROTECTED) >
 =>*
-  < testTa : TaKernel | app-status : normal, api-call : noCall,
+  < testTa : TaKernel | status : normal, api-call : noCall,
                         api-state : finished, current-api : CreatePersistentObject,
                         current-params : storageId(TEE-STORAGE-PROTECTED),
                         api-return : apiReturn(CreatePersistentObject, TEE-ERROR-ITEM-NOT-FOUND,
@@ -246,16 +246,16 @@ search [1] in COMPLETION-TEST :
 --- AllocateOperation initializes the paper-level state and operation class on
 --- the top-level OpHandle.
 search [1] in COMPLETION-TEST :
-  < testTa : TaKernel | app-status : normal, api-call : noCall,
+  < testTa : TaKernel | status : normal, api-call : noCall,
                         api-return : noReturn, api-state : started,
                         current-api : AllocateOperation,
                         current-params : (alg(TEE-ALG-AES-GCM),
                                           mode(TEE-MODE-ENCRYPT),
                                           size(256 Bits)),
-                        id-counter : 0, trust-app-id : TESTTA >
+                        counter : 0, trust-app-id : TESTTA >
 =>1
-  < testTa : TaKernel | api-state : finished, id-counter : 2,
-                        app-status : normal, api-call : noCall,
+  < testTa : TaKernel | api-state : finished, counter : 2,
+                        status : normal, api-call : noCall,
                         current-api : AllocateOperation,
                         current-params : (alg(TEE-ALG-AES-GCM),
                                           mode(TEE-MODE-ENCRYPT),
@@ -269,15 +269,15 @@ search [1] in COMPLETION-TEST :
 
 --- AES-CTS is a supported cipher allocation, including its 192-bit key size.
 search [1] in COMPLETION-TEST :
-  < testTa : TaKernel | app-status : normal, api-call : noCall,
+  < testTa : TaKernel | status : normal, api-call : noCall,
       api-return : noReturn, api-state : started, current-api : AllocateOperation,
       current-params : (alg(TEE-ALG-AES-CTS), mode(TEE-MODE-DECRYPT),
-                        size(192 Bits)), id-counter : 0, trust-app-id : TESTTA >
+                        size(192 Bits)), counter : 0, trust-app-id : TESTTA >
 =>1
-  < testTa : TaKernel | app-status : normal, api-call : noCall,
+  < testTa : TaKernel | status : normal, api-call : noCall,
       api-state : finished, current-api : AllocateOperation,
       current-params : (alg(TEE-ALG-AES-CTS), mode(TEE-MODE-DECRYPT),
-                        size(192 Bits)), id-counter : 2, trust-app-id : TESTTA,
+                        size(192 Bits)), counter : 2, trust-app-id : TESTTA,
       api-return : apiReturn(AllocateOperation, TEE-SUCCESS,
                              handle(handleId(1, testTa))) >
   < handleId(1, testTa) : OperationHandle | oid : taOid(0, testTa),
@@ -328,14 +328,14 @@ search [1] in COMPLETION-TEST :
   reqSetOperationKey(handleId(1, testTa), TEE-TYPE-AES,
     teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(256, 1)),
     TEE-USAGE-ENCRYPT, testTa)
-  < testTa : TaKernel | app-status : normal, api-state : waitSetOperationKey,
+  < testTa : TaKernel | status : normal, api-state : waitSetOperationKey,
                         current-api : SetOperationKey >
   < taOid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-AES-CTR, mode : TEE-MODE-ENCRYPT,
       max-size : 128 Bits >
   < handleId(1, testTa) : OperationHandle | state : noHandleState >
 =>*
-  < testTa : TaKernel | app-status : panic, api-state : finished,
+  < testTa : TaKernel | status : panic, api-state : finished,
                         current-api : SetOperationKey >
   < taOid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-AES-CTR, mode : TEE-MODE-ENCRYPT,
@@ -347,14 +347,14 @@ search [1] in COMPLETION-TEST :
   reqSetOperationKey(handleId(1, testTa), TEE-TYPE-AES,
     teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1)),
     TEE-USAGE-ENCRYPT, testTa)
-  < testTa : TaKernel | app-status : normal, api-state : waitSetOperationKey,
+  < testTa : TaKernel | status : normal, api-state : waitSetOperationKey,
                         current-api : SetOperationKey >
   < taOid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-AES-XTS, mode : TEE-MODE-ENCRYPT,
       max-size : 128 Bits >
   < handleId(1, testTa) : OperationHandle | state : noHandleState >
 =>*
-  < testTa : TaKernel | app-status : panic, api-state : finished,
+  < testTa : TaKernel | status : panic, api-state : finished,
                         current-api : SetOperationKey >
   < taOid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-AES-XTS, mode : TEE-MODE-ENCRYPT,
@@ -366,14 +366,14 @@ search [1] in COMPLETION-TEST :
   reqSetOperationKey(handleId(1, testTa), TEE-TYPE-AES,
     teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal),
     (TEE-USAGE-ENCRYPT, TEE-USAGE-VERIFY), testTa)
-  < testTa : TaKernel | app-status : normal, api-state : waitSetOperationKey,
+  < testTa : TaKernel | status : normal, api-state : waitSetOperationKey,
                         current-api : SetOperationKey >
   < taOid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-RSA-NOPAD, mode : TEE-MODE-ENCRYPT,
       max-size : 2048 Bits >
   < handleId(1, testTa) : OperationHandle | state : noHandleState >
 =>*
-  < testTa : TaKernel | app-status : panic, api-state : finished,
+  < testTa : TaKernel | status : panic, api-state : finished,
                         current-api : SetOperationKey >
   < taOid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-RSA-NOPAD, mode : TEE-MODE-ENCRYPT,
@@ -430,11 +430,11 @@ search [1] in COMPLETION-TEST :
   < taOid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-AES-CTR, mode : TEE-MODE-ENCRYPT,
       max-size : 256 Bits >
-  < testTa : TaKernel | app-status : normal, api-call : noCall,
+  < testTa : TaKernel | status : normal, api-call : noCall,
       api-return : noReturn, api-state : waitReqCopyOperation,
       current-api : CopyOperation >
 =>*
-  < testTa : TaKernel | app-status : panic, api-call : noCall,
+  < testTa : TaKernel | status : panic, api-call : noCall,
       api-return : noReturn, api-state : finished,
       current-api : CopyOperation > C .
 
@@ -448,17 +448,17 @@ search [1] in COMPLETION-TEST :
   < taOid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-AES-GCM, mode : TEE-MODE-ENCRYPT,
       max-size : 128 Bits >
-  < testTa : TaKernel | app-status : normal, api-call : noCall,
+  < testTa : TaKernel | status : normal, api-call : noCall,
       api-return : noReturn, api-state : waitReqCopyOperation,
       current-api : CopyOperation >
 =>*
-  < testTa : TaKernel | app-status : panic, api-call : noCall,
+  < testTa : TaKernel | status : panic, api-call : noCall,
       api-return : noReturn, api-state : finished,
       current-api : CopyOperation > C .
 
 --- Invisible CopyOperation atomically copies object and handle state.
 search [1] in COMPLETION-INVISIBLE-TEST :
-  < testTa : TaKernel | app-status : normal, api-call : noCall, api-return : noReturn,
+  < testTa : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
       api-state : started, current-api : CopyOperation,
       current-params : (trgHandle(handleId(1, testTa)),
                         srcHandle(handleId(2, testTa))) >
@@ -475,7 +475,7 @@ search [1] in COMPLETION-INVISIBLE-TEST :
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       state : noHandleState, key-material-set : false >
 =>*
-  < testTa : TaKernel | app-status : normal, api-call : noCall, api-state : finished,
+  < testTa : TaKernel | status : normal, api-call : noCall, api-state : finished,
       current-api : CopyOperation,
       current-params : (trgHandle(handleId(1, testTa)),
                         srcHandle(handleId(2, testTa))),
@@ -484,13 +484,13 @@ search [1] in COMPLETION-INVISIBLE-TEST :
 --- Invisible CopyOperation also panics on incompatible algorithms.
 search [1] in COMPLETION-INVISIBLE-TEST :
   failCopyOperation(testTa)
-  < testTa : TaKernel | app-status : normal, api-call : noCall,
+  < testTa : TaKernel | status : normal, api-call : noCall,
       api-return : noReturn, api-state : waitReqCopyOperation,
       current-api : CopyOperation,
       current-params : (trgHandle(handleId(1, testTa)),
                         srcHandle(handleId(2, testTa))) >
 =>*
-  < testTa : TaKernel | app-status : panic, api-call : noCall,
+  < testTa : TaKernel | status : panic, api-call : noCall,
       api-return : noReturn, api-state : finished, current-api : CopyOperation,
       current-params : (trgHandle(handleId(1, testTa)),
                         srcHandle(handleId(2, testTa))) > C .
@@ -847,9 +847,9 @@ search [1] in COMPLETION-TEST :
 --- TeeOpenTASession creates a top-level session handle linked to its owner.
 search [1] in COMPLETION-TEST :
   retTrustedOS(openSessionSuccess(testTa), testTa)
-  < testTa : TaKernel | app-status : normal, api-return : noReturn,
+  < testTa : TaKernel | status : normal, api-return : noReturn,
                         api-state : TeeOpenTASession(uuid(TESTTA)) # 1,
-                        id-counter : 1 >
+                        counter : 1 >
 =>1
   < taOid(1, testTa) : Session |
       req : noReq, ret : noRet, ta-id : testTa >
@@ -863,8 +863,8 @@ search [1] in COMPLETION-TEST :
       opened-session : empty, session-counter : 0 >
 =>1
   < trustAppId(0) : TrustApp |
-      trust-app-id : TESTTA, app-status : normal, os-kernel : osId,
-      storage-object : storageId(0), id-counter : 0,
+      trust-app-id : TESTTA, status : normal, os-kernel : osId,
+      storage : storageId(0), counter : 0,
       api-call : noCall, api-return : noReturn,
       current-api : noApi, api-state : noState, current-params : empty,
       prog : P, proc : none, running : false,
@@ -878,13 +878,13 @@ search [1] in COMPLETION-TEST :
   < osId : TeeOSKernel |
       service-in : notifyFileCreation(testFileId), service-out : nil,
       service-request-ta : TESTTA, service-request-ta-inst : testTa >
-  < testTa : TaKernel | storage-object : storageId(0) >
+  < testTa : TaKernel | storage : storageId(0) >
   < storageId(0) : Storage | files : empty, counter : 0 >
 =>1
   < osId : TeeOSKernel |
       service-in : nil, service-out : acceptNotification,
       service-request-ta : TESTTA, service-request-ta-inst : testTa >
-  < testTa : TaKernel | storage-object : storageId(0) >
+  < testTa : TaKernel | storage : storageId(0) >
   < storageId(0) : Storage | files : testFileId, counter : 2 >
   C .
 
@@ -907,7 +907,7 @@ search [1] in COMPLETION-TEST :
 --- GENERAL-PANIC handles programmer errors against active calls and top-level
 --- handles.
 search [1] in COMPLETION-TEST :
-  < testTa : TaKernel | app-status : normal, api-call : noCall,
+  < testTa : TaKernel | status : normal, api-call : noCall,
                         api-return : noReturn, api-state : started,
                         current-api : CipherUpdate,
                         current-params : (handle(handleId(1, testTa)),
@@ -915,32 +915,32 @@ search [1] in COMPLETION-TEST :
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       opclass : TEE-OPERATION-MAC >
 =>*
-  < testTa : TaKernel | app-status : panic, api-call : noCall,
+  < testTa : TaKernel | status : panic, api-call : noCall,
                         api-return : noReturn, api-state : finished,
                         current-api : CipherUpdate,
                         current-params : (handle(handleId(1, testTa)),
                                           data(randomData)) > C .
 
 search [1] in COMPLETION-TEST :
-  < testTa : TaKernel | app-status : normal, api-call : noCall,
+  < testTa : TaKernel | status : normal, api-call : noCall,
                         api-return : noReturn, api-state : started,
                         current-api : GetObjectInfo1,
                         current-params : handle(TEE-HANDLE-NULL) >
 =>1
-  < testTa : TaKernel | app-status : panic, api-call : noCall,
+  < testTa : TaKernel | status : panic, api-call : noCall,
                         api-return : noReturn, api-state : finished,
                         current-api : GetObjectInfo1,
                         current-params : handle(TEE-HANDLE-NULL) > .
 
 search [1] in COMPLETION-TEST :
-  < testTa : TaKernel | app-status : normal, api-call : noCall,
+  < testTa : TaKernel | status : normal, api-call : noCall,
                         api-return : noReturn, api-state : started,
                         current-api : ReadObjectData,
                         current-params : (handle(handleId(1, testTa)), size(dataSize(1))) >
   < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa),
       flags : TEE-DATA-FLAG-ACCESS-WRITE >
 =>1
-  < testTa : TaKernel | app-status : panic, api-call : noCall,
+  < testTa : TaKernel | status : panic, api-call : noCall,
                         api-return : noReturn, api-state : finished,
                         current-api : ReadObjectData,
                         current-params : (handle(handleId(1, testTa)), size(dataSize(1))) >
@@ -951,51 +951,51 @@ search [1] in COMPLETION-TEST :
 --- of leaving an unmatched intermediate request.
 search [1] in COMPLETION-TEST :
   reqAttribute(handleId(1, testTa), testTa)
-  < testTa : TaKernel | app-status : normal, api-state : waitReqAttribute,
+  < testTa : TaKernel | status : normal, api-state : waitReqAttribute,
                         current-api : CopyObjectAttributes1 >
   < taOid(1, testTa) : TransientObject | initialized : false >
   < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa) >
 =>1
-  < testTa : TaKernel | app-status : panic, api-state : finished,
+  < testTa : TaKernel | status : panic, api-state : finished,
                         current-api : CopyObjectAttributes1 > C .
 
 search [1] in COMPLETION-TEST :
   reqCopyAttribute(handleId(1, testTa), empty, TEE-TYPE-AES, empty, testTa)
-  < testTa : TaKernel | app-status : normal, api-state : waitCopyAttribute,
+  < testTa : TaKernel | status : normal, api-state : waitCopyAttribute,
                         current-api : CopyObjectAttributes1 >
   < taOid(1, testTa) : TransientObject | initialized : true >
   < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa) >
 =>1
-  < testTa : TaKernel | app-status : panic, api-state : finished,
+  < testTa : TaKernel | status : panic, api-state : finished,
                         current-api : CopyObjectAttributes1 > C .
 
 search [1] in COMPLETION-TEST :
   reqCopyAttribute(handleId(1, testTa), empty, TEE-TYPE-RSA-PUBLIC-KEY,
                    empty, testTa)
-  < testTa : TaKernel | app-status : normal, api-state : waitCopyAttribute,
+  < testTa : TaKernel | status : normal, api-state : waitCopyAttribute,
                         current-api : CopyObjectAttributes1 >
   < taOid(1, testTa) : TransientObject | initialized : false,
       object-type : TEE-TYPE-AES >
   < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa) >
 =>1
-  < testTa : TaKernel | app-status : panic, api-state : finished,
+  < testTa : TaKernel | status : panic, api-state : finished,
                         current-api : CopyObjectAttributes1 > C .
 
 --- ResetOperation without configured key material is a programmer error.
 search [1] in COMPLETION-TEST :
   resetOperation(handleId(1, testTa), testTa)
-  < testTa : TaKernel | app-status : normal, api-state : waitResetOperation,
+  < testTa : TaKernel | status : normal, api-state : waitResetOperation,
                         current-api : ResetOperation >
   < taOid(1, testTa) : CryptoOperation | >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       state : noHandleState >
 =>1
-  < testTa : TaKernel | app-status : panic, api-state : finished,
+  < testTa : TaKernel | status : panic, api-state : finished,
                         current-api : ResetOperation > C .
 
 --- GP 6.2.6: TEE_HANDLE_NULL clears copied key material.
 search [1] in COMPLETION-TEST :
-  < testTa : TaKernel | app-status : normal, api-call : noCall,
+  < testTa : TaKernel | status : normal, api-call : noCall,
                         api-return : noReturn, api-state : started,
                         current-api : SetOperationKey,
                         current-params : (handle(handleId(1, testTa)),
@@ -1006,146 +1006,146 @@ search [1] in COMPLETION-TEST :
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       state : keySet, key-material-set : true >
 =>1
-  < testTa : TaKernel | app-status : normal, api-state : finished,
+  < testTa : TaKernel | status : normal, api-state : finished,
                         current-api : SetOperationKey,
                         CLEAR-TK-ATTS:AttributeSet > C .
 
 --- GP 6.2.6: an initialized operation rejects key replacement or clearing.
 search [1] in COMPLETION-TEST :
-  < testTa : TaKernel | app-status : normal, api-call : noCall,
+  < testTa : TaKernel | status : normal, api-call : noCall,
                         api-return : noReturn, api-state : started,
                         current-api : SetOperationKey,
                         current-params : (handle(handleId(1, testTa)),
                                           keyHandle(TEE-HANDLE-NULL)) >
   < handleId(1, testTa) : OperationHandle | state : init >
 =>1
-  < testTa : TaKernel | app-status : panic, api-state : finished,
+  < testTa : TaKernel | status : panic, api-state : finished,
                         current-api : SetOperationKey,
                         SETKEY-PANIC-ATTS:AttributeSet > C .
 
 --- GP 6.2.6: a non-null key object must be initialized.
 search [1] in COMPLETION-TEST :
   reqAttribute(handleId(2, testTa), testTa)
-  < testTa : TaKernel | app-status : normal, api-state : waitReqAttribute,
+  < testTa : TaKernel | status : normal, api-state : waitReqAttribute,
                         current-api : SetOperationKey >
   < taOid(2, testTa) : TransientObject | initialized : false >
   < handleId(2, testTa) : ObjectHandle | oid : taOid(2, testTa) >
 =>1
-  < testTa : TaKernel | app-status : panic, api-state : finished,
+  < testTa : TaKernel | status : panic, api-state : finished,
                         current-api : SetOperationKey > C .
 
 --- GP 5.6.4: missing or unsupported attributes are programmer errors.
 search [1] in COMPLETION-TEST :
   reqPopulateTransient(handleId(1, testTa), empty, testTa)
-  < testTa : TaKernel | app-status : normal, api-state : waitPopulateTransient,
+  < testTa : TaKernel | status : normal, api-state : waitPopulateTransient,
                         current-api : PopulateTransientObject >
   < taOid(1, testTa) : TransientObject | object-type : TEE-TYPE-AES >
   < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa) >
 =>1
-  < testTa : TaKernel | app-status : panic, api-state : finished,
+  < testTa : TaKernel | status : panic, api-state : finished,
                         current-api : PopulateTransientObject > C .
 
 --- GP 5.6.4: the destination object must be uninitialized.
 search [1] in COMPLETION-TEST :
   reqPopulateTransient(handleId(1, testTa),
     teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal), testTa)
-  < testTa : TaKernel | app-status : normal, api-state : waitPopulateTransient,
+  < testTa : TaKernel | status : normal, api-state : waitPopulateTransient,
                         current-api : PopulateTransientObject >
   < taOid(1, testTa) : TransientObject | object-type : TEE-TYPE-AES >
   < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa) >
 =>1
-  < testTa : TaKernel | app-status : panic, api-state : finished,
+  < testTa : TaKernel | status : panic, api-state : finished,
                         current-api : PopulateTransientObject > C .
 
 --- GP 5.6.7: an oversized key or missing mandatory generation parameters panic.
 search [1] in COMPLETION-TEST :
   reqGenerateKey(handleId(1, testTa), 256 Bits, empty, testTa)
-  < testTa : TaKernel | app-status : normal, api-state : waitReqGenerateKey,
+  < testTa : TaKernel | status : normal, api-state : waitReqGenerateKey,
                         current-api : GenerateKey >
   < taOid(1, testTa) : TransientObject | object-type : TEE-TYPE-AES,
       max-object-size : 128 Bits >
   < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa) >
 =>1
-  < testTa : TaKernel | app-status : panic, api-state : finished,
+  < testTa : TaKernel | status : panic, api-state : finished,
                         current-api : GenerateKey > C .
 
 search [1] in COMPLETION-TEST :
   reqGenerateKey(handleId(1, testTa), 0 Bits, empty, testTa)
-  < testTa : TaKernel | app-status : normal, api-state : waitReqGenerateKey,
+  < testTa : TaKernel | status : normal, api-state : waitReqGenerateKey,
                         current-api : GenerateKey >
   < taOid(1, testTa) : TransientObject | object-type : TEE-TYPE-DH-KEYPAIR,
       max-object-size : 256 Bits >
   < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa) >
 =>1
-  < testTa : TaKernel | app-status : panic, api-state : finished,
+  < testTa : TaKernel | status : panic, api-state : finished,
                         current-api : GenerateKey > C .
 
 --- GP 5.6.7: a Table 5-9-unsupported key size is a programmer error.
 search [1] in COMPLETION-TEST :
   reqGenerateKey(handleId(1, testTa), 64 Bits, empty, testTa)
-  < testTa : TaKernel | app-status : normal, api-state : waitReqGenerateKey,
+  < testTa : TaKernel | status : normal, api-state : waitReqGenerateKey,
                         current-api : GenerateKey >
   < taOid(1, testTa) : TransientObject | object-type : TEE-TYPE-AES,
       max-object-size : 128 Bits >
   < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa) >
 =>1
-  < testTa : TaKernel | app-status : panic, api-state : finished,
+  < testTa : TaKernel | status : panic, api-state : finished,
                         current-api : GenerateKey > C .
 
 --- GP 5.6.7: key generation requires an uninitialized transient object.
 search [1] in COMPLETION-TEST :
   reqGenerateKey(handleId(1, testTa), 128 Bits, empty, testTa)
-  < testTa : TaKernel | app-status : normal, api-state : waitReqGenerateKey,
+  < testTa : TaKernel | status : normal, api-state : waitReqGenerateKey,
                         current-api : GenerateKey >
   < taOid(1, testTa) : TransientObject | object-type : TEE-TYPE-AES,
       max-object-size : 128 Bits >
   < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa) >
 =>1
-  < testTa : TaKernel | app-status : panic, api-state : finished,
+  < testTa : TaKernel | status : panic, api-state : finished,
                         current-api : GenerateKey > C .
 
 --- The invisible counterparts preserve the same observable panic results.
 search [1] in COMPLETION-INVISIBLE-TEST :
   reqAttribute(handleId(1, testTa), testTa)
-  < testTa : TaKernel | app-status : normal, api-state : waitReqAttribute,
+  < testTa : TaKernel | status : normal, api-state : waitReqAttribute,
                         current-api : CopyObjectAttributes1 >
   < taOid(1, testTa) : TransientObject | initialized : false >
   < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa) >
 =>*
-  < testTa : TaKernel | app-status : panic, api-state : finished,
+  < testTa : TaKernel | status : panic, api-state : finished,
                         current-api : CopyObjectAttributes1 > C .
 
 search [1] in COMPLETION-INVISIBLE-TEST :
   resetOperation(handleId(1, testTa), testTa)
-  < testTa : TaKernel | app-status : normal, api-state : waitResetOperation,
+  < testTa : TaKernel | status : normal, api-state : waitResetOperation,
                         current-api : ResetOperation >
   < taOid(1, testTa) : CryptoOperation | >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       state : noHandleState >
 =>*
-  < testTa : TaKernel | app-status : panic, api-state : finished,
+  < testTa : TaKernel | status : panic, api-state : finished,
                         current-api : ResetOperation > C .
 
 --- Invisible transient behavior mirrors the GP panic preconditions.
 search [1] in COMPLETION-INVISIBLE-TEST :
   reqPopulateTransient(handleId(1, testTa), empty, testTa)
-  < testTa : TaKernel | app-status : normal, api-state : waitPopulateTransient,
+  < testTa : TaKernel | status : normal, api-state : waitPopulateTransient,
                         current-api : PopulateTransientObject >
   < taOid(1, testTa) : TransientObject | object-type : TEE-TYPE-AES >
   < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa) >
 =>*
-  < testTa : TaKernel | app-status : panic, api-state : finished,
+  < testTa : TaKernel | status : panic, api-state : finished,
                         current-api : PopulateTransientObject > C .
 
 search [1] in COMPLETION-INVISIBLE-TEST :
   reqGenerateKey(handleId(1, testTa), 0 Bits, empty, testTa)
-  < testTa : TaKernel | app-status : normal, api-state : waitReqGenerateKey,
+  < testTa : TaKernel | status : normal, api-state : waitReqGenerateKey,
                         current-api : GenerateKey >
   < taOid(1, testTa) : TransientObject | object-type : TEE-TYPE-DH-KEYPAIR,
       max-object-size : 256 Bits >
   < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa) >
 =>*
-  < testTa : TaKernel | app-status : panic, api-state : finished,
+  < testTa : TaKernel | status : panic, api-state : finished,
                         current-api : GenerateKey > C .
 
 --- Other algorithms cannot accept the two-key API.
@@ -1153,13 +1153,13 @@ search [1] in COMPLETION-TEST :
   installOperationKeys(handleId(1, testTa),
     TEE-TYPE-AES, TEE-USAGE-ENCRYPT, empty,
     TEE-TYPE-AES, TEE-USAGE-ENCRYPT, empty, testTa)
-  < testTa : TaKernel | app-status : normal, api-state : waitSetOperationKey,
+  < testTa : TaKernel | status : normal, api-state : waitSetOperationKey,
                         current-api : SetOperationKey2 >
   < taOid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-AES-CTR, mode : TEE-MODE-ENCRYPT,
       max-size : 128 Bits >
 =>*
-  < testTa : TaKernel | app-status : panic, api-state : finished,
+  < testTa : TaKernel | status : panic, api-state : finished,
                         current-api : SetOperationKey2 > C .
 
 --- Equal-sized, distinct AES-XTS key material reaches handle installation.
@@ -1185,13 +1185,13 @@ search [1] in COMPLETION-TEST :
     teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(256, 1)),
     TEE-TYPE-AES, TEE-USAGE-ENCRYPT,
     teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(256, 2)), testTa)
-  < testTa : TaKernel | app-status : normal, api-state : waitSetOperationKey,
+  < testTa : TaKernel | status : normal, api-state : waitSetOperationKey,
                         current-api : SetOperationKey2 >
   < taOid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-AES-XTS, mode : TEE-MODE-ENCRYPT,
       max-size : 128 Bits >
 =>*
-  < testTa : TaKernel | app-status : panic, api-state : finished,
+  < testTa : TaKernel | status : panic, api-state : finished,
                         current-api : SetOperationKey2 > C .
 
 --- The invisible reduction performs the same AES-XTS installation atomically.
@@ -1276,7 +1276,7 @@ search [1] in COMPLETION-INVISIBLE-TEST :
 
 --- Clearing two keys is valid only for an operation that expects two keys.
 search [1] in COMPLETION-TEST :
-  < testTa : TaKernel | app-status : normal, api-call : noCall,
+  < testTa : TaKernel | status : normal, api-call : noCall,
       api-return : noReturn, api-state : started, current-api : SetOperationKey2,
       current-params : (handle(handleId(1, testTa)), keyHandle(TEE-HANDLE-NULL),
                         secondKeyHandle(TEE-HANDLE-NULL)) >
@@ -1284,7 +1284,7 @@ search [1] in COMPLETION-TEST :
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       state : noHandleState >
 =>1
-  < testTa : TaKernel | app-status : panic, api-call : noCall,
+  < testTa : TaKernel | status : panic, api-call : noCall,
       api-return : noReturn, api-state : finished, current-api : SetOperationKey2,
       current-params : (handle(handleId(1, testTa)), keyHandle(TEE-HANDLE-NULL),
                         secondKeyHandle(TEE-HANDLE-NULL)) >

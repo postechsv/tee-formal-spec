@@ -226,7 +226,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | api-call : noCall , api-return : noReturn, api-state : started,
                       current-api : API , current-params : PARAMS >
     =>
-    < TK : TaKernel | api-state : finished , app-status : panic >
+    < TK : TaKernel | api-state : finished , status : panic >
   if overlapSensitive(API) and invalidBufferOverlap(PARAMS)
   .
 
@@ -341,11 +341,11 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     supported(TEE-TYPE-RSA-PUBLIC-KEY , KEYSIZE) .
   eq validKeySize(TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA224 , KEYSIZE) =
     supported(TEE-TYPE-RSA-PUBLIC-KEY , KEYSIZE) .
-  eq validKeySize(ALGO , KEYSIZE) = false [owise] .  
+  eq validKeySize(ALGO , KEYSIZE) = false [owise] .
 
   op validParams : AlgorithmIdentifier OperationMode CryptoKeySize -> Bool .
-  eq validParams(ALGO , MODE , KEYSIZE) = 
-    compatibleMode(ALGO , MODE) and 
+  eq validParams(ALGO , MODE , KEYSIZE) =
+    compatibleMode(ALGO , MODE) and
     validKeySize(ALGO , KEYSIZE) .
 
 --- For TEE_SetOperationKey
@@ -645,24 +645,24 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- Version In Paper
   --- crl [allocate-operation-success] :
   ---   < TK : TAKernel | api-call : AllocateOperation(ALGO , MODE , MAXSIZE) ,
-  ---                     status : normal , id-counter : N >
-  ---   => 
-  ---   < TK : TAKernel | api-call : return(AllocateOperation , HI) , id-counter : N + 2 >
+  ---                     status : normal , counter : N >
+  ---   =>
+  ---   < TK : TAKernel | api-call : return(AllocateOperation , HI) , counter : N + 2 >
   ---   < HI : OpHandle | oid : OI , state : noKeyNotInit , key-material-set : false >
   ---   < OI : CryptoOp | attributes : empty , max-size : MAXSIZE , handle : HI ,
   ---                     algorithm : ALGO , mode : MODE , class : getClass(ALGO) ,
   ---                     acc-data : nil , state : initial >
-  --- if compatible(ALGO , MODE) /\ OI := newOid(N , TK) /\ HI := newOid(N + 1 , TK) 
+  --- if compatible(ALGO , MODE) /\ OI := newOid(N , TK) /\ HI := newOid(N + 1 , TK)
   --- .
 
 --- Model/Implementation Specific Version
   crl [allocate-operation-success] :
-    < TK : TaKernel | app-status : normal , api-call : noCall , api-return : noReturn ,
+    < TK : TaKernel | status : normal , api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : AllocateOperation ,
                       current-params : (alg(ALGO) , mode(MODE) , size(KEYSIZE)) ,
-                      id-counter : N , trust-app-id : TN >
+                      counter : N , trust-app-id : TN >
     =>
-    < TK : TaKernel | api-state : finished , id-counter : N + 2 ,
+    < TK : TaKernel | api-state : finished , counter : N + 2 ,
                       api-return : apiReturn(AllocateOperation , TEE-SUCCESS , handle(handleId(N + 1 , TK))) >
     < taOid(N , TK) : CryptoOperation |
                                         attributes : nil , max-size : KEYSIZE ,
@@ -678,18 +678,18 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- Version In Paper
   --- crl [allocate-operation-params-err] :
   ---   < TK : TAKernel | api-call : AllocateOperation(ALGO , MODE , MAXSIZE) >
-  ---   => 
-  ---   < TK : TAKernel | api-call : return(AllocateOperation , errorNotSupported) > 
-  --- if not compatible(ALGO , MODE) 
+  ---   =>
+  ---   < TK : TAKernel | api-call : return(AllocateOperation , errorNotSupported) >
+  --- if not compatible(ALGO , MODE)
   --- .
 
 --- Model/Implementation Specific Version
---- This rule returns TEE_ERROR_NOT_SUPPORTED if the mode is not compatible with the algorithm or key size 
---- or if the algorithm is not one of the listed algorithms 
+--- This rule returns TEE_ERROR_NOT_SUPPORTED if the mode is not compatible with the algorithm or key size
+--- or if the algorithm is not one of the listed algorithms
 --- or if maxKeySize is not appropriate for the algorithm.
 
   crl [allocate-operation-not-supported] :
-    < TK : TaKernel | app-status : normal , api-call : noCall , api-return : noReturn ,
+    < TK : TaKernel | status : normal , api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : AllocateOperation ,
                       current-params : alg(ALGO) , mode(MODE) , size(KEYSIZE) >
     =>
@@ -701,15 +701,15 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- Version In Paper
   --- rl [allocate-operation-memory-err] :
   ---   < TK : TAKernel | status : outOfMemory , api-call : AllocateOperation(VL) >
-  ---   => 
-  ---   < TK : TAKernel | api-call : return(AllocateOperation , errorOutOfMemory) > 
+  ---   =>
+  ---   < TK : TAKernel | api-call : return(AllocateOperation , errorOutOfMemory) >
   --- .
 
 --- Model/Implementation Specific Version
 --- This rule returns TEE_ERROR_OUT_OF_MEMORY if there are not enough resources to allocate the operation.
 
   rl [allocate-operation-memory-err] :
-    < TK : TaKernel | app-status : outOfMemory , api-call : noCall , api-return : noReturn ,
+    < TK : TaKernel | status : outOfMemory , api-call : noCall , api-return : noReturn ,
                       current-api : AllocateOperation >
     =>
     < TK : TaKernel | api-state : finished ,
@@ -732,7 +732,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : FreeOperation ,
                       current-params : handle(HANDLE) >
-    => 
+    =>
     < TK : TaKernel | api-state : waitDeleteOperationObject >
     deleteOperationObject(HANDLE, TK)
   if not nullHandle(HANDLE)
@@ -762,8 +762,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : FreeOperation ,
                       current-params : handle(HANDLE) >
-    => 
-    < TK : TaKernel | api-state : finished , 
+    =>
+    < TK : TaKernel | api-state : finished ,
                       api-return : apiReturn(FreeOperation , handle(HANDLE)) >
   if nullHandle(HANDLE)
   .
@@ -784,7 +784,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : GetOperationInfo ,
                       current-params : handle(HANDLE) >
-    => 
+    =>
     < TK : TaKernel | api-state : waitOperationAttr >
     reqOperationInfoMultiple(HANDLE , TK)
   .
@@ -874,12 +874,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
 --- Version In Paper
   --- rl [reset-operation-request-reset] :
-  ---   < TK : TAKernel | api-call : ResetOperation(HI) > 
+  ---   < TK : TAKernel | api-call : ResetOperation(HI) >
   ---   < HI : OpHandle | oid : CI >
-  ---   => 
-  ---   < TK : TAKernel | > 
-  ---   < HI : OpHandle | > 
-  ---   (msg resetOp[HI] from TK to CI) 
+  ---   =>
+  ---   < TK : TAKernel | >
+  ---   < HI : OpHandle | >
+  ---   (msg resetOp[HI] from TK to CI)
   --- .
 
 --- Model/Implementation Specific Version
@@ -891,20 +891,20 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : ResetOperation ,
                       current-params : handle(HANDLE) >
-    => 
+    =>
     < TK : TaKernel | api-state : waitResetOperation >
-    resetOperation(HANDLE, TK) 
+    resetOperation(HANDLE, TK)
   .
 
 --- Version In Paper
   --- rl [reset-operation-finish-reset] :
   ---   (msg resetOp[HI] from TK to CI)
   ---   < HI : OpHandle | oid : CI , key-material-set : true >
-  ---   < CI : CryptoOp | state : STATE >  
-  ---   => 
-  ---   < HI : OpHandle | > 
+  ---   < CI : CryptoOp | state : STATE >
+  ---   =>
+  ---   < HI : OpHandle | >
   ---   < CI : CryptoOp | acc-data : nil , state : resetState(STATE) >
-  ---   (msg finishResetOp from CI to TK) 
+  ---   (msg finishResetOp from CI to TK)
   --- .
 
 --- Model/Implementation Specific Version (2 rules)
@@ -945,23 +945,23 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- programmer error.
   crl [reset-operation-key-not-set-panic] :
     resetOperation(HANDLE, TK)
-    < TK : TaKernel | app-status : normal , api-state : waitResetOperation ,
+    < TK : TaKernel | status : normal , api-state : waitResetOperation ,
                       current-api : ResetOperation >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | oid : CI , state : HS >
     =>
-    < TK : TaKernel | app-status : panic , api-state : finished >
+    < TK : TaKernel | status : panic , api-state : finished >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
   if not hasKeySet(HS) and not hasExtract(HS)
   .
 
 --- Version In Paper
-  --- rl [reset-operation-success] : 
-  ---   (msg finishResetOp from CI to TK) 
+  --- rl [reset-operation-success] :
+  ---   (msg finishResetOp from CI to TK)
   ---   < TK : TAKernel | api-call : ResetOperation(VL) >
-  ---   => 
-  ---   < TK : TAKernel | api-call : return(ResetOperation) > 
+  ---   =>
+  ---   < TK : TAKernel | api-call : return(ResetOperation) >
   --- .
 
 --- Model/Implementation Specific Version
@@ -969,8 +969,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     finishResetOperation(TK)
     < TK : TaKernel | current-api : ResetOperation ,
                       api-state : waitResetOperation >
-    => 
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(ResetOperation) > 
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(ResetOperation) >
   .
 
 ------------------------------------------------------------
@@ -1010,9 +1010,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                                  key-material-set : false >
   if not hasInit(HS) .
 
-  rl [set-operation-key-subroutine-1] : 
+  rl [set-operation-key-subroutine-1] :
     retAttributeTr(ATTRS, OBJTYPE, OBJUSAGES, TK)
-    < TK : TaKernel | api-state : waitReqAttribute , 
+    < TK : TaKernel | api-state : waitReqAttribute ,
                       current-api : SetOperationKey ,
                       current-params : handle(HANDLE) , PARAMS >
     =>
@@ -1022,12 +1022,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   rl [set-operation-key-uninitialized-key-panic] :
     reqAttribute(KEY , TK)
-    < TK : TaKernel | app-status : normal , api-state : waitReqAttribute ,
+    < TK : TaKernel | status : normal , api-state : waitReqAttribute ,
                       current-api : SetOperationKey >
     < OI : TransientObject | initialized : false >
     < KEY : ObjectHandle | oid : OI >
     =>
-    < TK : TaKernel | app-status : panic , api-state : finished >
+    < TK : TaKernel | status : panic , api-state : finished >
     < OI : TransientObject | >
     < KEY : ObjectHandle | >
   .
@@ -1083,21 +1083,21 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     finishSetOperationKey(TK)
     < TK : TaKernel | api-state : waitSetOperationKey ,
                       current-api : SetOperationKey >
-    => 
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(SetOperationKey, TEE-SUCCESS) > 
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(SetOperationKey, TEE-SUCCESS) >
   .
 
   rl [set-operation-key-panic] :
     failSetOperationKey(TK)
     < TK : TaKernel | api-state : waitSetOperationKey ,
                       current-api : SetOperationKey >
-    => 
-    < TK : TaKernel | app-status : panic , api-state : finished >
+    =>
+    < TK : TaKernel | status : panic , api-state : finished >
   .
 
-  rl [set-operation-key-subroutine-2] : 
+  rl [set-operation-key-subroutine-2] :
     retAttributePr(ATTRS, OBJTYPE, OBJUSAGES, TK)
-    < TK : TaKernel | api-state : waitReqAttribute , 
+    < TK : TaKernel | api-state : waitReqAttribute ,
                       current-api : SetOperationKey ,
                       current-params : (handle(HANDLE) , PARAMS , attrs(ATTRS) , type(OBJTYPE)) ,
                       trust-app-id : TN >
@@ -1108,15 +1108,15 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   rl [set-operation-key-subroutine-2] :
     retTrustedOS(storageStatus(storageNormal) , TK)
-    < TK : TaKernel | api-state : waitStorageCheck , 
+    < TK : TaKernel | api-state : waitStorageCheck ,
                       current-api : SetOperationKey ,
                       current-params : handle(HANDLE) , PARAMS , attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) >
-    => 
+    =>
     < TK : TaKernel | api-state : waitSetOperationKey >
     reqSetOperationKey(HANDLE , OBJTYPE , ATTRS , OBJUSAGES , TK)
   .
 
---- TODO: For symmetric cipher, MAC, and AE 
+--- TODO: For symmetric cipher, MAC, and AE
 --- Handle state transitions from KEY_SET && INITIALIZED -> KEY_SET && not INITIALIZED ?
 
 --- This rule returns TEE_ERROR_CORRUPT_OBJECT if the object is corrupt.
@@ -1124,10 +1124,10 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   crl [set-operation-key-storage-err] :
     retTrustedOS(storageStatus(STATUS), TK)
-    < TK : TaKernel | api-state : waitStorageCheck , 
+    < TK : TaKernel | api-state : waitStorageCheck ,
                       current-api : SetOperationKey >
     =>
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(SetOperationKey , storageErrCode(STATUS)) > 
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(SetOperationKey , storageErrCode(STATUS)) >
   if abnormalStorage(STATUS)
   .
 
@@ -1160,12 +1160,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
      not nullHandle(KEY2) /\ KEY1 =/= KEY2 .
 
   crl [set-operation-key2-wrong-algorithm-panic] :
-    < TK : TaKernel | app-status : normal, api-state : started,
+    < TK : TaKernel | status : normal, api-state : started,
                       current-api : SetOperationKey2,
                       current-params : handle(HANDLE), PARAMS >
     < HANDLE : OperationHandle | oid : CI, state : HS >
     < CI : CryptoOperation | algorithm : ALGO >
-    => < TK : TaKernel | app-status : panic, api-state : finished >
+    => < TK : TaKernel | status : panic, api-state : finished >
        < HANDLE : OperationHandle | >
        < CI : CryptoOperation | >
   if not hasInit(HS) /\ not expectsTwoKeys(ALGO) .
@@ -1186,10 +1186,10 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   if not hasInit(HS) /\ expectsTwoKeys(ALGO) .
 
   crl [set-operation-key2-mixed-null-panic] :
-    < TK : TaKernel | app-status : normal , api-state : started ,
+    < TK : TaKernel | status : normal , api-state : started ,
                       current-api : SetOperationKey2 ,
                       current-params : handle(HANDLE) , keyHandle(KEY1) , secondKeyHandle(KEY2) >
-    => < TK : TaKernel | app-status : panic , api-state : finished >
+    => < TK : TaKernel | status : panic , api-state : finished >
   if (nullHandle(KEY1) and not nullHandle(KEY2)) or
      (not nullHandle(KEY1) and nullHandle(KEY2)) .
 
@@ -1283,11 +1283,11 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   rl [set-operation-key2-uninitialized-key-panic] :
     reqAttribute(KEY , TK)
-    < TK : TaKernel | app-status : normal , api-state : waitReqAttribute,
+    < TK : TaKernel | status : normal , api-state : waitReqAttribute,
                       current-api : SetOperationKey2 >
     < OI : TransientObject | initialized : false >
     < KEY : ObjectHandle | oid : OI >
-    => < TK : TaKernel | app-status : panic , api-state : finished >
+    => < TK : TaKernel | status : panic , api-state : finished >
        < OI : TransientObject | > < KEY : ObjectHandle | > .
 
   crl [set-operation-key2-top-level-handle] :
@@ -1328,7 +1328,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   rl [set-operation-key2-panic] :
     failSetOperationKey2(TK)
     < TK : TaKernel | api-state : waitSetOperationKey , current-api : SetOperationKey2 >
-    => < TK : TaKernel | app-status : panic , api-state : finished > .
+    => < TK : TaKernel | status : panic , api-state : finished > .
 
 ---   rl [set-operation-key2-security-err] :
 ---     apiCall(SetOperationKey2Call(HANDLE , HANDLE1 , HANDLE1) , TI)
@@ -1354,7 +1354,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : CopyOperation ,
                       current-params : srcHandle(HANDLE) , PARAMS >
-    => 
+    =>
     < TK : TaKernel | api-state : waitOperationAttr >
     reqOperationAttr(HANDLE , TK)
   .
@@ -1364,7 +1364,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | api-state : waitOperationAttr ,
                       current-api : CopyOperation ,
                       current-params : trgHandle(HANDLE) , PARAMS >
-    => 
+    =>
     < TK : TaKernel | api-state : waitReqCopyOperation >
     reqCopyOperation(HANDLE , OPOBJATTR , OPHANDLEATTR , TK)
   .
@@ -1406,16 +1406,16 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     finishCopyOperation(TK)
     < TK : TaKernel | api-state : waitReqCopyOperation ,
                       current-api : CopyOperation >
-    => 
+    =>
     < TK : TaKernel | api-state : finished , api-return : apiReturn(CopyOperation) >
   .
 
   rl [copy-operation-panic] :
     failCopyOperation(TK)
-    < TK : TaKernel | app-status : normal , api-state : waitReqCopyOperation ,
+    < TK : TaKernel | status : normal , api-state : waitReqCopyOperation ,
                       current-api : CopyOperation >
     =>
-    < TK : TaKernel | app-status : panic , api-state : finished > .
+    < TK : TaKernel | status : panic , api-state : finished > .
 
 ------------------------------------------------------------
 --- TEE_IsAlgorithmSupported
@@ -1452,7 +1452,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : DigestUpdate ,
                       current-params : handle(HANDLE) , data(DATA) >
-    => 
+    =>
     < TK : TaKernel | api-state : waitDigestUpdate >
     digestUpdate(HANDLE , DATA , TK)
   .
@@ -1483,10 +1483,10 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   rl [digest-update-success] :
     finishDigestUpdate(TK)
-    < TK : TaKernel | api-state : waitDigestUpdate , 
+    < TK : TaKernel | api-state : waitDigestUpdate ,
                       current-api : DigestUpdate >
-    => 
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(DigestUpdate) > 
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(DigestUpdate) >
   .
 
 ------------------------------------------------------------
@@ -1504,7 +1504,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : DigestDoFinal ,
                       current-params : handle(HANDLE) , data(DATA) >
-    => 
+    =>
     < TK : TaKernel | api-state : waitDigestDoFinal >
     digestDoFinal(HANDLE , DATA , TK)
   .
@@ -1565,10 +1565,10 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   rl [digest-do-final-success] :
     finishDigestDoFinal(DATA , TK)
-    < TK : TaKernel | api-state : waitDigestDoFinal , 
+    < TK : TaKernel | api-state : waitDigestDoFinal ,
                       current-api : DigestDoFinal >
-    => 
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(DigestDoFinal , TEE-SUCCESS , data(DATA)) > 
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(DigestDoFinal , TEE-SUCCESS , data(DATA)) >
   .
 
 ------------------------------------------------------------
@@ -1586,7 +1586,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : DigestExtract ,
                       current-params : handle(HANDLE) >
-    => 
+    =>
     < TK : TaKernel | api-state : waitDigestExtract >
     digestExtract(HANDLE , TK)
   .
@@ -1647,10 +1647,10 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   rl [digest-extract-success] :
     finishDigestExtract(DATA , TK)
-    < TK : TaKernel | api-state : waitDigestExtract , 
+    < TK : TaKernel | api-state : waitDigestExtract ,
                       current-api : DigestExtract >
-    => 
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(DigestExtract , TEE-SUCCESS , data(DATA)) > 
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(DigestExtract , TEE-SUCCESS , data(DATA)) >
   .
 
 ------------------------------------------------------------
@@ -1668,9 +1668,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : CipherInit ,
                       current-params : handle(HANDLE) , iv(IV) >
-    => 
+    =>
     < TK : TaKernel | api-state : waitInitOperation >
-    initOperation(HANDLE , IV , TK) 
+    initOperation(HANDLE , IV , TK)
   .
 
 
@@ -1713,10 +1713,10 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   rl [cipher-init-success] :
     finishInitOperation(TK)
-    < TK : TaKernel | api-state : waitInitOperation , 
+    < TK : TaKernel | api-state : waitInitOperation ,
                       current-api : CipherInit >
-    => 
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(CipherInit) > 
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(CipherInit) >
   .
 
 ------------------------------------------------------------
@@ -1727,13 +1727,13 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- See page 209 of the G.P. documentation for more details.
 
 --- Version In Paper
-  --- rl [cipher-update-request-cipher] : 
-  ---   < TK : TAKernel | api-call : CipherUpdate(HI , DATA) > 
-  ---   < HI : OpHandle | oid : CI > 
-  ---   => 
-  ---   < TK : TAKernel | > 
-  ---   < HI : OpHandle | > 
-  ---   (msg reqCipher[HI DATA] from TK to CI) 
+  --- rl [cipher-update-request-cipher] :
+  ---   < TK : TAKernel | api-call : CipherUpdate(HI , DATA) >
+  ---   < HI : OpHandle | oid : CI >
+  ---   =>
+  ---   < TK : TAKernel | >
+  ---   < HI : OpHandle | >
+  ---   (msg reqCipher[HI DATA] from TK to CI)
   --- .
 
 --- Model/Implementation Specific Version
@@ -1750,7 +1750,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       current-params : handle(HANDLE) , data(DATA) , PARAMS >
     =>
     < TK : TaKernel | api-state : waitCipherUpdate >
-    cipherUpdate(HANDLE , DATA , TK) 
+    cipherUpdate(HANDLE , DATA , TK)
   if not hasOutputCapacity(PARAMS) /\ not invalidBufferOverlap(PARAMS)
   .
 
@@ -1782,13 +1782,13 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   ---   (msg reqCipher[HI DATA] from TK to CI)
   ---   < HI : OpHandle | key-material-set : true >
   ---   < CI : CryptoOp | attributes : ATTRS , algorithm : ALGO , mode : MODE ,
-  ---                     class : CLASS , state : STATE > 
-  ---   => 
+  ---                     class : CLASS , state : STATE >
+  ---   =>
   ---   < HI : OpHandle | >
-  ---   < CI : CryptoOp | > 
-  ---   if cipherSuccess(ALGO , MODE , ATTRS , CLASS , STATE , DATA) 
+  ---   < CI : CryptoOp | >
+  ---   if cipherSuccess(ALGO , MODE , ATTRS , CLASS , STATE , DATA)
   ---   then (msg finishCipher[runOp(ALGO , MODE , ATTRS , DATA)] from CI to TK)
-  ---   else (msg failCipher from CI to TK) fi 
+  ---   else (msg failCipher from CI to TK) fi
   --- .
 
 --- Model/Implementation Specific Version (2 rules)
@@ -1842,15 +1842,15 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- rl [cipher-update-success] :
   ---   (msg cipherSuccess[VALUE] from CI to TK)
   ---   < TK : TAKernel | api-call : CipherUpdate(VL) >
-  ---   => 
-  ---   < TK : TAKernel | api-call : return(CipherUpdate , VALUE) > 
+  ---   =>
+  ---   < TK : TAKernel | api-call : return(CipherUpdate , VALUE) >
   --- .
 
   --- rl [cipher-update-panic] :
   ---   (msg failCipher from CI to TK)
-  ---   < TK : TAKernel | api-call : CipherUpdate(VL) > 
-  ---   => 
-  ---   < TK : TAKernel | status : panic > 
+  ---   < TK : TAKernel | api-call : CipherUpdate(VL) >
+  ---   =>
+  ---   < TK : TAKernel | status : panic >
   --- .
 
 --- Model/Implementation Specific Version (In Order)
@@ -1858,16 +1858,16 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     finishCipherUpdate(DATA, TK)
     < TK : TaKernel | api-state : waitCipherUpdate ,
                       current-api : CipherUpdate >
-    => 
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(CipherUpdate , TEE-SUCCESS , data(DATA)) > 
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(CipherUpdate , TEE-SUCCESS , data(DATA)) >
   .
 
   rl [cipher-update-fail] :
     failCipherUpdate(TK)
     < TK : TaKernel | api-state : waitCipherUpdate ,
                       current-api : CipherUpdate >
-    => 
-    < TK : TaKernel | api-state : finished, app-status : panic > 
+    =>
+    < TK : TaKernel | api-state : finished, status : panic >
   .
 
 --- This rule returns TEE_ERROR_SHORT_BUFFER if the output buffer is not large enough to contain the output.
@@ -1889,7 +1889,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : CipherDoFinal ,
                       current-params : handle(HANDLE) , data(DATA) , PARAMS >
-    => 
+    =>
     < TK : TaKernel | api-state : waitCipherDoFinal >
     cipherDoFinal(HANDLE , DATA , TK)
   if not hasOutputCapacity(PARAMS) /\ not invalidBufferOverlap(PARAMS)
@@ -1944,7 +1944,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     finishCipherDoFinal(DATA , TK)
     < TK : TaKernel | api-state : waitCipherDoFinal ,
                       current-api : CipherDoFinal >
-    => 
+    =>
     < TK : TaKernel | api-state : finished , api-return : apiReturn(CipherDoFinal , TEE-SUCCESS , data(DATA)) >
   .
 
@@ -1959,17 +1959,17 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : MACInit ,
                       current-params : handle(HANDLE) , iv(IV) >
-    => 
+    =>
     < TK : TaKernel | api-state : waitInitOperation >
-    initOperation(HANDLE , IV , TK) 
+    initOperation(HANDLE , IV , TK)
   .
 
   rl [mac-init-success] :
     finishInitOperation(TK)
     < TK : TaKernel | current-api : MACInit ,
                       api-state : waitInitOperation >
-    => 
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(MACInit) > 
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(MACInit) >
   .
 
 ------------------------------------------------------------
@@ -1987,7 +1987,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : MACUpdate ,
                       current-params : handle(HANDLE) , data(DATA) >
-    => 
+    =>
     < TK : TaKernel | api-state : waitMacUpdate >
     macUpdate(HANDLE , DATA , TK)
   .
@@ -2017,8 +2017,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     finishMacUpdate(TK)
     < TK : TaKernel | current-api : MACUpdate ,
                       api-state : waitMacUpdate >
-    => 
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(MACUpdate) > 
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(MACUpdate) >
   .
 
 ------------------------------------------------------------
@@ -2036,7 +2036,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : MACComputeFinal ,
                       current-params : handle(HANDLE) , data(DATA) >
-    => 
+    =>
     < TK : TaKernel | api-state : waitMacComputeFinal >
     macComputeFinal(HANDLE , DATA , TK)
   .
@@ -2098,13 +2098,13 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < HANDLE : OperationHandle | state : keySet >
     finishMacComputeFinal(DATA , TK)
   .
- 
+
   rl [mac-compute-final-success] :
     finishMacComputeFinal(DATA , TK)
     < TK : TaKernel | current-api : MACComputeFinal ,
                       api-state : waitMacComputeFinal >
-    => 
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(MACComputeFinal , TEE-SUCCESS , data(DATA)) > 
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(MACComputeFinal , TEE-SUCCESS , data(DATA)) >
   .
 
 --- This rule returns TEE_ERROR_SHORT_BUFFER if the output buffer is not large enough to contain the computed MAC.
@@ -2120,17 +2120,17 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : MACCompareFinal ,
                       current-params : handle(HANDLE) , data(DATA) , PARAMS >
-    => 
+    =>
     < TK : TaKernel | api-state : waitMacComputeFinal >
-    macComputeFinal(HANDLE , DATA , TK) 
+    macComputeFinal(HANDLE , DATA , TK)
   .
 
   rl [mac-compare-final-success] :
     finishMacComputeFinal(DATA , TK)
     < TK : TaKernel | api-state : waitMacComputeFinal ,
                       current-api : MACCompareFinal , current-params : mac(MAC) , PARAMS >
-    => 
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(MACCompareFinal , getReturnCode(DATA , MAC)) > 
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(MACCompareFinal , getReturnCode(DATA , MAC)) >
   .
 
 ------------------------------------------------------------
@@ -2144,7 +2144,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : AEInit ,
                       current-params : handle(HANDLE) , iv(IV) >
-    => 
+    =>
     < TK : TaKernel | api-state : waitInitOperation >
     initOperation(HANDLE , IV , TK)
   .
@@ -2153,8 +2153,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     finishInitOperation(TK)
     < TK : TaKernel | current-api : AEInit ,
                       api-state : waitInitOperation >
-    => 
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(AEInit , TEE-SUCCESS) > 
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(AEInit , TEE-SUCCESS) >
   .
 
 ------------------------------------------------------------
@@ -2172,7 +2172,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : AEUpdateAAD ,
                       current-params : handle(HANDLE) , data(DATA) >
-    => 
+    =>
     < TK : TaKernel | api-state : waitAEUpdateAAD >
     reqAEUpdateAAD(HANDLE , DATA , TK)
   .
@@ -2202,8 +2202,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     finishAEUpdateAAD(TK)
     < TK : TaKernel | current-api : AEUpdateAAD ,
                       api-state : waitAEUpdateAAD >
-    => 
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(AEUpdateAAD) > 
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(AEUpdateAAD) >
   .
 
 ------------------------------------------------------------
@@ -2221,7 +2221,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : AEUpdate ,
                       current-params : handle(HANDLE) , data(DATA) >
-    => 
+    =>
     < TK : TaKernel | api-state : waitAEUpdate >
     reqAEUpdate(HANDLE , DATA , TK)
   .
@@ -2291,8 +2291,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     finishAEUpdate(DATA , TK)
     < TK : TaKernel | current-api : AEUpdate ,
                       api-state : waitAEUpdate >
-    => 
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(AEUpdate , TEE-SUCCESS , data(DATA)) > 
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(AEUpdate , TEE-SUCCESS , data(DATA)) >
   .
 
 --- ---------------------------------------------------------
@@ -2459,7 +2459,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : AsymmetricEncrypt ,
                       current-params : handle(HANDLE) , data(DATA) >
-    => 
+    =>
     < TK : TaKernel | api-state : waitAsymEncrypt >
     asymEncrypt(HANDLE , DATA , TK)
   .
@@ -2562,8 +2562,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     finishAsymEncrypt(DATA , TK)
     < TK : TaKernel | api-state : waitAsymEncrypt ,
                       current-api : AsymmetricEncrypt >
-    => 
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(AsymmetricEncrypt , TEE-SUCCESS , data(DATA)) > 
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(AsymmetricEncrypt , TEE-SUCCESS , data(DATA)) >
   .
 
   msg asymDecrypt : HandleId List{Data} TaInstId -> Msg .
@@ -2574,7 +2574,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : AsymmetricDecrypt ,
                       current-params : handle(HANDLE) , data(DATA) >
-    => 
+    =>
     < TK : TaKernel | api-state : waitAsymDecrypt >
     asymDecrypt(HANDLE , DATA , TK)
   .
@@ -2708,8 +2708,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     finishAsymDecrypt(DATA , TK)
     < TK : TaKernel | api-state : waitAsymDecrypt ,
                       current-api : AsymmetricDecrypt >
-    => 
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(AsymmetricDecrypt , TEE-SUCCESS , data(DATA)) > 
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(AsymmetricDecrypt , TEE-SUCCESS , data(DATA)) >
   .
 
 ------------------------------------------------------------
@@ -2727,7 +2727,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : AsymmetricSignDigest ,
                       current-params : handle(HANDLE) , data(DATA) >
-    => 
+    =>
     < TK : TaKernel | api-state : waitAsymSignDigest >
     asymSignDigest(HANDLE , DATA , TK)
   .
@@ -2795,7 +2795,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                              algorithm : ALGO , mode : TEE-MODE-SIGN >
     < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-ASYMMETRIC-SIGNATURE >
     =>
-    < TK : TaKernel | api-state : finished , app-status : panic >
+    < TK : TaKernel | api-state : finished , status : panic >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
   if not validSignatureDigestLength(ALGO , DATA)
@@ -2805,8 +2805,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     finishAsymSignDigest(DATA , TK)
     < TK : TaKernel | api-state : waitAsymSignDigest ,
                       current-api : AsymmetricSignDigest >
-    => 
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(AsymmetricSignDigest , TEE-SUCCESS , data(DATA)) > 
+    =>
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(AsymmetricSignDigest , TEE-SUCCESS , data(DATA)) >
   .
 
 ------------------------------------------------------------
@@ -2824,7 +2824,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : AsymmetricVerifyDigest ,
                       current-params : handle(HANDLE) , data(DATA) , PARAMS >
-    => 
+    =>
     < TK : TaKernel | api-state : waitAsymVerifDigest >
     asymVerifyDigest(HANDLE , DATA , TK)
   .
@@ -2860,7 +2860,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                              algorithm : ALGO , mode : TEE-MODE-VERIFY >
     < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-ASYMMETRIC-SIGNATURE >
     =>
-    < TK : TaKernel | api-state : finished , app-status : panic >
+    < TK : TaKernel | api-state : finished , status : panic >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
   if not validSignatureDigestLength(ALGO , DATA)
@@ -2871,7 +2871,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | api-state : waitAsymVerifDigest ,
                       current-api : AsymmetricVerifyDigest ,
                       current-params : digest(DIGEST) , PARAMS >
-    => 
+    =>
     < TK : TaKernel | api-state : finished , api-return : apiReturn(AsymmetricVerifyDigest , getReturnCodeOfDigest(DATA , DIGEST)) >
   .
 
@@ -3056,7 +3056,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
 ------------------------------------------------------------
 
   eq
-    < TK : TaKernel | app-status : normal , api-call : noCall , api-return : noReturn ,
+    < TK : TaKernel | status : normal , api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : CopyOperation ,
                       current-params : (trgHandle(HANDLE) , srcHandle(KEY)) >
     =
@@ -3078,7 +3078,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
 
   eq
     retOperationAttr(OPOBJATTR , OPHANDLEATTR , TK)
-    < TK : TaKernel | app-status : normal , api-call : noCall ,
+    < TK : TaKernel | status : normal , api-call : noCall ,
                       api-return : noReturn , api-state : waitOperationAttr ,
                       current-api : CopyOperation ,
                       current-params : (trgHandle(HANDLE) , PARAMS) >
@@ -3121,7 +3121,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
 
   eq
     finishCopyOperation(TK)
-    < TK : TaKernel | app-status : normal , api-call : noCall ,
+    < TK : TaKernel | status : normal , api-call : noCall ,
                       api-return : noReturn , api-state : waitReqCopyOperation ,
                       current-api : CopyOperation , current-params : PARAMS >
     =
@@ -3129,23 +3129,23 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
 
   eq
     failCopyOperation(TK)
-    < TK : TaKernel | app-status : normal , api-call : noCall ,
+    < TK : TaKernel | status : normal , api-call : noCall ,
                       api-return : noReturn , api-state : waitReqCopyOperation ,
                       current-api : CopyOperation , current-params : PARAMS >
     =
-    < TK : TaKernel | app-status : panic , api-state : finished > .
+    < TK : TaKernel | status : panic , api-state : finished > .
 
 ------------------------------------------------------------
 --- TEE_AllocateOperation
 ------------------------------------------------------------
 
   ceq
-    < TK : TaKernel | app-status : normal , api-call : noCall , api-return : noReturn ,
+    < TK : TaKernel | status : normal , api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : AllocateOperation ,
                       current-params : (alg(ALGO) , mode(MODE) , size(KEYSIZE)) ,
-                      id-counter : N , trust-app-id : TN >
+                      counter : N , trust-app-id : TN >
     =
-    < TK : TaKernel | api-state : finished , id-counter : N + 2 ,
+    < TK : TaKernel | api-state : finished , counter : N + 2 ,
                       api-return : apiReturn(AllocateOperation , TEE-SUCCESS , handle(handleId(N + 1 , TK))) >
     < taOid(N , TK) : CryptoOperation |
                                         attributes : nil , max-size : KEYSIZE ,
@@ -3159,7 +3159,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
   .
 
   eq
-    < TK : TaKernel | app-status : outOfMemory , api-call : noCall , api-return : noReturn ,
+    < TK : TaKernel | status : outOfMemory , api-call : noCall , api-return : noReturn ,
                       current-api : AllocateOperation >
     =
     < TK : TaKernel | api-state : finished ,
@@ -3167,7 +3167,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
   .
 
   ceq
-    < TK : TaKernel | app-status : normal , api-call : noCall , api-return : noReturn ,
+    < TK : TaKernel | status : normal , api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : AllocateOperation ,
                       current-params : alg(ALGO) , mode(MODE) , size(KEYSIZE) >
     =
@@ -3184,7 +3184,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : FreeOperation ,
                       current-params : handle(HANDLE) >
-    = 
+    =
     < TK : TaKernel | api-state : waitDeleteOperationObject >
     deleteOperationObject(HANDLE, TK)
   if not nullHandle(HANDLE)
@@ -3212,8 +3212,8 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : FreeOperation ,
                       current-params : handle(HANDLE) >
-    = 
-    < TK : TaKernel | api-state : finished , 
+    =
+    < TK : TaKernel | api-state : finished ,
                       api-return : apiReturn(FreeOperation , handle(HANDLE)) >
   if nullHandle(HANDLE)
   .
@@ -3228,7 +3228,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
                       current-params : handle(HANDLE) >
     =
     < TK : TaKernel | api-state : waitResetOperation >
-    resetOperation(HANDLE, TK) 
+    resetOperation(HANDLE, TK)
   .
 
 
@@ -3246,12 +3246,12 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
 
   ceq
     resetOperation(HANDLE, TK)
-    < TK : TaKernel | app-status : normal , api-state : waitResetOperation ,
+    < TK : TaKernel | status : normal , api-state : waitResetOperation ,
                       current-api : ResetOperation >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | oid : CI , state : HS >
     =
-    < TK : TaKernel | app-status : panic , api-state : finished >
+    < TK : TaKernel | status : panic , api-state : finished >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
   if not hasKeySet(HS) and not hasExtract(HS)
@@ -3275,7 +3275,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | api-return : noReturn ,
                       api-state : waitResetOperation >
     =
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(ResetOperation) > 
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(ResetOperation) >
   .
 
 ------------------------------------------------------------
@@ -3309,7 +3309,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
 
   eq
     retAttributeTr(ATTRS, OBJTYPE, OBJUSAGES, TK)
-    < TK : TaKernel | api-state : waitReqAttribute , 
+    < TK : TaKernel | api-state : waitReqAttribute ,
                       current-api : SetOperationKey ,
                       current-params : handle(HANDLE) , PARAMS >
     =
@@ -3319,12 +3319,12 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
 
   eq
     reqAttribute(KEY , TK)
-    < TK : TaKernel | app-status : normal , api-state : waitReqAttribute ,
+    < TK : TaKernel | status : normal , api-state : waitReqAttribute ,
                       current-api : SetOperationKey >
     < OI : TransientObject | initialized : false >
     < KEY : ObjectHandle | oid : OI >
     =
-    < TK : TaKernel | app-status : panic , api-state : finished >
+    < TK : TaKernel | status : panic , api-state : finished >
     < OI : TransientObject | >
     < KEY : ObjectHandle | >
   .
@@ -3381,7 +3381,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | api-state : waitSetOperationKey ,
                       current-api : SetOperationKey >
     =
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(SetOperationKey, TEE-SUCCESS) > 
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(SetOperationKey, TEE-SUCCESS) >
   .
 
   eq
@@ -3389,12 +3389,12 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | api-state : waitSetOperationKey ,
                       current-api : SetOperationKey >
     =
-    < TK : TaKernel | app-status : panic , api-state : finished >
+    < TK : TaKernel | status : panic , api-state : finished >
   .
 
   eq
     retAttributePr(ATTRS, OBJTYPE, OBJUSAGES, TK)
-    < TK : TaKernel | api-state : waitReqAttribute , 
+    < TK : TaKernel | api-state : waitReqAttribute ,
                       current-api : SetOperationKey ,
                       current-params : (handle(HANDLE) , PARAMS , attrs(ATTRS) , type(OBJTYPE)) ,
                       trust-app-id : TN >
@@ -3405,7 +3405,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
 
   eq
     retTrustedOS(storageStatus(storageNormal) , TK)
-    < TK : TaKernel | api-state : waitStorageCheck , 
+    < TK : TaKernel | api-state : waitStorageCheck ,
                       current-api : SetOperationKey ,
                       current-params : handle(HANDLE) , PARAMS , attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) >
     =
@@ -3415,10 +3415,10 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
 
   ceq
     retTrustedOS(storageStatus(STATUS), TK)
-    < TK : TaKernel | api-state : waitStorageCheck , 
+    < TK : TaKernel | api-state : waitStorageCheck ,
                       current-api : SetOperationKey >
     =
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(SetOperationKey , storageErrCode(STATUS)) > 
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(SetOperationKey , storageErrCode(STATUS)) >
   if abnormalStorage(STATUS)
   .
 
@@ -3442,13 +3442,13 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
      not nullHandle(KEY2) /\ KEY1 =/= KEY2 .
 
   ceq
-    < TK : TaKernel | app-status : normal, api-state : started,
+    < TK : TaKernel | status : normal, api-state : started,
                       current-api : SetOperationKey2,
                       current-params : handle(HANDLE), PARAMS >
     < HANDLE : OperationHandle | oid : CI, state : HS >
     < CI : CryptoOperation | algorithm : ALGO >
     =
-    < TK : TaKernel | app-status : panic, api-state : finished >
+    < TK : TaKernel | status : panic, api-state : finished >
     < HANDLE : OperationHandle | >
     < CI : CryptoOperation | >
   if not hasInit(HS) /\ not expectsTwoKeys(ALGO) .
@@ -3470,12 +3470,12 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
   if not hasInit(HS) /\ expectsTwoKeys(ALGO) .
 
   ceq
-    < TK : TaKernel | app-status : normal, api-state : started,
+    < TK : TaKernel | status : normal, api-state : started,
                       current-api : SetOperationKey2,
                       current-params : handle(HANDLE), keyHandle(KEY1),
                                        secondKeyHandle(KEY2) >
     =
-    < TK : TaKernel | app-status : panic, api-state : finished >
+    < TK : TaKernel | status : panic, api-state : finished >
   if (nullHandle(KEY1) and not nullHandle(KEY2)) or
      (not nullHandle(KEY1) and nullHandle(KEY2)) .
 
@@ -3579,12 +3579,12 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
 
   eq
     reqAttribute(KEY, TK)
-    < TK : TaKernel | app-status : normal, api-state : waitReqAttribute,
+    < TK : TaKernel | status : normal, api-state : waitReqAttribute,
                       current-api : SetOperationKey2 >
     < OI : TransientObject | initialized : false >
     < KEY : ObjectHandle | oid : OI >
     =
-    < TK : TaKernel | app-status : panic, api-state : finished >
+    < TK : TaKernel | status : panic, api-state : finished >
     < OI : TransientObject | > < KEY : ObjectHandle | > .
 
   ceq
@@ -3634,7 +3634,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | api-state : waitSetOperationKey,
                       current-api : SetOperationKey2 >
     =
-    < TK : TaKernel | app-status : panic, api-state : finished > .
+    < TK : TaKernel | status : panic, api-state : finished > .
 
 ------------------------------------------------------------
 --- TEE_CipherInit
@@ -3646,7 +3646,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
                       current-params : handle(HANDLE) , iv(IV) >
     =
     < TK : TaKernel | api-state : waitInitOperation >
-    initOperation(HANDLE , IV , TK) 
+    initOperation(HANDLE , IV , TK)
   .
 
 
@@ -3689,10 +3689,10 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
 
   eq
     finishInitOperation(TK)
-    < TK : TaKernel | api-state : waitInitOperation , 
+    < TK : TaKernel | api-state : waitInitOperation ,
                       current-api : CipherInit >
     =
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(CipherInit) > 
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(CipherInit) >
   .
 
 ------------------------------------------------------------
@@ -3705,7 +3705,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
                       current-params : handle(HANDLE) , data(DATA) >
     =
     < TK : TaKernel | api-state : waitCipherUpdate >
-    cipherUpdate(HANDLE , DATA , TK) 
+    cipherUpdate(HANDLE , DATA , TK)
   .
 
   ceq
@@ -3782,7 +3782,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | api-state : waitCipherUpdate ,
                       current-api : CipherUpdate >
     =
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(CipherUpdate , TEE-SUCCESS , data(DATA)) > 
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(CipherUpdate , TEE-SUCCESS , data(DATA)) >
   .
 
   eq
@@ -3790,7 +3790,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | api-state : waitCipherUpdate ,
                       current-api : CipherUpdate >
     =
-    < TK : TaKernel | api-state : finished, app-status : panic > 
+    < TK : TaKernel | api-state : finished, status : panic >
   .
 
 endom

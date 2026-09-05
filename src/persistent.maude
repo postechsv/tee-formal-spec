@@ -39,7 +39,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
   pr HANDLE-AUX .
   pr OBJECT-HANDLE .
   pr TEE-OS-BEHAVIOR .
-  
+
   var N : Nat .
   vars HANDLE H OPTHANDLE OPT : HandleId .
   vars OI DI : TaObjectId .
@@ -132,7 +132,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
   .
 
   crl [open-persistent-subroutine] :
-    < TK : TaKernel | app-status : normal , api-call : noCall , api-return : noReturn ,
+    < TK : TaKernel | status : normal , api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : OpenPersistentObject ,
                       current-params : (storageId(STORID) , fileId(FILE) , PARAMS) ,
                       trust-app-id : TN >
@@ -143,7 +143,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
   .
 
   crl [open-persistent-storage-id-not-found] :
-    < TK : TaKernel | app-status : normal , api-call : noCall , api-return : noReturn ,
+    < TK : TaKernel | status : normal , api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : OpenPersistentObject ,
                       current-params : (storageId(STORID) , PARAMS) >
     =>
@@ -154,12 +154,12 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 
   rl [open-persistent-subroutine] :
     retTrustedOS(storageStatus(storageNormal) fileExist , TK)
-    < TK : TaKernel | app-status : normal ,
+    < TK : TaKernel | status : normal ,
                       api-state : waitStorageCheck , current-api : OpenPersistentObject ,
                       current-params : storageId(STORID) , fileId(FILE) , flags(DATAFLAGS) ,
-                      id-counter : N >
+                      counter : N >
     =>
-    < TK : TaKernel | api-state : waitOpenPersistent , id-counter : N + 1 >
+    < TK : TaKernel | api-state : waitOpenPersistent , counter : N + 1 >
     openPersistentHandle(FILE , DATAFLAGS , N , TK)
   .
 
@@ -186,9 +186,9 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
   if not persistentHandlesCompatible(OI, DATAFLAGS, HS)
   .
 
-  rl [open-persistent-success] : 
+  rl [open-persistent-success] :
     finishOpenPersistentHandle(HANDLE , TK)
-    < TK : TaKernel | app-status : normal , api-state : waitOpenPersistent , 
+    < TK : TaKernel | status : normal , api-state : waitOpenPersistent ,
                       current-api : OpenPersistentObject >
     =>
     < TK : TaKernel | api-state : finished , api-return : apiReturn(OpenPersistentObject , TEE-SUCCESS , handle(HANDLE)) >
@@ -196,9 +196,9 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 
 --- The following two rules return TEE_ERROR_ACCESS_CONFLICT if an access right conflict was detected.
 
-  rl [open-persistent-fail] : 
+  rl [open-persistent-fail] :
     failOpenPersistentHandle(TK)
-    < TK : TaKernel | app-status : normal , api-state : waitOpenPersistent , 
+    < TK : TaKernel | status : normal , api-state : waitOpenPersistent ,
                       current-api : OpenPersistentObject >
     =>
     < TK : TaKernel | api-state : finished , api-return : apiReturn(OpenPersistentObject , TEE-ERROR-ACCESS-CONFLICT , handle(TEE-HANDLE-NULL)) >
@@ -209,9 +209,9 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 
 --- This rule returns TEE_ERROR_ITEM_NOT_FOUND if the object identifier cannot be found in the storage.
 
-  rl [open-persistent-file-err] : 
+  rl [open-persistent-file-err] :
     retTrustedOS(storageStatus(storageNormal) noFileExist , TK)
-    < TK : TaKernel | app-status : normal , api-state : waitStorageCheck , 
+    < TK : TaKernel | status : normal , api-state : waitStorageCheck ,
                       current-api : OpenPersistentObject >
     =>
     < TK : TaKernel | api-state : finished , api-return : apiReturn(OpenPersistentObject , TEE-ERROR-ITEM-NOT-FOUND , handle(TEE-HANDLE-NULL)) >
@@ -220,9 +220,9 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 --- This rule returns TEE_ERROR_OUT_OF_MEMORY if there is not enough memory to complete the operation.
 
   rl [open-persistent-memory-err] :
-    < TK : TaKernel | app-status : outOfMemory , api-call : noCall , api-return : noReturn ,
+    < TK : TaKernel | status : outOfMemory , api-call : noCall , api-return : noReturn ,
                       current-api : OpenPersistentObject >
-    => 
+    =>
     < TK : TaKernel | api-state : finished , api-return : apiReturn(OpenPersistentObject , TEE-ERROR-OUT-OF-MEMORY , handle(TEE-HANDLE-NULL)) >
   .
 
@@ -231,7 +231,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 
   crl [open-persistent-storage-err] :
     retTrustedOS(storageStatus(STATUS) noFileExist , TK)
-    < TK : TaKernel | app-status : normal , api-state : waitStorageCheck , 
+    < TK : TaKernel | status : normal , api-state : waitStorageCheck ,
                       current-api : OpenPersistentObject >
     =>
     < TK : TaKernel | api-state : finished , api-return : apiReturn(OpenPersistentObject , storageErrCode(STATUS) , handle(TEE-HANDLE-NULL)) >
@@ -248,31 +248,31 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 --- Version In Paper
   --- op mkCreationMsg : FileName Set{DataAccessFlag} HandleId Data HandleId Oid Oid -> Configuration .
   --- eq mkCreationMsg(FILE , FLAGS , null , DATA , OPT , SI , TK) = (msg create[pure FILE FLAGS null DATA] from TK to SI) .
-  --- ceq mkCreationMsg(FILE , FLAGS , HI , DATA , OPT , SI , TK) = 
-  ---   if OPT =/= null 
+  --- ceq mkCreationMsg(FILE , FLAGS , HI , DATA , OPT , SI , TK) =
+  ---   if OPT =/= null
   ---   then (msg create[transform FILE FLAGS HI DATA] from TK to SI)
-  ---   else (msg create[persist FILE FLAGS HI DATA] from TK to SI) 
+  ---   else (msg create[persist FILE FLAGS HI DATA] from TK to SI)
   ---   fi if HI =/= null .
 
   --- rl [create-persistent-determine-case] :
   ---   < TK : TAKernel | api-call : createPersistent(FILE , FLAGS , HI , DATA , OPT) , storage : SI >
-  ---   => 
+  ---   =>
   ---   < TK : TAKernel | api-call : createPersistent(FILE , FLAGS , HI , DATA , OPT) # 1 >
-  ---   mkCreationMsg(FILE , FLAGS , HI , DATA , OPT , SI , TK) 
+  ---   mkCreationMsg(FILE , FLAGS , HI , DATA , OPT , SI , TK)
   --- .
 
   --- crl [create-persist-overwrite-check] :
   ---   (msg create[METHOD FILE FLAGS HI DATA] from TK to SI)
   ---   < PI : PersistObj | file-name : FILE >
   ---   < SI : Storage | status : normal , files : FILES , counter : N >
-  ---   => 
+  ---   =>
   ---   < PI : PersistObj | >
-  ---   if overwrite in FLAGS 
+  ---   if overwrite in FLAGS
   ---   then < SI : Storage | counter : N + 2 >
   ---        (msg create[METHOD FILE FLAGS HI DATA N TK] from SI to PI)
-  ---   else < SI : Storage | > 
-  ---        (msg createFail from SI to TK) 
-  ---   fi if FILE in FILES 
+  ---   else < SI : Storage | >
+  ---        (msg createFail from SI to TK)
+  ---   fi if FILE in FILES
   --- .
 
 --- Model/Implementation Specific Version (2 rules)
@@ -286,7 +286,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
   .
 
   crl [create-persistent-subroutine] :
-    < TK : TaKernel | app-status : normal , api-call : noCall , api-return : noReturn ,
+    < TK : TaKernel | status : normal , api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : CreatePersistentObject ,
                       current-params : storageId(STORID) , fileId(FILE) , PARAMS ,
                       trust-app-id : TN >
@@ -297,7 +297,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
   .
 
   crl [create-persistent-storage-id-not-found] :
-    < TK : TaKernel | app-status : normal , api-call : noCall , api-return : noReturn ,
+    < TK : TaKernel | status : normal , api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : CreatePersistentObject ,
                       current-params : (storageId(STORID) , PARAMS) >
     =>
@@ -313,7 +313,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 
   rl [create-persistent-subroutine] :
     retTrustedOS(storageStatus(storageNormal) EXISTENCE , TK)
-    < TK : TaKernel | app-status : normal , api-state : waitStorageCheck , 
+    < TK : TaKernel | status : normal , api-state : waitStorageCheck ,
                       current-api : CreatePersistentObject ,
                       current-params : flags(DATAFLAGS) , PARAMS >
     =>
@@ -322,25 +322,25 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 
 --- Version In Paper
   --- crl [create-persist-transform] :
-  ---   (msg create[transform FILE FLAGS HI DATA N TK] from SI to PI) 
+  ---   (msg create[transform FILE FLAGS HI DATA N TK] from SI to PI)
   ---   < HI : ObjHandle | oid : OI >
   ---   < OI : TransObj | type : TYPE , usages : USAGES , max-size : M , attributes : ATTRS >
   ---   < PI : PersistObj | file-name : FILE >
-  ---   => 
+  ---   =>
   ---   < NEW-HI : ObjHandle | oid : NEW-PI , flags : FLAGS >
   ---   < NEW-PI : PersistObj | type : TYPE , usages : USAGES , max-size : M ,
   ---                           attributes : ATTRS , data-stream : DATA ,
   ---                           file-name : FILE >
   ---   (msg createSuccess[NEW-HI] from NEW-PI to TK)
-  --- if NEW-HI := newOid(N , SI) /\ NEW-PI := newOid(N + 1 , SI) 
+  --- if NEW-HI := newOid(N , SI) /\ NEW-PI := newOid(N + 1 , SI)
   --- .
 
---- Model/Implementation Specific Version (3 rules)  
+--- Model/Implementation Specific Version (3 rules)
   msg reqAttributeAndDelete : HandleId TaInstId -> Msg .
   msg retAttributeAndDelete : Set{TeeAttribute} ObjectType Set{ObjectUsage} TaInstId -> Msg .
 
-  rl [create-persistent-subroutine-2] : 
-    < TK : TaKernel | app-status : normal , api-state : transformTransient , 
+  rl [create-persistent-subroutine-2] :
+    < TK : TaKernel | status : normal , api-state : transformTransient ,
                       current-api : CreatePersistentObject ,
                       current-params : handle(HANDLE) , PARAMS >
     =>
@@ -357,14 +357,14 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     < HANDLE : ObjectHandle | oid : OI >
   => retAttributeAndDelete(ATTRS, OBJTYPE, OBJUSAGES, TK) .
 
-  rl [create-persistent-sucess] : 
+  rl [create-persistent-sucess] :
     retAttributeAndDelete(ATTRS, OBJTYPE, OBJUSAGES, TK)
-    < TK : TaKernel | app-status : normal , api-state : waitReqAttributeAndDelete , 
+    < TK : TaKernel | status : normal , api-state : waitReqAttributeAndDelete ,
                       current-api : CreatePersistentObject ,
                       current-params : (fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) , PARAMS) ,
-                      id-counter : N , trust-app-id : TN >
+                      counter : N , trust-app-id : TN >
     =>
-    < TK : TaKernel | api-state : finished , id-counter : N + 3 ,
+    < TK : TaKernel | api-state : finished , counter : N + 3 ,
                       current-params : (fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) , PARAMS , openedHandle(handleId(N + 1 , TK))) ,
                       api-return : apiReturn(CreatePersistentObject , TEE-SUCCESS , handle(handleId(N + 1 , TK))) >
     < taOid(N , TK) : PersistentObject |
@@ -379,17 +379,17 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
   .
 
 --- Version In Paper
-  --- rl [create-persist-success] : 
+  --- rl [create-persist-success] :
   ---   (msg createSuccess[HI] from PI to TK)
   ---   < TK : TAKernel | status : normal , api-call : createPersistent(VL) >
-  ---   => 
-  ---   < TK : TAKernel | api-call : return(createPersistent , HI) > 
+  ---   =>
+  ---   < TK : TAKernel | api-call : return(createPersistent , HI) >
   --- .
 
 --- Model/Implementation Specific Version
   rl [create-persistent-success] :
     retTrustedOS(acceptNotification, TK)
-    < TK : TaKernel | app-status : normal , api-state : waitNotifyFileCreation , 
+    < TK : TaKernel | status : normal , api-state : waitNotifyFileCreation ,
                       current-api : CreatePersistentObject ,
                       current-params : openedHandle(HANDLE) , PARAMS  >
     =>
@@ -397,17 +397,17 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
   .
 
 --- Version In Paper
-  --- rl [create-persist-fail] : 
+  --- rl [create-persist-fail] :
   ---   (msg createFail from SI to TK)
   ---   < TK : TAKernel | status : normal , api-call : createPersistent(VL) >
-  ---   => 
-  ---   < TK : TAKernel | api-call : return(createPersistent , errorAccessConflict) > 
+  ---   =>
+  ---   < TK : TAKernel | api-call : return(createPersistent , errorAccessConflict) >
   --- .
 
   --- rl [create-persist-mem-err] :
-  ---   < TK : TAKernel | app-status : outOfMemory , api-call : createPersistent(VL) >
-  ---   => 
-  ---   < TK : TAKernel | api-call : return(createPersistent , errorOutOfMemory) > 
+  ---   < TK : TAKernel | status : outOfMemory , api-call : createPersistent(VL) >
+  ---   =>
+  ---   < TK : TAKernel | api-call : return(createPersistent , errorOutOfMemory) >
   --- .
 
 --- Model/Implementation Specific Version (In Order)
@@ -423,9 +423,9 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 --- This rule returns TEE_ERROR_OUT_OF_MEMORY if there is not enough memory to complete the operation.
 
   rl [create-persistent-memory-err] :
-    < TK : TaKernel | app-status : outOfMemory , api-call : noCall , api-return : noReturn ,
+    < TK : TaKernel | status : outOfMemory , api-call : noCall , api-return : noReturn ,
                       current-api : CreatePersistentObject >
-    => 
+    =>
     < TK : TaKernel | api-state : finished , api-return : apiReturn(CreatePersistentObject , TEE-ERROR-OUT-OF-MEMORY , handle(TEE-HANDLE-NULL))  >
   .
 
@@ -435,7 +435,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
   msg finishDeleteOldPersistent : TaInstId -> Msg .
 
   rl [create-persistent-subroutine] :
-    < TK : TaKernel | app-status : normal , api-state : creationNotReady , 
+    < TK : TaKernel | status : normal , api-state : creationNotReady ,
                       current-api : CreatePersistentObject ,
                       current-params : fileId(FILE) , PARAMS ,
                       trust-app-id : TN >
@@ -456,7 +456,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 
   rl [create-persistent-subroutine] :
     finishDeleteOldPersistent(TK)
-    < TK : TaKernel | app-status : normal , api-state : waitDeleteOldPersistent , 
+    < TK : TaKernel | status : normal , api-state : waitDeleteOldPersistent ,
                       current-api : CreatePersistentObject >
     =>
     < TK : TaKernel | api-state : creationReady >
@@ -469,7 +469,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
   ceq determineCreation(H, OPT) = createPersistent if not nullHandle(H) /\ not nullHandle(OPT) .
 
   rl [create-persistent-subroutine] :
-    < TK : TaKernel | app-status : normal , api-state : creationReady , 
+    < TK : TaKernel | status : normal , api-state : creationReady ,
                       current-api : CreatePersistentObject ,
                       current-params : handle(HANDLE) , opt(OPTHANDLE) , PARAMS >
     =>
@@ -478,14 +478,14 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 
 --- This rule creates a new pure persistent data object.
 
-  rl [create-persistent-subroutine] : 
-    < TK : TaKernel | app-status : normal , api-state : createPureData , 
+  rl [create-persistent-subroutine] :
+    < TK : TaKernel | status : normal , api-state : createPureData ,
                       current-api : CreatePersistentObject ,
                       current-params : (fileId(FILE) , data(DATALIST) , size(DATASIZE) , flags(DATAFLAGS) , PARAMS) ,
-                      id-counter : N , trust-app-id : TN >
+                      counter : N , trust-app-id : TN >
     =>
-    < TK : TaKernel | api-state : waitNotifyFileCreation , id-counter : N + 3 ,
-                      current-params : (fileId(FILE) , data(DATALIST) , size(DATASIZE) , flags(DATAFLAGS) , 
+    < TK : TaKernel | api-state : waitNotifyFileCreation , counter : N + 3 ,
+                      current-params : (fileId(FILE) , data(DATALIST) , size(DATASIZE) , flags(DATAFLAGS) ,
                                         PARAMS , openedHandle(handleId(N + 1 , TK))) >
     < taOid(N , TK) : PersistentObject |
                                          file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
@@ -501,8 +501,8 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 
 --- The following four rules copy object from handles and use it to make a new persistent object.
 
-  rl [create-persistent-subroutine-3] : 
-    < TK : TaKernel | app-status : normal , api-state : createPersistent , 
+  rl [create-persistent-subroutine-3] :
+    < TK : TaKernel | status : normal , api-state : createPersistent ,
                       current-api : CreatePersistentObject ,
                       current-params : handle(HANDLE) , PARAMS >
     =>
@@ -510,9 +510,9 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     reqAttribute(HANDLE , TK)
   .
 
-  rl [create-persistent-subroutine-3] : 
+  rl [create-persistent-subroutine-3] :
     retAttributeTr(ATTRS, OBJTYPE, OBJUSAGES, TK)
-    < TK : TaKernel | app-status : normal , api-state : waitReqAttribute , 
+    < TK : TaKernel | status : normal , api-state : waitReqAttribute ,
                       current-api : CreatePersistentObject ,
                       current-params : PARAMS >
     =>
@@ -520,9 +520,9 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
                       current-params : attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) , PARAMS >
   .
 
-  rl [create-persistent-subroutine-3] : 
+  rl [create-persistent-subroutine-3] :
     retAttributePr(ATTRS, OBJTYPE, OBJUSAGES, TK)
-    < TK : TaKernel | app-status : normal , api-state : waitReqAttribute , 
+    < TK : TaKernel | status : normal , api-state : waitReqAttribute ,
                       current-api : CreatePersistentObject ,
                       current-params : PARAMS >
     =>
@@ -530,14 +530,14 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
                       current-params : attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) , PARAMS >
   .
 
-  rl [create-persistent-subroutine-3] : 
-    < TK : TaKernel | app-status : normal , api-state : createPersistentUsingAttrs , 
+  rl [create-persistent-subroutine-3] :
+    < TK : TaKernel | status : normal , api-state : createPersistentUsingAttrs ,
                       current-api : CreatePersistentObject ,
                       current-params : (fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) ,
                                         attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) , PARAMS) ,
-                      id-counter : N , trust-app-id : TN >
+                      counter : N , trust-app-id : TN >
     =>
-    < TK : TaKernel | api-state : waitNotifyFileCreation , id-counter : N + 3 ,
+    < TK : TaKernel | api-state : waitNotifyFileCreation , counter : N + 3 ,
                       current-params : fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) ,
                                        attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) , PARAMS , openedHandle(handleId(N + 1 , TK)) >
     < taOid(N , TK) : PersistentObject |
@@ -561,12 +561,12 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 
   crl [create-persistent-abnormal-storage-err] :
     retTrustedOS(storageStatus(STATUS) EXISTENCE, TK)
-    < TK : TaKernel | app-status : normal , api-state : waitStorageCheck , 
+    < TK : TaKernel | status : normal , api-state : waitStorageCheck ,
                       current-api : CreatePersistentObject >
-    => 
+    =>
     < TK : TaKernel | api-state : finished , api-return : apiReturn(CreatePersistentObject , storageErrCode(STATUS) , handle(TEE-HANDLE-NULL)) >
   if abnormalStorage(STATUS)
-  .  
+  .
 
 ------------------------------------------------------------
 --- 'TEE_CloseAndDeletePersistentObject1'
@@ -578,7 +578,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 
 --- The following five rules close and delete the persistent object.
 
-  crl [close-and-delete-persistent-subroutine] : 
+  crl [close-and-delete-persistent-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : CloseAndDeletePersistentObject1 ,
                       current-params : handle(HANDLE) ,
@@ -586,14 +586,14 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     =>
     < TK : TaKernel | api-state : waitStorageCheck >
     reqTrustedOS(getStorageStatus , TK , TN)
-  if not nullHandle(HANDLE) 
+  if not nullHandle(HANDLE)
   .
 
   msg deletePersistent : HandleId TaInstId AppId -> Msg .
   msg finishDeletePersistent : FileId TaInstId -> Msg .
   msg failDeletePersistent : TaInstId -> Msg .
 
-  rl [close-and-delete-persistent-subroutine] : 
+  rl [close-and-delete-persistent-subroutine] :
     retTrustedOS(storageStatus(storageNormal) , TK)
     < TK : TaKernel | api-state : waitStorageCheck , current-api : CloseAndDeletePersistentObject1 ,
                       current-params : handle(HANDLE) ,
@@ -641,7 +641,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
   if not hasWriteMeta(DATAFLAGS)
   .
 
-  rl [close-and-delete-persistent-subroutine] : 
+  rl [close-and-delete-persistent-subroutine] :
     finishDeletePersistent(FILE , TK)
     < TK : TaKernel | api-state : waitDeletePersistent ,
                       trust-app-id : TN >
@@ -650,12 +650,12 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     reqTrustedOS(notifyFileDeletion(FILE) , TK , TN)
   .
 
-  rl [close-and-delete-persistent-success] : 
+  rl [close-and-delete-persistent-success] :
     retTrustedOS(acceptNotification , TK)
     < TK : TaKernel | api-state : waitNotifyFileDeletion ,
                       current-api : CloseAndDeletePersistentObject1 >
     =>
-    < TK : TaKernel | api-state : finished , 
+    < TK : TaKernel | api-state : finished ,
                       api-return : apiReturn(CloseAndDeletePersistentObject1 , TEE-SUCCESS) >
   .
 
@@ -666,19 +666,19 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     failDeletePersistent(TK)
     < TK : TaKernel | api-state : waitDeletePersistent ,
                      current-api : CloseAndDeletePersistentObject1 >
-    => 
-    < TK : TaKernel | app-status : panic > 
+    =>
+    < TK : TaKernel | status : panic >
   .
 
 --- This rule does nothing when the input handle is TEE_HANDLE_NULL.
 
-  crl [close-and-delete-persistent-success] : 
+  crl [close-and-delete-persistent-success] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : CloseAndDeletePersistentObject1 ,
                       current-params : handle(HANDLE) ,
                       trust-app-id : TN >
     =>
-    < TK : TaKernel | api-state : finished , 
+    < TK : TaKernel | api-state : finished ,
                       api-return : apiReturn(CloseAndDeletePersistentObject1 , TEE-SUCCESS , handle(HANDLE)) >
   if nullHandle(HANDLE)
   .
@@ -690,7 +690,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     < TK : TaKernel | api-state : waitStorageCheck ,
                      current-api : CloseAndDeletePersistentObject1 >
     =>
-    < TK : TaKernel | api-state : finished , 
+    < TK : TaKernel | api-state : finished ,
                       api-return : apiReturn(CloseAndDeletePersistentObject1 , TEE-ERROR-STORAGE-NOT-AVAILABLE) >
   .
 
@@ -707,7 +707,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
   msg renamePersistentOwner : FileId TaInstId TaObjectId -> Msg .
   msg finishRenamePersistent : FileId TaInstId -> Msg .
 
-  rl [rename-persistent-subroutine] : 
+  rl [rename-persistent-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : RenamePersistentObject ,
                       current-params : (fileId(FILE) , PARAMS) ,
@@ -717,9 +717,9 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     reqTrustedOS(getStorageStatus checkFileExist(FILE) , TK , TN)
   .
 
-  rl [rename-persistent-subroutine] : 
+  rl [rename-persistent-subroutine] :
     retTrustedOS(storageStatus(storageNormal) noFileExist , TK)
-    < TK : TaKernel | api-state : waitStorageCheck , 
+    < TK : TaKernel | api-state : waitStorageCheck ,
                       current-api : RenamePersistentObject ,
                       current-params : (handle(HANDLE) , fileId(FILE)) ,
                       trust-app-id : TN >
@@ -748,7 +748,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 
   rl [rename-persistent-subroutine] :
     finishRenamePersistent(FILE' , TK)
-    < TK : TaKernel | api-state : waitRenamePersistent , 
+    < TK : TaKernel | api-state : waitRenamePersistent ,
                       current-api : RenamePersistentObject ,
                       current-params : fileId(FILE) , PARAMS ,
                       trust-app-id : TN >
@@ -759,7 +759,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 
   rl [rename-persistent-success] :
     retTrustedOS(acceptNotification, TK)
-    < TK : TaKernel | api-state : waitNotifyFileRename , 
+    < TK : TaKernel | api-state : waitNotifyFileRename ,
                       current-api : RenamePersistentObject >
     =>
     < TK : TaKernel | api-state : finished , api-return : apiReturn(RenamePersistentObject , TEE-SUCCESS) >
@@ -769,7 +769,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 
   rl [rename-persistent-access-conflict] :
     retTrustedOS(storageStatus(storageNormal) fileExist , TK)
-    < TK : TaKernel | api-state : waitStorageCheck , 
+    < TK : TaKernel | api-state : waitStorageCheck ,
                       current-api : RenamePersistentObject >
     =>
     < TK : TaKernel | api-state : finished , api-return : apiReturn(RenamePersistentObject , TEE-ERROR-ACCESS-CONFLICT) >
@@ -780,7 +780,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 
   crl [rename-persistent-storage-err] :
     retTrustedOS(storageStatus(STATUS) EXISTENCE , TK)
-    < TK : TaKernel | api-state : waitStorageCheck , 
+    < TK : TaKernel | api-state : waitStorageCheck ,
                       current-api : RenamePersistentObject >
     =>
     < TK : TaKernel | api-state : finished , api-return : apiReturn(RenamePersistentObject , storageErrCode(STATUS)) >
@@ -806,25 +806,25 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
   .
 
   rl [copy-object-attributes-subroutine] :
-    retAttributePr(ATTRS , OBJTYPE , OBJUSAGES , TK) 
+    retAttributePr(ATTRS , OBJTYPE , OBJUSAGES , TK)
     < TK : TaKernel | api-state : waitReqAttribute ,
-                      current-api : CopyObjectAttributes1 , current-params : PARAMS , 
+                      current-api : CopyObjectAttributes1 , current-params : PARAMS ,
                       trust-app-id : TN >
-    => 
+    =>
     < TK : TaKernel | api-state : waitStorageCheck ,
                       current-params : PARAMS , attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) >
-    reqTrustedOS(getStorageStatus , TK , TN) 
+    reqTrustedOS(getStorageStatus , TK , TN)
   .
 
   rl [copy-object-attributes-subroutine] :
     retTrustedOS(storageStatus(storageNormal) , TK)
-    < TK : TaKernel | api-state : waitStorageCheck , 
+    < TK : TaKernel | api-state : waitStorageCheck ,
                       current-api : CopyObjectAttributes1 ,
-                      current-params : trgHandle(HANDLE) , attrs(ATTRS) , 
+                      current-params : trgHandle(HANDLE) , attrs(ATTRS) ,
                                        type(OBJTYPE) , usages(OBJUSAGES) , PARAMS >
-    => 
+    =>
     < TK : TaKernel | api-state : waitCopyAttribute >
-    reqCopyAttribute(HANDLE , ATTRS , OBJTYPE , OBJUSAGES , TK) 
+    reqCopyAttribute(HANDLE , ATTRS , OBJTYPE , OBJUSAGES , TK)
   .
 
 --- This rule returns TEE_ERROR_CORRUPT_OBJECT when the persistent object is corrupt.
@@ -834,9 +834,9 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     retTrustedOS(storageStatus(STATUS) , TK)
     < TK : TaKernel | api-state : waitStorageCheck ,
                       current-api : CopyObjectAttributes1 >
-    => 
+    =>
     < TK : TaKernel | api-state : finished , api-return : apiReturn(CopyObjectAttributes1 , storageErrCode(STATUS)) >
-  if abnormalStorage(STATUS) 
+  if abnormalStorage(STATUS)
   .
 
 ------------------------------------------------------------
@@ -860,7 +860,7 @@ endom
 
 omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
   pr UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR .
-  
+
   var N : Nat .
   vars HANDLE H OPTHANDLE OPT : HandleId .
   vars OI DI : TaObjectId .
@@ -884,7 +884,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
 ------------------------------------------------------------
 
   ceq
-    < TK : TaKernel | app-status : normal , api-call : noCall , api-return : noReturn ,
+    < TK : TaKernel | status : normal , api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : OpenPersistentObject ,
                       current-params : (storageId(STORID) , fileId(FILE) , PARAMS) ,
                       trust-app-id : TN >
@@ -906,7 +906,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
   .
 
   ceq
-    < TK : TaKernel | app-status : normal , api-call : noCall , api-return : noReturn ,
+    < TK : TaKernel | status : normal , api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : OpenPersistentObject ,
                       current-params : (storageId(STORID) , PARAMS) >
     =
@@ -917,12 +917,12 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
 
   eq
     retTrustedOS(storageStatus(storageNormal) fileExist , TK)
-    < TK : TaKernel | app-status : normal ,
+    < TK : TaKernel | status : normal ,
                       api-state : waitStorageCheck , current-api : OpenPersistentObject ,
                       current-params : storageId(STORID) , fileId(FILE) , flags(DATAFLAGS) ,
-                      id-counter : N >
+                      counter : N >
     =
-    < TK : TaKernel | api-state : waitOpenPersistent , id-counter : N + 1 >
+    < TK : TaKernel | api-state : waitOpenPersistent , counter : N + 1 >
     openPersistentHandle(FILE , DATAFLAGS , N , TK)
   .
 
@@ -951,7 +951,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
 
   eq
     finishOpenPersistentHandle(HANDLE , TK)
-    < TK : TaKernel | app-status : normal , api-state : waitOpenPersistent , 
+    < TK : TaKernel | status : normal , api-state : waitOpenPersistent ,
                       current-api : OpenPersistentObject >
     =
     < TK : TaKernel | api-state : finished , api-return : apiReturn(OpenPersistentObject , TEE-SUCCESS , handle(HANDLE)) >
@@ -959,7 +959,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
 
   eq
     failOpenPersistentHandle(TK)
-    < TK : TaKernel | app-status : normal , api-state : waitOpenPersistent , 
+    < TK : TaKernel | status : normal , api-state : waitOpenPersistent ,
                       current-api : OpenPersistentObject >
     =
     < TK : TaKernel | api-state : finished , api-return : apiReturn(OpenPersistentObject , TEE-ERROR-ACCESS-CONFLICT , handle(TEE-HANDLE-NULL)) >
@@ -967,14 +967,14 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
 
   eq
     retTrustedOS(storageStatus(storageNormal) noFileExist , TK)
-    < TK : TaKernel | app-status : normal , api-state : waitStorageCheck , 
+    < TK : TaKernel | status : normal , api-state : waitStorageCheck ,
                       current-api : OpenPersistentObject >
     =
     < TK : TaKernel | api-state : finished , api-return : apiReturn(OpenPersistentObject , TEE-ERROR-ITEM-NOT-FOUND , handle(TEE-HANDLE-NULL)) >
   .
 
   eq
-    < TK : TaKernel | app-status : outOfMemory , api-call : noCall , api-return : noReturn ,
+    < TK : TaKernel | status : outOfMemory , api-call : noCall , api-return : noReturn ,
                       current-api : OpenPersistentObject >
     =
     < TK : TaKernel | api-state : finished , api-return : apiReturn(OpenPersistentObject , TEE-ERROR-OUT-OF-MEMORY , handle(TEE-HANDLE-NULL)) >
@@ -982,7 +982,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
 
   ceq
     retTrustedOS(storageStatus(STATUS) noFileExist , TK)
-    < TK : TaKernel | app-status : normal , api-state : waitStorageCheck , 
+    < TK : TaKernel | status : normal , api-state : waitStorageCheck ,
                       current-api : OpenPersistentObject >
     =
     < TK : TaKernel | api-state : finished , api-return : apiReturn(OpenPersistentObject , storageErrCode(STATUS) , handle(TEE-HANDLE-NULL)) >
@@ -994,7 +994,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
 ------------------------------------------------------------
 
   ceq
-    < TK : TaKernel | app-status : normal , api-call : noCall , api-return : noReturn ,
+    < TK : TaKernel | status : normal , api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : CreatePersistentObject ,
                       current-params : storageId(STORID) , fileId(FILE) , PARAMS ,
                       trust-app-id : TN >
@@ -1005,7 +1005,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
   .
 
   ceq
-    < TK : TaKernel | app-status : normal , api-call : noCall , api-return : noReturn ,
+    < TK : TaKernel | status : normal , api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : CreatePersistentObject ,
                       current-params : (storageId(STORID) , PARAMS) >
     =
@@ -1016,14 +1016,14 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
 
   eq
     retTrustedOS(storageStatus(storageNormal) EXISTENCE , TK)
-    < TK : TaKernel | app-status : normal , api-state : waitStorageCheck , 
+    < TK : TaKernel | status : normal , api-state : waitStorageCheck ,
                       current-api : CreatePersistentObject ,
                       current-params : flags(DATAFLAGS) , PARAMS >
     =
     < TK : TaKernel | api-state : nextState(EXISTENCE , DATAFLAGS) >
   .
 
---- 1. object already exists and overwrite flag does not exist 
+--- 1. object already exists and overwrite flag does not exist
 
   eq
     < TK : TaKernel | api-state : accessRightConflict , current-api : CreatePersistentObject >
@@ -1034,7 +1034,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
 --- 2. object already exists and overwrite flag exist
 
   eq
-    < TK : TaKernel | app-status : normal , api-state : creationNotReady , 
+    < TK : TaKernel | status : normal , api-state : creationNotReady ,
                       current-api : CreatePersistentObject ,
                       current-params : fileId(FILE) , PARAMS ,
                       trust-app-id : TN >
@@ -1055,14 +1055,14 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
 
   eq
     finishDeleteOldPersistent(TK)
-    < TK : TaKernel | app-status : normal , api-state : waitDeleteOldPersistent , 
+    < TK : TaKernel | status : normal , api-state : waitDeleteOldPersistent ,
                       current-api : CreatePersistentObject >
     =
     < TK : TaKernel | api-state : creationReady >
   .
 
   eq
-    < TK : TaKernel | app-status : normal , api-state : creationReady , 
+    < TK : TaKernel | status : normal , api-state : creationReady ,
                       current-api : CreatePersistentObject ,
                       current-params : handle(HANDLE) , opt(OPTHANDLE) , PARAMS >
     =
@@ -1072,13 +1072,13 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
 --- 3.2. HANDLE == NULL /\ OPTHANDLE != NULL : create a new pure persistent object
 
   eq
-    < TK : TaKernel | app-status : normal , api-state : createPureData , 
+    < TK : TaKernel | status : normal , api-state : createPureData ,
                       current-api : CreatePersistentObject ,
                       current-params : (fileId(FILE) , data(DATALIST) , size(DATASIZE) , flags(DATAFLAGS) , PARAMS) ,
-                      id-counter : N , trust-app-id : TN >
+                      counter : N , trust-app-id : TN >
     =
-    < TK : TaKernel | api-state : waitNotifyFileCreation , id-counter : N + 3 ,
-                      current-params : (fileId(FILE) , data(DATALIST) , size(DATASIZE) , flags(DATAFLAGS) , 
+    < TK : TaKernel | api-state : waitNotifyFileCreation , counter : N + 3 ,
+                      current-params : (fileId(FILE) , data(DATALIST) , size(DATASIZE) , flags(DATAFLAGS) ,
                                         PARAMS , openedHandle(handleId(N + 1 , TK))) >
     < taOid(N , TK) : PersistentObject |
                                          file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
@@ -1095,7 +1095,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
 --- 3.3. HANDLE != NULL /\ OPTHANDLE == NULL : if handle object is transient, transform object into a persistent object
 
   eq
-    < TK : TaKernel | app-status : normal , api-state : transformTransient , 
+    < TK : TaKernel | status : normal , api-state : transformTransient ,
                       current-api : CreatePersistentObject ,
                       current-params : handle(HANDLE) , PARAMS >
     =
@@ -1105,12 +1105,12 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
 
   eq
     retAttributeAndDelete(ATTRS, OBJTYPE, OBJUSAGES, TK)
-    < TK : TaKernel | app-status : normal , api-state : waitReqAttributeAndDelete , 
+    < TK : TaKernel | status : normal , api-state : waitReqAttributeAndDelete ,
                       current-api : CreatePersistentObject ,
                       current-params : (fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) , PARAMS) ,
-                      id-counter : N , trust-app-id : TN >
+                      counter : N , trust-app-id : TN >
     =
-    < TK : TaKernel | api-state : finished , id-counter : N + 3 ,
+    < TK : TaKernel | api-state : finished , counter : N + 3 ,
                       current-params : (fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) , PARAMS , openedHandle(handleId(N + 1 , TK))) ,
                       api-return : apiReturn(CreatePersistentObject , TEE-SUCCESS , handle(handleId(N + 1 , TK))) >
     < taOid(N , TK) : PersistentObject |
@@ -1127,7 +1127,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
 --- 3.4. HANDLE != NULL /\ OPTHANDLE != NULL : copy object from handle and use it to make a new persistent object
 
   eq
-    < TK : TaKernel | app-status : normal , api-state : createPersistent , 
+    < TK : TaKernel | status : normal , api-state : createPersistent ,
                       current-api : CreatePersistentObject ,
                       current-params : handle(HANDLE) , PARAMS >
     =
@@ -1137,17 +1137,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
 
   eq
     retAttributeTr(ATTRS, OBJTYPE, OBJUSAGES, TK)
-    < TK : TaKernel | app-status : normal , api-state : waitReqAttribute , 
-                      current-api : CreatePersistentObject ,
-                      current-params : PARAMS >
-    =
-    < TK : TaKernel | api-state : createPersistentUsingAttrs ,
-                      current-params : attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) , PARAMS >
-  .
-
-  eq 
-    retAttributePr(ATTRS, OBJTYPE, OBJUSAGES, TK)
-    < TK : TaKernel | app-status : normal , api-state : waitReqAttribute , 
+    < TK : TaKernel | status : normal , api-state : waitReqAttribute ,
                       current-api : CreatePersistentObject ,
                       current-params : PARAMS >
     =
@@ -1156,13 +1146,23 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
   .
 
   eq
-    < TK : TaKernel | app-status : normal , api-state : createPersistentUsingAttrs , 
+    retAttributePr(ATTRS, OBJTYPE, OBJUSAGES, TK)
+    < TK : TaKernel | status : normal , api-state : waitReqAttribute ,
+                      current-api : CreatePersistentObject ,
+                      current-params : PARAMS >
+    =
+    < TK : TaKernel | api-state : createPersistentUsingAttrs ,
+                      current-params : attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) , PARAMS >
+  .
+
+  eq
+    < TK : TaKernel | status : normal , api-state : createPersistentUsingAttrs ,
                       current-api : CreatePersistentObject ,
                       current-params : (fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) ,
                                         attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) , PARAMS) ,
-                      id-counter : N , trust-app-id : TN >
+                      counter : N , trust-app-id : TN >
     =
-    < TK : TaKernel | api-state : waitNotifyFileCreation , id-counter : N + 3 ,
+    < TK : TaKernel | api-state : waitNotifyFileCreation , counter : N + 3 ,
                       current-params : fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) ,
                                        attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) , PARAMS , openedHandle(handleId(N + 1 , TK)) >
     < taOid(N , TK) : PersistentObject |
@@ -1179,7 +1179,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
 
   eq
     retTrustedOS(acceptNotification, TK)
-    < TK : TaKernel | app-status : normal , api-state : waitNotifyFileCreation , 
+    < TK : TaKernel | status : normal , api-state : waitNotifyFileCreation ,
                       current-api : CreatePersistentObject ,
                       current-params : openedHandle(HANDLE) , PARAMS  >
     =
@@ -1187,7 +1187,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
   .
 
   eq
-    < TK : TaKernel | app-status : outOfMemory , api-call : noCall , api-return : noReturn ,
+    < TK : TaKernel | status : outOfMemory , api-call : noCall , api-return : noReturn ,
                       current-api : CreatePersistentObject >
     =
     < TK : TaKernel | api-state : finished , api-return : apiReturn(CreatePersistentObject , TEE-ERROR-OUT-OF-MEMORY , handle(TEE-HANDLE-NULL))  >
@@ -1195,12 +1195,12 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
 
   ceq
     retTrustedOS(storageStatus(STATUS) EXISTENCE, TK)
-    < TK : TaKernel | app-status : normal , api-state : waitStorageCheck , 
+    < TK : TaKernel | status : normal , api-state : waitStorageCheck ,
                       current-api : CreatePersistentObject >
     =
     < TK : TaKernel | api-state : finished , api-return : apiReturn(CreatePersistentObject , storageErrCode(STATUS) , handle(TEE-HANDLE-NULL)) >
   if abnormalStorage(STATUS)
-  .  
+  .
 
 ------------------------------------------------------------
 --- 'TEE_CloseAndDeletePersistentObject1'
@@ -1214,7 +1214,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
     =
     < TK : TaKernel | api-state : waitStorageCheck >
     reqTrustedOS(getStorageStatus , TK , TN)
-  if not nullHandle(HANDLE) 
+  if not nullHandle(HANDLE)
   .
 
   ceq
@@ -1223,14 +1223,14 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
                       current-params : handle(HANDLE) ,
                       trust-app-id : TN >
     =
-    < TK : TaKernel | api-state : finished , 
+    < TK : TaKernel | api-state : finished ,
                       api-return : apiReturn(CloseAndDeletePersistentObject1 , TEE-SUCCESS , handle(HANDLE)) >
   if nullHandle(HANDLE)
   .
 
   eq
     retTrustedOS(storageStatus(storageNormal) , TK)
-    < TK : TaKernel | app-status : normal ,
+    < TK : TaKernel | status : normal ,
                       api-state : waitStorageCheck , current-api : CloseAndDeletePersistentObject1 ,
                       current-params : handle(HANDLE) ,
                       trust-app-id : TN >
@@ -1243,7 +1243,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
 
   eq
     retTrustedOS(storageStatus(storageCorrupt) , TK)
-    < TK : TaKernel | app-status : normal,
+    < TK : TaKernel | status : normal,
                       api-state : waitStorageCheck,
                       current-api : CloseAndDeletePersistentObject1,
                       current-params : handle(HANDLE), trust-app-id : TN >
@@ -1261,12 +1261,12 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
     reqTrustedOS(notifyFileDeletion(FILE) , TK , TN)
   .
 
-  eq 
+  eq
     retTrustedOS(acceptNotification , TK)
     < TK : TaKernel | api-state : waitNotifyFileDeletion ,
                       current-api : CloseAndDeletePersistentObject1 >
     =
-    < TK : TaKernel | api-state : finished , 
+    < TK : TaKernel | api-state : finished ,
                       api-return : apiReturn(CloseAndDeletePersistentObject1 , TEE-SUCCESS) >
   .
 
@@ -1275,7 +1275,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | api-state : waitDeletePersistent ,
                      current-api : CloseAndDeletePersistentObject1 >
     =
-    < TK : TaKernel | app-status : panic > 
+    < TK : TaKernel | status : panic >
   .
 
   eq
@@ -1283,7 +1283,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | api-state : waitStorageCheck ,
                      current-api : CloseAndDeletePersistentObject1 >
     =
-    < TK : TaKernel | api-state : finished , 
+    < TK : TaKernel | api-state : finished ,
                       api-return : apiReturn(CloseAndDeletePersistentObject1 , TEE-ERROR-STORAGE-NOT-AVAILABLE) >
   .
 
@@ -1320,23 +1320,23 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
   eq
     retAttributePr(ATTRS , OBJTYPE , OBJUSAGES , TK)
     < TK : TaKernel | api-state : waitReqAttribute ,
-                      current-api : CopyObjectAttributes1 , current-params : PARAMS , 
+                      current-api : CopyObjectAttributes1 , current-params : PARAMS ,
                       trust-app-id : TN >
     =
     < TK : TaKernel | api-state : waitStorageCheck ,
                       current-params : PARAMS , attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) >
-    reqTrustedOS(getStorageStatus , TK , TN) 
+    reqTrustedOS(getStorageStatus , TK , TN)
   .
 
   eq
     retTrustedOS(storageStatus(storageNormal) , TK)
-    < TK : TaKernel | api-state : waitStorageCheck , 
+    < TK : TaKernel | api-state : waitStorageCheck ,
                       current-api : CopyObjectAttributes1 ,
-                      current-params : trgHandle(HANDLE) , attrs(ATTRS) , 
+                      current-params : trgHandle(HANDLE) , attrs(ATTRS) ,
                                        type(OBJTYPE) , usages(OBJUSAGES) , PARAMS >
     =
     < TK : TaKernel | api-state : waitCopyAttribute >
-    reqCopyAttribute(HANDLE , ATTRS , OBJTYPE , OBJUSAGES , TK) 
+    reqCopyAttribute(HANDLE , ATTRS , OBJTYPE , OBJUSAGES , TK)
   .
 
   ceq
@@ -1346,7 +1346,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
                       trust-app-id : TN >
     =
     < TK : TaKernel | api-state : finished , api-return : apiReturn(CopyObjectAttributes1 , storageErrCode(STATUS)) >
-  if abnormalStorage(STATUS) 
+  if abnormalStorage(STATUS)
   .
 
 endom

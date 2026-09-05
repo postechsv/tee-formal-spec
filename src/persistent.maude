@@ -15,7 +15,7 @@ omod PERSISTENT-OBJECT is
   subclass PersistObj < CryptoObj .
 
 --- Model/Implementation Specific Version
-  class PersistentObject | data-stream-id : TaObjectId , file-id : FileId .
+  class PersistentObject | data-stream-id : TaObjectId .
   subclass PersistentObject < PersistObj TaObject .
 
 endom
@@ -166,7 +166,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 
   crl [open-persistent-top-level-handle] :
     openPersistentHandle(SI , FILE , DATAFLAGS , N , TK)
-    < storageOid(M, SI) : PersistentObject | file-id : FILE >
+    < storageOid(M, SI) : PersistentObject | file-name : FILE >
     HS
     =>
     < storageOid(M, SI) : PersistentObject | >
@@ -178,7 +178,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 
   crl [open-persistent-top-level-conflict] :
     openPersistentHandle(SI , FILE , DATAFLAGS , N , TK)
-    < storageOid(M, SI) : PersistentObject | file-id : FILE >
+    < storageOid(M, SI) : PersistentObject | file-name : FILE >
     HS
     =>
     < storageOid(M, SI) : PersistentObject | >
@@ -369,7 +369,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     < storageId(SIDX) : Storage | >
     < storageOid(M, storageId(SIDX)) : PersistentObject |
                                          file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
-                                         file-id : FILE , type : OBJTYPE , max-size : keySize(ATTRS) ,
+                                         type : OBJTYPE , max-size : keySize(ATTRS) ,
                                          attributes : ATTRS , usages : OBJUSAGES ,
                                          data-stream-id : storageOid(M + 1, storageId(SIDX)) ,
                                          trust-app-id : TN >
@@ -447,7 +447,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 
   rl [create-persistent-subroutine] :
     deleteOldPersistent(SI , FILE , TK , TN)
-    < storageOid(M, SI) : PersistentObject | file-id : FILE , data-stream-id : DI , trust-app-id : TN >
+    < storageOid(M, SI) : PersistentObject | file-name : FILE , data-stream-id : DI , trust-app-id : TN >
     < DI : DataStreamObject | persistent-owner-id : storageOid(M, SI) >
     HS
     =>
@@ -492,7 +492,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     < storageId(SIDX) : Storage | >
     < storageOid(M, storageId(SIDX)) : PersistentObject |
                                          file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
-                                         file-id : FILE , type : TEE-TYPE-DATA , max-size : 0 Bits ,
+                                         type : TEE-TYPE-DATA , max-size : 0 Bits ,
                                          attributes : empty , usages : empty ,
                                          data-stream-id : storageOid(M + 1, storageId(SIDX)) ,
                                          trust-app-id : TN >
@@ -547,7 +547,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     < storageId(SIDX) : Storage | >
     < storageOid(M, storageId(SIDX)) : PersistentObject |
                                          file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
-                                         file-id : FILE , type : OBJTYPE , max-size : keySize(ATTRS) ,
+                                         type : OBJTYPE , max-size : keySize(ATTRS) ,
                                          attributes : ATTRS , usages : OBJUSAGES ,
                                          data-stream-id : storageOid(M + 1, storageId(SIDX)) ,
                                          trust-app-id : TN >
@@ -621,7 +621,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
   crl [close-and-delete-persistent-top-level-start] :
     deletePersistent(HANDLE, TK, TN)
     < OI : PersistentObject |
-                              data-stream-id : DI, file-id : FILE,
+                              data-stream-id : DI, file-name : FILE,
                               trust-app-id : TN >
     < DI : DataStreamObject | persistent-owner-id : OI >
     < HANDLE : ObjectHandle | oid : OI, flags : DATAFLAGS >
@@ -742,9 +742,9 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 
   rl [rename-persistent-top-level-update-owner] :
     renamePersistentOwner(FILE, TK, OI)
-    < OI : PersistentObject | file-id : FILE' >
+    < OI : PersistentObject | file-name : FILE' >
     =>
-    < OI : PersistentObject | file-name : FILE, file-id : FILE >
+    < OI : PersistentObject | file-name : FILE >
     finishRenamePersistent(FILE', TK)
   .
 
@@ -931,7 +931,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
 
   ceq
     openPersistentHandle(SI , FILE , DATAFLAGS , N , TK)
-    < storageOid(M, SI) : PersistentObject | file-id : FILE >
+    < storageOid(M, SI) : PersistentObject | file-name : FILE >
     HS
     =
     < storageOid(M, SI) : PersistentObject | >
@@ -943,7 +943,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
 
   ceq
     openPersistentHandle(SI , FILE , DATAFLAGS , N , TK)
-    < storageOid(M, SI) : PersistentObject | file-id : FILE >
+    < storageOid(M, SI) : PersistentObject | file-name : FILE >
     HS
     =
     < storageOid(M, SI) : PersistentObject | >
@@ -1048,7 +1048,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
 
   eq
     deleteOldPersistent(SI , FILE , TK , TN)
-    < storageOid(M, SI) : PersistentObject | file-id : FILE , data-stream-id : DI , trust-app-id : TN >
+    < storageOid(M, SI) : PersistentObject | file-name : FILE , data-stream-id : DI , trust-app-id : TN >
     < DI : DataStreamObject | persistent-owner-id : storageOid(M, SI) >
     HS
     =
@@ -1087,7 +1087,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
     < storageId(SIDX) : Storage | >
     < storageOid(M, storageId(SIDX)) : PersistentObject |
                                          file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
-                                         file-id : FILE , type : TEE-TYPE-DATA , max-size : 0 Bits ,
+                                         type : TEE-TYPE-DATA , max-size : 0 Bits ,
                                          attributes : empty , usages : empty ,
                                          data-stream-id : storageOid(M + 1, storageId(SIDX)) ,
                                          trust-app-id : TN >
@@ -1122,7 +1122,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
     < storageId(SIDX) : Storage | >
     < storageOid(M, storageId(SIDX)) : PersistentObject |
                                          file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
-                                         file-id : FILE , type : OBJTYPE , max-size : keySize(ATTRS) ,
+                                         type : OBJTYPE , max-size : keySize(ATTRS) ,
                                          attributes : ATTRS , usages : OBJUSAGES ,
                                          data-stream-id : storageOid(M + 1, storageId(SIDX)) ,
                                          trust-app-id : TN >
@@ -1177,7 +1177,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
     < storageId(SIDX) : Storage | >
     < storageOid(M, storageId(SIDX)) : PersistentObject |
                                          file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
-                                         file-id : FILE , type : OBJTYPE , max-size : keySize(ATTRS) ,
+                                         type : OBJTYPE , max-size : keySize(ATTRS) ,
                                          attributes : ATTRS , usages : OBJUSAGES ,
                                          data-stream-id : storageOid(M + 1, storageId(SIDX)) ,
                                          trust-app-id : TN >
@@ -1300,7 +1300,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
   ceq
     deletePersistent(HANDLE, TK, TN)
     < OI : PersistentObject |
-                              data-stream-id : DI, file-id : FILE,
+                              data-stream-id : DI, file-name : FILE,
                               trust-app-id : TN >
     < DI : DataStreamObject | persistent-owner-id : OI >
     < HANDLE : ObjectHandle | oid : OI, flags : DATAFLAGS >

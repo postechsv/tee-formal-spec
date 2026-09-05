@@ -40,7 +40,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
   pr OBJECT-HANDLE .
   pr TEE-OS-BEHAVIOR .
 
-  var N : Nat .
+  vars N M SIDX : Nat .
   vars HANDLE H OPTHANDLE OPT : HandleId .
   vars OI DI : TaObjectId .
   vars FILE FILE' : FileId .
@@ -359,19 +359,21 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     < TK : TaKernel | status : normal , api-state : waitReqAttributeAndDelete ,
                       current-api : CreatePersistentObject ,
                       current-params : (fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) , PARAMS) ,
-                      counter : N , trust-app-id : TN >
+                      storage : storageId(SIDX), counter : N , trust-app-id : TN >
+    < storageId(SIDX) : Storage | counter : M >
     =>
-    < TK : TaKernel | api-state : waitNotifyFileCreation , counter : N + 3 ,
-                      current-params : (fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) , PARAMS , openedHandle(handleId(N + 1 , TK))) ,
+    < TK : TaKernel | api-state : waitNotifyFileCreation , counter : N + 1 ,
+                      current-params : (fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) , PARAMS , openedHandle(handleId(N, TK))) ,
                       api-return : noReturn >
-    < taOid(N , TK) : PersistentObject |
+    < storageId(SIDX) : Storage | >
+    < storageOid(M, storageId(SIDX)) : PersistentObject |
                                          file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
                                          file-id : FILE , type : OBJTYPE , max-size : keySize(ATTRS) ,
                                          attributes : ATTRS , usages : OBJUSAGES ,
-                                         data-stream-id : taOid(N + 2, TK) ,
+                                         data-stream-id : storageOid(M + 1, storageId(SIDX)) ,
                                          trust-app-id : TN >
-    freshPersistentHandle(N + 1 , TK , DATAFLAGS , taOid(N , TK))
-    < taOid(N + 2 , TK) : DataStreamObject | persistent-owner-id : taOid(N , TK) ,
+    freshPersistentHandle(N, TK , DATAFLAGS , storageOid(M, storageId(SIDX)))
+    < storageOid(M + 1, storageId(SIDX)) : DataStreamObject | persistent-owner-id : storageOid(M, storageId(SIDX)) ,
                                              data-size : DATASIZE , content : newContent(DATALIST) >
     reqTrustedOS(notifyFileCreation(FILE) , TK , TN)
   .
@@ -480,19 +482,21 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     < TK : TaKernel | status : normal , api-state : createPureData ,
                       current-api : CreatePersistentObject ,
                       current-params : (fileId(FILE) , data(DATALIST) , size(DATASIZE) , flags(DATAFLAGS) , PARAMS) ,
-                      counter : N , trust-app-id : TN >
+                      storage : storageId(SIDX), counter : N , trust-app-id : TN >
+    < storageId(SIDX) : Storage | counter : M >
     =>
-    < TK : TaKernel | api-state : waitNotifyFileCreation , counter : N + 3 ,
+    < TK : TaKernel | api-state : waitNotifyFileCreation , counter : N + 1 ,
                       current-params : (fileId(FILE) , data(DATALIST) , size(DATASIZE) , flags(DATAFLAGS) ,
-                                        PARAMS , openedHandle(handleId(N + 1 , TK))) >
-    < taOid(N , TK) : PersistentObject |
+                                        PARAMS , openedHandle(handleId(N, TK))) >
+    < storageId(SIDX) : Storage | >
+    < storageOid(M, storageId(SIDX)) : PersistentObject |
                                          file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
                                          file-id : FILE , type : TEE-TYPE-DATA , max-size : 0 Bits ,
                                          attributes : empty , usages : empty ,
-                                         data-stream-id : taOid(N + 2, TK) ,
+                                         data-stream-id : storageOid(M + 1, storageId(SIDX)) ,
                                          trust-app-id : TN >
-    freshPersistentHandle(N + 1 , TK , DATAFLAGS , taOid(N , TK))
-    < taOid(N + 2 , TK) : DataStreamObject | persistent-owner-id : taOid(N , TK) ,
+    freshPersistentHandle(N, TK , DATAFLAGS , storageOid(M, storageId(SIDX)))
+    < storageOid(M + 1, storageId(SIDX)) : DataStreamObject | persistent-owner-id : storageOid(M, storageId(SIDX)) ,
                                              data-size : DATASIZE , content : newContent(DATALIST) >
     reqTrustedOS(notifyFileCreation(FILE) , TK , TN)
   .
@@ -533,19 +537,21 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
                       current-api : CreatePersistentObject ,
                       current-params : (fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) ,
                                         attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) , PARAMS) ,
-                      counter : N , trust-app-id : TN >
+                      storage : storageId(SIDX), counter : N , trust-app-id : TN >
+    < storageId(SIDX) : Storage | counter : M >
     =>
-    < TK : TaKernel | api-state : waitNotifyFileCreation , counter : N + 3 ,
+    < TK : TaKernel | api-state : waitNotifyFileCreation , counter : N + 1 ,
                       current-params : fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) ,
-                                       attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) , PARAMS , openedHandle(handleId(N + 1 , TK)) >
-    < taOid(N , TK) : PersistentObject |
+                                       attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) , PARAMS , openedHandle(handleId(N, TK)) >
+    < storageId(SIDX) : Storage | >
+    < storageOid(M, storageId(SIDX)) : PersistentObject |
                                          file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
                                          file-id : FILE , type : OBJTYPE , max-size : keySize(ATTRS) ,
                                          attributes : ATTRS , usages : OBJUSAGES ,
-                                         data-stream-id : taOid(N + 2, TK) ,
+                                         data-stream-id : storageOid(M + 1, storageId(SIDX)) ,
                                          trust-app-id : TN >
-    freshPersistentHandle(N + 1 , TK , DATAFLAGS , taOid(N , TK))
-    < taOid(N + 2 , TK) : DataStreamObject | persistent-owner-id : taOid(N , TK) ,
+    freshPersistentHandle(N, TK , DATAFLAGS , storageOid(M, storageId(SIDX)))
+    < storageOid(M + 1, storageId(SIDX)) : DataStreamObject | persistent-owner-id : storageOid(M, storageId(SIDX)) ,
                                              data-size : DATASIZE , content : newContent(DATALIST) >
     reqTrustedOS(notifyFileCreation(FILE) , TK , TN)
   .
@@ -856,7 +862,7 @@ endom
 omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
   pr UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR .
 
-  var N : Nat .
+  vars N M SIDX : Nat .
   vars HANDLE H OPTHANDLE OPT : HandleId .
   vars OI DI : TaObjectId .
   var FILE : FileId .
@@ -1070,19 +1076,21 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | status : normal , api-state : createPureData ,
                       current-api : CreatePersistentObject ,
                       current-params : (fileId(FILE) , data(DATALIST) , size(DATASIZE) , flags(DATAFLAGS) , PARAMS) ,
-                      counter : N , trust-app-id : TN >
+                      storage : storageId(SIDX), counter : N , trust-app-id : TN >
+    < storageId(SIDX) : Storage | counter : M >
     =
-    < TK : TaKernel | api-state : waitNotifyFileCreation , counter : N + 3 ,
+    < TK : TaKernel | api-state : waitNotifyFileCreation , counter : N + 1 ,
                       current-params : (fileId(FILE) , data(DATALIST) , size(DATASIZE) , flags(DATAFLAGS) ,
-                                        PARAMS , openedHandle(handleId(N + 1 , TK))) >
-    < taOid(N , TK) : PersistentObject |
+                                        PARAMS , openedHandle(handleId(N, TK))) >
+    < storageId(SIDX) : Storage | >
+    < storageOid(M, storageId(SIDX)) : PersistentObject |
                                          file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
                                          file-id : FILE , type : TEE-TYPE-DATA , max-size : 0 Bits ,
                                          attributes : empty , usages : empty ,
-                                         data-stream-id : taOid(N + 2, TK) ,
+                                         data-stream-id : storageOid(M + 1, storageId(SIDX)) ,
                                          trust-app-id : TN >
-    freshPersistentHandle(N + 1 , TK , DATAFLAGS , taOid(N , TK))
-    < taOid(N + 2 , TK) : DataStreamObject | persistent-owner-id : taOid(N , TK) ,
+    freshPersistentHandle(N, TK , DATAFLAGS , storageOid(M, storageId(SIDX)))
+    < storageOid(M + 1, storageId(SIDX)) : DataStreamObject | persistent-owner-id : storageOid(M, storageId(SIDX)) ,
                                              data-size : DATASIZE , content : newContent(DATALIST) >
     reqTrustedOS(notifyFileCreation(FILE) , TK , TN)
   .
@@ -1103,19 +1111,21 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | status : normal , api-state : waitReqAttributeAndDelete ,
                       current-api : CreatePersistentObject ,
                       current-params : (fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) , PARAMS) ,
-                      counter : N , trust-app-id : TN >
+                      storage : storageId(SIDX), counter : N , trust-app-id : TN >
+    < storageId(SIDX) : Storage | counter : M >
     =
-    < TK : TaKernel | api-state : waitNotifyFileCreation , counter : N + 3 ,
-                      current-params : (fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) , PARAMS , openedHandle(handleId(N + 1 , TK))) ,
+    < TK : TaKernel | api-state : waitNotifyFileCreation , counter : N + 1 ,
+                      current-params : (fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) , PARAMS , openedHandle(handleId(N, TK))) ,
                       api-return : noReturn >
-    < taOid(N , TK) : PersistentObject |
+    < storageId(SIDX) : Storage | >
+    < storageOid(M, storageId(SIDX)) : PersistentObject |
                                          file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
                                          file-id : FILE , type : OBJTYPE , max-size : keySize(ATTRS) ,
                                          attributes : ATTRS , usages : OBJUSAGES ,
-                                         data-stream-id : taOid(N + 2, TK) ,
+                                         data-stream-id : storageOid(M + 1, storageId(SIDX)) ,
                                          trust-app-id : TN >
-    freshPersistentHandle(N + 1 , TK , DATAFLAGS , taOid(N , TK))
-    < taOid(N + 2 , TK) : DataStreamObject | persistent-owner-id : taOid(N , TK) ,
+    freshPersistentHandle(N, TK , DATAFLAGS , storageOid(M, storageId(SIDX)))
+    < storageOid(M + 1, storageId(SIDX)) : DataStreamObject | persistent-owner-id : storageOid(M, storageId(SIDX)) ,
                                              data-size : DATASIZE , content : newContent(DATALIST) >
     reqTrustedOS(notifyFileCreation(FILE) , TK , TN)
   .
@@ -1156,19 +1166,21 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
                       current-api : CreatePersistentObject ,
                       current-params : (fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) ,
                                         attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) , PARAMS) ,
-                      counter : N , trust-app-id : TN >
+                      storage : storageId(SIDX), counter : N , trust-app-id : TN >
+    < storageId(SIDX) : Storage | counter : M >
     =
-    < TK : TaKernel | api-state : waitNotifyFileCreation , counter : N + 3 ,
+    < TK : TaKernel | api-state : waitNotifyFileCreation , counter : N + 1 ,
                       current-params : fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) ,
-                                       attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) , PARAMS , openedHandle(handleId(N + 1 , TK)) >
-    < taOid(N , TK) : PersistentObject |
+                                       attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) , PARAMS , openedHandle(handleId(N, TK)) >
+    < storageId(SIDX) : Storage | >
+    < storageOid(M, storageId(SIDX)) : PersistentObject |
                                          file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
                                          file-id : FILE , type : OBJTYPE , max-size : keySize(ATTRS) ,
                                          attributes : ATTRS , usages : OBJUSAGES ,
-                                         data-stream-id : taOid(N + 2, TK) ,
+                                         data-stream-id : storageOid(M + 1, storageId(SIDX)) ,
                                          trust-app-id : TN >
-    freshPersistentHandle(N + 1 , TK , DATAFLAGS , taOid(N , TK))
-    < taOid(N + 2 , TK) : DataStreamObject | persistent-owner-id : taOid(N , TK) ,
+    freshPersistentHandle(N, TK , DATAFLAGS , storageOid(M, storageId(SIDX)))
+    < storageOid(M + 1, storageId(SIDX)) : DataStreamObject | persistent-owner-id : storageOid(M, storageId(SIDX)) ,
                                              data-size : DATASIZE , content : newContent(DATALIST) >
     reqTrustedOS(notifyFileCreation(FILE) , TK , TN)
   .

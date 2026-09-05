@@ -992,6 +992,40 @@ search [1] in COMPLETION-TEST :
   < storageId(0) : Storage | files : testFileId, counter : 2 >
   C .
 
+--- Consecutive creations reserve disjoint object/data-stream Oid pairs.
+search [1] in COMPLETION-TEST :
+  < osId : TeeOSKernel |
+      service-in : (notifyFileCreation(testFileId)
+                    notifyFileCreation(newTestFileId)),
+      service-out : nil,
+      service-request-ta : TESTTA, service-request-ta-inst : testTa >
+  < testTa : TaKernel | storage : storageId(0) >
+  < storageId(0) : Storage | files : empty, counter : 0 >
+=>*
+  < osId : TeeOSKernel |
+      service-in : nil,
+      service-out : (acceptNotification acceptNotification),
+      service-request-ta : TESTTA, service-request-ta-inst : testTa >
+  < testTa : TaKernel | storage : storageId(0) >
+  < storageId(0) : Storage |
+      files : (testFileId, newTestFileId), counter : 4 > .
+
+--- A notification advances only the Storage referenced by the requesting TA.
+search [1] in COMPLETION-TEST :
+  < osId : TeeOSKernel |
+      service-in : notifyFileCreation(testFileId), service-out : nil,
+      service-request-ta : TESTTA, service-request-ta-inst : testTa >
+  < testTa : TaKernel | storage : storageId(1) >
+  < storageId(0) : Storage | files : empty, counter : 0 >
+  < storageId(1) : Storage | files : empty, counter : 6 >
+=>1
+  < osId : TeeOSKernel |
+      service-in : nil, service-out : acceptNotification,
+      service-request-ta : TESTTA, service-request-ta-inst : testTa >
+  < testTa : TaKernel | storage : storageId(1) >
+  < storageId(0) : Storage | files : empty, counter : 0 >
+  < storageId(1) : Storage | files : testFileId, counter : 8 > .
+
 --- TeeInvokeTACommand resolves a top-level session handle in both directions.
 search [1] in COMPLETION-TEST :
   reqInvoke(handleId(1, testTa), main, nil, testTa)

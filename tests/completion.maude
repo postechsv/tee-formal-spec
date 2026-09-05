@@ -289,8 +289,8 @@ search [1] in COMPLETION-TEST :
                         api-state : started, current-api : ResetOperation,
                         current-params : handle(handleId(1, testTa)) >
   < taOid(1, testTa) : CryptoOperation |
-      accumulated-data : randomData, initialization-vector : randomData,
-      operation-state : TEE-OPERATION-STATE-ACTIVE >
+      acc-data : randomData, initialization-vector : randomData,
+      state : TEE-OPERATION-STATE-ACTIVE >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       state : init keySet >
 =>*
@@ -299,8 +299,8 @@ search [1] in COMPLETION-TEST :
                         current-params : handle(handleId(1, testTa)),
                         api-return : apiReturn(ResetOperation, noReturnCode, empty) >
   < taOid(1, testTa) : CryptoOperation |
-      accumulated-data : nil, initialization-vector : nil,
-      operation-state : TEE-OPERATION-STATE-INITIAL >
+      acc-data : nil, initialization-vector : nil,
+      state : TEE-OPERATION-STATE-INITIAL >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       state : keySet > .
 
@@ -311,8 +311,8 @@ search [1] in COMPLETION-TEST :
                      TEE-USAGE-ENCRYPT, testTa)
   < taOid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-AES-CTR,
-      operation-mode : TEE-MODE-ENCRYPT, max-key-size : 256 Bits, crypto-keys : nil,
-      operation-state : TEE-OPERATION-STATE-INITIAL >
+      mode : TEE-MODE-ENCRYPT, max-size : 256 Bits, attributes : nil,
+      state : TEE-OPERATION-STATE-INITIAL >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       state : noHandleState,
       key-material-set : false >
@@ -331,15 +331,15 @@ search [1] in COMPLETION-TEST :
   < testTa : TaKernel | app-status : normal, api-state : waitSetOperationKey,
                         current-api : SetOperationKey >
   < taOid(1, testTa) : CryptoOperation |
-      algorithm : TEE-ALG-AES-CTR, operation-mode : TEE-MODE-ENCRYPT,
-      max-key-size : 128 Bits >
+      algorithm : TEE-ALG-AES-CTR, mode : TEE-MODE-ENCRYPT,
+      max-size : 128 Bits >
   < handleId(1, testTa) : OperationHandle | state : noHandleState >
 =>*
   < testTa : TaKernel | app-status : panic, api-state : finished,
                         current-api : SetOperationKey >
   < taOid(1, testTa) : CryptoOperation |
-      algorithm : TEE-ALG-AES-CTR, operation-mode : TEE-MODE-ENCRYPT,
-      max-key-size : 128 Bits >
+      algorithm : TEE-ALG-AES-CTR, mode : TEE-MODE-ENCRYPT,
+      max-size : 128 Bits >
   < handleId(1, testTa) : OperationHandle | state : noHandleState > C .
 
 --- Algorithms that expect two keys cannot be programmed by SetOperationKey.
@@ -350,15 +350,15 @@ search [1] in COMPLETION-TEST :
   < testTa : TaKernel | app-status : normal, api-state : waitSetOperationKey,
                         current-api : SetOperationKey >
   < taOid(1, testTa) : CryptoOperation |
-      algorithm : TEE-ALG-AES-XTS, operation-mode : TEE-MODE-ENCRYPT,
-      max-key-size : 128 Bits >
+      algorithm : TEE-ALG-AES-XTS, mode : TEE-MODE-ENCRYPT,
+      max-size : 128 Bits >
   < handleId(1, testTa) : OperationHandle | state : noHandleState >
 =>*
   < testTa : TaKernel | app-status : panic, api-state : finished,
                         current-api : SetOperationKey >
   < taOid(1, testTa) : CryptoOperation |
-      algorithm : TEE-ALG-AES-XTS, operation-mode : TEE-MODE-ENCRYPT,
-      max-key-size : 128 Bits >
+      algorithm : TEE-ALG-AES-XTS, mode : TEE-MODE-ENCRYPT,
+      max-size : 128 Bits >
   < handleId(1, testTa) : OperationHandle | state : noHandleState > C .
 
 --- Matching mode and usage do not permit an object type from another family.
@@ -369,15 +369,15 @@ search [1] in COMPLETION-TEST :
   < testTa : TaKernel | app-status : normal, api-state : waitSetOperationKey,
                         current-api : SetOperationKey >
   < taOid(1, testTa) : CryptoOperation |
-      algorithm : TEE-ALG-RSA-NOPAD, operation-mode : TEE-MODE-ENCRYPT,
-      max-key-size : 2048 Bits >
+      algorithm : TEE-ALG-RSA-NOPAD, mode : TEE-MODE-ENCRYPT,
+      max-size : 2048 Bits >
   < handleId(1, testTa) : OperationHandle | state : noHandleState >
 =>*
   < testTa : TaKernel | app-status : panic, api-state : finished,
                         current-api : SetOperationKey >
   < taOid(1, testTa) : CryptoOperation |
-      algorithm : TEE-ALG-RSA-NOPAD, operation-mode : TEE-MODE-ENCRYPT,
-      max-key-size : 2048 Bits >
+      algorithm : TEE-ALG-RSA-NOPAD, mode : TEE-MODE-ENCRYPT,
+      max-size : 2048 Bits >
   < handleId(1, testTa) : OperationHandle | state : noHandleState > C .
 
 --- CipherInit updates the operation object and top-level handle in two steps.
@@ -385,7 +385,7 @@ search [1] in COMPLETION-TEST :
   initOperation(handleId(1, testTa), randomData, testTa)
   < taOid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-AES-GCM,
-      operation-state : TEE-OPERATION-STATE-INITIAL,
+      state : TEE-OPERATION-STATE-INITIAL,
       initialization-vector : nil >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       state : keySet, opclass : TEE-OPERATION-CIPHER >
@@ -393,7 +393,7 @@ search [1] in COMPLETION-TEST :
   finishInitOperation(testTa)
   < taOid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-AES-GCM,
-      operation-state : TEE-OPERATION-STATE-ACTIVE,
+      state : TEE-OPERATION-STATE-ACTIVE,
       initialization-vector : randomData >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       state : init keySet, opclass : TEE-OPERATION-CIPHER > .
@@ -406,18 +406,18 @@ search [1] in COMPLETION-TEST :
                  key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1)))),
     opHandleAttr(true, true, false), testTa)
   < taOid(1, testTa) : CryptoOperation |
-      algorithm : TEE-ALG-AES-GCM, operation-mode : TEE-MODE-ENCRYPT,
-      max-key-size : 256 Bits,
-      operation-state : TEE-OPERATION-STATE-INITIAL, crypto-keys : nil >
+      algorithm : TEE-ALG-AES-GCM, mode : TEE-MODE-ENCRYPT,
+      max-size : 256 Bits,
+      state : TEE-OPERATION-STATE-INITIAL, attributes : nil >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       state : noHandleState, key-material-set : false >
 =>*
   finishCopyOperation(testTa)
   < taOid(1, testTa) : CryptoOperation |
-      algorithm : TEE-ALG-AES-GCM, operation-mode : TEE-MODE-ENCRYPT,
-      max-key-size : 256 Bits,
-      operation-state : TEE-OPERATION-STATE-ACTIVE,
-      crypto-keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1))) >
+      algorithm : TEE-ALG-AES-GCM, mode : TEE-MODE-ENCRYPT,
+      max-size : 256 Bits,
+      state : TEE-OPERATION-STATE-ACTIVE,
+      attributes : key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1))) >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       state : init keySet, key-material-set : true > .
 
@@ -428,8 +428,8 @@ search [1] in COMPLETION-TEST :
       TEE-OPERATION-STATE-ACTIVE, nil),
     opHandleAttr(false, false, false), testTa)
   < taOid(1, testTa) : CryptoOperation |
-      algorithm : TEE-ALG-AES-CTR, operation-mode : TEE-MODE-ENCRYPT,
-      max-key-size : 256 Bits >
+      algorithm : TEE-ALG-AES-CTR, mode : TEE-MODE-ENCRYPT,
+      max-size : 256 Bits >
   < testTa : TaKernel | app-status : normal, api-call : noCall,
       api-return : noReturn, api-state : waitReqCopyOperation,
       current-api : CopyOperation >
@@ -446,8 +446,8 @@ search [1] in COMPLETION-TEST :
       key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(256, 1)))),
     opHandleAttr(false, true, false), testTa)
   < taOid(1, testTa) : CryptoOperation |
-      algorithm : TEE-ALG-AES-GCM, operation-mode : TEE-MODE-ENCRYPT,
-      max-key-size : 128 Bits >
+      algorithm : TEE-ALG-AES-GCM, mode : TEE-MODE-ENCRYPT,
+      max-size : 128 Bits >
   < testTa : TaKernel | app-status : normal, api-call : noCall,
       api-return : noReturn, api-state : waitReqCopyOperation,
       current-api : CopyOperation >
@@ -463,15 +463,15 @@ search [1] in COMPLETION-INVISIBLE-TEST :
       current-params : (trgHandle(handleId(1, testTa)),
                         srcHandle(handleId(2, testTa))) >
   < taOid(2, testTa) : CryptoOperation |
-      algorithm : TEE-ALG-AES-GCM, operation-mode : TEE-MODE-ENCRYPT,
-      crypto-keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1))),
-      operation-state : TEE-OPERATION-STATE-ACTIVE >
+      algorithm : TEE-ALG-AES-GCM, mode : TEE-MODE-ENCRYPT,
+      attributes : key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1))),
+      state : TEE-OPERATION-STATE-ACTIVE >
   < handleId(2, testTa) : OperationHandle | oid : taOid(2, testTa),
       state : init keySet, key-material-set : true >
   < taOid(1, testTa) : CryptoOperation |
-      algorithm : TEE-ALG-AES-GCM, operation-mode : TEE-MODE-ENCRYPT,
-      crypto-keys : nil, max-key-size : 256 Bits,
-      operation-state : TEE-OPERATION-STATE-INITIAL >
+      algorithm : TEE-ALG-AES-GCM, mode : TEE-MODE-ENCRYPT,
+      attributes : nil, max-size : 256 Bits,
+      state : TEE-OPERATION-STATE-INITIAL >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       state : noHandleState, key-material-set : false >
 =>*
@@ -499,8 +499,8 @@ search [1] in COMPLETION-INVISIBLE-TEST :
 search [1] in COMPLETION-TEST :
   digestDoFinal(handleId(1, testTa), randomData, testTa)
   < taOid(1, testTa) : CryptoOperation |
-      accumulated-data : randomData, algorithm : TEE-ALG-SHA256,
-      operation-state : TEE-OPERATION-STATE-ACTIVE >
+      acc-data : randomData, algorithm : TEE-ALG-SHA256,
+      state : TEE-OPERATION-STATE-ACTIVE >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       state : extract, opclass : TEE-OPERATION-DIGEST >
 =>*
@@ -513,8 +513,8 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   digestExtract(handleId(1, testTa), testTa)
   < taOid(1, testTa) : CryptoOperation |
-      accumulated-data : randomData, algorithm : TEE-ALG-SHA256,
-      operation-state : TEE-OPERATION-STATE-ACTIVE >
+      acc-data : randomData, algorithm : TEE-ALG-SHA256,
+      state : TEE-OPERATION-STATE-ACTIVE >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       state : noHandleState, opclass : TEE-OPERATION-DIGEST >
 =>*
@@ -527,9 +527,9 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   cipherDoFinal(handleId(1, testTa), randomData, testTa)
   < taOid(1, testTa) : CryptoOperation |
-      crypto-keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)),
-      algorithm : TEE-ALG-AES-GCM, operation-mode : TEE-MODE-ENCRYPT,
-      operation-state : TEE-OPERATION-STATE-ACTIVE >
+      attributes : key(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)),
+      algorithm : TEE-ALG-AES-GCM, mode : TEE-MODE-ENCRYPT,
+      state : TEE-OPERATION-STATE-ACTIVE >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       state : init keySet, opclass : TEE-OPERATION-CIPHER >
 =>*
@@ -542,9 +542,9 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   asymEncrypt(handleId(1, testTa), randomData, testTa)
   < taOid(1, testTa) : CryptoOperation |
-      crypto-keys : key(teeAttribute(TEE-ATTR-RSA-MODULUS, randomAttrVal)),
+      attributes : key(teeAttribute(TEE-ATTR-RSA-MODULUS, randomAttrVal)),
       algorithm : TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA1,
-      max-key-size : 2048 Bits, operation-mode : TEE-MODE-ENCRYPT >
+      max-size : 2048 Bits, mode : TEE-MODE-ENCRYPT >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       state : keySet, opclass : TEE-OPERATION-ASYMMETRIC-CIPHER >
 =>*
@@ -557,7 +557,7 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   deriveKey(handleId(1, testTa), empty, handleId(2, testTa), testTa)
   < taOid(1, testTa) : CryptoOperation |
-      operation-mode : TEE-MODE-DERIVE >
+      mode : TEE-MODE-DERIVE >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       state : keySet, opclass : TEE-OPERATION-KEY-DERIVATION >
   < taOid(2, testTa) : TransientObject |
@@ -578,9 +578,9 @@ search [1] in COMPLETION-TEST :
                         current-params : (handle(handleId(1, testTa)),
                                           data(randomData), capacity(dataSize(0))) >
   < taOid(1, testTa) : CryptoOperation |
-      crypto-keys : key(teeAttribute(TEE-ATTR-RSA-MODULUS, randomAttrVal)),
+      attributes : key(teeAttribute(TEE-ATTR-RSA-MODULUS, randomAttrVal)),
       algorithm : TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA1,
-      max-key-size : 2048 Bits, operation-mode : TEE-MODE-ENCRYPT >
+      max-size : 2048 Bits, mode : TEE-MODE-ENCRYPT >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       key-material-set : true, opclass : TEE-OPERATION-ASYMMETRIC-CIPHER >
 =>*
@@ -591,9 +591,9 @@ search [1] in COMPLETION-TEST :
                         api-return : apiReturn(AsymmetricEncrypt,
                           TEE-ERROR-SHORT-BUFFER, size(dataSize(256))) >
   < taOid(1, testTa) : CryptoOperation |
-      crypto-keys : key(teeAttribute(TEE-ATTR-RSA-MODULUS, randomAttrVal)),
+      attributes : key(teeAttribute(TEE-ATTR-RSA-MODULUS, randomAttrVal)),
       algorithm : TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA1,
-      max-key-size : 2048 Bits, operation-mode : TEE-MODE-ENCRYPT >
+      max-size : 2048 Bits, mode : TEE-MODE-ENCRYPT >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       key-material-set : true, opclass : TEE-OPERATION-ASYMMETRIC-CIPHER > .
 
@@ -601,9 +601,9 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   asymSignDigest(handleId(1, testTa), repeatDigestByte(randomData, 32), testTa)
   < taOid(1, testTa) : CryptoOperation |
-      crypto-keys : key(teeAttribute(TEE-ATTR-RSA-MODULUS, randomAttrVal)),
+      attributes : key(teeAttribute(TEE-ATTR-RSA-MODULUS, randomAttrVal)),
       algorithm : TEE-ALG-RSASSA-PKCS1-V1-5-SHA256,
-      operation-mode : TEE-MODE-SIGN >
+      mode : TEE-MODE-SIGN >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       state : keySet, opclass : TEE-OPERATION-ASYMMETRIC-SIGNATURE >
 =>*
@@ -616,10 +616,10 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   reqAEUpdate(handleId(1, testTa), randomData, testTa)
   < taOid(1, testTa) : CryptoOperation |
-      crypto-keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)),
-      accumulated-data : nil, algorithm : TEE-ALG-AES-GCM,
-      operation-mode : TEE-MODE-ENCRYPT,
-      operation-state : TEE-OPERATION-STATE-INITIAL >
+      attributes : key(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)),
+      acc-data : nil, algorithm : TEE-ALG-AES-GCM,
+      mode : TEE-MODE-ENCRYPT,
+      state : TEE-OPERATION-STATE-INITIAL >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       state : init keySet, opclass : TEE-OPERATION-AE >
 =>*
@@ -632,10 +632,10 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   aeEncryptFinal(handleId(1, testTa), randomData, testTa)
   < taOid(1, testTa) : CryptoOperation |
-      crypto-keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)),
-      accumulated-data : randomData, algorithm : TEE-ALG-AES-GCM,
-      operation-mode : TEE-MODE-ENCRYPT,
-      operation-state : TEE-OPERATION-STATE-ACTIVE >
+      attributes : key(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)),
+      acc-data : randomData, algorithm : TEE-ALG-AES-GCM,
+      mode : TEE-MODE-ENCRYPT,
+      state : TEE-OPERATION-STATE-ACTIVE >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       state : init keySet, opclass : TEE-OPERATION-AE >
 =>*
@@ -648,9 +648,9 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   macComputeFinal(handleId(1, testTa), randomData, testTa)
   < taOid(1, testTa) : CryptoOperation |
-      crypto-keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)),
-      accumulated-data : randomData, algorithm : TEE-ALG-HMAC-SHA256,
-      operation-state : TEE-OPERATION-STATE-ACTIVE >
+      attributes : key(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)),
+      acc-data : randomData, algorithm : TEE-ALG-HMAC-SHA256,
+      state : TEE-OPERATION-STATE-ACTIVE >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       state : init keySet, opclass : TEE-OPERATION-MAC >
 =>*
@@ -1001,8 +1001,8 @@ search [1] in COMPLETION-TEST :
                         current-params : (handle(handleId(1, testTa)),
                                           keyHandle(TEE-HANDLE-NULL)) >
   < taOid(1, testTa) : CryptoOperation |
-      crypto-keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)),
-      operation-state : TEE-OPERATION-STATE-ACTIVE >
+      attributes : key(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)),
+      state : TEE-OPERATION-STATE-ACTIVE >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       state : keySet, key-material-set : true >
 =>1
@@ -1156,8 +1156,8 @@ search [1] in COMPLETION-TEST :
   < testTa : TaKernel | app-status : normal, api-state : waitSetOperationKey,
                         current-api : SetOperationKey2 >
   < taOid(1, testTa) : CryptoOperation |
-      algorithm : TEE-ALG-AES-CTR, operation-mode : TEE-MODE-ENCRYPT,
-      max-key-size : 128 Bits >
+      algorithm : TEE-ALG-AES-CTR, mode : TEE-MODE-ENCRYPT,
+      max-size : 128 Bits >
 =>*
   < testTa : TaKernel | app-status : panic, api-state : finished,
                         current-api : SetOperationKey2 > C .
@@ -1169,14 +1169,14 @@ search [1] in COMPLETION-TEST :
     TEE-TYPE-AES, TEE-USAGE-ENCRYPT,
     teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 2)), testTa)
   < taOid(1, testTa) : CryptoOperation |
-      algorithm : TEE-ALG-AES-XTS, operation-mode : TEE-MODE-ENCRYPT,
-      max-key-size : 128 Bits, crypto-keys : nil >
+      algorithm : TEE-ALG-AES-XTS, mode : TEE-MODE-ENCRYPT,
+      max-size : 128 Bits, attributes : nil >
 =>1
   finishInstallTopOperationKeys(handleId(1, testTa), testTa)
   < taOid(1, testTa) : CryptoOperation |
-    algorithm : TEE-ALG-AES-XTS, operation-mode : TEE-MODE-ENCRYPT,
-    max-key-size : 128 Bits,
-    crypto-keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1)))
+    algorithm : TEE-ALG-AES-XTS, mode : TEE-MODE-ENCRYPT,
+    max-size : 128 Bits,
+    attributes : key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1)))
                   key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 2))) > C .
 
 --- A valid AES-XTS key pair still panics when it exceeds operation maxKeySize.
@@ -1188,8 +1188,8 @@ search [1] in COMPLETION-TEST :
   < testTa : TaKernel | app-status : normal, api-state : waitSetOperationKey,
                         current-api : SetOperationKey2 >
   < taOid(1, testTa) : CryptoOperation |
-      algorithm : TEE-ALG-AES-XTS, operation-mode : TEE-MODE-ENCRYPT,
-      max-key-size : 128 Bits >
+      algorithm : TEE-ALG-AES-XTS, mode : TEE-MODE-ENCRYPT,
+      max-size : 128 Bits >
 =>*
   < testTa : TaKernel | app-status : panic, api-state : finished,
                         current-api : SetOperationKey2 > C .
@@ -1201,14 +1201,14 @@ search [1] in COMPLETION-INVISIBLE-TEST :
     TEE-TYPE-AES, TEE-USAGE-ENCRYPT,
     teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 2)), testTa)
   < taOid(1, testTa) : CryptoOperation |
-      algorithm : TEE-ALG-AES-XTS, operation-mode : TEE-MODE-ENCRYPT,
-      max-key-size : 128 Bits, crypto-keys : nil >
+      algorithm : TEE-ALG-AES-XTS, mode : TEE-MODE-ENCRYPT,
+      max-size : 128 Bits, attributes : nil >
 =>*
   finishInstallTopOperationKeys(handleId(1, testTa), testTa)
   < taOid(1, testTa) : CryptoOperation |
-      algorithm : TEE-ALG-AES-XTS, operation-mode : TEE-MODE-ENCRYPT,
-      max-key-size : 128 Bits,
-      crypto-keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1)))
+      algorithm : TEE-ALG-AES-XTS, mode : TEE-MODE-ENCRYPT,
+      max-size : 128 Bits,
+      attributes : key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1)))
                     key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 2))) > C .
 
 --- GP 6.2.7: a persistent first key resumes with the second-key lookup only
@@ -1298,18 +1298,18 @@ search [1] in COMPLETION-TEST :
     teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 2)),
     TEE-USAGE-ENCRYPT, testTa)
   < taOid(1, testTa) : CryptoOperation |
-      algorithm : TEE-ALG-AES-CTR, operation-mode : TEE-MODE-ENCRYPT,
-      max-key-size : 128 Bits,
-      crypto-keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1))),
-      operation-state : TEE-OPERATION-STATE-INITIAL >
+      algorithm : TEE-ALG-AES-CTR, mode : TEE-MODE-ENCRYPT,
+      max-size : 128 Bits,
+      attributes : key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1))),
+      state : TEE-OPERATION-STATE-INITIAL >
 =>1
   installTopOperationKey(handleId(1, testTa), taOid(1, testTa),
     teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 2)), testTa)
   < taOid(1, testTa) : CryptoOperation |
-      algorithm : TEE-ALG-AES-CTR, operation-mode : TEE-MODE-ENCRYPT,
-      max-key-size : 128 Bits,
-      crypto-keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 2))),
-      operation-state : TEE-OPERATION-STATE-INITIAL > .
+      algorithm : TEE-ALG-AES-CTR, mode : TEE-MODE-ENCRYPT,
+      max-size : 128 Bits,
+      attributes : key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 2))),
+      state : TEE-OPERATION-STATE-INITIAL > .
 
 search [1] in COMPLETION-TEST :
   installTopOperationKey(handleId(1, testTa), taOid(1, testTa), empty, testTa)
@@ -1336,12 +1336,12 @@ search [1] in COMPLETION-INVISIBLE-TEST :
       api-state : started, current-api : GetOperationInfoMultiple,
       current-params : handle(handleId(1, testTa)) >
   < taOid(1, testTa) : CryptoOperation |
-      crypto-keys :
+      attributes :
         key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1)))
         key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 2))),
-      max-key-size : 256 Bits, algorithm : TEE-ALG-AES-XTS,
-      operation-mode : TEE-MODE-ENCRYPT,
-      operation-state : TEE-OPERATION-STATE-INITIAL >
+      max-size : 256 Bits, algorithm : TEE-ALG-AES-XTS,
+      mode : TEE-MODE-ENCRYPT,
+      state : TEE-OPERATION-STATE-INITIAL >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       state : keySet, key-material-set : true,
       opclass : TEE-OPERATION-CIPHER >
@@ -1363,10 +1363,10 @@ search [1] in COMPLETION-TEST :
       api-state : started, current-api : GetOperationInfo,
       current-params : handle(handleId(1, testTa)) >
   < taOid(1, testTa) : CryptoOperation |
-      crypto-keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1))),
-      max-key-size : 256 Bits, algorithm : TEE-ALG-AES-CTR,
-      operation-mode : TEE-MODE-ENCRYPT,
-      operation-state : TEE-OPERATION-STATE-INITIAL >
+      attributes : key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1))),
+      max-size : 256 Bits, algorithm : TEE-ALG-AES-CTR,
+      mode : TEE-MODE-ENCRYPT,
+      state : TEE-OPERATION-STATE-INITIAL >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       state : keySet, key-material-set : true,
       opclass : TEE-OPERATION-CIPHER >
@@ -1385,10 +1385,10 @@ search [1] in COMPLETION-INVISIBLE-TEST :
       api-state : started, current-api : GetOperationInfo,
       current-params : handle(handleId(1, testTa)) >
   < taOid(1, testTa) : CryptoOperation |
-      crypto-keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1))),
-      max-key-size : 256 Bits, algorithm : TEE-ALG-AES-CTR,
-      operation-mode : TEE-MODE-ENCRYPT,
-      operation-state : TEE-OPERATION-STATE-INITIAL >
+      attributes : key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1))),
+      max-size : 256 Bits, algorithm : TEE-ALG-AES-CTR,
+      mode : TEE-MODE-ENCRYPT,
+      state : TEE-OPERATION-STATE-INITIAL >
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       state : keySet, key-material-set : true,
       opclass : TEE-OPERATION-CIPHER >

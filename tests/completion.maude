@@ -860,7 +860,6 @@ search [1] in COMPLETION-TEST :
   < osId : TeeOSKernel |
       service-in : openTASession(TESTTA) nil, service-out : nil,
       ta-prog-map : TESTTA |-> [P],
-      storage : empty, storage-status : empty,
       opened-session : empty, session-counter : 0 >
 =>1
   < trustAppId(0) : TrustApp |
@@ -872,6 +871,21 @@ search [1] in COMPLETION-TEST :
       task : noTask, task-counter : 0 >
   < storageId(0) : Storage |
       status : storageNormal, files : empty, counter : 0 >
+  C .
+
+--- Storage services follow the TA's Oid reference instead of an OS-side map.
+search [1] in COMPLETION-TEST :
+  < osId : TeeOSKernel |
+      service-in : notifyFileCreation(testFileId), service-out : nil,
+      service-request-ta : TESTTA, service-request-ta-inst : testTa >
+  < testTa : TaKernel | storage-object : storageId(0) >
+  < storageId(0) : Storage | files : empty >
+=>1
+  < osId : TeeOSKernel |
+      service-in : nil, service-out : acceptNotification,
+      service-request-ta : TESTTA, service-request-ta-inst : testTa >
+  < testTa : TaKernel | storage-object : storageId(0) >
+  < storageId(0) : Storage | files : testFileId >
   C .
 
 --- TeeInvokeTACommand resolves a top-level session handle in both directions.

@@ -135,11 +135,11 @@ endv
 omod TEE-OS is
   pr NAT .
   pr STORAGE-OBJECT-ID .
+  pr STORAGE-STATUS .
+  pr SET{FileId} .
   pr TA-INSTANCE-ID .
   pr MAP{AppId,ProgramCell} .
   pr MAP{SessionId,TaInstId} .
-  pr MAP{AppId,Set{FileId}} .
-  pr MAP{AppId,StorageStatus} .
   pr MAP{SessionId,List{SmcArgument}} .
   pr MAP{AppId,Set{TaObjectId}} * (op undefined to noObject) .
   pr LIST{Service} .
@@ -148,13 +148,12 @@ omod TEE-OS is
   subsort StorageId < Oid .
   
 --- Paper-level classes. TeeOSKernel refines TrustedOS with executable service
---- queues and per-application storage maps.
+--- queues; TA storage state is held by separate Storage objects.
   class Storage | status : StorageStatus, files : Set{FileId}, counter : Nat .
   class TrustedOS | opened-session : Map{SessionId,TaInstId} .
 
 --- Actual Implemenation
   class TeeOSKernel | session-counter : Nat,
-                      storage : Map{AppId,Set{FileId}}, storage-status : Map{AppId,StorageStatus},
                       service-request-ta : AppId?, service-request-ta-inst : TaInstId?,
                       service-in : List{Service}, service-out : List{ServiceReturn},
                       temporary-objects : Map{AppId,Set{TaObjectId}},

@@ -10,19 +10,31 @@ omod TASK is
   op noTask : -> Task? [ctor] .
 endom
 
+omod CLIENT-SERVICE is
+  pr CONFIGURATION .
+  pr IMP-FUNC-SIG .
+
+  sorts ClientService ClientService? .
+  subsort ClientService < ClientService? .
+
+  op clientService : Oid FuncId -> ClientService [ctor] .
+  op noClientService : -> ClientService? [ctor] .
+endom
+
 --- This module defines the abstract TA class.
 
 omod TRUST-APP is
   pr PROGRAM-APP .
   pr TA-KERNEL .
   pr TASK .
+  pr CLIENT-SERVICE .
 
-  class TA .
-  subclass TA < App TAKernel .
+  class TrustedApp | client-service : ClientService? .
+  subclass TrustedApp < App TAKernel .
 
 --- Model/Implementation Specific Version
   class TrustApp | task : Task?, task-counter : Nat, state-changed : Bool .
-  subclass TrustApp < TA TaKernel ProgramApp .
+  subclass TrustApp < TrustedApp TaKernel ProgramApp .
 endom
 
 --- This module defines messages for TAs.
@@ -51,7 +63,6 @@ omod TRUST-APP-BEHAVIOR is
 
   var RI : Oid .
   var TI : TaInstId .
-  var MSG : InvokeMessage .
   var SID : SessionId .
   var FUNC : FuncId .
   var P : Program .
@@ -62,9 +73,9 @@ omod TRUST-APP-BEHAVIOR is
 --- Version In Paper
   --- crl [handle-invoke-ta] :
   ---   invkTa(TI , RI , ARGS)
-  ---   < TI : TA | proc : none , prog : P > 
+  ---   < TI : TrustedApp | proc : none , prog : P >
   ---   => 
-  ---   < TI : TA | proc : run(P , F , VL) > 
+  ---   < TI : TrustedApp | proc : run(P , F , VL) >
   ---   invkTa(TI , RI , ARGS) 
   --- if F := getFunc(ARGS) /\ VL := getParams(ARGS) 
   --- .
@@ -73,10 +84,11 @@ omod TRUST-APP-BEHAVIOR is
 --- Receive parameters from RA.
 
   rl [accept-invoke-ta] :
-    invokeTA(TI , MSG , RI)
+    invokeTA(TI , {SID , FUNC , VL} , RI)
     < TI : TrustApp | task : noTask , running : false >
-    => 
-    < TI : TrustApp | task : task(MSG , RI) > 
+    =>
+    < TI : TrustApp | client-service : clientService(RI , FUNC) ,
+                      task : task({SID , FUNC , VL} , RI) >
   .
 
 --- Handle REE request by running TA program.
@@ -92,9 +104,9 @@ omod TRUST-APP-BEHAVIOR is
 --- Version In Paper
   --- crl [handle-invoke-ta-finish] :
   ---   invkTa(TI , RI , ARGS)
-  ---   < TI : TA | proc : KS > 
+  ---   < TI : TrustedApp | proc : KS >
   ---   => 
-  ---   < TI : TA | proc : none > 
+  ---   < TI : TrustedApp | proc : none >
   ---   invkTaRet(RI , RV)
   --- if finished(KS) /\ RV := getRes(KS) /\ RI := getRequestor(ARGS) 
   --- .
@@ -105,7 +117,8 @@ omod TRUST-APP-BEHAVIOR is
   rl [handle-invoke-ta-finish] :
     < TI : TrustApp | proc : (k(.K) KS) , task : task({SID , FUNC , VL} , RI) , running : true >
     => 
-    < TI : TrustApp | proc : none , task : noTask , running : false >
+    < TI : TrustApp | proc : none , client-service : noClientService ,
+                      task : noTask , running : false >
     invokeTAReturn({SID , FUNC , readReturn(FUNC, KS)} , RI) 
   .
 
@@ -134,9 +147,9 @@ omod TRUST-APP-IMP-BEHAVIOR is
 
 --- Version In Paper
   --- crl [tee-api-call] :
-  ---   < TI : TA | proc : (k(FUNC(VL) ~> K) KS) > 
+  ---   < TI : TrustedApp | proc : (k(FUNC(VL) ~> K) KS) >
   ---   => 
-  ---   < TI : TA | proc : (k($wait(FUNC) ~> K) KS) , api-call : FUNC(VL) > 
+  ---   < TI : TrustedApp | proc : (k($wait(FUNC) ~> K) KS) , api-call : FUNC(VL) >
   --- if isTeeApi(FUNC) 
   --- .
 
@@ -161,10 +174,10 @@ omod TRUST-APP-IMP-BEHAVIOR is
 
 --- Version In Paper
   --- crl [tee-api-call-return] :
-  ---   < TI : TA | proc : (k($wait(FUNC) ~> $out(XL) ~> K) KS) ,
+  ---   < TI : TrustedApp | proc : (k($wait(FUNC) ~> $out(XL) ~> K) KS) ,
   ---               api-call : return(FUNC , VL) >
   ---   => 
-  ---   < TI : TA | proc : (k(STMT ~> K) KS) , api-call : noCall >
+  ---   < TI : TrustedApp | proc : (k(STMT ~> K) KS) , api-call : noCall >
   --- if isTeeApi(FUNC) /\ STMT := makeRetStmt(VL , XL) 
   --- .
 
@@ -198,9 +211,9 @@ omod TRUST-APP-IMP-BEHAVIOR-INVISIBLE is
 
 --- Version In Paper
   --- crl [tee-api-call] :
-  ---   < TI : TA | proc : (k(FUNC(VL) ~> K) KS) > 
+  ---   < TI : TrustedApp | proc : (k(FUNC(VL) ~> K) KS) >
   ---   => 
-  ---   < TI : TA | proc : (k($wait(FUNC) ~> K) KS) , api-call : FUNC(VL) > 
+  ---   < TI : TrustedApp | proc : (k($wait(FUNC) ~> K) KS) , api-call : FUNC(VL) >
   --- if isTeeApi(FUNC) 
   --- .
 
@@ -224,10 +237,10 @@ omod TRUST-APP-IMP-BEHAVIOR-INVISIBLE is
 
 --- Version In Paper
   --- crl [tee-api-call-return] :
-  ---   < TI : TA | proc : (k($wait(FUNC) ~> $out(XL) ~> K) KS) ,
+  ---   < TI : TrustedApp | proc : (k($wait(FUNC) ~> $out(XL) ~> K) KS) ,
   ---               api-call : return(FUNC , VL) >
   ---   => 
-  ---   < TI : TA | proc : (k(STMT ~> K) KS) , api-call : noCall >
+  ---   < TI : TrustedApp | proc : (k(STMT ~> K) KS) , api-call : noCall >
   --- if isTeeApi(FUNC) /\ STMT := makeRetStmt(VL , XL) 
   --- .
 

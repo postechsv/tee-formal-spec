@@ -793,6 +793,25 @@ search [1] in COMPLETION-TEST :
   finishReadData(randomData, testTa)
   C .
 
+--- Enumeration resolves duplicate file identifiers in the TA's Storage only.
+search [1] in COMPLETION-TEST :
+  reqNextObject(storageId(1), testFileId, testTa, TESTTA)
+  < storageOid(0, storageId(0)) : PersistentObject |
+      type : TEE-TYPE-DES, max-size : 64 Bits, attributes : empty,
+      usages : empty, data-stream-id : taOid(1, testTa),
+      file-id : testFileId, trust-app-id : TESTTA >
+  < taOid(1, testTa) : DataStreamObject | data-size : dataSize(1) >
+  < storageOid(0, storageId(1)) : PersistentObject |
+      type : TEE-TYPE-AES, max-size : 128 Bits, attributes : empty,
+      usages : TEE-USAGE-ENCRYPT, data-stream-id : taOid(2, testTa),
+      file-id : testFileId, trust-app-id : TESTTA >
+  < taOid(2, testTa) : DataStreamObject | data-size : dataSize(2) >
+=>1
+  retNextObject(teeObjectInfo(TEE-TYPE-AES, keySize(empty), 128 Bits,
+                              TEE-USAGE-ENCRYPT, dataSize(2), pos(0), empty),
+                testTa)
+  C .
+
 --- WriteObjectData updates the top-level handle position and stream contents.
 search [1] in COMPLETION-TEST :
   writeObjectData(handleId(1, testTa), randomData, testTa, TESTTA)

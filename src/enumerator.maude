@@ -26,11 +26,12 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
   pr TEE-OS-BEHAVIOR .
 
   var B : Bool .
-  var N : Nat .
+  vars N M : Nat .
   var HANDLE : HandleId .
   var TK : TaInstId .
   var TN : AppId .
   vars OI EI DI : TaObjectId .
+  var SI : Oid .
   var FILE : FileId .
   var FILES : Set{FileId} .
   var STATUS : StorageStatus .
@@ -313,7 +314,7 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
     retNextObjectId(FILE , TK)
   .
 
-  msg reqNextObject : FileId TaInstId AppId -> Msg .
+  msg reqNextObject : Oid FileId TaInstId AppId -> Msg .
   msg retNextObject : TeeObjectInfo TaInstId -> Msg .
 
   rl [get-next-persistent-subroutine] :
@@ -321,22 +322,22 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
     < TK : TaKernel | api-state : waitGetNextObjectId ,
                       current-api : GetNextPersistentObject ,
                       current-params : PARAMS ,
-                      trust-app-id : TN >
+                      storage : SI , trust-app-id : TN >
     =>
     < TK : TaKernel | api-state : waitGetNextObject ,
                       current-params : PARAMS , fileId(FILE) >
-    reqNextObject(FILE , TK , TN)
+    reqNextObject(SI , FILE , TK , TN)
   .
 
---- TODO: which handle info to use?
+--- Resolve the identifier only inside the TA's paper-level Storage relation.
   rl [get-next-persistent-subroutine] :
-    reqNextObject(FILE , TK , TN)
-    < OI : PersistentObject | type : OBJTYPE , max-size : MAXOBJSIZE , attributes : ATTRS ,
+    reqNextObject(SI , FILE , TK , TN)
+    < storageOid(M, SI) : PersistentObject | type : OBJTYPE , max-size : MAXOBJSIZE , attributes : ATTRS ,
                               usages : OBJUSAGES , data-stream-id : DI ,
                               file-id : FILE , trust-app-id : TN >
     < DI : DataStreamObject | data-size : DATASIZE >
     =>
-    < OI : PersistentObject | >
+    < storageOid(M, SI) : PersistentObject | >
     < DI : DataStreamObject | >
     retNextObject(teeObjectInfo(OBJTYPE , keySize(ATTRS) , MAXOBJSIZE , OBJUSAGES , DATASIZE , pos(0) , empty) , TK)
   .

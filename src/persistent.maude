@@ -432,26 +432,26 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 
 --- The following four rules define when an object already exists and overwrite flag exist.
 
-  msg deleteOldPersistent : FileId TaInstId AppId -> Msg .
+  msg deleteOldPersistent : Oid FileId TaInstId AppId -> Msg .
   msg finishDeleteOldPersistent : TaInstId -> Msg .
 
   rl [create-persistent-subroutine] :
     < TK : TaKernel | status : normal , api-state : creationNotReady ,
                       current-api : CreatePersistentObject ,
                       current-params : fileId(FILE) , PARAMS ,
-                      trust-app-id : TN >
+                      storage : SI , trust-app-id : TN >
     =>
     < TK : TaKernel | api-state : waitDeleteOldPersistent >
-    deleteOldPersistent(FILE , TK , TN)
+    deleteOldPersistent(SI , FILE , TK , TN)
   .
 
   rl [create-persistent-subroutine] :
-    deleteOldPersistent(FILE , TK , TN)
-    < OI : PersistentObject | file-id : FILE , data-stream-id : DI , trust-app-id : TN >
-    < DI : DataStreamObject | persistent-owner-id : OI >
+    deleteOldPersistent(SI , FILE , TK , TN)
+    < storageOid(M, SI) : PersistentObject | file-id : FILE , data-stream-id : DI , trust-app-id : TN >
+    < DI : DataStreamObject | persistent-owner-id : storageOid(M, SI) >
     HS
     =>
-    removePersistentHandles(OI, HS)
+    removePersistentHandles(storageOid(M, SI), HS)
     finishDeleteOldPersistent(TK)
   .
 
@@ -1040,19 +1040,19 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | status : normal , api-state : creationNotReady ,
                       current-api : CreatePersistentObject ,
                       current-params : fileId(FILE) , PARAMS ,
-                      trust-app-id : TN >
+                      storage : SI , trust-app-id : TN >
     =
     < TK : TaKernel | api-state : waitDeleteOldPersistent >
-    deleteOldPersistent(FILE , TK , TN)
+    deleteOldPersistent(SI , FILE , TK , TN)
   .
 
   eq
-    deleteOldPersistent(FILE , TK , TN)
-    < OI : PersistentObject | file-id : FILE , data-stream-id : DI , trust-app-id : TN >
-    < DI : DataStreamObject | persistent-owner-id : OI >
+    deleteOldPersistent(SI , FILE , TK , TN)
+    < storageOid(M, SI) : PersistentObject | file-id : FILE , data-stream-id : DI , trust-app-id : TN >
+    < DI : DataStreamObject | persistent-owner-id : storageOid(M, SI) >
     HS
     =
-    removePersistentHandles(OI, HS)
+    removePersistentHandles(storageOid(M, SI), HS)
     finishDeleteOldPersistent(TK)
   .
 

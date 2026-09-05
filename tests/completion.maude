@@ -758,6 +758,27 @@ search [1] in COMPLETION-TEST :
   < storageOid(0, storageId(0)) : PersistentObject | file-id : testFileId >
   < storageOid(0, storageId(1)) : PersistentObject | file-id : testFileId > .
 
+--- Overwrite removes only the old object in the TA's Storage namespace.
+search [1] in COMPLETION-TEST :
+  deleteOldPersistent(storageId(1), testFileId, testTa, TESTTA)
+  < storageOid(0, storageId(0)) : PersistentObject |
+      file-id : testFileId, data-stream-id : taOid(1, testTa),
+      trust-app-id : TESTTA >
+  < taOid(1, testTa) : DataStreamObject |
+      persistent-owner-id : storageOid(0, storageId(0)) >
+  < storageOid(0, storageId(1)) : PersistentObject |
+      file-id : testFileId, data-stream-id : taOid(2, testTa),
+      trust-app-id : TESTTA >
+  < taOid(2, testTa) : DataStreamObject |
+      persistent-owner-id : storageOid(0, storageId(1)) >
+=>*
+  finishDeleteOldPersistent(testTa)
+  < storageOid(0, storageId(0)) : PersistentObject |
+      file-id : testFileId, data-stream-id : taOid(1, testTa),
+      trust-app-id : TESTTA >
+  < taOid(1, testTa) : DataStreamObject |
+      persistent-owner-id : storageOid(0, storageId(0)) > .
+
 --- ReadObjectData resolves and advances a top-level persistent handle.
 search [1] in COMPLETION-TEST :
   readObjectData(handleId(1, testTa), dataSize(1), testTa, TESTTA)

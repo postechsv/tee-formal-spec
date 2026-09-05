@@ -99,15 +99,21 @@ omod TEE-OS-BEHAVIOR is
   eq updateStorageFiles(notifyFileDeletion(FILE) , FL) = FL [owise] .
   eq updateStorageFiles(notifyFileRename(FILE' , FILE) , (FILE' , FL)) = (FILE , FL) .
 
+  --- A persistent object and its data stream consume two storage identifiers.
+  op updateStorageCounter : Service Nat -> Nat .
+  eq updateStorageCounter(notifyFileCreation(FILE) , N) = N + 2 .
+  eq updateStorageCounter(S , N) = N [owise] .
+
   crl [notify-file-manipulation] :
     < KI : TeeOSKernel | service-in : (S SIL) , service-out : SOL , 
                          service-request-ta : TN , service-request-ta-inst : TK >
     < TK : TaKernel | storage-object : SI >
-    < SI : Storage | files : FL >
+    < SI : Storage | files : FL , counter : N >
     =>
     < KI : TeeOSKernel | service-in : SIL , service-out : (SOL acceptNotification) >
     < TK : TaKernel | >
-    < SI : Storage | files : updateStorageFiles(S , FL) >
+    < SI : Storage | files : updateStorageFiles(S , FL) ,
+                     counter : updateStorageCounter(S , N) >
   if isNotifyService(S)
   .
 

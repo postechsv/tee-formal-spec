@@ -212,8 +212,8 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
     =>
     < TK : TaKernel | api-state : finished , counter : N + 2 ,
                       api-return : apiReturn(AllocateTransientObject , TEE-SUCCESS, handle(handleId(N + 1 , TK))) >
-    < taOid(N , TK) : TransientObject | object-type : OBJTYPE , max-object-size : MAXOBJSIZE ,
-                                        attribute-set : empty , object-usage-set : allObjectUsages,
+    < taOid(N , TK) : TransientObject | type : OBJTYPE , max-size : MAXOBJSIZE ,
+                                        attributes : empty , usages : allObjectUsages,
                                         initialized : false,
                                         trust-app-id : TN >
     freshTransientHandle(N + 1 , TK , taOid(N , TK))
@@ -321,7 +321,7 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
     < HANDLE : ObjectHandle | oid : OI >
     =>
     < OI : TransientObject | initialized : false,
-                             attribute-set : empty , object-usage-set : allObjectUsages >
+                             attributes : empty , usages : allObjectUsages >
     < HANDLE : ObjectHandle | >
     retResetTransient(TK)
   .
@@ -371,11 +371,11 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
   crl [populate-transient-top-level-handle] :
     reqPopulateTransient(HANDLE , ATTRS , TK)
     < OI : TransientObject | initialized : false,
-                             object-type : OBJTYPE >
+                             type : OBJTYPE >
     < HANDLE : ObjectHandle | oid : OI  >
     =>
     < OI : TransientObject | initialized : true,
-                             attribute-set : ATTRS >
+                             attributes : ATTRS >
     < HANDLE : ObjectHandle | >
     retPopulateTransient(TK)
   if checkCompatible(OBJTYPE , ATTRS)
@@ -386,7 +386,7 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
     < TK : TaKernel | status : normal , api-state : waitPopulateTransient ,
                       current-api : PopulateTransientObject >
     < OI : TransientObject | initialized : false,
-                             object-type : OBJTYPE >
+                             type : OBJTYPE >
     < HANDLE : ObjectHandle | oid : OI  >
     =>
     < TK : TaKernel | status : panic , api-state : finished >
@@ -425,7 +425,7 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 
   --- crl [populate-transient-bad-params-err] :
   ---   apiCall(PopulateTransientObjectCall(HANDLE , ATTRS) , TI)
-  ---                            object-type : OBJTYPE , max-object-size : MAXOBJSIZE >
+  ---                            type : OBJTYPE , max-size : MAXOBJSIZE >
   ---   =>
   ---   apiReturn(PopulateTransientObjectReturn(TEE-ERROR-BAD-PARAMETERS) , TI)
   --- if validAttributes(OBJTYPE , MAXOBJSIZE , ATTRS) /\ not validAttrValues(OBJTYPE , ATTRS)
@@ -482,8 +482,8 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
   rl [copy-object-attributes-from-top-level-handle] :
     reqAttribute(HANDLE , TK)
     < OI : TransientObject | initialized : true,
-                             object-type : OBJTYPE , attribute-set : ATTRS ,
-                             object-usage-set : OBJUSAGES >
+                             type : OBJTYPE , attributes : ATTRS ,
+                             usages : OBJUSAGES >
     < HANDLE : ObjectHandle | oid : OI  >
     =>
     < OI : TransientObject | >
@@ -518,12 +518,12 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
   crl [copy-object-attributes-to-top-level-handle] :
     reqCopyAttribute(HANDLE , ATTRS , OBJTYPE , OBJUSAGES , TK)
     < OI : TransientObject | initialized : false,
-                             object-type : OBJTYPE' , object-usage-set : OBJUSAGES' >
+                             type : OBJTYPE' , usages : OBJUSAGES' >
     < HANDLE : ObjectHandle | oid : OI  >
     =>
     < OI : TransientObject | initialized : true,
-                             object-usage-set : updateObjectUsage(OBJUSAGES' , OBJUSAGES) ,
-                             attribute-set : ATTRS >
+                             usages : updateObjectUsage(OBJUSAGES' , OBJUSAGES) ,
+                             attributes : ATTRS >
     < HANDLE : ObjectHandle | >
     finishCopyAttribute(TK)
   if typeCompatible(OBJTYPE', OBJTYPE)
@@ -548,7 +548,7 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
     < TK : TaKernel | status : normal , api-state : waitCopyAttribute ,
                       current-api : CopyObjectAttributes1 >
     < OI : TransientObject | initialized : false,
-                             object-type : OBJTYPE' >
+                             type : OBJTYPE' >
     < HANDLE : ObjectHandle | oid : OI  >
     =>
     < TK : TaKernel | status : panic , api-state : finished >
@@ -590,11 +590,11 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
   crl [generate-key-top-level-handle] :
     reqGenerateKey(HANDLE , KEYSIZE , ATTRS , TK)
     < OI : TransientObject | initialized : false,
-                             object-type : OBJTYPE , max-object-size : MAXOBJSIZE >
+                             type : OBJTYPE , max-size : MAXOBJSIZE >
     < HANDLE : ObjectHandle | oid : OI  >
     =>
     < OI : TransientObject | initialized : true,
-                             attribute-set : randomAttributes(OBJTYPE , ATTRS) >
+                             attributes : randomAttributes(OBJTYPE , ATTRS) >
     < HANDLE : ObjectHandle | >
     retGenerateKey(TK)
   if KEYSIZE <= MAXOBJSIZE /\ validKeySizeForGeneration(OBJTYPE , KEYSIZE)
@@ -606,7 +606,7 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
     < TK : TaKernel | status : normal , api-state : waitReqGenerateKey ,
                       current-api : GenerateKey >
     < OI : TransientObject | initialized : false,
-                             object-type : OBJTYPE , max-object-size : MAXOBJSIZE >
+                             type : OBJTYPE , max-size : MAXOBJSIZE >
     < HANDLE : ObjectHandle | oid : OI  >
     =>
     < TK : TaKernel | status : panic , api-state : finished >
@@ -620,7 +620,7 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
     < TK : TaKernel | status : normal , api-state : waitReqGenerateKey ,
                       current-api : GenerateKey >
     < OI : TransientObject | initialized : false,
-                             object-type : OBJTYPE , max-object-size : MAXOBJSIZE >
+                             type : OBJTYPE , max-size : MAXOBJSIZE >
     < HANDLE : ObjectHandle | oid : OI  >
     =>
     < TK : TaKernel | status : panic , api-state : finished >
@@ -634,7 +634,7 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
     < TK : TaKernel | status : normal , api-state : waitReqGenerateKey ,
                       current-api : GenerateKey >
     < OI : TransientObject | initialized : false,
-                             object-type : OBJTYPE , max-object-size : MAXOBJSIZE >
+                             type : OBJTYPE , max-size : MAXOBJSIZE >
     < HANDLE : ObjectHandle | oid : OI  >
     =>
     < TK : TaKernel | status : panic , api-state : finished >
@@ -672,7 +672,7 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 
   --- crl [generate-key-bad-params-err] :
   ---   apiCall(GenerateKeyCall(HANDLE , KEYSIZE , ATTRS) , TI)
-  ---                            object-type : OBJTYPE , max-object-size : MAXOBJSIZE >
+  ---                            type : OBJTYPE , max-size : MAXOBJSIZE >
   ---   =>
   ---   apiReturn(GenerateKeyReturn(TEE-ERROR-BAD-PARAMETERS) , TI)
   --- if validParamsForKeyGen(OBJTYPE , MAXOBJSIZE , ATTRS , KEYSIZE) /\ not validParamValues(OBJTYPE , ATTRS)
@@ -719,8 +719,8 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
     =
     < TK : TaKernel | api-state : finished , counter : N + 2 ,
                       api-return : apiReturn(AllocateTransientObject, TEE-SUCCESS, handle(handleId(N + 1 , TK))) >
-    < taOid(N , TK) : TransientObject | object-type : OBJTYPE , max-object-size : MAXOBJSIZE ,
-                                        attribute-set : empty , object-usage-set : allObjectUsages,
+    < taOid(N , TK) : TransientObject | type : OBJTYPE , max-size : MAXOBJSIZE ,
+                                        attributes : empty , usages : allObjectUsages,
                                         initialized : false,
                                         trust-app-id : TN >
     freshTransientHandle(N + 1 , TK , taOid(N , TK))
@@ -805,7 +805,7 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
     < HANDLE : ObjectHandle | oid : OI >
     =
     < OI : TransientObject | initialized : false,
-                             attribute-set : empty , object-usage-set : allObjectUsages >
+                             attributes : empty , usages : allObjectUsages >
     < HANDLE : ObjectHandle | >
     retResetTransient(TK)
   .
@@ -844,11 +844,11 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
   ceq
     reqPopulateTransient(HANDLE , ATTRS , TK)
     < OI : TransientObject | initialized : false,
-                             object-type : OBJTYPE >
+                             type : OBJTYPE >
     < HANDLE : ObjectHandle | oid : OI  >
     =
     < OI : TransientObject | initialized : true,
-                             attribute-set : ATTRS >
+                             attributes : ATTRS >
     < HANDLE : ObjectHandle | >
     retPopulateTransient(TK)
   if checkCompatible(OBJTYPE , ATTRS)
@@ -859,7 +859,7 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | status : normal , api-state : waitPopulateTransient ,
                       current-api : PopulateTransientObject >
     < OI : TransientObject | initialized : false,
-                             object-type : OBJTYPE >
+                             type : OBJTYPE >
     < HANDLE : ObjectHandle | oid : OI  >
     =
     < TK : TaKernel | status : panic , api-state : finished >
@@ -928,8 +928,8 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
   eq
     reqAttribute(HANDLE , TK)
     < OI : TransientObject | initialized : true,
-                             object-type : OBJTYPE , attribute-set : ATTRS ,
-                             object-usage-set : OBJUSAGES >
+                             type : OBJTYPE , attributes : ATTRS ,
+                             usages : OBJUSAGES >
     < HANDLE : ObjectHandle | oid : OI  >
     =
     < OI : TransientObject | >
@@ -963,12 +963,12 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
   ceq
     reqCopyAttribute(HANDLE , ATTRS , OBJTYPE , OBJUSAGES , TK)
     < OI : TransientObject | initialized : false,
-                             object-type : OBJTYPE' , object-usage-set : OBJUSAGES' >
+                             type : OBJTYPE' , usages : OBJUSAGES' >
     < HANDLE : ObjectHandle | oid : OI  >
     =
     < OI : TransientObject | initialized : true,
-                             object-usage-set : updateObjectUsage(OBJUSAGES' , OBJUSAGES) ,
-                             attribute-set : ATTRS >
+                             usages : updateObjectUsage(OBJUSAGES' , OBJUSAGES) ,
+                             attributes : ATTRS >
     < HANDLE : ObjectHandle | >
     finishCopyAttribute(TK)
   if typeCompatible(OBJTYPE', OBJTYPE)
@@ -991,7 +991,7 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | status : normal , api-state : waitCopyAttribute ,
                       current-api : CopyObjectAttributes1 >
     < OI : TransientObject | initialized : false,
-                             object-type : OBJTYPE' >
+                             type : OBJTYPE' >
     < HANDLE : ObjectHandle | oid : OI  >
     =
     < TK : TaKernel | status : panic , api-state : finished >
@@ -1025,13 +1025,13 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
     reqGenerateKey(HANDLE , KEYSIZE , ATTRS , TK)
     < TK : TaKernel | api-state : waitReqGenerateKey , current-api : GenerateKey >
     < OI : TransientObject | initialized : false,
-                             object-type : OBJTYPE , max-object-size : MAXOBJSIZE >
+                             type : OBJTYPE , max-size : MAXOBJSIZE >
     < HANDLE : ObjectHandle | oid : OI  >
     =
     < TK : TaKernel | api-state : finished , current-api : GenerateKey ,
                       api-return : apiReturn(GenerateKey , TEE-SUCCESS) >
     < OI : TransientObject | initialized : true,
-                             attribute-set : randomAttributes(OBJTYPE , ATTRS) >
+                             attributes : randomAttributes(OBJTYPE , ATTRS) >
     < HANDLE : ObjectHandle | >
   if KEYSIZE <= MAXOBJSIZE /\ validKeySizeForGeneration(OBJTYPE , KEYSIZE)
      /\ mandatoryParamsForKeyGen(OBJTYPE , ATTRS)
@@ -1042,7 +1042,7 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | status : normal , api-state : waitReqGenerateKey ,
                       current-api : GenerateKey >
     < OI : TransientObject | initialized : false,
-                             object-type : OBJTYPE , max-object-size : MAXOBJSIZE >
+                             type : OBJTYPE , max-size : MAXOBJSIZE >
     < HANDLE : ObjectHandle | oid : OI  >
     =
     < TK : TaKernel | status : panic , api-state : finished >
@@ -1056,7 +1056,7 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | status : normal , api-state : waitReqGenerateKey ,
                       current-api : GenerateKey >
     < OI : TransientObject | initialized : false,
-                             object-type : OBJTYPE , max-object-size : MAXOBJSIZE >
+                             type : OBJTYPE , max-size : MAXOBJSIZE >
     < HANDLE : ObjectHandle | oid : OI  >
     =
     < TK : TaKernel | status : panic , api-state : finished >
@@ -1070,7 +1070,7 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | status : normal , api-state : waitReqGenerateKey ,
                       current-api : GenerateKey >
     < OI : TransientObject | initialized : false,
-                             object-type : OBJTYPE , max-object-size : MAXOBJSIZE >
+                             type : OBJTYPE , max-size : MAXOBJSIZE >
     < HANDLE : ObjectHandle | oid : OI  >
     =
     < TK : TaKernel | status : panic , api-state : finished >

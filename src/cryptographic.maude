@@ -6,6 +6,7 @@ omod CRYPTO-OPERATION is
   pr TA-OBJECT .
   pr LIST{Data} .
   pr LIST{CryptoKey} .
+  pr SET{TeeAttribute} .
   pr CRYPTO-KEY-SIZE .
   pr POSSIBLE-CRYPTO-KEY-SIZE .
   pr ALGORITHM-IDENTIFIER .
@@ -16,16 +17,26 @@ omod CRYPTO-OPERATION is
 --- Paper-level class, represented with the concrete GP datatypes used by the
 --- executable model.  Each CryptoKey wraps a set of TEE attributes; the list
 --- preserves the two-key boundary required by algorithms such as AES-XTS.
-  class CryptoOp | attributes : List{CryptoKey},
+  class CryptoOp | attributes : Set{TeeAttribute},
                    max-size : CryptoKeySize,
                    acc-data : List{Data},
                    algorithm : AlgorithmIdentifier,
                    mode : OperationMode,
                    state : OperationState .
 
---- Model/Implementation Specific Version
-  class CryptoOperation | initialization-vector : List{Data} .
+--- Model/Implementation Specific Version.  The key list retains the boundary
+--- between multiple GP keys while the paper-level attribute set stays exact.
+  class CryptoOperation | keys : List{CryptoKey},
+                          initialization-vector : List{Data} .
   subclass CryptoOperation < CryptoOp TaObject .
+
+  var KEYATTRS : Set{TeeAttribute} .
+  var KEYLIST : List{CryptoKey} .
+
+  op keyAttributes : List{CryptoKey} -> Set{TeeAttribute} .
+  eq keyAttributes(nil) = empty .
+  eq keyAttributes(key(KEYATTRS) KEYLIST) =
+    (KEYATTRS , keyAttributes(KEYLIST)) .
 
 endom
 
@@ -665,7 +676,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | api-state : finished , counter : N + 2 ,
                       api-return : apiReturn(AllocateOperation , TEE-SUCCESS , handle(handleId(N + 1 , TK))) >
     < taOid(N , TK) : CryptoOperation |
-                                        attributes : nil , max-size : KEYSIZE ,
+                                        attributes : empty , keys : nil , max-size : KEYSIZE ,
                                         acc-data : nil ,
                                         algorithm : ALGO , mode : MODE ,
                                         initialization-vector : nil ,
@@ -793,7 +804,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   rl [req-operation-top-level-handle] :
     reqOperationAttr(HANDLE , TK)
     < CI : CryptoOperation |
-                              attributes : KEYS , algorithm : ALGO ,
+                              keys : KEYS , algorithm : ALGO ,
                               mode : MODE , state : OS >
     < HANDLE : OperationHandle | oid : CI , state : HS,
                                  key-material-set : B2 >
@@ -828,7 +839,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   rl [req-operation-info-multiple] :
     reqOperationInfoMultiple(HANDLE , TK)
     < CI : CryptoOperation |
-                             attributes : KEYS , max-size : KEYSIZE ,
+                             keys : KEYS , max-size : KEYSIZE ,
                              algorithm : ALGO , mode : MODE ,
                              state : OS >
     < HANDLE : OperationHandle | oid : CI , state : HS,
@@ -1004,7 +1015,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     =>
     < TK : TaKernel | api-state : finished ,
                       api-return : apiReturn(SetOperationKey , TEE-SUCCESS) >
-    < CI : CryptoOperation | attributes : nil ,
+    < CI : CryptoOperation | attributes : empty , keys : nil ,
                              state : TEE-OPERATION-STATE-INITIAL >
     < HANDLE : OperationHandle | state : noHandleState,
                                  key-material-set : false >
@@ -1037,9 +1048,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     reqSetOperationKey(HANDLE , OBJTYPE , ATTRS , OBJUSAGES , TK)
     < CI : CryptoOperation | algorithm : ALGO , mode : MODE,
                              max-size : KEYSIZE,
-                             attributes : KEYS , state : OS >
+                             keys : KEYS , state : OS >
     =>
-    < CI : CryptoOperation | attributes : key(ATTRS) ,
+    < CI : CryptoOperation | attributes : ATTRS , keys : key(ATTRS) ,
                              state : TEE-OPERATION-STATE-INITIAL >
     installTopOperationKey(HANDLE , CI , ATTRS , TK)
   if not expectsTwoKeys(ALGO) /\ algorithmObjectTypeCompatible(ALGO , OBJTYPE) /\
@@ -1179,7 +1190,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < HANDLE : OperationHandle | oid : CI , state : HS >
     => < TK : TaKernel | api-state : finished ,
                       api-return : apiReturn(SetOperationKey2 , TEE-SUCCESS) >
-       < CI : CryptoOperation | attributes : nil ,
+       < CI : CryptoOperation | attributes : empty , keys : nil ,
                               state : TEE-OPERATION-STATE-INITIAL >
        < HANDLE : OperationHandle | state : noHandleState,
                                   key-material-set : false >
@@ -1296,7 +1307,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < CI : CryptoOperation |
                              algorithm : ALGO, mode : MODE,
                              max-size : KEYSIZE >
-    => < CI : CryptoOperation | attributes : key(ATTRS) key(ATTRS2) >
+    => < CI : CryptoOperation | attributes : (ATTRS , ATTRS2) ,
+                              keys : key(ATTRS) key(ATTRS2) >
        finishInstallTopOperationKeys(HANDLE , TK)
   if twoKeyCompatible(ALGO , MODE, OBJTYPE , OBJUSAGES, OBJTYPE2 , OBJUSAGES2) /\
      twoKeyMaterialCompatible(ALGO , ATTRS , ATTRS2) /\
@@ -1374,10 +1386,11 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     reqCopyOperation(HANDLE, opObjectAttr(ALGO , MODE , OS , KEYS) , opHandleAttr(B1 , B2 , B3) , TK)
     < CI : CryptoOperation |
                              algorithm : ALGO , mode : MODE ,
-                             attributes : KEYS' , max-size : KEYSIZE ,
+                             keys : KEYS' , max-size : KEYSIZE ,
                              state : OS' >
     =>
-    < CI : CryptoOperation | attributes : KEYS , state : OS >
+    < CI : CryptoOperation | attributes : keyAttributes(KEYS) ,
+                             keys : KEYS , state : OS >
     applyCopiedOperationHandle(HANDLE , B1 , B2 , B3 , TK)
   if operationKeysFit(KEYS , KEYSIZE)
   .
@@ -1797,7 +1810,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   crl [cipher-update-top-level-object-success] :
     cipherUpdate(HANDLE , DATA , TK)
     < CI : CryptoOperation |
-                             attributes : KEYS , algorithm : ALGO ,
+                             keys : KEYS , algorithm : ALGO ,
                              mode : MODE ,
                              state : TEE-OPERATION-STATE-ACTIVE >
     < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-CIPHER >
@@ -1811,7 +1824,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   crl [cipher-update-top-level-object-fail] :
     cipherUpdate(HANDLE , DATA , TK)
     < CI : CryptoOperation |
-                             attributes : KEYS , algorithm : ALGO ,
+                             keys : KEYS , algorithm : ALGO ,
                              mode : MODE ,
                              state : TEE-OPERATION-STATE-ACTIVE >
     < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-CIPHER >
@@ -1922,7 +1935,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   rl [cipher-do-final-top-level-object] :
     cipherDoFinal(HANDLE , DATA , TK)
     < CI : CryptoOperation |
-                             attributes : KEYS , algorithm : ALGO ,
+                             keys : KEYS , algorithm : ALGO ,
                              mode : MODE ,
                              state : TEE-OPERATION-STATE-ACTIVE >
     < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-CIPHER >
@@ -2048,7 +2061,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       current-api : MACComputeFinal,
                       current-params : handle(HANDLE) , data(DATA) , PARAMS >
     < CI : CryptoOperation |
-                             attributes : KEYS , acc-data : DL , algorithm : ALGO,
+                             keys : KEYS , acc-data : DL , algorithm : ALGO,
                              state : TEE-OPERATION-STATE-ACTIVE >
     < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-MAC >
     =>
@@ -2064,7 +2077,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       current-api : MACComputeFinal,
                       current-params : handle(HANDLE) , data(DATA) , PARAMS >
     < CI : CryptoOperation |
-                             attributes : KEYS , acc-data : DL , algorithm : ALGO,
+                             keys : KEYS , acc-data : DL , algorithm : ALGO,
                              state : TEE-OPERATION-STATE-ACTIVE >
     < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-MAC >
     =>
@@ -2080,7 +2093,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   rl [mac-compute-final-top-level-object] :
     macComputeFinal(HANDLE , DATA , TK)
     < CI : CryptoOperation |
-                             attributes : KEYS , acc-data : DL ,
+                             keys : KEYS , acc-data : DL ,
                              algorithm : ALGO ,
                              state : TEE-OPERATION-STATE-ACTIVE >
     < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-MAC >
@@ -2233,7 +2246,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       current-api : AEUpdate,
                       current-params : handle(HANDLE) , data(DATA) , PARAMS >
     < CI : CryptoOperation |
-                             attributes : KEYS , acc-data : DL, algorithm : ALGO,
+                             keys : KEYS , acc-data : DL, algorithm : ALGO,
                              mode : MODE >
     < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-AE >
     =>
@@ -2250,7 +2263,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       current-api : AEUpdate,
                       current-params : handle(HANDLE) , data(DATA) , PARAMS >
     < CI : CryptoOperation |
-                             attributes : KEYS , acc-data : DL, algorithm : ALGO,
+                             keys : KEYS , acc-data : DL, algorithm : ALGO,
                              mode : MODE >
     < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-AE >
     =>
@@ -2268,7 +2281,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   rl [ae-update-top-level-object] :
     reqAEUpdate(HANDLE , DATA , TK)
     < CI : CryptoOperation |
-                             attributes : KEYS , acc-data : DL , algorithm : ALGO ,
+                             keys : KEYS , acc-data : DL , algorithm : ALGO ,
                              mode : MODE ,
                              state : OS >
     < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-AE >
@@ -2311,7 +2324,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       current-api : AEEncryptFinal,
                       current-params : handle(HANDLE) , data(DATA) , PARAMS >
     < CI : CryptoOperation |
-                             attributes : KEYS , acc-data : DL , algorithm : ALGO,
+                             keys : KEYS , acc-data : DL , algorithm : ALGO,
                              mode : TEE-MODE-ENCRYPT >
     < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-AE >
     =>
@@ -2329,7 +2342,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       current-api : AEEncryptFinal,
                       current-params : handle(HANDLE) , data(DATA) , PARAMS >
     < CI : CryptoOperation |
-                             attributes : KEYS , acc-data : DL , algorithm : ALGO,
+                             keys : KEYS , acc-data : DL , algorithm : ALGO,
                              mode : TEE-MODE-ENCRYPT >
     < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-AE >
     =>
@@ -2349,7 +2362,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   rl [ae-encrypt-final-top-level-object] :
     aeEncryptFinal(HANDLE , DATA , TK)
     < CI : CryptoOperation |
-                             attributes : KEYS , acc-data : DL , algorithm : ALGO ,
+                             keys : KEYS , acc-data : DL , algorithm : ALGO ,
                              mode : TEE-MODE-ENCRYPT ,
                              state : OS >
     < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-AE >
@@ -2386,7 +2399,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       current-api : AEDecryptFinal,
                       current-params : handle(HANDLE) , data(DATA) , mac(MAC) , PARAMS >
     < CI : CryptoOperation |
-                             attributes : KEYS , algorithm : ALGO,
+                             keys : KEYS , algorithm : ALGO,
                              mode : TEE-MODE-DECRYPT >
     < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-AE >
     =>
@@ -2402,7 +2415,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       current-api : AEDecryptFinal,
                       current-params : handle(HANDLE) , data(DATA) , mac(MAC) , PARAMS >
     < CI : CryptoOperation |
-                             attributes : KEYS , algorithm : ALGO,
+                             keys : KEYS , algorithm : ALGO,
                              mode : TEE-MODE-DECRYPT >
     < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-AE >
     =>
@@ -2418,7 +2431,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   rl [ae-decrypt-final-top-level-object] :
     aeDecryptFinal(HANDLE , DATA , MAC , TK)
     < CI : CryptoOperation |
-                             attributes : KEYS , acc-data : DL , algorithm : ALGO ,
+                             keys : KEYS , acc-data : DL , algorithm : ALGO ,
                              mode : TEE-MODE-DECRYPT ,
                              state : OS >
     < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-AE >
@@ -2472,7 +2485,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       current-api : AsymmetricEncrypt,
                       current-params : handle(HANDLE) , data(DATA) , PARAMS >
     < CI : CryptoOperation |
-                             attributes : KEYS , algorithm : ALGO, max-size : KEYSIZE,
+                             keys : KEYS , algorithm : ALGO, max-size : KEYSIZE,
                              mode : TEE-MODE-ENCRYPT >
     < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-ASYMMETRIC-CIPHER >
     =>
@@ -2489,7 +2502,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       current-api : AsymmetricEncrypt,
                       current-params : handle(HANDLE) , data(DATA) , PARAMS >
     < CI : CryptoOperation |
-                             attributes : KEYS , algorithm : ALGO, max-size : KEYSIZE,
+                             keys : KEYS , algorithm : ALGO, max-size : KEYSIZE,
                              mode : TEE-MODE-ENCRYPT >
     < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-ASYMMETRIC-CIPHER >
     =>
@@ -2524,7 +2537,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   crl [asymmetric-encrypt-top-level-object] :
     asymEncrypt(HANDLE , DATA , TK)
     < CI : CryptoOperation |
-                             attributes : KEYS , algorithm : ALGO , max-size : KEYSIZE,
+                             keys : KEYS , algorithm : ALGO , max-size : KEYSIZE,
                              mode : TEE-MODE-ENCRYPT >
     < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-ASYMMETRIC-CIPHER >
     =>
@@ -2588,7 +2601,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       current-api : AsymmetricDecrypt,
                       current-params : handle(HANDLE) , data(DATA) , PARAMS >
     < CI : CryptoOperation |
-                             attributes : KEYS , algorithm : ALGO, max-size : KEYSIZE,
+                             keys : KEYS , algorithm : ALGO, max-size : KEYSIZE,
                              mode : TEE-MODE-DECRYPT >
     < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-ASYMMETRIC-CIPHER >
     =>
@@ -2605,7 +2618,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       current-api : AsymmetricDecrypt,
                       current-params : handle(HANDLE) , data(DATA) , PARAMS >
     < CI : CryptoOperation |
-                             attributes : KEYS , algorithm : ALGO, max-size : KEYSIZE,
+                             keys : KEYS , algorithm : ALGO, max-size : KEYSIZE,
                              mode : TEE-MODE-DECRYPT >
     < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-ASYMMETRIC-CIPHER >
     =>
@@ -2639,7 +2652,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       current-api : AsymmetricDecrypt,
                       current-params : handle(HANDLE) , data(DATA) , PARAMS >
     < CI : CryptoOperation |
-                             attributes : KEYS , algorithm : ALGO, max-size : KEYSIZE,
+                             keys : KEYS , algorithm : ALGO, max-size : KEYSIZE,
                              mode : TEE-MODE-DECRYPT >
     < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-ASYMMETRIC-CIPHER >
     =>
@@ -2656,7 +2669,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   crl [asymmetric-decrypt-top-level-object] :
     asymDecrypt(HANDLE , DATA , TK)
     < CI : CryptoOperation |
-                             attributes : KEYS , algorithm : ALGO , max-size : KEYSIZE,
+                             keys : KEYS , algorithm : ALGO , max-size : KEYSIZE,
                              mode : TEE-MODE-DECRYPT >
     < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-ASYMMETRIC-CIPHER >
     =>
@@ -2693,7 +2706,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     asymDecrypt(HANDLE , DATA , TK)
     < TK : TaKernel | api-state : waitAsymDecrypt , current-api : AsymmetricDecrypt >
     < CI : CryptoOperation |
-                             attributes : KEYS , algorithm : ALGO , max-size : KEYSIZE,
+                             keys : KEYS , algorithm : ALGO , max-size : KEYSIZE,
                              mode : TEE-MODE-DECRYPT >
     < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-ASYMMETRIC-CIPHER >
     =>
@@ -2769,7 +2782,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   crl [asymmetric-sign-digest-top-level-object] :
     asymSignDigest(HANDLE , DATA , TK)
     < CI : CryptoOperation |
-                             attributes : KEYS , algorithm : ALGO ,
+                             keys : KEYS , algorithm : ALGO ,
                              mode : TEE-MODE-SIGN >
     < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-ASYMMETRIC-SIGNATURE >
     =>
@@ -2834,7 +2847,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   crl [asymmetric-verify-digest-top-level-object] :
     asymVerifyDigest(HANDLE , DATA , TK)
     < CI : CryptoOperation |
-                             attributes : KEYS , algorithm : ALGO ,
+                             keys : KEYS , algorithm : ALGO ,
                              mode : TEE-MODE-VERIFY >
     < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-ASYMMETRIC-SIGNATURE >
     =>
@@ -2901,11 +2914,11 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     deriveTopTransient(HANDLE , DERIVED , TK)
     < OI : TransientObject |
                              initialized : false ,
-                             object-type : TEE-TYPE-GENERIC-SECRET ,
-                             attribute-set : ATTRS >
+                             type : TEE-TYPE-GENERIC-SECRET ,
+                             attributes : ATTRS >
     =>
     < OI : TransientObject | initialized : true,
-                             attribute-set : teeAttribute(TEE-ATTR-SECRET-VALUE , randomAttrVal) >
+                             attributes : teeAttribute(TEE-ATTR-SECRET-VALUE , randomAttrVal) >
     validateTopDeriveHandle(HANDLE , DERIVED , TK) .
   crl [derive-key-top-level-operation-handle] :
     validateTopDeriveHandle(HANDLE , DERIVED , TK)
@@ -3013,7 +3026,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
   eq
     reqOperationInfoMultiple(HANDLE , TK)
     < CI : CryptoOperation |
-                             attributes : KEYS , max-size : KEYSIZE ,
+                             keys : KEYS , max-size : KEYSIZE ,
                              algorithm : ALGO , mode : MODE ,
                              state : OS >
     < HANDLE : OperationHandle | oid : CI , state : HS,
@@ -3067,7 +3080,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     reqOperationAttr(KEY , TK)
     < CI : CryptoOperation |
                              algorithm : ALGO , mode : MODE ,
-                             attributes : KEYS , state : OS >
+                             keys : KEYS , state : OS >
     < KEY : OperationHandle | oid : CI , state : HS,
                             key-material-set : B2 >
     =
@@ -3091,10 +3104,11 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
                      opHandleAttr(B1 , B2 , B3) , TK)
     < CI2 : CryptoOperation |
                               algorithm : ALGO , mode : MODE ,
-                              attributes : KEYS' , max-size : KEYSIZE ,
+                              keys : KEYS' , max-size : KEYSIZE ,
                               state : OS' >
     =
-    < CI2 : CryptoOperation | attributes : KEYS , state : OS >
+    < CI2 : CryptoOperation | attributes : keyAttributes(KEYS) ,
+                              keys : KEYS , state : OS >
     applyCopiedOperationHandle(HANDLE , B1 , B2 , B3 , TK)
   if operationKeysFit(KEYS , KEYSIZE) .
 
@@ -3103,7 +3117,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
                      opHandleAttr(B1 , B2 , B3) , TK)
     < CI2 : CryptoOperation |
                               algorithm : ALGO2 , mode : MODE2 ,
-                              attributes : KEYS' , max-size : KEYSIZE ,
+                              keys : KEYS' , max-size : KEYSIZE ,
                               state : OS' >
     =
     < CI2 : CryptoOperation | >
@@ -3148,7 +3162,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | api-state : finished , counter : N + 2 ,
                       api-return : apiReturn(AllocateOperation , TEE-SUCCESS , handle(handleId(N + 1 , TK))) >
     < taOid(N , TK) : CryptoOperation |
-                                        attributes : nil , max-size : KEYSIZE ,
+                                        attributes : empty , keys : nil , max-size : KEYSIZE ,
                                         acc-data : nil ,
                                         algorithm : ALGO , mode : MODE ,
                                         initialization-vector : nil ,
@@ -3301,7 +3315,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     =
     < TK : TaKernel | api-state : finished ,
                       api-return : apiReturn(SetOperationKey , TEE-SUCCESS) >
-    < CI : CryptoOperation | attributes : nil ,
+    < CI : CryptoOperation | attributes : empty , keys : nil ,
                              state : TEE-OPERATION-STATE-INITIAL >
     < HANDLE : OperationHandle | state : noHandleState,
                                  key-material-set : false >
@@ -3334,9 +3348,9 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     reqSetOperationKey(HANDLE , OBJTYPE , ATTRS , OBJUSAGES , TK)
     < CI : CryptoOperation | algorithm : ALGO , mode : MODE ,
                              max-size : KEYSIZE,
-                             attributes : KEYS , state : OS >
+                             keys : KEYS , state : OS >
     =
-    < CI : CryptoOperation | attributes : key(ATTRS) ,
+    < CI : CryptoOperation | attributes : ATTRS , keys : key(ATTRS) ,
                              state : TEE-OPERATION-STATE-INITIAL >
     installTopOperationKey(HANDLE , CI , ATTRS , TK)
   if not expectsTwoKeys(ALGO) /\ algorithmObjectTypeCompatible(ALGO , OBJTYPE) /\
@@ -3463,7 +3477,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     =
     < TK : TaKernel | api-state : finished,
                       api-return : apiReturn(SetOperationKey2, TEE-SUCCESS) >
-    < CI : CryptoOperation | attributes : nil,
+    < CI : CryptoOperation | attributes : empty, keys : nil,
                              state : TEE-OPERATION-STATE-INITIAL >
     < HANDLE : OperationHandle | state : noHandleState,
                                  key-material-set : false >
@@ -3594,7 +3608,8 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
                              algorithm : ALGO, mode : MODE,
                              max-size : KEYSIZE >
     =
-    < CI : CryptoOperation | attributes : key(ATTRS) key(ATTRS2) >
+    < CI : CryptoOperation | attributes : (ATTRS , ATTRS2),
+                             keys : key(ATTRS) key(ATTRS2) >
     finishInstallTopOperationKeys(HANDLE, TK)
   if twoKeyCompatible(ALGO, MODE, OBJTYPE, OBJUSAGES, OBJTYPE2, OBJUSAGES2) /\
      twoKeyMaterialCompatible(ALGO, ATTRS, ATTRS2) /\
@@ -3736,7 +3751,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
   ceq
     cipherUpdate(HANDLE , DATA , TK)
     < CI : CryptoOperation |
-                             attributes : KEYS , algorithm : ALGO ,
+                             keys : KEYS , algorithm : ALGO ,
                              mode : MODE ,
                              state : TEE-OPERATION-STATE-ACTIVE >
     < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-CIPHER >
@@ -3750,7 +3765,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
   ceq
     cipherUpdate(HANDLE , DATA , TK)
     < CI : CryptoOperation |
-                             attributes : KEYS , algorithm : ALGO ,
+                             keys : KEYS , algorithm : ALGO ,
                              mode : MODE ,
                              state : TEE-OPERATION-STATE-ACTIVE >
     < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-CIPHER >

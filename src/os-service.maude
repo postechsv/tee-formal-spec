@@ -16,7 +16,7 @@ omod TEE-OS-BEHAVIOR is
   var TK : TaInstId .
   var TN : AppId .
   var STATUS : StorageStatus .
-  var SESS : Map{SessionId,TaInstId} .
+  var SESS : Map{SessionId,Oid} .
   var SI : Oid .
   vars FILE FILE' : FileId .
   var FL : Set{FileId} .
@@ -134,10 +134,10 @@ omod TEE-OS-BEHAVIOR is
 
   rl [open-ta-session] :
     < KI : TeeOSKernel | service-in : (openTASession(TN) SIL) , service-out : SOL , ta-prog-map : (TN |-> [P] , PROGC) ,
-                         opened-session : SESS , session-counter : N >
+                         sess : SESS , session-counter : N >
     =>
     < KI : TeeOSKernel | service-in : SIL , service-out : (SOL openSessionSuccess(trustAppId(N))) ,
-                         opened-session : (sessionId(N) |-> trustAppId(N) , SESS) , session-counter : N + 1 >
+                         sess : (sessionId(N) |-> trustAppId(N) , SESS) , session-counter : N + 1 >
     < trustAppId(N) : TrustApp | proc : none , prog : P , running : false ,
                                  status : normal , api-call : noCall , api-return : noReturn ,
                                  current-api : noApi , api-state : noState , current-params : empty , counter : 0 ,

@@ -10,7 +10,7 @@ omod TEE-CLIENT-API-BEHAVIOR is
   var TI : TaInstId .
   var TK : TaInstId .
   var SID : SessionId .
-  var SMAP : Map{SessionId,TaInstId} .
+  var SMAP : Map{SessionId,Oid} .
   var FUNC : FuncId .
   var VL : ValueList .
 
@@ -39,17 +39,17 @@ omod TEE-CLIENT-API-BEHAVIOR is
 
   --- rl [open-session] :
   ---   smcRequest(requestor(RI) {TeecOpenSession , # TI})
-  ---   < KI : TeeOSKernel | opened-session : SMAP , session-counter : N >
+  ---   < KI : TeeOSKernel | sess : SMAP , session-counter : N >
   ---   =>
-  ---   < KI : TeeOSKernel | opened-session : (sessionId(N) |-> TI , SMAP) , session-counter : N + 1 >
+  ---   < KI : TeeOSKernel | sess : (sessionId(N) |-> TI , SMAP) , session-counter : N + 1 >
   ---   smcReturn(requestor(RI) {TeecOpenSession , (# TEE-SUCCESS , # sessionId(N))})
   --- .
 
   --- rl [close-session-subroutine] :
   ---   smcRequest(RI , {TeecCloseSession , # SI})
-  ---   < OSI : TeeOS | opened-session : (SI |-> TI , RMAP) >
+  ---   < OSI : TeeOS | sess : (SI |-> TI , RMAP) >
   ---   =>
-  ---   < OSI : TeeOS | opened-session : RMAP >
+  ---   < OSI : TeeOS | sess : RMAP >
   ---   killTa(RI , TI)
   --- .
 
@@ -93,7 +93,7 @@ omod TEE-CLIENT-API-BEHAVIOR is
 --- Model/Implementation Specific Version
   rl [accept-smc-request-subroutine] :
     smcRequest(requestor(RI) invokeMessage({SID , FUNC , VL}))
-    < KI : TeeOSKernel | opened-session : (SID |-> TK , SMAP) >
+    < KI : TeeOSKernel | sess : (SID |-> TK , SMAP) >
     =>
     < KI : TeeOSKernel | >
     invokeTA(TK , {SID , FUNC , VL} , RI)

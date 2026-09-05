@@ -361,9 +361,9 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
                       current-params : (fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) , PARAMS) ,
                       counter : N , trust-app-id : TN >
     =>
-    < TK : TaKernel | api-state : finished , counter : N + 3 ,
+    < TK : TaKernel | api-state : waitNotifyFileCreation , counter : N + 3 ,
                       current-params : (fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) , PARAMS , openedHandle(handleId(N + 1 , TK))) ,
-                      api-return : apiReturn(CreatePersistentObject , TEE-SUCCESS , handle(handleId(N + 1 , TK))) >
+                      api-return : noReturn >
     < taOid(N , TK) : PersistentObject |
                                          file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
                                          file-id : FILE , type : OBJTYPE , max-size : keySize(ATTRS) ,
@@ -373,6 +373,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     freshPersistentHandle(N + 1 , TK , DATAFLAGS , taOid(N , TK))
     < taOid(N + 2 , TK) : DataStreamObject | persistent-owner-id : taOid(N , TK) ,
                                              data-size : DATASIZE , content : newContent(DATALIST) >
+    reqTrustedOS(notifyFileCreation(FILE) , TK , TN)
   .
 
 --- Version In Paper
@@ -1104,9 +1105,9 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
                       current-params : (fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) , PARAMS) ,
                       counter : N , trust-app-id : TN >
     =
-    < TK : TaKernel | api-state : finished , counter : N + 3 ,
+    < TK : TaKernel | api-state : waitNotifyFileCreation , counter : N + 3 ,
                       current-params : (fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) , PARAMS , openedHandle(handleId(N + 1 , TK))) ,
-                      api-return : apiReturn(CreatePersistentObject , TEE-SUCCESS , handle(handleId(N + 1 , TK))) >
+                      api-return : noReturn >
     < taOid(N , TK) : PersistentObject |
                                          file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
                                          file-id : FILE , type : OBJTYPE , max-size : keySize(ATTRS) ,
@@ -1116,6 +1117,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
     freshPersistentHandle(N + 1 , TK , DATAFLAGS , taOid(N , TK))
     < taOid(N + 2 , TK) : DataStreamObject | persistent-owner-id : taOid(N , TK) ,
                                              data-size : DATASIZE , content : newContent(DATALIST) >
+    reqTrustedOS(notifyFileCreation(FILE) , TK , TN)
   .
 
 --- 3.4. HANDLE != NULL /\ OPTHANDLE != NULL : copy object from handle and use it to make a new persistent object

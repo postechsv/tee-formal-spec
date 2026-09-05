@@ -686,6 +686,38 @@ search [1] in COMPLETION-TEST :
   retAttributeAndDelete(empty, TEE-TYPE-AES,
                         TEE-USAGE-EXTRACTABLE, testTa) .
 
+--- Transforming a transient object notifies and advances its Storage object.
+search [1] in COMPLETION-TEST :
+  retAttributeAndDelete(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal),
+                        TEE-TYPE-AES,
+                        TEE-USAGE-EXTRACTABLE, testTa)
+  < testTa : TaKernel |
+      status : normal, api-call : noCall, api-return : noReturn,
+      current-api : CreatePersistentObject,
+      api-state : waitReqAttributeAndDelete,
+      current-params : (fileId(testFileId), handle(handleId(1, testTa)),
+                        flags(TEE-DATA-FLAG-ACCESS-READ), data(nil),
+                        size(dataSize(0))),
+      storage : storageId(0), counter : 0, trust-app-id : TESTTA >
+  < osId : TeeOSKernel |
+      service-in : nil, service-out : nil,
+      service-request-ta : noAppId, service-request-ta-inst : noInstId >
+  < storageId(0) : Storage |
+      status : storageNormal, files : empty, counter : 0 >
+=>*
+  < testTa : TaKernel |
+      status : normal, api-call : noCall,
+      current-api : CreatePersistentObject, api-state : finished,
+      current-params : (fileId(testFileId), handle(handleId(1, testTa)),
+                        flags(TEE-DATA-FLAG-ACCESS-READ), data(nil),
+                        size(dataSize(0)), openedHandle(handleId(1, testTa))),
+      storage : storageId(0), counter : 3, trust-app-id : TESTTA,
+      api-return : apiReturn(CreatePersistentObject, TEE-SUCCESS,
+                             handle(handleId(1, testTa))) >
+  < storageId(0) : Storage |
+      status : storageNormal, files : testFileId, counter : 2 >
+  C .
+
 --- OpenPersistentObject resolves a paper-level object through the handle's oid relation.
 search [1] in COMPLETION-TEST :
   openPersistentHandle(testFileId, TEE-DATA-FLAG-ACCESS-READ,

@@ -720,27 +720,43 @@ search [1] in COMPLETION-TEST :
 
 --- OpenPersistentObject resolves a paper-level object through the handle's oid relation.
 search [1] in COMPLETION-TEST :
-  openPersistentHandle(testFileId, TEE-DATA-FLAG-ACCESS-READ,
+  openPersistentHandle(storageId(0), testFileId, TEE-DATA-FLAG-ACCESS-READ,
                        3, testTa)
-  < taOid(1, testTa) : PersistentObject | file-id : testFileId >
+  < storageOid(1, storageId(0)) : PersistentObject | file-id : testFileId >
 =>*
   finishOpenPersistentHandle(handleId(3, testTa), testTa)
   C .
 
 --- A second open conflicts when an existing reader did not share read access.
 search [1] in COMPLETION-TEST :
-  openPersistentHandle(testFileId,
+  openPersistentHandle(storageId(0), testFileId,
                        (TEE-DATA-FLAG-ACCESS-READ,
                         TEE-DATA-FLAG-SHARE-READ),
                        2, testTa)
-  < taOid(1, testTa) : PersistentObject | file-id : testFileId >
-  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa),
+  < storageOid(1, storageId(0)) : PersistentObject | file-id : testFileId >
+  < handleId(1, testTa) : ObjectHandle | oid : storageOid(1, storageId(0)),
       flags : TEE-DATA-FLAG-ACCESS-READ >
 =>*
   failOpenPersistentHandle(testTa)
-  < taOid(1, testTa) : PersistentObject | file-id : testFileId >
-  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa),
+  < storageOid(1, storageId(0)) : PersistentObject | file-id : testFileId >
+  < handleId(1, testTa) : ObjectHandle | oid : storageOid(1, storageId(0)),
       flags : TEE-DATA-FLAG-ACCESS-READ > .
+
+--- Opening is scoped to the TA's Storage even when another Storage contains
+--- an object with the same file identifier.
+search [1] in COMPLETION-TEST :
+  openPersistentHandle(storageId(1), testFileId,
+                       TEE-DATA-FLAG-ACCESS-READ, 4, testTa)
+  < storageOid(0, storageId(0)) : PersistentObject | file-id : testFileId >
+  < storageOid(0, storageId(1)) : PersistentObject | file-id : testFileId >
+=>*
+  finishOpenPersistentHandle(handleId(4, testTa), testTa)
+  < handleId(4, testTa) : ObjectHandle |
+      oid : storageOid(0, storageId(1)),
+      flags : TEE-DATA-FLAG-ACCESS-READ,
+      pos : pos(0) >
+  < storageOid(0, storageId(0)) : PersistentObject | file-id : testFileId >
+  < storageOid(0, storageId(1)) : PersistentObject | file-id : testFileId > .
 
 --- ReadObjectData resolves and advances a top-level persistent handle.
 search [1] in COMPLETION-TEST :

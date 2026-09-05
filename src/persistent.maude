@@ -43,6 +43,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
   vars N M SIDX : Nat .
   vars HANDLE H OPTHANDLE OPT : HandleId .
   vars OI DI : TaObjectId .
+  var SI : Oid .
   vars FILE FILE' : FileId .
   var TN : AppId .
   var TK : TaInstId .
@@ -120,7 +121,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 
 --- The following four rules create a new persistent object handle.
 
-  msg openPersistentHandle : FileId Set{DataFlag} Nat TaInstId -> Msg .
+  msg openPersistentHandle : Oid FileId Set{DataFlag} Nat TaInstId -> Msg .
   msg finishOpenPersistentHandle : HandleId TaInstId -> Msg .
   msg failOpenPersistentHandle : TaInstId -> Msg .
 
@@ -157,33 +158,33 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     < TK : TaKernel | status : normal ,
                       api-state : waitStorageCheck , current-api : OpenPersistentObject ,
                       current-params : storageId(STORID) , fileId(FILE) , flags(DATAFLAGS) ,
-                      counter : N >
+                      storage : SI , counter : N >
     =>
     < TK : TaKernel | api-state : waitOpenPersistent , counter : N + 1 >
-    openPersistentHandle(FILE , DATAFLAGS , N , TK)
+    openPersistentHandle(SI , FILE , DATAFLAGS , N , TK)
   .
 
   crl [open-persistent-top-level-handle] :
-    openPersistentHandle(FILE , DATAFLAGS , N , TK)
-    < OI : PersistentObject | file-id : FILE >
+    openPersistentHandle(SI , FILE , DATAFLAGS , N , TK)
+    < storageOid(M, SI) : PersistentObject | file-id : FILE >
     HS
     =>
-    < OI : PersistentObject | >
+    < storageOid(M, SI) : PersistentObject | >
     HS
-    freshPersistentHandle(N, TK, DATAFLAGS, OI)
+    freshPersistentHandle(N, TK, DATAFLAGS, storageOid(M, SI))
     finishOpenPersistentHandle(handleId(N, TK), TK)
-  if persistentHandlesCompatible(OI, DATAFLAGS, HS)
+  if persistentHandlesCompatible(storageOid(M, SI), DATAFLAGS, HS)
   .
 
   crl [open-persistent-top-level-conflict] :
-    openPersistentHandle(FILE , DATAFLAGS , N , TK)
-    < OI : PersistentObject | file-id : FILE >
+    openPersistentHandle(SI , FILE , DATAFLAGS , N , TK)
+    < storageOid(M, SI) : PersistentObject | file-id : FILE >
     HS
     =>
-    < OI : PersistentObject | >
+    < storageOid(M, SI) : PersistentObject | >
     HS
     failOpenPersistentHandle(TK)
-  if not persistentHandlesCompatible(OI, DATAFLAGS, HS)
+  if not persistentHandlesCompatible(storageOid(M, SI), DATAFLAGS, HS)
   .
 
   rl [open-persistent-success] :
@@ -865,6 +866,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
   vars N M SIDX : Nat .
   vars HANDLE H OPTHANDLE OPT : HandleId .
   vars OI DI : TaObjectId .
+  var SI : Oid .
   var FILE : FileId .
   var TN : AppId .
   var TK : TaInstId .
@@ -921,33 +923,33 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | status : normal ,
                       api-state : waitStorageCheck , current-api : OpenPersistentObject ,
                       current-params : storageId(STORID) , fileId(FILE) , flags(DATAFLAGS) ,
-                      counter : N >
+                      storage : SI , counter : N >
     =
     < TK : TaKernel | api-state : waitOpenPersistent , counter : N + 1 >
-    openPersistentHandle(FILE , DATAFLAGS , N , TK)
+    openPersistentHandle(SI , FILE , DATAFLAGS , N , TK)
   .
 
   ceq
-    openPersistentHandle(FILE , DATAFLAGS , N , TK)
-    < OI : PersistentObject | file-id : FILE >
+    openPersistentHandle(SI , FILE , DATAFLAGS , N , TK)
+    < storageOid(M, SI) : PersistentObject | file-id : FILE >
     HS
     =
-    < OI : PersistentObject | >
+    < storageOid(M, SI) : PersistentObject | >
     HS
-    freshPersistentHandle(N, TK, DATAFLAGS, OI)
+    freshPersistentHandle(N, TK, DATAFLAGS, storageOid(M, SI))
     finishOpenPersistentHandle(handleId(N, TK), TK)
-  if persistentHandlesCompatible(OI, DATAFLAGS, HS)
+  if persistentHandlesCompatible(storageOid(M, SI), DATAFLAGS, HS)
   .
 
   ceq
-    openPersistentHandle(FILE , DATAFLAGS , N , TK)
-    < OI : PersistentObject | file-id : FILE >
+    openPersistentHandle(SI , FILE , DATAFLAGS , N , TK)
+    < storageOid(M, SI) : PersistentObject | file-id : FILE >
     HS
     =
-    < OI : PersistentObject | >
+    < storageOid(M, SI) : PersistentObject | >
     HS
     failOpenPersistentHandle(TK)
-  if not persistentHandlesCompatible(OI, DATAFLAGS, HS)
+  if not persistentHandlesCompatible(storageOid(M, SI), DATAFLAGS, HS)
   .
 
   eq

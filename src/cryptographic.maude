@@ -1756,7 +1756,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   msg finishCipherUpdate : List{Data} TaInstId -> Msg .
   msg failCipherUpdate : TaInstId -> Msg .
 
---- TODO: Update to check for sufficient input data.
+  --- A Data element denotes one processable symbolic chunk.  Consequently,
+  --- only nil is provably insufficient at this abstraction level.
+  op sufficientCipherUpdateInput : List{Data} -> Bool .
+  eq sufficientCipherUpdateInput(nil) = false .
+  eq sufficientCipherUpdateInput(DATA) = true [owise] .
+
   crl [cipher-update-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : CipherUpdate ,
@@ -1806,6 +1811,16 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
 --- Model/Implementation Specific Version (2 rules)
 
+  rl [cipher-update-top-level-empty-input] :
+    cipherUpdate(HANDLE , nil , TK)
+    < CI : CryptoOperation |
+                             state : TEE-OPERATION-STATE-ACTIVE >
+    < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-CIPHER >
+    =>
+    < CI : CryptoOperation | >
+    < HANDLE : OperationHandle | >
+    finishTopCipherUpdate(HANDLE , nil , TK)
+  .
 
   crl [cipher-update-top-level-object-success] :
     cipherUpdate(HANDLE , DATA , TK)
@@ -1818,7 +1833,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
     finishTopCipherUpdate(HANDLE , cipherOperation(ALGO , MODE , KEYS , DATA) , TK)
-  if cipherSuccess(ALGO , MODE , KEYS , DATA)
+  if sufficientCipherUpdateInput(DATA) /\ cipherSuccess(ALGO , MODE , KEYS , DATA)
   .
 
   crl [cipher-update-top-level-object-fail] :
@@ -1832,7 +1847,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
     failTopCipherUpdate(HANDLE , TK)
-  if not cipherSuccess(ALGO , MODE , KEYS , DATA)
+  if sufficientCipherUpdateInput(DATA) /\ not cipherSuccess(ALGO , MODE , KEYS , DATA)
   .
 
   rl [cipher-update-top-level-handle-success] :
@@ -3748,6 +3763,17 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
 
 
 
+  eq
+    cipherUpdate(HANDLE , nil , TK)
+    < CI : CryptoOperation |
+                             state : TEE-OPERATION-STATE-ACTIVE >
+    < HANDLE : OperationHandle | oid : CI, opclass : TEE-OPERATION-CIPHER >
+    =
+    < CI : CryptoOperation | >
+    < HANDLE : OperationHandle | >
+    finishTopCipherUpdate(HANDLE , nil , TK)
+  .
+
   ceq
     cipherUpdate(HANDLE , DATA , TK)
     < CI : CryptoOperation |
@@ -3759,7 +3785,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
     finishTopCipherUpdate(HANDLE , cipherOperation(ALGO , MODE , KEYS , DATA) , TK)
-  if cipherSuccess(ALGO , MODE , KEYS , DATA)
+  if sufficientCipherUpdateInput(DATA) /\ cipherSuccess(ALGO , MODE , KEYS , DATA)
   .
 
   ceq
@@ -3773,7 +3799,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
     failTopCipherUpdate(HANDLE , TK)
-  if not cipherSuccess(ALGO , MODE , KEYS , DATA)
+  if sufficientCipherUpdateInput(DATA) /\ not cipherSuccess(ALGO , MODE , KEYS , DATA)
   .
 
   eq

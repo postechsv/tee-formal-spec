@@ -124,6 +124,34 @@ search [1] in COMPLETION-TEST :
   < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
       opclass : TEE-OPERATION-CIPHER, state : init keySet > .
 
+--- GP permits exact in-place cipher buffers but panics on partial overlap.
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
+      api-state : started, current-api : CipherUpdate,
+      current-params : (handle(handleId(1, testTa)), data(randomData),
+                        srcRegion(bufferRegion(100, 16)),
+                        destRegion(bufferRegion(108, 16))) >
+=>1
+  < testTa : TaKernel | status : panic, api-call : noCall, api-return : noReturn,
+      api-state : finished, current-api : CipherUpdate,
+      current-params : (handle(handleId(1, testTa)), data(randomData),
+                        srcRegion(bufferRegion(100, 16)),
+                        destRegion(bufferRegion(108, 16))) > .
+
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
+      api-state : started, current-api : CipherUpdate,
+      current-params : (handle(handleId(1, testTa)), data(randomData),
+                        srcRegion(bufferRegion(100, 16)),
+                        destRegion(bufferRegion(100, 16))) >
+=>1
+  < testTa : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
+      api-state : waitCipherUpdate, current-api : CipherUpdate,
+      current-params : (handle(handleId(1, testTa)), data(randomData),
+                        srcRegion(bufferRegion(100, 16)),
+                        destRegion(bufferRegion(100, 16))) >
+  cipherUpdate(handleId(1, testTa), randomData, testTa) .
+
 search [1] in COMPLETION-INVISIBLE-TEST :
   cipherUpdate(handleId(1, testTa), nil, testTa)
   < taOid(1, testTa) : CryptoOperation |

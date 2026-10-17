@@ -136,7 +136,9 @@ Automatic rules (no annotation)
   * pr SET{X} / MAP{K,V} / LIST{X} (with optional `* (renames)`) -> SET-DM / MAP-DM / LIST-DM.
     Views used as SET elements or MAP keys are upgraded to TRIV-EQ (`eq? to eqX`); a Nat key
     becomes NatEq (renamed back to Nat); nested Set{X} / List{X} arguments get generated views
-    SET-OF-X / LIST-OF-X placed before the enclosing module.
+    SET-OF-X / LIST-OF-X placed before the enclosing module.  An upgraded view also used as a LIST
+    element or a MAP value (TRIV parameters) is passed there as a companion view X-TRIV.  A prelude
+    sort given constructors by a spec module (Oid) is handled as a sort of its view's target module.
   * owise equation whose siblings with the same LHS are all conditional -> ceq with the negated
     conditions; owise with two variables that siblings identify -> guard `not (A .=. B)`.
   * owise equations with a single sibling pattern constant are reported as errors unless annotated.
@@ -856,6 +858,7 @@ class Collect(object):
         self.numeq = set()
         self.uses = {}          # module -> sorts whose equality it uses (the declaring module is imported)
         self.list_users = {}    # element view -> modules with pr LIST{view}
+        self.triv_users = {}    # value view -> modules with pr MAP{key,view}
 
 
 class Gen(object):
@@ -1199,9 +1202,9 @@ def is_late(gen, S):
     return False
 
 
-def list_elt_name(a):
-    """Companion view of an upgraded element view a for LIST-DM (LIST-DM needs a plain TRIV view)."""
-    return a + '-LIST'
+def triv_name(a):
+    """Companion view of an upgraded view a for a TRIV parameter (LIST-DM elements, MAP-DM values)."""
+    return a + '-TRIV'
 
 
 def list_eq_mod(a):
@@ -2995,6 +2998,10 @@ def build_plan(gen):
         if v['from'] != 'TRIV':
             raise GenError('view %s is used as a TRIV-EQ parameter but is from %s' % (vname, v['from']))
         view_sorts.setdefault(v['elt'], []).append(vname)
+        if v['elt'] not in gen.sort_mod and v['to'] in gen.mod_sorts:
+            # a prelude sort (Oid of CONFIGURATION) given constructors by a spec module: its equality is
+            # declared in the view's target, like a sort of the spec
+            gen.sort_mod[v['elt']] = v['to']
         if v['keep']:
             forced.add(v['elt'])
         need.add(v['elt'])
@@ -3137,25 +3144,31 @@ def build_plan(gen):
 def list_plan(gen, coll, upgraded, after):
     """LIST-DM instantiations and the list equalities (LIST-EQ-X) placed before the first module that
     uses them (the anchor's end when only constructors use them).  An upgraded element view (TRIV-EQ) is
-    not a TRIV parameter of LIST-DM, so LIST{X} then instantiates a companion view X-LIST (TRIV) and
-    renames the sort back to List{X}."""
-    for a in sorted(set(coll.list_users) | gen.list_eq):
+    not a TRIV parameter of LIST-DM, so LIST{X} then instantiates a companion view X-TRIV (TRIV) and
+    renames the sort back to List{X}.  The value parameter of MAP-DM is TRIV too: MAP{K,X} uses X-TRIV
+    the same way (the companion is placed before the first module of either kind)."""
+    order = lambda m: gen.mod_order.get(m, 0)
+    for a in sorted(set(coll.list_users) | set(coll.triv_users) | gen.list_eq):
         S = 'List{%s}' % a
         users = set(coll.list_users.get(a, ())) | set(M for M, Ss in coll.uses.items() if S in Ss)
-        if not users and a not in gen.list_eq:
+        tusers = set(coll.triv_users.get(a, ()))
+        if not users and not tusers and a not in gen.list_eq:
             continue
-        block = []
+        comp = []
         if a in upgraded:
             v = gen.views[a]
-            block += ['view %s from TRIV to %s is' % (list_elt_name(a), v['to']),
-                      '  sort Elt to %s .' % v['elt'], 'endv', '']
-        if a in gen.list_eq:
-            block += list_eq_block(gen, a, upgraded, users)
+            comp = ['view %s from TRIV to %s is' % (triv_name(a), v['to']),
+                    '  sort Elt to %s .' % v['elt'], 'endv', '']
+        block = list_eq_block(gen, a, upgraded, users) if a in gen.list_eq else []
+        if tusers:
+            if comp:
+                coll.nested.setdefault(min(users | tusers, key=order), []).append(('triv-%s' % a, comp))
+            comp = []
+        block = comp + block
         if not block:
             continue
         if users:
-            first = min(users, key=lambda m: gen.mod_order.get(m, 0))
-            coll.nested.setdefault(first, []).append(('list-%s' % a, block))
+            coll.nested.setdefault(min(users, key=order), []).append(('list-%s' % a, block))
         else:
             after.setdefault(anchor_module(gen, None), [])[0:0] = block
 
@@ -3196,7 +3209,7 @@ def list_eq_block(gen, a, upgraded, users):
 def list_inst(a, upgraded):
     """The LIST-DM instantiation of element view a (the same text as pr_auto emits)."""
     if a in upgraded:
-        return 'LIST-DM{%s} * (sort List{%s} to List{%s})' % (list_elt_name(a), list_elt_name(a), a)
+        return 'LIST-DM{%s} * (sort List{%s} to List{%s})' % (triv_name(a), triv_name(a), a)
     return 'LIST-DM{%s}' % a
 
 
@@ -3258,8 +3271,10 @@ def pr_auto(ctx, u, t):
             gen.coll.view_needs.add(a)
         if base == 'LIST' and gen.coll is not None:
             gen.coll.list_users.setdefault(a, set()).add(mod)
-        if base == 'LIST' and gen.plan is not None and a in gen.plan.upgrade:
-            a_new = list_elt_name(a)
+        if base == 'MAP' and k == 1 and gen.coll is not None:
+            gen.coll.triv_users.setdefault(a, set()).add(mod)
+        if (base == 'LIST' or (base == 'MAP' and k == 1)) and gen.plan is not None and a in gen.plan.upgrade:
+            a_new = triv_name(a)
             new_args.append(a_new)
             sort_renames.append(a)
             continue

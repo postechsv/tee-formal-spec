@@ -20,18 +20,18 @@ search [1] in TEST-AUX :
   < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
                     current-api : OpenPersistentObject, api-state : started,
                     current-params : (fileId(testFileId), flags(TEE-DATA-FLAG-ACCESS-READ)),
-                    storage : storageId(0), counter : 0, trust-app-id : TESTTA >
-  < storageOid(0, storageId(0)) : PersistentObject | type : TEE-TYPE-AES,
+                    storage : oid(0, ta), counter : 0, trust-app-id : TESTTA >
+  < oid(0, oid(0, ta)) : PersistentObject | type : TEE-TYPE-AES,
                            max-size : 128 Bits,
                            attributes : empty,
                            usages : empty,
-                           data-stream-id : taOid(1, ta),
+                           data-stream-id : oid(1, ta),
                            file-name : testFileId,
                            trust-app-id : TESTTA >
 =>*
   < ta : TaKernel | api-state : finished,
                     api-return : apiReturn(OpenPersistentObject , TEE-SUCCESS,
-                                           handle(handleId(0, ta))) > .
+                                           handle(oid(0, ta))) > .
 
 --- [BB-P-OP-2] open-persistent-file-not-found
 search [1] in TEST-AUX :
@@ -43,7 +43,7 @@ search [1] in TEST-AUX :
 =>*
   < ta : TaKernel | api-state : finished,
                     api-return : apiReturn(OpenPersistentObject , TEE-ERROR-ITEM-NOT-FOUND,
-                                           handle(TEE-HANDLE-NULL)) > .
+                                           handle(null)) > .
 
 --- [BB-P-OP-3] open-persistent-out-of-memory
 search [1] in TEST-AUX :
@@ -54,7 +54,7 @@ search [1] in TEST-AUX :
 =>*
   < ta : TaKernel | api-state : finished,
                     api-return : apiReturn(OpenPersistentObject , TEE-ERROR-OUT-OF-MEMORY,
-                                           handle(TEE-HANDLE-NULL)) > .
+                                           handle(null)) > .
 
 --- [BB-P-OP-4] open-persistent-storage-error
 search [1] in TEST-AUX :
@@ -66,7 +66,7 @@ search [1] in TEST-AUX :
 =>*
   < ta : TaKernel | api-state : finished,
                     api-return : apiReturn(OpenPersistentObject , TEE-ERROR-CORRUPT-OBJECT,
-                                           handle(TEE-HANDLE-NULL)) > .
+                                           handle(null)) > .
 
 --- ============================================================
 --- CreatePersistentObject
@@ -78,29 +78,29 @@ search [1] in TEST-AUX :
                         TEE-TYPE-AES, TEE-USAGE-ENCRYPT, ta)
   < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
                     current-api : CreatePersistentObject, api-state : waitReqAttributeAndDelete,
-                    current-params : (fileId(testFileId), handle(handleId(1, ta)),
+                    current-params : (fileId(testFileId), handle(oid(1, ta)),
                                       flags(TEE-DATA-FLAG-ACCESS-READ), data(nil), size(dataSize(0))),
-                    storage : storageId(0), counter : 0, trust-app-id : TESTTA >
+                    storage : oid(0, ta), counter : 0, trust-app-id : TESTTA >
   < osId : TeeOSKernel | service-in : nil, service-out : nil,
                            service-request-ta : noAppId,
-                           service-request-ta-inst : noInstId >
-  < storageId(0) : Storage | status : storageNormal, files : empty, counter : 0 >
+                           service-request-ta-inst : noOid >
+  < oid(0, ta) : Storage | status : storageNormal, files : empty, counter : 0 >
 =>*
   < ta : TaKernel | api-state : finished,
                     api-return : apiReturn(CreatePersistentObject , TEE-SUCCESS,
-                                           handle(handleId(0, ta))) > .
+                                           handle(oid(0, ta))) > .
 
 --- [BB-P-CP-2] create-persistent-success (notify accepted)
 search [1] in TEST-AUX :
   retTrustedOS(acceptNotification, ta)
   < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
                     current-api : CreatePersistentObject, api-state : waitNotifyFileCreation,
-                    current-params : openedHandle(handleId(1, ta)),
+                    current-params : openedHandle(oid(1, ta)),
                     counter : 0, trust-app-id : TESTTA >
 =>*
   < ta : TaKernel | api-state : finished,
                     api-return : apiReturn(CreatePersistentObject , TEE-SUCCESS,
-                                           handle(handleId(1, ta))) > .
+                                           handle(oid(1, ta))) > .
 
 --- [BB-P-CP-3] create-persistent-access-conflict
 search [1] in TEST-AUX :
@@ -110,7 +110,7 @@ search [1] in TEST-AUX :
 =>*
   < ta : TaKernel | api-state : finished,
                     api-return : apiReturn(CreatePersistentObject , TEE-ERROR-ACCESS-CONFLICT,
-                                           handle(TEE-HANDLE-NULL)) > .
+                                           handle(null)) > .
 
 --- [BB-P-CP-4] create-persistent-out-of-memory
 search [1] in TEST-AUX :
@@ -120,7 +120,7 @@ search [1] in TEST-AUX :
 =>*
   < ta : TaKernel | api-state : finished,
                     api-return : apiReturn(CreatePersistentObject , TEE-ERROR-OUT-OF-MEMORY,
-                                           handle(TEE-HANDLE-NULL)) > .
+                                           handle(null)) > .
 
 --- [BB-P-CP-5] create-persistent-storage-not-available
 search [1] in TEST-AUX :
@@ -131,7 +131,7 @@ search [1] in TEST-AUX :
 =>*
   < ta : TaKernel | api-state : finished,
                     api-return : apiReturn(CreatePersistentObject , TEE-ERROR-STORAGE-NOT-AVAILABLE,
-                                           handle(TEE-HANDLE-NULL)) > .
+                                           handle(null)) > .
 
 --- ============================================================
 --- CloseAndDeletePersistentObject1
@@ -142,21 +142,21 @@ search [1] in TEST-AUX :
   retTrustedOS(acceptNotification, ta)
   < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
                     current-api : CloseAndDeletePersistentObject1, api-state : waitNotifyFileDeletion,
-                    current-params : handle(handleId(2, ta)),
+                    current-params : handle(oid(2, ta)),
                     counter : 0, trust-app-id : TESTTA >
-  < handleId(2, ta) : ObjectHandle | oid : p,
+  < oid(2, ta) : ObjectHandle | oid : p,
                                            flags : TEE-DATA-FLAG-ACCESS-WRITE-META,
                                            pos : pos(0) >
   < p : PersistentObject | type : TEE-TYPE-AES,
                            max-size : 128 Bits,
                            attributes : empty,
                            usages : empty,
-                           data-stream-id : taOid(4, ta), file-name : testFileId,
+                           data-stream-id : oid(4, ta), file-name : testFileId,
                            trust-app-id : TESTTA >
-  < taOid(4, ta) : DataStreamObject | data-size : dataSize(0),
+  < oid(4, ta) : DataStreamObject | data-size : dataSize(0),
                                      content : newContent(randomData),
                                      persistent-owner-id : p,
-                                     device-owner-id : deviceId(0),
+                                     device-owner-id : devId,
                                      trust-app-id : TESTTA >
 =>*
   < ta : TaKernel | api-state : finished,
@@ -166,19 +166,19 @@ search [1] in TEST-AUX :
 search [1] in TEST-AUX :
   < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
                     current-api : CloseAndDeletePersistentObject1, api-state : started,
-                    current-params : handle(TEE-HANDLE-NULL),
+                    current-params : handle(null),
                     counter : 0, trust-app-id : TESTTA >
 =>*
   < ta : TaKernel | api-state : finished,
                     api-return : apiReturn(CloseAndDeletePersistentObject1 , TEE-SUCCESS,
-                                           handle(TEE-HANDLE-NULL)) > .
+                                           handle(null)) > .
 
 --- [BB-P-CD-3] close-delete-storage-not-available
 search [1] in TEST-AUX :
   retTrustedOS(storageStatus(storageInAccessible) , ta)
   < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
                     current-api : CloseAndDeletePersistentObject1, api-state : started,
-                    current-params : handle(handleId(2, ta)),
+                    current-params : handle(oid(2, ta)),
                     counter : 0, trust-app-id : TESTTA >
 =>*
   < ta : TaKernel | api-state : finished,
@@ -193,16 +193,16 @@ search [1] in TEST-AUX :
   retTrustedOS(acceptNotification, ta)
   < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
                     current-api : RenamePersistentObject, api-state : waitNotifyFileRename,
-                    current-params : (fileId(newTestFileId), handle(handleId(6, ta))),
+                    current-params : (fileId(newTestFileId), handle(oid(106, ta))),
                     counter : 0, trust-app-id : TESTTA >
-  < handleId(6, ta) : ObjectHandle | oid : p,
+  < oid(106, ta) : ObjectHandle | oid : p,
                                            flags : TEE-DATA-FLAG-ACCESS-WRITE-META,
                                            pos : pos(0) >
   < p : PersistentObject | type : TEE-TYPE-AES,
                            max-size : 128 Bits,
                            attributes : empty,
                            usages : empty,
-                           data-stream-id : taOid(6, ta),
+                           data-stream-id : oid(6, ta),
                            file-name : testFileId, trust-app-id : TESTTA >
 =>*
   < ta : TaKernel | api-state : finished,
@@ -213,7 +213,7 @@ search [1] in TEST-AUX :
   retTrustedOS(storageStatus(storageNormal) fileExist , ta)
   < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
                     current-api : RenamePersistentObject, api-state : started,
-                    current-params : (fileId(newTestFileId), handle(handleId(6, ta))),
+                    current-params : (fileId(newTestFileId), handle(oid(6, ta))),
                     counter : 0, trust-app-id : TESTTA >
 =>*
   < ta : TaKernel | api-state : finished,
@@ -224,7 +224,7 @@ search [1] in TEST-AUX :
   retTrustedOS(storageStatus(storageCorrupt) fileExist , ta)
   < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
                     current-api : RenamePersistentObject, api-state : started,
-                    current-params : (fileId(newTestFileId), handle(handleId(6, ta))),
+                    current-params : (fileId(newTestFileId), handle(oid(6, ta))),
                     counter : 0, trust-app-id : TESTTA >
 =>*
   < ta : TaKernel | api-state : finished,

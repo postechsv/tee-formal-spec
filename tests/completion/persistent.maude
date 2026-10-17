@@ -23,7 +23,7 @@ search [1] in COMPLETION-TEST :
                         api-state : finished, current-api : OpenPersistentObject,
                         current-params : storageId(TEE-STORAGE-PERSO),
                         api-return : apiReturn(OpenPersistentObject, TEE-ERROR-ITEM-NOT-FOUND,
-                                               handle(TEE-HANDLE-NULL)) > .
+                                               handle(null)) > .
 
 search [1] in COMPLETION-TEST :
   < testTa : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
@@ -34,15 +34,15 @@ search [1] in COMPLETION-TEST :
                         api-state : finished, current-api : CreatePersistentObject,
                         current-params : storageId(TEE-STORAGE-PROTECTED),
                         api-return : apiReturn(CreatePersistentObject, TEE-ERROR-ITEM-NOT-FOUND,
-                                               handle(TEE-HANDLE-NULL)) > .
+                                               handle(null)) > .
 
 --- Creating a persistent object can consume a paper-level top-level transient handle.
 search [1] in COMPLETION-TEST :
-  reqAttributeAndDelete(handleId(1, testTa), testTa)
-  < taOid(1, testTa) : TransientObject | initialized : true,
+  reqAttributeAndDelete(oid(101, testTa), testTa)
+  < oid(1, testTa) : TransientObject | initialized : true,
       type : TEE-TYPE-AES, attributes : empty,
       usages : TEE-USAGE-EXTRACTABLE >
-  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa) >
+  < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa) >
 =>1
   retAttributeAndDelete(empty, TEE-TYPE-AES,
                         TEE-USAGE-EXTRACTABLE, testTa) .
@@ -56,109 +56,109 @@ search [1] in COMPLETION-TEST :
       status : normal, api-call : noCall, api-return : noReturn,
       current-api : CreatePersistentObject,
       api-state : waitReqAttributeAndDelete,
-      current-params : (fileId(testFileId), handle(handleId(1, testTa)),
+      current-params : (fileId(testFileId), handle(oid(1, testTa)),
                         flags(TEE-DATA-FLAG-ACCESS-READ), data(nil),
                         size(dataSize(0))),
-      storage : storageId(0), counter : 0, trust-app-id : TESTTA >
+      storage : oid(0, testTa), counter : 0, trust-app-id : TESTTA >
   < osId : TeeOSKernel |
       service-in : nil, service-out : nil,
-      service-request-ta : noAppId, service-request-ta-inst : noInstId >
-  < storageId(0) : Storage |
+      service-request-ta : noAppId, service-request-ta-inst : noOid >
+  < oid(0, testTa) : Storage |
       status : storageNormal, files : empty, counter : 0 >
 =>*
   < testTa : TaKernel |
       status : normal, api-call : noCall,
       current-api : CreatePersistentObject, api-state : finished,
-      current-params : (fileId(testFileId), handle(handleId(1, testTa)),
+      current-params : (fileId(testFileId), handle(oid(1, testTa)),
                         flags(TEE-DATA-FLAG-ACCESS-READ), data(nil),
-                        size(dataSize(0)), openedHandle(handleId(0, testTa))),
-      storage : storageId(0), counter : 1, trust-app-id : TESTTA,
+                        size(dataSize(0)), openedHandle(oid(0, testTa))),
+      storage : oid(0, testTa), counter : 1, trust-app-id : TESTTA,
       api-return : apiReturn(CreatePersistentObject, TEE-SUCCESS,
-                             handle(handleId(0, testTa))) >
-  < storageId(0) : Storage |
+                             handle(oid(0, testTa))) >
+  < oid(0, testTa) : Storage |
       status : storageNormal, files : testFileId, counter : 2 >
   C .
 
 --- OpenPersistentObject resolves a paper-level object through the handle's oid relation.
 search [1] in COMPLETION-TEST :
-  openPersistentHandle(storageId(0), testFileId, TEE-DATA-FLAG-ACCESS-READ,
+  openPersistentHandle(oid(0, testTa), testFileId, TEE-DATA-FLAG-ACCESS-READ,
                        3, testTa)
-  < storageOid(1, storageId(0)) : PersistentObject | file-name : testFileId >
+  < oid(1, oid(0, testTa)) : PersistentObject | file-name : testFileId >
 =>*
-  finishOpenPersistentHandle(handleId(3, testTa), testTa)
+  finishOpenPersistentHandle(oid(3, testTa), testTa)
   C .
 
 --- A second open conflicts when an existing reader did not share read access.
 search [1] in COMPLETION-TEST :
-  openPersistentHandle(storageId(0), testFileId,
+  openPersistentHandle(oid(0, testTa), testFileId,
                        (TEE-DATA-FLAG-ACCESS-READ,
                         TEE-DATA-FLAG-SHARE-READ),
                        2, testTa)
-  < storageOid(1, storageId(0)) : PersistentObject | file-name : testFileId >
-  < handleId(1, testTa) : ObjectHandle | oid : storageOid(1, storageId(0)),
+  < oid(1, oid(0, testTa)) : PersistentObject | file-name : testFileId >
+  < oid(1, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
       flags : TEE-DATA-FLAG-ACCESS-READ >
 =>*
   failOpenPersistentHandle(testTa)
-  < storageOid(1, storageId(0)) : PersistentObject | file-name : testFileId >
-  < handleId(1, testTa) : ObjectHandle | oid : storageOid(1, storageId(0)),
+  < oid(1, oid(0, testTa)) : PersistentObject | file-name : testFileId >
+  < oid(1, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
       flags : TEE-DATA-FLAG-ACCESS-READ > .
 
 --- Opening is scoped to the TA's Storage even when another Storage contains
 --- an object with the same file identifier.
 search [1] in COMPLETION-TEST :
-  openPersistentHandle(storageId(1), testFileId,
+  openPersistentHandle(oid(0, otherTa), testFileId,
                        TEE-DATA-FLAG-ACCESS-READ, 4, testTa)
-  < storageOid(0, storageId(0)) : PersistentObject | file-name : testFileId >
-  < storageOid(0, storageId(1)) : PersistentObject | file-name : testFileId >
+  < oid(0, oid(0, testTa)) : PersistentObject | file-name : testFileId >
+  < oid(0, oid(0, otherTa)) : PersistentObject | file-name : testFileId >
 =>*
-  finishOpenPersistentHandle(handleId(4, testTa), testTa)
-  < handleId(4, testTa) : ObjectHandle |
-      oid : storageOid(0, storageId(1)),
+  finishOpenPersistentHandle(oid(4, testTa), testTa)
+  < oid(4, testTa) : ObjectHandle |
+      oid : oid(0, oid(0, otherTa)),
       flags : TEE-DATA-FLAG-ACCESS-READ,
       pos : pos(0) >
-  < storageOid(0, storageId(0)) : PersistentObject | file-name : testFileId >
-  < storageOid(0, storageId(1)) : PersistentObject | file-name : testFileId > .
+  < oid(0, oid(0, testTa)) : PersistentObject | file-name : testFileId >
+  < oid(0, oid(0, otherTa)) : PersistentObject | file-name : testFileId > .
 
 --- Overwrite removes only the old object in the TA's Storage namespace.
 search [1] in COMPLETION-TEST :
-  deleteOldPersistent(storageId(1), testFileId, testTa, TESTTA)
-  < storageOid(0, storageId(0)) : PersistentObject |
-      file-name : testFileId, data-stream-id : taOid(1, testTa),
+  deleteOldPersistent(oid(0, otherTa), testFileId, testTa, TESTTA)
+  < oid(0, oid(0, testTa)) : PersistentObject |
+      file-name : testFileId, data-stream-id : oid(1, testTa),
       trust-app-id : TESTTA >
-  < taOid(1, testTa) : DataStreamObject |
-      persistent-owner-id : storageOid(0, storageId(0)) >
-  < storageOid(0, storageId(1)) : PersistentObject |
-      file-name : testFileId, data-stream-id : taOid(2, testTa),
+  < oid(1, testTa) : DataStreamObject |
+      persistent-owner-id : oid(0, oid(0, testTa)) >
+  < oid(0, oid(0, otherTa)) : PersistentObject |
+      file-name : testFileId, data-stream-id : oid(2, testTa),
       trust-app-id : TESTTA >
-  < taOid(2, testTa) : DataStreamObject |
-      persistent-owner-id : storageOid(0, storageId(1)) >
+  < oid(2, testTa) : DataStreamObject |
+      persistent-owner-id : oid(0, oid(0, otherTa)) >
 =>*
   finishDeleteOldPersistent(testTa)
-  < storageOid(0, storageId(0)) : PersistentObject |
-      file-name : testFileId, data-stream-id : taOid(1, testTa),
+  < oid(0, oid(0, testTa)) : PersistentObject |
+      file-name : testFileId, data-stream-id : oid(1, testTa),
       trust-app-id : TESTTA >
-  < taOid(1, testTa) : DataStreamObject |
-      persistent-owner-id : storageOid(0, storageId(0)) > .
+  < oid(1, testTa) : DataStreamObject |
+      persistent-owner-id : oid(0, oid(0, testTa)) > .
 
 --- CloseAndDelete invalidates every top-level handle that references the owner.
 search [1] in COMPLETION-TEST :
-  deletePersistent(handleId(1, testTa), testTa, TESTTA)
-  < taOid(1, testTa) : PersistentObject |
-      data-stream-id : taOid(2, testTa), file-name : testFileId,
+  deletePersistent(oid(101, testTa), testTa, TESTTA)
+  < oid(1, testTa) : PersistentObject |
+      data-stream-id : oid(2, testTa), file-name : testFileId,
       trust-app-id : TESTTA >
-  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa),
       flags : TEE-DATA-FLAG-ACCESS-WRITE-META >
-  < handleId(2, testTa) : ObjectHandle | oid : taOid(1, testTa) >
-  < taOid(2, testTa) : DataStreamObject | persistent-owner-id : taOid(1, testTa) >
+  < oid(102, testTa) : ObjectHandle | oid : oid(1, testTa) >
+  < oid(2, testTa) : DataStreamObject | persistent-owner-id : oid(1, testTa) >
 =>*
   finishDeletePersistent(testFileId, testTa) .
 
 --- RenamePersistentObject authorizes through a top-level write-meta handle.
 search [1] in COMPLETION-TEST :
-  renamePersistent(handleId(1, testTa), newTestFileId, testTa, TESTTA)
-  < taOid(1, testTa) : PersistentObject |
+  renamePersistent(oid(101, testTa), newTestFileId, testTa, TESTTA)
+  < oid(1, testTa) : PersistentObject |
       file-name : testFileId, trust-app-id : TESTTA >
-  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa),
       flags : TEE-DATA-FLAG-ACCESS-WRITE-META >
 =>*
   finishRenamePersistent(testFileId, testTa)
@@ -166,11 +166,11 @@ search [1] in COMPLETION-TEST :
 
 --- Persistent attributes are available through a top-level object handle.
 search [1] in COMPLETION-TEST :
-  reqAttribute(handleId(1, testTa), testTa)
-  < taOid(1, testTa) : PersistentObject |
+  reqAttribute(oid(101, testTa), testTa)
+  < oid(1, testTa) : PersistentObject |
       type : TEE-TYPE-AES, attributes : empty,
       usages : TEE-USAGE-EXTRACTABLE >
-  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa) >
+  < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa) >
 =>1
   retAttributePr(empty, TEE-TYPE-AES, TEE-USAGE-EXTRACTABLE, testTa)
   C .
@@ -180,14 +180,14 @@ search [1] in COMPLETION-TEST :
   < osId : TeeOSKernel |
       service-in : notifyFileCreation(testFileId), service-out : nil,
       service-request-ta : TESTTA, service-request-ta-inst : testTa >
-  < testTa : TaKernel | storage : storageId(0) >
-  < storageId(0) : Storage | files : empty, counter : 0 >
+  < testTa : TaKernel | storage : oid(0, testTa) >
+  < oid(0, testTa) : Storage | files : empty, counter : 0 >
 =>1
   < osId : TeeOSKernel |
       service-in : nil, service-out : acceptNotification,
       service-request-ta : TESTTA, service-request-ta-inst : testTa >
-  < testTa : TaKernel | storage : storageId(0) >
-  < storageId(0) : Storage | files : testFileId, counter : 2 >
+  < testTa : TaKernel | storage : oid(0, testTa) >
+  < oid(0, testTa) : Storage | files : testFileId, counter : 2 >
   C .
 
 --- Consecutive creations reserve disjoint object/data-stream Oid pairs.
@@ -197,15 +197,15 @@ search [1] in COMPLETION-TEST :
                     notifyFileCreation(newTestFileId)),
       service-out : nil,
       service-request-ta : TESTTA, service-request-ta-inst : testTa >
-  < testTa : TaKernel | storage : storageId(0) >
-  < storageId(0) : Storage | files : empty, counter : 0 >
+  < testTa : TaKernel | storage : oid(0, testTa) >
+  < oid(0, testTa) : Storage | files : empty, counter : 0 >
 =>*
   < osId : TeeOSKernel |
       service-in : nil,
       service-out : (acceptNotification acceptNotification),
       service-request-ta : TESTTA, service-request-ta-inst : testTa >
-  < testTa : TaKernel | storage : storageId(0) >
-  < storageId(0) : Storage |
+  < testTa : TaKernel | storage : oid(0, testTa) >
+  < oid(0, testTa) : Storage |
       files : (testFileId, newTestFileId), counter : 4 > .
 
 --- A notification advances only the Storage referenced by the requesting TA.
@@ -213,13 +213,13 @@ search [1] in COMPLETION-TEST :
   < osId : TeeOSKernel |
       service-in : notifyFileCreation(testFileId), service-out : nil,
       service-request-ta : TESTTA, service-request-ta-inst : testTa >
-  < testTa : TaKernel | storage : storageId(1) >
-  < storageId(0) : Storage | files : empty, counter : 0 >
-  < storageId(1) : Storage | files : empty, counter : 6 >
+  < testTa : TaKernel | storage : oid(0, otherTa) >
+  < oid(0, testTa) : Storage | files : empty, counter : 0 >
+  < oid(0, otherTa) : Storage | files : empty, counter : 6 >
 =>1
   < osId : TeeOSKernel |
       service-in : nil, service-out : acceptNotification,
       service-request-ta : TESTTA, service-request-ta-inst : testTa >
-  < testTa : TaKernel | storage : storageId(1) >
-  < storageId(0) : Storage | files : empty, counter : 0 >
-  < storageId(1) : Storage | files : testFileId, counter : 8 > .
+  < testTa : TaKernel | storage : oid(0, otherTa) >
+  < oid(0, testTa) : Storage | files : empty, counter : 0 >
+  < oid(0, otherTa) : Storage | files : testFileId, counter : 8 > .

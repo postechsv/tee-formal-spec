@@ -1,16 +1,6 @@
 --- This file defines objects for the TEE storage/cryptographic operation APIs for the transient, persistent, and data stream objects.
 --- We define TrustedStorageObject and DataStreamObject which are not specified in the G.P. documentation for modeling purposes
 
---- This module defines an abstracted object class that belongs to TAs.
-
-omod TA-OBJECT is
-  pr TA-OBJECT-ID .
-  pr APP-ID .
-
-  subsort TaObjectId < Oid .
-  class TaObject | trust-app-id : AppId .
-endom
-
 --- This module defines the paper-level CryptoObj class and its implementation
 --- refinement TrustedStorageObject.
 
@@ -27,17 +17,26 @@ omod TRUSTED-STORAGE-OBJECT is
   subclass TrustedStorageObject < CryptoObj .
 endom
 
+--- This module defines an abstracted object class that belongs to TAs.
+
+omod TA-OBJECT is
+  pr OBJECT-ID .
+  pr APP-ID .
+
+  class TaObject | trust-app-id : AppId .
+endom
+
 --- This module defines DataStreamObject class which corresponds to a data stream object.
 
 omod DATA-STREAM-OBJECT is
   pr TA-OBJECT .
-  pr DEVICE-ID .
+  pr OBJECT-ID .
   pr DATA-STREAM-OPERATOR .
 
   class DataStreamObject | data-size : DataSize?,
                            content : Map{DataPosition,Data},
-                           persistent-owner-id : TaObjectId,
-                           device-owner-id : DeviceId .
+                           persistent-owner-id : Oid,
+                           device-owner-id : Oid .
   subclass DataStreamObject < TaObject .
 endom
 

@@ -19,25 +19,26 @@ search [1] in COMPLETION-TEST :
                         api-state : TeeOpenTASession(uuid(TESTTA)) # 1,
                         counter : 1 >
 =>1
-  < taOid(1, testTa) : Session |
+  < oid(1, testTa) : Session |
       req : noReq, ret : noRet, ta-id : testTa >
   C .
 
 --- The trusted OS records itself on each TA kernel that it creates.
+--- The TA instance is oid(N, osId) and its Storage is oid(0, TA instance).
 search [1] in COMPLETION-TEST :
   < osId : TeeOSKernel |
       service-in : openTASession(TESTTA) nil, service-out : nil,
       ta-prog-map : TESTTA |-> [P],
       sess : empty, session-counter : 0 >
 =>1
-  < trustAppId(0) : TrustApp |
+  < oid(0, osId) : TrustApp |
       trust-app-id : TESTTA, status : normal, os-kernel : osId,
-      storage : storageId(0), counter : 0,
+      storage : oid(0, oid(0, osId)), counter : 1,
       api-call : noCall, api-return : noReturn,
       current-api : noApi, api-state : noState, current-params : empty,
       prog : P, proc : none, running : false,
       client-service : noClientService, task : noTask, task-counter : 0 >
-  < storageId(0) : Storage |
+  < oid(0, oid(0, osId)) : Storage |
       status : storageNormal, files : empty, counter : 0 >
   C .
 
@@ -53,17 +54,18 @@ search [1] in COMPLETION-TEST :
   C .
 
 --- TeeInvokeTACommand resolves a top-level session handle in both directions.
+--- The session object is oid(1, testTa); its handle is oid(2, testTa).
 search [1] in COMPLETION-TEST :
-  reqInvoke(handleId(1, testTa), main, nil, testTa)
-  < taOid(1, testTa) : Session | req : noReq >
-  < handleId(1, testTa) : TaSessionHandle | oid : taOid(1, testTa) >
+  reqInvoke(oid(2, testTa), main, nil, testTa)
+  < oid(1, testTa) : Session | req : noReq >
+  < oid(2, testTa) : TaSessionHandle | oid : oid(1, testTa) >
 =>1
   C .
 
 search [1] in COMPLETION-TEST :
-  < taOid(1, testTa) : Session |
-      ret : {handleId(1, testTa), main, testTa, nil} >
-  < handleId(1, testTa) : TaSessionHandle | oid : taOid(1, testTa) >
+  < oid(1, testTa) : Session |
+      ret : {oid(2, testTa), main, testTa, nil} >
+  < oid(2, testTa) : TaSessionHandle | oid : oid(1, testTa) >
 =>1
-  finishReqInvoke(handleId(1, testTa), main, testTa, nil)
+  finishReqInvoke(oid(2, testTa), main, testTa, nil)
   C .

@@ -27,10 +27,10 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
 
   var B : Bool .
   vars N M : Nat .
-  var HANDLE : HandleId .
-  var TK : TaInstId .
+  var HANDLE : Oid .
+  var TK : Oid .
   var TN : AppId .
-  vars OI EI DI : TaObjectId .
+  vars OI EI DI : Oid .
   var SI : Oid .
   var FILE : FileId .
   var FILES : Set{FileId} .
@@ -60,11 +60,11 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
                       counter : N , trust-app-id : TN >
     =>
     < TK : TaKernel | api-state : finished , counter : N + 2 ,
-                      api-return : apiReturn(AllocatePersistentObjectEnumerator , TEE-SUCCESS, handle(handleId(N + 1 , TK))) >
-    < taOid(N , TK) : EnumeratorObject |
+                      api-return : apiReturn(AllocatePersistentObjectEnumerator , TEE-SUCCESS, handle(oid(N + 1 , TK))) >
+    < oid(N , TK) : EnumeratorObject |
                                          persistent-objects : empty , enumerating : false ,
                                          trust-app-id : TN >
-    freshEnumeratorHandle(N + 1 , TK , taOid(N , TK))
+    freshEnumeratorHandle(N + 1 , TK , oid(N , TK))
   .
 
 --- This rule returns TEE_ERROR_OUT_OF_MEMORY if there is not enough memory to allocate the enumerator.
@@ -73,7 +73,7 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
     < TK : TaKernel | status : outOfMemory , api-call : noCall , api-return : noReturn ,
                       current-api : AllocatePersistentObjectEnumerator >
     =>
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(AllocatePersistentObjectEnumerator , TEE-ERROR-OUT-OF-MEMORY , handle(TEE-HANDLE-NULL)) >
+    < TK : TaKernel | api-state : finished , api-return : apiReturn(AllocatePersistentObjectEnumerator , TEE-ERROR-OUT-OF-MEMORY , handle(null)) >
   .
 
 ------------------------------------------------------------
@@ -85,8 +85,8 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
 
 --- The following three rules delete the enumerator object pointed by the valid input handle.
 
-  msg deleteEnumerator : HandleId TaInstId -> Msg .
-  msg finishDeleteEnumerator : TaInstId -> Msg .
+  msg deleteEnumerator : Oid Oid -> Msg .
+  msg finishDeleteEnumerator : Oid -> Msg .
 
   crl [free-enumerator-not-null-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -123,7 +123,7 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
                       current-params : handle(HANDLE) >
     =>
     < TK : TaKernel | api-state : finished ,
-                      api-return : apiReturn(FreePersistentObjectEnumerator , handle(TEE-HANDLE-NULL)) >
+                      api-return : apiReturn(FreePersistentObjectEnumerator , handle(null)) >
   if nullHandle(HANDLE)
   .
 
@@ -136,8 +136,8 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
 
 --- The following three rules reset the enumerator object.
 
-  msg reqResetEnumerator : HandleId TaInstId -> Msg .
-  msg retResetEnumerator : TaInstId -> Msg .
+  msg reqResetEnumerator : Oid Oid -> Msg .
+  msg retResetEnumerator : Oid -> Msg .
 
   crl [reset-enumerator-not-null-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -188,8 +188,8 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
 
 --- The following four rules start the enumeration.
 
-  msg startEnumerator : HandleId Set{FileId} TaInstId -> Msg .
-  msg finishStartEnumerator : TaInstId -> Msg .
+  msg startEnumerator : Oid Set{FileId} Oid -> Msg .
+  msg finishStartEnumerator : Oid -> Msg .
 
   rl [start-enumerator-default-private-storage] :
     < TK : TaKernel | api-state : started , current-api : StartPersistentObjectEnumerator ,
@@ -299,8 +299,8 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
     reqNextObjectId(HANDLE , TK)
   .
 
-  msg reqNextObjectId : HandleId TaInstId -> Msg .
-  msg retNextObjectId : FileId TaInstId -> Msg .
+  msg reqNextObjectId : Oid Oid -> Msg .
+  msg retNextObjectId : FileId Oid -> Msg .
 
 
   rl [get-next-persistent-top-level-handle] :
@@ -314,8 +314,8 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
     retNextObjectId(FILE , TK)
   .
 
-  msg reqNextObject : Oid FileId TaInstId AppId -> Msg .
-  msg retNextObject : TeeObjectInfo TaInstId -> Msg .
+  msg reqNextObject : Oid FileId Oid AppId -> Msg .
+  msg retNextObject : TeeObjectInfo Oid -> Msg .
 
   rl [get-next-persistent-subroutine] :
     retNextObjectId(FILE , TK)
@@ -332,12 +332,12 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
 --- Resolve the identifier only inside the TA's paper-level Storage relation.
   rl [get-next-persistent-subroutine] :
     reqNextObject(SI , FILE , TK , TN)
-    < storageOid(M, SI) : PersistentObject | type : OBJTYPE , max-size : MAXOBJSIZE , attributes : ATTRS ,
+    < oid(M, SI) : PersistentObject | type : OBJTYPE , max-size : MAXOBJSIZE , attributes : ATTRS ,
                               usages : OBJUSAGES , data-stream-id : DI ,
                               file-name : FILE , trust-app-id : TN >
     < DI : DataStreamObject | data-size : DATASIZE >
     =>
-    < storageOid(M, SI) : PersistentObject | >
+    < oid(M, SI) : PersistentObject | >
     < DI : DataStreamObject | >
     retNextObject(teeObjectInfo(OBJTYPE , keySize(ATTRS) , MAXOBJSIZE , OBJUSAGES , DATASIZE , pos(0) , empty) , TK)
   .

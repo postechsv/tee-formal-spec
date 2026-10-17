@@ -1,9 +1,9 @@
 --- This module defines API call parameters.
 
-fmod TEE-API-PARAM is
+mod TEE-API-PARAM is
   pr OBJECT-TYPE .
   pr CRYPTO-KEY-SIZE .
-  pr HANDLE-ID .
+  pr OBJECT-ID .
   pr SET{TeeAttribute} .
   pr FILE-ID .
   pr STORAGE-IDENTIFER .
@@ -34,21 +34,21 @@ fmod TEE-API-PARAM is
 --- transient
   op type : ObjectType -> TeeApiParam [ctor] .
   op size : CryptoKeySize -> TeeApiParam [ctor] .
-  op handle : HandleId -> TeeApiParam [ctor] .
+  op handle : Oid -> TeeApiParam [ctor] .
   op attrs : Set{TeeAttribute} -> TeeApiParam [ctor] .
   op constId : AttrId -> TeeApiParam [ctor] .
   op constVal : AttrContent -> TeeApiParam [ctor] .
-  op srcHandle : HandleId -> TeeApiParam [ctor] .
-  op trgHandle : HandleId -> TeeApiParam [ctor] .
+  op srcHandle : Oid -> TeeApiParam [ctor] .
+  op trgHandle : Oid -> TeeApiParam [ctor] .
 
 --- persistent
   op storageId : StorageIdentifier -> TeeApiParam [ctor] .
   op fileId : FileId -> TeeApiParam [ctor] .
   op flags : Set{DataFlag} -> TeeApiParam [ctor] .
-  op opt : HandleId -> TeeApiParam [ctor] .
+  op opt : Oid -> TeeApiParam [ctor] .
   op data : List{Data} -> TeeApiParam [ctor] .
   op size : DataSize -> TeeApiParam [ctor] .
-  op openedHandle : HandleId -> TeeApiParam [ctor] .
+  op openedHandle : Oid -> TeeApiParam [ctor] .
   op usages : Set{ObjectUsage} -> TeeApiParam [ctor] .
 
 
@@ -70,13 +70,13 @@ fmod TEE-API-PARAM is
   op taCancelReqTime : TaCancelTimeOut -> TeeApiParam [ctor] .
   op funcId : FuncId -> TeeApiParam [ctor] .
   op values : ValueList -> TeeApiParam [ctor] .
-endfm
+endm
 
 view TeeApiParam from TRIV to TEE-API-PARAM is
   sort Elt to TeeApiParam .
 endv
 
-fmod TEE-API-CALL is
+mod TEE-API-CALL is
   pr TEE-API .
   pr SET{TeeApiParam} .
 
@@ -87,9 +87,9 @@ fmod TEE-API-CALL is
   op noCall : -> TeeApiCall? [ctor] .
 
   op _(_) : TeeApi Set{TeeApiParam} -> TeeApiCall [ctor] .
-endfm
+endm
 
-fmod TEE-API-RETURN is
+mod TEE-API-RETURN is
   pr TEE-API .
   pr RETURN-CODE .
   pr SET{TeeApiParam} .
@@ -112,9 +112,9 @@ fmod TEE-API-RETURN is
 
   op apiReturn : TeeApi -> TeeApiReturn .
   eq apiReturn(API) = apiReturn(API , noReturnCode , empty) .
-endfm
+endm
 
-fmod TEE-API-STATE is
+mod TEE-API-STATE is
   pr NAT .
   pr TEE-API-CALL .
 
@@ -128,18 +128,18 @@ fmod TEE-API-STATE is
 
 --- with step
   op _#_ : TeeApiCall Nat -> TeeApiState [ctor] .
-endfm
+endm
 
-fmod TRUSTED-STORAGE-FUNC-STATE is
+mod TRUSTED-STORAGE-FUNC-STATE is
   pr TEE-API-STATE .
 
   op waitStorageCheck : -> TeeApiState [ctor] .
   op waitReqAttribute : -> TeeApiState [ctor] .
-endfm
+endm
 
 --- This module defines states for Transient API.
 
-fmod TRANSIENT-OBJECT-FUNC-STATE is
+mod TRANSIENT-OBJECT-FUNC-STATE is
   pr TEE-API-STATE .
 
   op waitDeleteTransient : -> TeeApiState [ctor] .
@@ -147,11 +147,11 @@ fmod TRANSIENT-OBJECT-FUNC-STATE is
   op waitPopulateTransient : -> TeeApiState [ctor] .
   op waitCopyAttribute : -> TeeApiState [ctor] .
   op waitReqGenerateKey : -> TeeApiState [ctor] .
-endfm
+endm
 
 --- This module defines states for Persistent API.
 
-fmod PERSISTENT-OBJECT-FUNC-STATE is
+mod PERSISTENT-OBJECT-FUNC-STATE is
   pr TEE-API-STATE .
 
   op waitOpenPersistent : -> TeeApiState [ctor] .
@@ -175,11 +175,11 @@ fmod PERSISTENT-OBJECT-FUNC-STATE is
   --- RenamePersistentObject
   op waitRenamePersistent : -> TeeApiState [ctor] .
   op waitNotifyFileRename : -> TeeApiState [ctor] .
-endfm
+endm
 
 --- This module defines states for Generic API.
 
-fmod GENERIC-OBJECT-FUNC-STATE is
+mod GENERIC-OBJECT-FUNC-STATE is
   pr TEE-API-STATE .
 
   op waitObjectInfo : -> TeeApiState [ctor] .
@@ -187,11 +187,11 @@ fmod GENERIC-OBJECT-FUNC-STATE is
   op waitRestrictObjectUsage : -> TeeApiState [ctor] .
   op waitGetBufferAttribute : -> TeeApiState [ctor] .
   op waitGetValueAttribute : -> TeeApiState [ctor] .
-endfm
+endm
 
 --- This module defines states for Persistent Enumerator API.
 
-fmod ENUMERATOR-OBJECT-FUNC-STATE is
+mod ENUMERATOR-OBJECT-FUNC-STATE is
   pr TEE-API-STATE .
 
   op waitDeleteEnumerator : -> TeeApiState [ctor] .  
@@ -199,22 +199,22 @@ fmod ENUMERATOR-OBJECT-FUNC-STATE is
   op waitStartEnumerator : -> TeeApiState [ctor] .
   op waitGetNextObjectId : -> TeeApiState [ctor] .
   op waitGetNextObject : -> TeeApiState [ctor] .
-endfm
+endm
 
 --- This module defines states for Data Stream API.
 
-fmod DATA-STREAM-OBJECT-FUNC-STATE is
+mod DATA-STREAM-OBJECT-FUNC-STATE is
   pr TEE-API-STATE .
 
   op waitReadObjectData : -> TeeApiState [ctor] .
   op waitWriteObjectData : -> TeeApiState [ctor] .
   op waitTruncateObjectData : -> TeeApiState [ctor] .
   op waitSeekObjectData : -> TeeApiState [ctor] .
-endfm
+endm
 
 --- This module defines states for Cryptographic Operations API.
 
-fmod CRYPTO-OPERATION-FUNC-STATE is
+mod CRYPTO-OPERATION-FUNC-STATE is
   pr TEE-API-STATE .
 
   op waitDeleteOperationObject : -> TeeApiState [ctor] .
@@ -239,4 +239,4 @@ fmod CRYPTO-OPERATION-FUNC-STATE is
   op waitAsymDecrypt : -> TeeApiState [ctor] .
   op waitAsymSignDigest : -> TeeApiState [ctor] .
   op waitAsymVerifDigest : -> TeeApiState [ctor] .
-endfm
+endm

@@ -19,11 +19,11 @@ omod GENERIC-OBJECT-BEHAVIOR is
   pr TEE-ATTRIBUTE-AUX .
   pr TEE-OS-BEHAVIOR .
 
-  var TK : TaInstId .
+  var TK : Oid .
   var N : Nat .
   var TN : AppId .
-  var HANDLE : HandleId .
-  vars OI DI : TaObjectId .
+  var HANDLE : Oid .
+  vars OI DI : Oid .
   var OBJTYPE : ObjectType .
   vars KEYSIZE MAXOBJSIZE : CryptoKeySize .
   vars OBJUSAGES OBJUSAGES' : Set{ObjectUsage} .
@@ -90,9 +90,9 @@ omod GENERIC-OBJECT-BEHAVIOR is
 --- The 'TEE_GetObjectInfo1' function returns the characteristics of an object.
 --- See page 132 of the G.P. documentation for more details.
 
-  msg reqObjectInfo : HandleId TaInstId AppId -> Msg .
-  msg retObjectInfoTr : ObjectType CryptoKeySize CryptoKeySize Set{ObjectUsage} TaInstId -> Msg .
-  msg retObjectInfoPr : ObjectType CryptoKeySize CryptoKeySize Set{ObjectUsage} DataSize DataPosition Set{DataFlag} TaInstId -> Msg .
+  msg reqObjectInfo : Oid Oid AppId -> Msg .
+  msg retObjectInfoTr : ObjectType CryptoKeySize CryptoKeySize Set{ObjectUsage} Oid -> Msg .
+  msg retObjectInfoPr : ObjectType CryptoKeySize CryptoKeySize Set{ObjectUsage} DataSize DataPosition Set{DataFlag} Oid -> Msg .
 
   crl [get-obj-info-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -190,8 +190,8 @@ omod GENERIC-OBJECT-BEHAVIOR is
 
 --- The following four rules restricts the usage of the (transient) object.
 
-  msg restrictUsage : HandleId Set{ObjectUsage} TaInstId -> Msg .
-  msg finishRestrictUsage : TaInstId -> Msg .
+  msg restrictUsage : Oid Set{ObjectUsage} Oid -> Msg .
+  msg finishRestrictUsage : Oid -> Msg .
 
   rl [restrict-object-usage-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -475,8 +475,8 @@ omod GENERIC-OBJECT-BEHAVIOR is
 
 --- The following four rules close an object handle.
 
-  msg closeObject : HandleId TaInstId -> Msg .
-  msg finishCloseObject : TaInstId -> Msg .
+  msg closeObject : Oid Oid -> Msg .
+  msg finishCloseObject : Oid -> Msg .
 
   crl [close-object-not-null-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -523,7 +523,7 @@ omod GENERIC-OBJECT-BEHAVIOR is
                       current-params : handle(HANDLE) >
     => 
     < TK : TaKernel | api-state : finished , 
-                      api-return : apiReturn(CloseObject , handle(TEE-HANDLE-NULL)) >
+                      api-return : apiReturn(CloseObject , handle(null)) >
   if nullHandle(HANDLE)
   .
 
@@ -534,10 +534,10 @@ endom
 omod GENERIC-OBJECT-BEHAVIOR-INVISIBLE is
   pr GENERIC-OBJECT-BEHAVIOR .
 
-  var TK : TaInstId .
+  var TK : Oid .
   var TN : AppId .
-  var HANDLE : HandleId .
-  vars OI DI : TaObjectId .
+  var HANDLE : Oid .
+  vars OI DI : Oid .
   var OBJTYPE : ObjectType .
   vars KEYSIZE MAXOBJSIZE : CryptoKeySize .
   var OBJUSAGES : Set{ObjectUsage} .
@@ -681,7 +681,7 @@ omod GENERIC-OBJECT-BEHAVIOR-INVISIBLE is
                       current-params : handle(HANDLE) >
     =
     < TK : TaKernel | api-state : finished , 
-                      api-return : apiReturn(CloseObject , handle(TEE-HANDLE-NULL)) >
+                      api-return : apiReturn(CloseObject , handle(null)) >
   if nullHandle(HANDLE)
   .
 

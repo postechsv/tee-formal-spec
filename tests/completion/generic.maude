@@ -46,27 +46,27 @@ search [1] in COMPLETION-TEST :
 
 --- Closing one persistent handle removes only that ID and its top-level object.
 search [1] in COMPLETION-TEST :
-  closeObject(handleId(1, testTa), testTa)
-  < taOid(1, testTa) : PersistentObject | >
-  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa) >
-  < handleId(2, testTa) : ObjectHandle | oid : taOid(1, testTa) >
+  closeObject(oid(101, testTa), testTa)
+  < oid(1, testTa) : PersistentObject | >
+  < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa) >
+  < oid(2, testTa) : ObjectHandle | oid : oid(1, testTa) >
 =>1
   finishCloseObject(testTa)
-  < taOid(1, testTa) : PersistentObject | >
-  < handleId(2, testTa) : ObjectHandle | oid : taOid(1, testTa) > .
+  < oid(1, testTa) : PersistentObject | >
+  < oid(2, testTa) : ObjectHandle | oid : oid(1, testTa) > .
 
 --- GetObjectInfo1 combines a persistent owner, top-level handle, and stream.
 search [1] in COMPLETION-TEST :
-  reqObjectInfo(handleId(1, testTa), testTa, TESTTA)
-  < taOid(1, testTa) : PersistentObject |
+  reqObjectInfo(oid(101, testTa), testTa, TESTTA)
+  < oid(1, testTa) : PersistentObject |
       type : TEE-TYPE-AES, max-size : 256 Bits,
       attributes : teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal),
       usages : TEE-USAGE-EXTRACTABLE,
-      data-stream-id : taOid(2, testTa), trust-app-id : TESTTA >
-  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa),
+      data-stream-id : oid(2, testTa), trust-app-id : TESTTA >
+  < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa),
       flags : TEE-DATA-FLAG-ACCESS-READ,
       pos : pos(2) >
-  < taOid(2, testTa) : DataStreamObject | data-size : dataSize(5) >
+  < oid(2, testTa) : DataStreamObject | data-size : dataSize(5) >
 =>1
   retObjectInfoPr(TEE-TYPE-AES, keySize(
       teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)), 256 Bits,
@@ -76,10 +76,10 @@ search [1] in COMPLETION-TEST :
 
 --- RestrictObjectUsage1 updates a persistent owner through its top-level handle.
 search [1] in COMPLETION-TEST :
-  restrictUsage(handleId(1, testTa), TEE-USAGE-ENCRYPT, testTa)
-  < taOid(1, testTa) : PersistentObject |
+  restrictUsage(oid(101, testTa), TEE-USAGE-ENCRYPT, testTa)
+  < oid(1, testTa) : PersistentObject |
       usages : (TEE-USAGE-ENCRYPT, TEE-USAGE-DECRYPT) >
-  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa) >
+  < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa) >
 =>1
   finishRestrictUsage(testTa)
   C .
@@ -88,9 +88,9 @@ search [1] in COMPLETION-TEST :
   < testTa : TaKernel | status : normal, api-call : noCall,
                         api-return : noReturn, api-state : started,
                         current-api : GetObjectInfo1,
-                        current-params : handle(TEE-HANDLE-NULL) >
+                        current-params : handle(null) >
 =>1
   < testTa : TaKernel | status : panic, api-call : noCall,
                         api-return : noReturn, api-state : finished,
                         current-api : GetObjectInfo1,
-                        current-params : handle(TEE-HANDLE-NULL) > .
+                        current-params : handle(null) > .

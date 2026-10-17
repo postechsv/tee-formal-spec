@@ -34,7 +34,7 @@ endfm
 
 --- This module defines crypto parameters of TEE API calls, moved from TEE-API-PARAM.
 
-fmod CRYPTO-API-PARAM is
+mod CRYPTO-API-PARAM is
   pr TEE-API-PARAM .
   pr CRYPTO-DATA-TYPE .
   pr ALGORITHM-IDENTIFIER .
@@ -45,13 +45,13 @@ fmod CRYPTO-API-PARAM is
   op mode : OperationMode -> TeeApiParam [ctor] .
   op teeOpInfo : TeeOperationInfo -> TeeApiParam [ctor] .
   op teeOpInfoMultiple : TeeOperationInfoMultiple -> TeeApiParam [ctor] .
-  op keyHandle : HandleId -> TeeApiParam [ctor] .
-  op secondKeyHandle : HandleId -> TeeApiParam [ctor] .
+  op keyHandle : Oid -> TeeApiParam [ctor] .
+  op secondKeyHandle : Oid -> TeeApiParam [ctor] .
   op cryptoElement : CryptoElement -> TeeApiParam [ctor] .
   op iv : List{Data} -> TeeApiParam [ctor] .
   op mac : List{Data} -> TeeApiParam [ctor] .
   op digest : List{Data} -> TeeApiParam [ctor] .
-endfm
+endm
 
 --- This module defines CryptoOperation class, modeling the cryptographic operation of the G.P. documentation.
 
@@ -214,10 +214,10 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   vars B1 B2 B3 B1' B2' B3' : Bool .
   vars N M P Q : Nat .
   var TN : AppId .
-  var TK : TaInstId .
-  vars CI OI OI2 : TaObjectId .
-  vars HANDLE KEY : HandleId .
-  vars KEY1 KEY2 DERIVED : HandleId .
+  var TK : Oid .
+  vars CI OI OI2 : Oid .
+  vars HANDLE KEY : Oid .
+  vars KEY1 KEY2 DERIVED : Oid .
   vars ALGO ALGO2 : AlgorithmIdentifier .
   vars KEYS KEYS' : List{CryptoKey} .
   vars MODE MODE2 : OperationMode .
@@ -764,15 +764,15 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       counter : N , trust-app-id : TN >
     =>
     < TK : TaKernel | api-state : finished , counter : N + 2 ,
-                      api-return : apiReturn(AllocateOperation , TEE-SUCCESS , handle(handleId(N + 1 , TK))) >
-    < taOid(N , TK) : CryptoOperation |
+                      api-return : apiReturn(AllocateOperation , TEE-SUCCESS , handle(oid(N + 1 , TK))) >
+    < oid(N , TK) : CryptoOperation |
                                         attributes : empty , keys : nil , max-size : KEYSIZE ,
                                         acc-data : nil ,
                                         algorithm : ALGO , mode : MODE ,
                                         initialization-vector : nil ,
                                         state : TEE-OPERATION-STATE-INITIAL ,
                                         trust-app-id : TN >
-    freshOperationHandle(N + 1 , TK , taOid(N , TK), determineOpClass(ALGO))
+    freshOperationHandle(N + 1 , TK , oid(N , TK), determineOpClass(ALGO))
   if validParams(ALGO , MODE , KEYSIZE)
   .
 
@@ -826,8 +826,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
 --- The following three rules delete the cryptographic operation.
 
-  msg deleteOperationObject : HandleId TaInstId -> Msg .
-  msg finishDeleteOperationObject : TaInstId -> Msg .
+  msg deleteOperationObject : Oid Oid -> Msg .
+  msg finishDeleteOperationObject : Oid -> Msg .
 
   crl [free-operation-not-null-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -876,10 +876,10 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- The 'TEE_GetOperationInfo' function returns information about an operation handle.
 --- See page 190 of the G.P. documentation for more details.
 
-  msg reqOperationAttr : HandleId TaInstId -> Msg .
-  msg retOperationAttr : OpObjectAttr OpHandleAttr TaInstId -> Msg .
-  msg reqOperationInfoMultiple : HandleId TaInstId -> Msg .
-  msg retOperationInfoMultiple : TeeOperationInfoMultiple TaInstId -> Msg .
+  msg reqOperationAttr : Oid Oid -> Msg .
+  msg retOperationAttr : OpObjectAttr OpHandleAttr Oid -> Msg .
+  msg reqOperationInfoMultiple : Oid Oid -> Msg .
+  msg retOperationInfoMultiple : TeeOperationInfoMultiple Oid -> Msg .
 
   rl [get-operation-info-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -985,8 +985,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
 --- Model/Implementation Specific Version
 
-  msg resetOperation : HandleId TaInstId -> Msg .
-  msg finishResetOperation : TaInstId -> Msg .
+  msg resetOperation : Oid Oid -> Msg .
+  msg finishResetOperation : Oid -> Msg .
 
   rl [reset-operation-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -1080,11 +1080,11 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
 --- The 'TEE_SetOperationKey' function programs the key of an operation; that is, it associates an operation with a key.
 
-  msg reqSetOperationKey : HandleId ObjectType Set{TeeAttribute} Set{ObjectUsage} TaInstId -> Msg .
-  msg installTopOperationKey : HandleId TaObjectId Set{TeeAttribute} TaInstId -> Msg .
-  msg rejectTopOperationKey : HandleId TaInstId -> Msg .
-  msg finishSetOperationKey : TaInstId -> Msg .
-  msg failSetOperationKey : TaInstId -> Msg .
+  msg reqSetOperationKey : Oid ObjectType Set{TeeAttribute} Set{ObjectUsage} Oid -> Msg .
+  msg installTopOperationKey : Oid Oid Set{TeeAttribute} Oid -> Msg .
+  msg rejectTopOperationKey : Oid Oid -> Msg .
+  msg finishSetOperationKey : Oid -> Msg .
+  msg failSetOperationKey : Oid -> Msg .
 
   crl [set-operation-key-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -1099,7 +1099,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   crl [set-operation-key-clear] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : SetOperationKey ,
-                      current-params : handle(HANDLE) , keyHandle(TEE-HANDLE-NULL) , PARAMS >
+                      current-params : handle(HANDLE) , keyHandle(null) , PARAMS >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | oid : CI , state : HS >
     =>
@@ -1236,16 +1236,16 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- TEE_SetOperationKey2
 ------------------------------------------------------------
 
-  msg installOperationKeys : HandleId ObjectType Set{ObjectUsage} Set{TeeAttribute}
-                             ObjectType Set{ObjectUsage} Set{TeeAttribute} TaInstId -> Msg .
-  msg finishInstallTopOperationKeys : HandleId TaInstId -> Msg .
-  msg finishSetOperationKey2 : TaInstId -> Msg .
-  msg failSetOperationKey2 : TaInstId -> Msg .
-  msg resumeSetOperationKey2 : HandleId ObjectType Set{ObjectUsage}
-                               Set{TeeAttribute} TaInstId -> Msg .
-  msg installStoredOperationKeys : HandleId ObjectType Set{ObjectUsage}
+  msg installOperationKeys : Oid ObjectType Set{ObjectUsage} Set{TeeAttribute}
+                             ObjectType Set{ObjectUsage} Set{TeeAttribute} Oid -> Msg .
+  msg finishInstallTopOperationKeys : Oid Oid -> Msg .
+  msg finishSetOperationKey2 : Oid -> Msg .
+  msg failSetOperationKey2 : Oid -> Msg .
+  msg resumeSetOperationKey2 : Oid ObjectType Set{ObjectUsage}
+                               Set{TeeAttribute} Oid -> Msg .
+  msg installStoredOperationKeys : Oid ObjectType Set{ObjectUsage}
                                    Set{TeeAttribute} ObjectType Set{ObjectUsage}
-                                   Set{TeeAttribute} TaInstId -> Msg .
+                                   Set{TeeAttribute} Oid -> Msg .
 
   crl [set-operation-key2-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn , api-state : started ,
@@ -1274,8 +1274,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   crl [set-operation-key2-clear] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn , api-state : started ,
                       current-api : SetOperationKey2 ,
-                      current-params : handle(HANDLE) , keyHandle(TEE-HANDLE-NULL) ,
-                                       secondKeyHandle(TEE-HANDLE-NULL) >
+                      current-params : handle(HANDLE) , keyHandle(null) ,
+                                       secondKeyHandle(null) >
     < CI : CryptoOperation | algorithm : ALGO >
     < HANDLE : OperationHandle | oid : CI , state : HS >
     => < TK : TaKernel | api-state : finished ,
@@ -1447,10 +1447,10 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- The 'TEE_CopyOperation' function copies an operation state from one operation handle into another operation handle.
 --- See page 200 of the G.P. documentation for more details.
 
-  msg reqCopyOperation : HandleId OpObjectAttr OpHandleAttr TaInstId -> Msg .
-  msg applyCopiedOperationHandle : HandleId Bool Bool Bool TaInstId -> Msg .
-  msg finishCopyOperation : TaInstId -> Msg .
-  msg failCopyOperation : TaInstId -> Msg .
+  msg reqCopyOperation : Oid OpObjectAttr OpHandleAttr Oid -> Msg .
+  msg applyCopiedOperationHandle : Oid Bool Bool Bool Oid -> Msg .
+  msg finishCopyOperation : Oid -> Msg .
+  msg failCopyOperation : Oid -> Msg .
 
   rl [copy-operation-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -1548,9 +1548,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- The 'TEE_DigestUpdate' function accumulates message data for hashing.
 --- See page 203 of the G.P. documentation for more details.
 
-  msg digestUpdate : HandleId List{Data} TaInstId -> Msg .
-  msg finishTopDigestUpdate : HandleId TaInstId -> Msg .
-  msg finishDigestUpdate : TaInstId -> Msg .
+  msg digestUpdate : Oid List{Data} Oid -> Msg .
+  msg finishTopDigestUpdate : Oid Oid -> Msg .
+  msg finishDigestUpdate : Oid -> Msg .
 
   rl [digest-update-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -1600,9 +1600,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- The 'TEE_DigestDoFinal' function finalizes the message digest operation and produces the message hash.
 --- See page 204 of the G.P. documentation for more details.
 
-  msg digestDoFinal : HandleId List{Data} TaInstId -> Msg .
-  msg resetTopDigestHandle : HandleId List{Data} TaInstId -> Msg .
-  msg finishDigestDoFinal : List{Data} TaInstId -> Msg .
+  msg digestDoFinal : Oid List{Data} Oid -> Msg .
+  msg resetTopDigestHandle : Oid List{Data} Oid -> Msg .
+  msg finishDigestDoFinal : List{Data} Oid -> Msg .
 
   rl [digest-do-final-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -1682,9 +1682,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- The 'TEE_DigestExtract' function extracts some or all of the digest depending on the size of the hash buffer.
 --- See page 205 of the G.P. documentation for more details.
 
-  msg digestExtract : HandleId TaInstId -> Msg .
-  msg extractTopDigestHandle : HandleId List{Data} TaInstId -> Msg .
-  msg finishDigestExtract : List{Data} TaInstId -> Msg .
+  msg digestExtract : Oid Oid -> Msg .
+  msg extractTopDigestHandle : Oid List{Data} Oid -> Msg .
+  msg finishDigestExtract : List{Data} Oid -> Msg .
 
   rl [digest-extract-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -1764,9 +1764,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- The 'TEE_CipherInit' function starts the symmetric cipher operation.
 --- See page 207 of the G.P. documentation for more details.
 
-  msg initOperation : HandleId List{Data} TaInstId -> Msg .
-  msg initTopOperationHandle : HandleId TaInstId -> Msg .
-  msg finishInitOperation : TaInstId -> Msg .
+  msg initOperation : Oid List{Data} Oid -> Msg .
+  msg initTopOperationHandle : Oid Oid -> Msg .
+  msg finishInitOperation : Oid -> Msg .
 
   rl [cipher-init-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -1841,11 +1841,11 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- .
 
 --- Model/Implementation Specific Version
-  msg cipherUpdate : HandleId List{Data} TaInstId -> Msg .
-  msg finishTopCipherUpdate : HandleId List{Data} TaInstId -> Msg .
-  msg failTopCipherUpdate : HandleId TaInstId -> Msg .
-  msg finishCipherUpdate : List{Data} TaInstId -> Msg .
-  msg failCipherUpdate : TaInstId -> Msg .
+  msg cipherUpdate : Oid List{Data} Oid -> Msg .
+  msg finishTopCipherUpdate : Oid List{Data} Oid -> Msg .
+  msg failTopCipherUpdate : Oid Oid -> Msg .
+  msg finishCipherUpdate : List{Data} Oid -> Msg .
+  msg failCipherUpdate : Oid -> Msg .
 
   --- A Data element denotes one processable symbolic chunk.  Consequently,
   --- only nil is provably insufficient at this abstraction level.
@@ -2002,9 +2002,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- The 'TEE_CipherDoFinal' function finalizes the cipher operation, processing data that has not been processed by previous calls to TEE_CipherUpdate as well as data supplied in 'srcData'.
 --- See page 210 of the G.P. documentation for more details.
 
-  msg cipherDoFinal : HandleId List{Data} TaInstId -> Msg .
-  msg finishTopCipherFinal : HandleId List{Data} TaInstId -> Msg .
-  msg finishCipherDoFinal : List{Data} TaInstId -> Msg .
+  msg cipherDoFinal : Oid List{Data} Oid -> Msg .
+  msg finishTopCipherFinal : Oid List{Data} Oid -> Msg .
+  msg finishCipherDoFinal : List{Data} Oid -> Msg .
 
   crl [cipher-do-final-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -2100,9 +2100,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- The 'TEE_MACUpdate' function accumulates data for a MAC calculation.
 --- See page 213 of the G.P. documentation for more details.
 
-  msg macUpdate : HandleId List{Data} TaInstId -> Msg .
-  msg finishTopMacUpdate : HandleId TaInstId -> Msg .
-  msg finishMacUpdate : TaInstId -> Msg .
+  msg macUpdate : Oid List{Data} Oid -> Msg .
+  msg finishTopMacUpdate : Oid Oid -> Msg .
+  msg finishMacUpdate : Oid -> Msg .
 
   rl [mac-update-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -2149,9 +2149,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- The 'TEE_MACComputeFinal' function finalizes the MAC operation with a last chunk of message, and computes the MAC.
 --- See page 214 of the G.P. documentation for more details.
 
-  msg macComputeFinal : HandleId List{Data} TaInstId -> Msg .
-  msg finishTopMacFinal : HandleId List{Data} TaInstId -> Msg .
-  msg finishMacComputeFinal : List{Data} TaInstId -> Msg .
+  msg macComputeFinal : Oid List{Data} Oid -> Msg .
+  msg finishTopMacFinal : Oid List{Data} Oid -> Msg .
+  msg finishMacComputeFinal : List{Data} Oid -> Msg .
 
   rl [mac-compute-final-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -2285,9 +2285,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- The 'TEE_AEUpdateAAD' function feeds a new chunk of Additional Authentication Data (AAD) to the AE operation.
 --- See page 219 of the G.P. documentation for more details.
 
-  msg reqAEUpdateAAD : HandleId List{Data} TaInstId -> Msg .
-  msg finishTopAEUpdateAAD : HandleId TaInstId -> Msg .
-  msg finishAEUpdateAAD : TaInstId -> Msg .
+  msg reqAEUpdateAAD : Oid List{Data} Oid -> Msg .
+  msg finishTopAEUpdateAAD : Oid Oid -> Msg .
+  msg finishAEUpdateAAD : Oid -> Msg .
 
   rl [ae-update-aad-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -2334,9 +2334,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- The 'TEE_AEUpdate' function accumulates data for an Authentication Encryption operation.
 --- See page 220 of the G.P. documentation for more details.
 
-  msg reqAEUpdate : HandleId List{Data} TaInstId -> Msg .
-  msg finishTopAEUpdate : HandleId List{Data} TaInstId -> Msg .
-  msg finishAEUpdate : List{Data} TaInstId -> Msg .
+  msg reqAEUpdate : Oid List{Data} Oid -> Msg .
+  msg finishTopAEUpdate : Oid List{Data} Oid -> Msg .
+  msg finishAEUpdate : List{Data} Oid -> Msg .
 
   rl [ae-update-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -2420,9 +2420,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- TEE_AEEncryptFinal
 --- ---------------------------------------------------------
 
-  msg aeEncryptFinal : HandleId List{Data} TaInstId -> Msg .
-  msg finishTopAEEncryptFinal : HandleId List{Data} List{Data} TaInstId -> Msg .
-  msg finishAEEncryptFinal : List{Data} List{Data} TaInstId -> Msg .
+  msg aeEncryptFinal : Oid List{Data} Oid -> Msg .
+  msg finishTopAEEncryptFinal : Oid List{Data} List{Data} Oid -> Msg .
+  msg finishAEEncryptFinal : List{Data} List{Data} Oid -> Msg .
   rl [ae-encrypt-final-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn , api-state : started ,
                       current-api : AEEncryptFinal , current-params : handle(HANDLE) , data(DATA) >
@@ -2495,9 +2495,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- TEE_AEDecryptFinal
 ------------------------------------------------------------
 
-  msg aeDecryptFinal : HandleId List{Data} List{Data} TaInstId -> Msg .
-  msg finishTopAEDecryptFinal : HandleId List{Data} List{Data} List{Data} TaInstId -> Msg .
-  msg finishAEDecryptFinal : List{Data} List{Data} List{Data} TaInstId -> Msg .
+  msg aeDecryptFinal : Oid List{Data} List{Data} Oid -> Msg .
+  msg finishTopAEDecryptFinal : Oid List{Data} List{Data} List{Data} Oid -> Msg .
+  msg finishAEDecryptFinal : List{Data} List{Data} List{Data} Oid -> Msg .
   rl [ae-decrypt-final-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn , api-state : started ,
                       current-api : AEDecryptFinal , current-params : handle(HANDLE) , data(DATA) , mac(MAC) >
@@ -2572,9 +2572,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- The 'TEE_AsymmetricDecrypt' function decrypts the result.
 --- See page 225 of the G.P. documentation for more details.
 
-  msg asymEncrypt : HandleId List{Data} TaInstId -> Msg .
-  msg finishTopAsymEncrypt : HandleId List{Data} TaInstId -> Msg .
-  msg finishAsymEncrypt : List{Data} TaInstId -> Msg .
+  msg asymEncrypt : Oid List{Data} Oid -> Msg .
+  msg finishTopAsymEncrypt : Oid List{Data} Oid -> Msg .
+  msg finishAsymEncrypt : List{Data} Oid -> Msg .
 
   rl [asymmetric-encrypt-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -2687,9 +2687,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | api-state : finished , api-return : apiReturn(AsymmetricEncrypt , TEE-SUCCESS , data(DATA)) >
   .
 
-  msg asymDecrypt : HandleId List{Data} TaInstId -> Msg .
-  msg finishTopAsymDecrypt : HandleId List{Data} TaInstId -> Msg .
-  msg finishAsymDecrypt : List{Data} TaInstId -> Msg .
+  msg asymDecrypt : Oid List{Data} Oid -> Msg .
+  msg finishTopAsymDecrypt : Oid List{Data} Oid -> Msg .
+  msg finishAsymDecrypt : List{Data} Oid -> Msg .
 
   rl [asymmetric-decrypt-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -2840,9 +2840,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- The 'TEE_AsymmetricSignDigest' function signs a message digest within an asymmetric operation.
 --- See page 228 of the G.P. documentation for more details.
 
-  msg asymSignDigest : HandleId List{Data} TaInstId -> Msg .
-  msg finishTopAsymSignDigest : HandleId List{Data} TaInstId -> Msg .
-  msg finishAsymSignDigest : List{Data} TaInstId -> Msg .
+  msg asymSignDigest : Oid List{Data} Oid -> Msg .
+  msg finishTopAsymSignDigest : Oid List{Data} Oid -> Msg .
+  msg finishAsymSignDigest : List{Data} Oid -> Msg .
 
   rl [asymmetric-sign-digest-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -2937,9 +2937,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- The 'TEE_AsymmetricVerifyDigest' function verifies a message digest signature within an asymmetric operation.
 --- See page 231 of the G.P. documentation for more details.
 
-  msg asymVerifyDigest : HandleId List{Data} TaInstId -> Msg .
-  msg finishTopAsymVerifyDigest : HandleId List{Data} TaInstId -> Msg .
-  msg finishAsymVerifyDigest : List{Data} TaInstId -> Msg .
+  msg asymVerifyDigest : Oid List{Data} Oid -> Msg .
+  msg finishTopAsymVerifyDigest : Oid List{Data} Oid -> Msg .
+  msg finishAsymVerifyDigest : List{Data} Oid -> Msg .
 
   rl [asymmetric-verify-digest-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -3000,11 +3000,11 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- TEE_DeriveKey
 ------------------------------------------------------------
 
-  msg deriveKey : HandleId Set{TeeAttribute} HandleId TaInstId -> Msg .
-  msg deriveTopTransient : HandleId HandleId TaInstId -> Msg .
-  msg validateTopDeriveHandle : HandleId HandleId TaInstId -> Msg .
-  msg finishTopDerivedHandle : HandleId TaInstId -> Msg .
-  msg finishDeriveKey : TaInstId -> Msg .
+  msg deriveKey : Oid Set{TeeAttribute} Oid Oid -> Msg .
+  msg deriveTopTransient : Oid Oid Oid -> Msg .
+  msg validateTopDeriveHandle : Oid Oid Oid -> Msg .
+  msg finishTopDerivedHandle : Oid Oid -> Msg .
+  msg finishDeriveKey : Oid -> Msg .
   rl [derive-key-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn , api-state : started ,
                       current-api : DeriveKey ,
@@ -3079,9 +3079,9 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
   vars B1 B2 B3 B1' B2' B3' : Bool .
   var N : Nat .
   var TN : AppId .
-  var TK : TaInstId .
-  vars OI CI CI2 : TaObjectId .
-  vars HANDLE KEY KEY1 KEY2 : HandleId .
+  var TK : Oid .
+  vars OI CI CI2 : Oid .
+  vars HANDLE KEY KEY1 KEY2 : Oid .
   vars ALGO ALGO2 : AlgorithmIdentifier .
   vars KEYS KEYS' : List{CryptoKey} .
   vars MODE MODE2 : OperationMode .
@@ -3268,15 +3268,15 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
                       counter : N , trust-app-id : TN >
     =
     < TK : TaKernel | api-state : finished , counter : N + 2 ,
-                      api-return : apiReturn(AllocateOperation , TEE-SUCCESS , handle(handleId(N + 1 , TK))) >
-    < taOid(N , TK) : CryptoOperation |
+                      api-return : apiReturn(AllocateOperation , TEE-SUCCESS , handle(oid(N + 1 , TK))) >
+    < oid(N , TK) : CryptoOperation |
                                         attributes : empty , keys : nil , max-size : KEYSIZE ,
                                         acc-data : nil ,
                                         algorithm : ALGO , mode : MODE ,
                                         initialization-vector : nil ,
                                         state : TEE-OPERATION-STATE-INITIAL ,
                                         trust-app-id : TN >
-    freshOperationHandle(N + 1 , TK , taOid(N , TK), determineOpClass(ALGO))
+    freshOperationHandle(N + 1 , TK , oid(N , TK), determineOpClass(ALGO))
   if validParams(ALGO , MODE , KEYSIZE)
   .
 
@@ -3417,7 +3417,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
   ceq
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : SetOperationKey ,
-                      current-params : handle(HANDLE) , keyHandle(TEE-HANDLE-NULL) , PARAMS >
+                      current-params : handle(HANDLE) , keyHandle(null) , PARAMS >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | oid : CI , state : HS >
     =
@@ -3578,8 +3578,8 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
   ceq
     < TK : TaKernel | api-call : noCall, api-return : noReturn,
                       api-state : started, current-api : SetOperationKey2,
-                      current-params : handle(HANDLE), keyHandle(TEE-HANDLE-NULL),
-                                       secondKeyHandle(TEE-HANDLE-NULL) >
+                      current-params : handle(HANDLE), keyHandle(null),
+                                       secondKeyHandle(null) >
     < CI : CryptoOperation | algorithm : ALGO >
     < HANDLE : OperationHandle | oid : CI, state : HS >
     =
@@ -3965,7 +3965,7 @@ mod CRYPTO-OPERATION-TEE-CALL is
 
   vars N N1 N2 : Nat .
   var TI : AppId .
-  vars HANDLE HANDLE1 HANDLE2 : HandleId .
+  vars HANDLE HANDLE1 HANDLE2 : Oid .
   var ALGO : AlgorithmIdentifier .
   var OM : OperationMode .
   var OC : OperationClass .
@@ -3990,7 +3990,7 @@ mod CRYPTO-OPERATION-TEE-CALL is
   
   eq makeCall(FreeOperation , (# HANDLE)) = apiCall(FreeOperation , handle(HANDLE)) .
   eq makeReturnStmt(FreeOperation , noReturnCode , empty , E) = skip .
-  eq makeReturnStmt(FreeOperation , noReturnCode , handle(TEE-HANDLE-NULL) , E) = skip .
+  eq makeReturnStmt(FreeOperation , noReturnCode , handle(null) , E) = skip .
   
   eq makeCall(ResetOperation , (# HANDLE)) = apiCall(ResetOperation , handle(HANDLE)) .
   eq makeReturnStmt(ResetOperation , noReturnCode , empty , nil) = skip .

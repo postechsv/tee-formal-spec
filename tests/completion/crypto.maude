@@ -85,12 +85,12 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   < testTa : TaKernel | api-call : noCall, api-return : noReturn,
                         api-state : started, current-api : CipherUpdate,
-                        current-params : (handle(handleId(1, testTa)), data(randomData),
+                        current-params : (handle(oid(1, testTa)), data(randomData),
                                           capacity(dataSize(0))) >
 =>*
   < testTa : TaKernel | api-call : noCall, api-state : finished,
                         current-api : CipherUpdate,
-                        current-params : (handle(handleId(1, testTa)), data(randomData),
+                        current-params : (handle(oid(1, testTa)), data(randomData),
                                           capacity(dataSize(0))),
                         api-return : apiReturn(CipherUpdate, TEE-ERROR-SHORT-BUFFER,
                                                size(dataSize(1))) > .
@@ -99,68 +99,68 @@ search [1] in COMPLETION-TEST :
 --- In particular, an empty decrypt update must not be treated as malformed
 --- ciphertext and panic the TA.
 search [1] in COMPLETION-TEST :
-  cipherUpdate(handleId(1, testTa), nil, testTa)
-  < taOid(1, testTa) : CryptoOperation |
+  cipherUpdate(oid(101, testTa), nil, testTa)
+  < oid(1, testTa) : CryptoOperation |
       mode : TEE-MODE-DECRYPT, state : TEE-OPERATION-STATE-ACTIVE >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       opclass : TEE-OPERATION-CIPHER, state : init keySet >
 =>*
   finishCipherUpdate(nil, testTa)
-  < taOid(1, testTa) : CryptoOperation |
+  < oid(1, testTa) : CryptoOperation |
       mode : TEE-MODE-DECRYPT, state : TEE-OPERATION-STATE-ACTIVE >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       opclass : TEE-OPERATION-CIPHER, state : init keySet > .
 
 --- GP permits exact in-place cipher buffers but panics on partial overlap.
 search [1] in COMPLETION-TEST :
   < testTa : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
       api-state : started, current-api : CipherUpdate,
-      current-params : (handle(handleId(1, testTa)), data(randomData),
+      current-params : (handle(oid(1, testTa)), data(randomData),
                         srcRegion(bufferRegion(100, 16)),
                         destRegion(bufferRegion(108, 16))) >
 =>1
   < testTa : TaKernel | status : panic, api-call : noCall, api-return : noReturn,
       api-state : finished, current-api : CipherUpdate,
-      current-params : (handle(handleId(1, testTa)), data(randomData),
+      current-params : (handle(oid(1, testTa)), data(randomData),
                         srcRegion(bufferRegion(100, 16)),
                         destRegion(bufferRegion(108, 16))) > .
 
 search [1] in COMPLETION-TEST :
   < testTa : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
       api-state : started, current-api : CipherUpdate,
-      current-params : (handle(handleId(1, testTa)), data(randomData),
+      current-params : (handle(oid(1, testTa)), data(randomData),
                         srcRegion(bufferRegion(100, 16)),
                         destRegion(bufferRegion(100, 16))) >
 =>1
   < testTa : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
       api-state : waitCipherUpdate, current-api : CipherUpdate,
-      current-params : (handle(handleId(1, testTa)), data(randomData),
+      current-params : (handle(oid(1, testTa)), data(randomData),
                         srcRegion(bufferRegion(100, 16)),
                         destRegion(bufferRegion(100, 16))) >
-  cipherUpdate(handleId(1, testTa), randomData, testTa) .
+  cipherUpdate(oid(1, testTa), randomData, testTa) .
 
 search [1] in COMPLETION-INVISIBLE-TEST :
-  cipherUpdate(handleId(1, testTa), nil, testTa)
-  < taOid(1, testTa) : CryptoOperation |
+  cipherUpdate(oid(101, testTa), nil, testTa)
+  < oid(1, testTa) : CryptoOperation |
       mode : TEE-MODE-DECRYPT, state : TEE-OPERATION-STATE-ACTIVE >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       opclass : TEE-OPERATION-CIPHER, state : init keySet >
 =>*
   finishCipherUpdate(nil, testTa)
-  < taOid(1, testTa) : CryptoOperation |
+  < oid(1, testTa) : CryptoOperation |
       mode : TEE-MODE-DECRYPT, state : TEE-OPERATION-STATE-ACTIVE >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       opclass : TEE-OPERATION-CIPHER, state : init keySet > .
 
 search [1] in COMPLETION-TEST :
   < testTa : TaKernel | api-call : noCall, api-return : noReturn,
                         api-state : started, current-api : CipherDoFinal,
-                        current-params : (handle(handleId(1, testTa)), data(randomData),
+                        current-params : (handle(oid(1, testTa)), data(randomData),
                                           capacity(dataSize(0))) >
 =>*
   < testTa : TaKernel | api-call : noCall, api-state : finished,
                         current-api : CipherDoFinal,
-                        current-params : (handle(handleId(1, testTa)), data(randomData),
+                        current-params : (handle(oid(1, testTa)), data(randomData),
                                           capacity(dataSize(0))),
                         api-return : apiReturn(CipherDoFinal, TEE-ERROR-SHORT-BUFFER,
                                                size(dataSize(1))) > .
@@ -168,12 +168,12 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-INVISIBLE-TEST :
   < testTa : TaKernel | api-call : noCall, api-return : noReturn,
                         api-state : started, current-api : CipherUpdate,
-                        current-params : (handle(handleId(1, testTa)), data(randomData),
+                        current-params : (handle(oid(1, testTa)), data(randomData),
                                           capacity(dataSize(0))) >
 =>*
   < testTa : TaKernel | api-call : noCall, api-state : finished,
                         current-api : CipherUpdate,
-                        current-params : (handle(handleId(1, testTa)), data(randomData),
+                        current-params : (handle(oid(1, testTa)), data(randomData),
                                           capacity(dataSize(0))),
                         api-return : apiReturn(CipherUpdate, TEE-ERROR-SHORT-BUFFER,
                                                size(dataSize(1))) > .
@@ -198,8 +198,8 @@ search [1] in COMPLETION-TEST :
                                           size(256 Bits)),
                         trust-app-id : TESTTA,
                         api-return : apiReturn(AllocateOperation, TEE-SUCCESS,
-                                               handle(handleId(1, testTa))) >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(0, testTa),
+                                               handle(oid(1, testTa))) >
+  < oid(1, testTa) : OperationHandle | oid : oid(0, testTa),
       state : noHandleState, opclass : TEE-OPERATION-AE,
       key-material-set : false > C .
 
@@ -215,158 +215,158 @@ search [1] in COMPLETION-TEST :
       current-params : (alg(TEE-ALG-AES-CTS), mode(TEE-MODE-DECRYPT),
                         size(192 Bits)), counter : 2, trust-app-id : TESTTA,
       api-return : apiReturn(AllocateOperation, TEE-SUCCESS,
-                             handle(handleId(1, testTa))) >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(0, testTa),
+                             handle(oid(1, testTa))) >
+  < oid(1, testTa) : OperationHandle | oid : oid(0, testTa),
       opclass : TEE-OPERATION-CIPHER, state : noHandleState,
       key-material-set : false > C .
 
 search [1] in COMPLETION-TEST :
   < testTa : TaKernel | api-call : noCall, api-return : noReturn,
                         api-state : started, current-api : ResetOperation,
-                        current-params : handle(handleId(1, testTa)) >
-  < taOid(1, testTa) : CryptoOperation |
+                        current-params : handle(oid(101, testTa)) >
+  < oid(1, testTa) : CryptoOperation |
       acc-data : randomData, initialization-vector : randomData,
       state : TEE-OPERATION-STATE-ACTIVE >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : init keySet >
 =>*
   < testTa : TaKernel | api-call : noCall, api-state : finished,
                         current-api : ResetOperation,
-                        current-params : handle(handleId(1, testTa)),
+                        current-params : handle(oid(101, testTa)),
                         api-return : apiReturn(ResetOperation, noReturnCode, empty) >
-  < taOid(1, testTa) : CryptoOperation |
+  < oid(1, testTa) : CryptoOperation |
       acc-data : nil, initialization-vector : nil,
       state : TEE-OPERATION-STATE-INITIAL >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : keySet > .
 
 --- SetOperationKey updates a top-level operation handle and its owner object.
 search [1] in COMPLETION-TEST :
-  reqSetOperationKey(handleId(1, testTa), TEE-TYPE-AES,
+  reqSetOperationKey(oid(101, testTa), TEE-TYPE-AES,
                      teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal),
                      TEE-USAGE-ENCRYPT, testTa)
-  < taOid(1, testTa) : CryptoOperation |
+  < oid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-AES-CTR,
       mode : TEE-MODE-ENCRYPT, max-size : 256 Bits,
       attributes : empty, keys : nil,
       state : TEE-OPERATION-STATE-INITIAL >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : noHandleState,
       key-material-set : false >
 =>*
   finishSetOperationKey(testTa)
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : keySet,
       key-material-set : true >
   C .
 
 --- GP 6.2.6 rejects a key larger than the allocated operation bound.
 search [1] in COMPLETION-TEST :
-  reqSetOperationKey(handleId(1, testTa), TEE-TYPE-AES,
+  reqSetOperationKey(oid(101, testTa), TEE-TYPE-AES,
     teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(256, 1)),
     TEE-USAGE-ENCRYPT, testTa)
   < testTa : TaKernel | status : normal, api-state : waitSetOperationKey,
                         current-api : SetOperationKey >
-  < taOid(1, testTa) : CryptoOperation |
+  < oid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-AES-CTR, mode : TEE-MODE-ENCRYPT,
       max-size : 128 Bits >
-  < handleId(1, testTa) : OperationHandle | state : noHandleState >
+  < oid(101, testTa) : OperationHandle | state : noHandleState >
 =>*
   < testTa : TaKernel | status : panic, api-state : finished,
                         current-api : SetOperationKey >
-  < taOid(1, testTa) : CryptoOperation |
+  < oid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-AES-CTR, mode : TEE-MODE-ENCRYPT,
       max-size : 128 Bits >
-  < handleId(1, testTa) : OperationHandle | state : noHandleState > C .
+  < oid(101, testTa) : OperationHandle | state : noHandleState > C .
 
 --- Algorithms that expect two keys cannot be programmed by SetOperationKey.
 search [1] in COMPLETION-TEST :
-  reqSetOperationKey(handleId(1, testTa), TEE-TYPE-AES,
+  reqSetOperationKey(oid(101, testTa), TEE-TYPE-AES,
     teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1)),
     TEE-USAGE-ENCRYPT, testTa)
   < testTa : TaKernel | status : normal, api-state : waitSetOperationKey,
                         current-api : SetOperationKey >
-  < taOid(1, testTa) : CryptoOperation |
+  < oid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-AES-XTS, mode : TEE-MODE-ENCRYPT,
       max-size : 128 Bits >
-  < handleId(1, testTa) : OperationHandle | state : noHandleState >
+  < oid(101, testTa) : OperationHandle | state : noHandleState >
 =>*
   < testTa : TaKernel | status : panic, api-state : finished,
                         current-api : SetOperationKey >
-  < taOid(1, testTa) : CryptoOperation |
+  < oid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-AES-XTS, mode : TEE-MODE-ENCRYPT,
       max-size : 128 Bits >
-  < handleId(1, testTa) : OperationHandle | state : noHandleState > C .
+  < oid(101, testTa) : OperationHandle | state : noHandleState > C .
 
 --- Matching mode and usage do not permit an object type from another family.
 search [1] in COMPLETION-TEST :
-  reqSetOperationKey(handleId(1, testTa), TEE-TYPE-AES,
+  reqSetOperationKey(oid(101, testTa), TEE-TYPE-AES,
     teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal),
     (TEE-USAGE-ENCRYPT, TEE-USAGE-VERIFY), testTa)
   < testTa : TaKernel | status : normal, api-state : waitSetOperationKey,
                         current-api : SetOperationKey >
-  < taOid(1, testTa) : CryptoOperation |
+  < oid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-RSA-NOPAD, mode : TEE-MODE-ENCRYPT,
       max-size : 2048 Bits >
-  < handleId(1, testTa) : OperationHandle | state : noHandleState >
+  < oid(101, testTa) : OperationHandle | state : noHandleState >
 =>*
   < testTa : TaKernel | status : panic, api-state : finished,
                         current-api : SetOperationKey >
-  < taOid(1, testTa) : CryptoOperation |
+  < oid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-RSA-NOPAD, mode : TEE-MODE-ENCRYPT,
       max-size : 2048 Bits >
-  < handleId(1, testTa) : OperationHandle | state : noHandleState > C .
+  < oid(101, testTa) : OperationHandle | state : noHandleState > C .
 
 --- CipherInit updates the operation object and top-level handle in two steps.
 search [1] in COMPLETION-TEST :
-  initOperation(handleId(1, testTa), randomData, testTa)
-  < taOid(1, testTa) : CryptoOperation |
+  initOperation(oid(101, testTa), randomData, testTa)
+  < oid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-AES-GCM,
       state : TEE-OPERATION-STATE-INITIAL,
       initialization-vector : nil >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : keySet, opclass : TEE-OPERATION-CIPHER >
 =>*
   finishInitOperation(testTa)
-  < taOid(1, testTa) : CryptoOperation |
+  < oid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-AES-GCM,
       state : TEE-OPERATION-STATE-ACTIVE,
       initialization-vector : randomData >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : init keySet, opclass : TEE-OPERATION-CIPHER > .
 
 --- CopyOperation synchronizes the destination object and top-level handle.
 search [1] in COMPLETION-TEST :
-  reqCopyOperation(handleId(1, testTa),
+  reqCopyOperation(oid(101, testTa),
     opObjectAttr(TEE-ALG-AES-GCM, TEE-MODE-ENCRYPT,
                  TEE-OPERATION-STATE-ACTIVE,
                  key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1)))),
     opHandleAttr(true, true, false), testTa)
-  < taOid(1, testTa) : CryptoOperation |
+  < oid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-AES-GCM, mode : TEE-MODE-ENCRYPT,
       max-size : 256 Bits,
       state : TEE-OPERATION-STATE-INITIAL,
       attributes : empty, keys : nil >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : noHandleState, key-material-set : false >
 =>*
   finishCopyOperation(testTa)
-  < taOid(1, testTa) : CryptoOperation |
+  < oid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-AES-GCM, mode : TEE-MODE-ENCRYPT,
       max-size : 256 Bits,
       state : TEE-OPERATION-STATE-ACTIVE,
       attributes : teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1)),
       keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1))) >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : init keySet, key-material-set : true > .
 
 --- CopyOperation panics when source and destination algorithms differ.
 search [1] in COMPLETION-TEST :
-  reqCopyOperation(handleId(1, testTa),
+  reqCopyOperation(oid(101, testTa),
     opObjectAttr(TEE-ALG-AES-GCM, TEE-MODE-ENCRYPT,
       TEE-OPERATION-STATE-ACTIVE, nil),
     opHandleAttr(false, false, false), testTa)
-  < taOid(1, testTa) : CryptoOperation |
+  < oid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-AES-CTR, mode : TEE-MODE-ENCRYPT,
       max-size : 256 Bits >
   < testTa : TaKernel | status : normal, api-call : noCall,
@@ -379,12 +379,12 @@ search [1] in COMPLETION-TEST :
 
 --- CopyOperation panics when a source key exceeds the destination maximum.
 search [1] in COMPLETION-TEST :
-  reqCopyOperation(handleId(1, testTa),
+  reqCopyOperation(oid(101, testTa),
     opObjectAttr(TEE-ALG-AES-GCM, TEE-MODE-ENCRYPT,
       TEE-OPERATION-STATE-ACTIVE,
       key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(256, 1)))),
     opHandleAttr(false, true, false), testTa)
-  < taOid(1, testTa) : CryptoOperation |
+  < oid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-AES-GCM, mode : TEE-MODE-ENCRYPT,
       max-size : 128 Bits >
   < testTa : TaKernel | status : normal, api-call : noCall,
@@ -399,26 +399,26 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-INVISIBLE-TEST :
   < testTa : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
       api-state : started, current-api : CopyOperation,
-      current-params : (trgHandle(handleId(1, testTa)),
-                        srcHandle(handleId(2, testTa))) >
-  < taOid(2, testTa) : CryptoOperation |
+      current-params : (trgHandle(oid(101, testTa)),
+                        srcHandle(oid(102, testTa))) >
+  < oid(2, testTa) : CryptoOperation |
       algorithm : TEE-ALG-AES-GCM, mode : TEE-MODE-ENCRYPT,
       attributes : teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1)),
       keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1))),
       state : TEE-OPERATION-STATE-ACTIVE >
-  < handleId(2, testTa) : OperationHandle | oid : taOid(2, testTa),
+  < oid(102, testTa) : OperationHandle | oid : oid(2, testTa),
       state : init keySet, key-material-set : true >
-  < taOid(1, testTa) : CryptoOperation |
+  < oid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-AES-GCM, mode : TEE-MODE-ENCRYPT,
       attributes : empty, keys : nil, max-size : 256 Bits,
       state : TEE-OPERATION-STATE-INITIAL >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : noHandleState, key-material-set : false >
 =>*
   < testTa : TaKernel | status : normal, api-call : noCall, api-state : finished,
       current-api : CopyOperation,
-      current-params : (trgHandle(handleId(1, testTa)),
-                        srcHandle(handleId(2, testTa))),
+      current-params : (trgHandle(oid(101, testTa)),
+                        srcHandle(oid(102, testTa))),
       api-return : apiReturn(CopyOperation, noReturnCode, empty) > C .
 
 --- Invisible CopyOperation also panics on incompatible algorithms.
@@ -427,176 +427,176 @@ search [1] in COMPLETION-INVISIBLE-TEST :
   < testTa : TaKernel | status : normal, api-call : noCall,
       api-return : noReturn, api-state : waitReqCopyOperation,
       current-api : CopyOperation,
-      current-params : (trgHandle(handleId(1, testTa)),
-                        srcHandle(handleId(2, testTa))) >
+      current-params : (trgHandle(oid(1, testTa)),
+                        srcHandle(oid(2, testTa))) >
 =>*
   < testTa : TaKernel | status : panic, api-call : noCall,
       api-return : noReturn, api-state : finished, current-api : CopyOperation,
-      current-params : (trgHandle(handleId(1, testTa)),
-                        srcHandle(handleId(2, testTa))) > C .
+      current-params : (trgHandle(oid(1, testTa)),
+                        srcHandle(oid(2, testTa))) > C .
 
 --- DigestDoFinal resets digest state through a top-level operation handle.
 search [1] in COMPLETION-TEST :
-  digestDoFinal(handleId(1, testTa), randomData, testTa)
-  < taOid(1, testTa) : CryptoOperation |
+  digestDoFinal(oid(101, testTa), randomData, testTa)
+  < oid(1, testTa) : CryptoOperation |
       acc-data : randomData, algorithm : TEE-ALG-SHA256,
       state : TEE-OPERATION-STATE-ACTIVE >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : extract, opclass : TEE-OPERATION-DIGEST >
 =>*
   finishDigestDoFinal(TESTDIGEST, testTa)
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : noHandleState, opclass : TEE-OPERATION-DIGEST >
   C .
 
 --- DigestExtract enters the paper-level extracting handle state.
 search [1] in COMPLETION-TEST :
-  digestExtract(handleId(1, testTa), testTa)
-  < taOid(1, testTa) : CryptoOperation |
+  digestExtract(oid(101, testTa), testTa)
+  < oid(1, testTa) : CryptoOperation |
       acc-data : randomData, algorithm : TEE-ALG-SHA256,
       state : TEE-OPERATION-STATE-ACTIVE >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : noHandleState, opclass : TEE-OPERATION-DIGEST >
 =>*
   finishDigestExtract(TESTDIGEST, testTa)
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : extract, opclass : TEE-OPERATION-DIGEST >
   C .
 
 --- CipherDoFinal resets the operation and its top-level initialized flag.
 search [1] in COMPLETION-TEST :
-  cipherDoFinal(handleId(1, testTa), randomData, testTa)
-  < taOid(1, testTa) : CryptoOperation |
+  cipherDoFinal(oid(101, testTa), randomData, testTa)
+  < oid(1, testTa) : CryptoOperation |
       attributes : teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal),
       keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)),
       algorithm : TEE-ALG-AES-GCM, mode : TEE-MODE-ENCRYPT,
       state : TEE-OPERATION-STATE-ACTIVE >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : init keySet, opclass : TEE-OPERATION-CIPHER >
 =>*
   finishCipherDoFinal(CIPHERRESULT, testTa)
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : keySet, opclass : TEE-OPERATION-CIPHER >
   C .
 
 --- Asymmetric encryption resolves a top-level key-set operation handle.
 search [1] in COMPLETION-TEST :
-  asymEncrypt(handleId(1, testTa), randomData, testTa)
-  < taOid(1, testTa) : CryptoOperation |
+  asymEncrypt(oid(101, testTa), randomData, testTa)
+  < oid(1, testTa) : CryptoOperation |
       keys : key(teeAttribute(TEE-ATTR-RSA-MODULUS, randomAttrVal)),
       algorithm : TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA1,
       max-size : 2048 Bits, mode : TEE-MODE-ENCRYPT >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : keySet, opclass : TEE-OPERATION-ASYMMETRIC-CIPHER >
 =>*
   finishAsymEncrypt(CIPHERRESULT, testTa)
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : keySet, opclass : TEE-OPERATION-ASYMMETRIC-CIPHER >
   C .
 
 --- DeriveKey links top-level operation and destination object handles.
 search [1] in COMPLETION-TEST :
-  deriveKey(handleId(1, testTa), empty, handleId(2, testTa), testTa)
-  < taOid(1, testTa) : CryptoOperation |
+  deriveKey(oid(101, testTa), empty, oid(102, testTa), testTa)
+  < oid(1, testTa) : CryptoOperation |
       mode : TEE-MODE-DERIVE >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : keySet, opclass : TEE-OPERATION-KEY-DERIVATION >
-  < taOid(2, testTa) : TransientObject |
+  < oid(2, testTa) : TransientObject |
       initialized : false, type : TEE-TYPE-GENERIC-SECRET,
       attributes : empty >
-  < handleId(2, testTa) : ObjectHandle | oid : taOid(2, testTa) >
+  < oid(102, testTa) : ObjectHandle | oid : oid(2, testTa) >
 =>*
   finishDeriveKey(testTa)
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : keySet, opclass : TEE-OPERATION-KEY-DERIVATION >
-  < handleId(2, testTa) : ObjectHandle | oid : taOid(2, testTa) >
+  < oid(102, testTa) : ObjectHandle | oid : oid(2, testTa) >
   C .
 
 --- Asymmetric capacity checks resolve the top-level operation owner.
 search [1] in COMPLETION-TEST :
   < testTa : TaKernel | api-call : noCall, api-return : noReturn,
                         api-state : started, current-api : AsymmetricEncrypt,
-                        current-params : (handle(handleId(1, testTa)),
+                        current-params : (handle(oid(101, testTa)),
                                           data(randomData), capacity(dataSize(0))) >
-  < taOid(1, testTa) : CryptoOperation |
+  < oid(1, testTa) : CryptoOperation |
       keys : key(teeAttribute(TEE-ATTR-RSA-MODULUS, randomAttrVal)),
       algorithm : TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA1,
       max-size : 2048 Bits, mode : TEE-MODE-ENCRYPT >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       key-material-set : true, opclass : TEE-OPERATION-ASYMMETRIC-CIPHER >
 =>*
   < testTa : TaKernel | api-call : noCall, api-state : finished,
                         current-api : AsymmetricEncrypt,
-                        current-params : (handle(handleId(1, testTa)),
+                        current-params : (handle(oid(101, testTa)),
                                           data(randomData), capacity(dataSize(0))),
                         api-return : apiReturn(AsymmetricEncrypt,
                           TEE-ERROR-SHORT-BUFFER, size(dataSize(256))) >
-  < taOid(1, testTa) : CryptoOperation |
+  < oid(1, testTa) : CryptoOperation |
       keys : key(teeAttribute(TEE-ATTR-RSA-MODULUS, randomAttrVal)),
       algorithm : TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA1,
       max-size : 2048 Bits, mode : TEE-MODE-ENCRYPT >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       key-material-set : true, opclass : TEE-OPERATION-ASYMMETRIC-CIPHER > .
 
 --- Asymmetric signing resolves a top-level key-set operation handle.
 search [1] in COMPLETION-TEST :
-  asymSignDigest(handleId(1, testTa), repeatDigestByte(randomData, 32), testTa)
-  < taOid(1, testTa) : CryptoOperation |
+  asymSignDigest(oid(101, testTa), repeatDigestByte(randomData, 32), testTa)
+  < oid(1, testTa) : CryptoOperation |
       keys : key(teeAttribute(TEE-ATTR-RSA-MODULUS, randomAttrVal)),
       algorithm : TEE-ALG-RSASSA-PKCS1-V1-5-SHA256,
       mode : TEE-MODE-SIGN >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : keySet, opclass : TEE-OPERATION-ASYMMETRIC-SIGNATURE >
 =>*
   finishAsymSignDigest(CIPHERRESULT, testTa)
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : keySet, opclass : TEE-OPERATION-ASYMMETRIC-SIGNATURE >
   C .
 
 --- AEUpdate accumulates data through a top-level initialized handle.
 search [1] in COMPLETION-TEST :
-  reqAEUpdate(handleId(1, testTa), randomData, testTa)
-  < taOid(1, testTa) : CryptoOperation |
+  reqAEUpdate(oid(101, testTa), randomData, testTa)
+  < oid(1, testTa) : CryptoOperation |
       keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)),
       acc-data : nil, algorithm : TEE-ALG-AES-GCM,
       mode : TEE-MODE-ENCRYPT,
       state : TEE-OPERATION-STATE-INITIAL >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : init keySet, opclass : TEE-OPERATION-AE >
 =>*
   finishAEUpdate(CIPHERRESULT, testTa)
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : init keySet, opclass : TEE-OPERATION-AE >
   C .
 
 --- AEEncryptFinal produces ciphertext/tag and resets the top-level handle.
 search [1] in COMPLETION-TEST :
-  aeEncryptFinal(handleId(1, testTa), randomData, testTa)
-  < taOid(1, testTa) : CryptoOperation |
+  aeEncryptFinal(oid(101, testTa), randomData, testTa)
+  < oid(1, testTa) : CryptoOperation |
       keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)),
       acc-data : randomData, algorithm : TEE-ALG-AES-GCM,
       mode : TEE-MODE-ENCRYPT,
       state : TEE-OPERATION-STATE-ACTIVE >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : init keySet, opclass : TEE-OPERATION-AE >
 =>*
   finishAEEncryptFinal(CIPHERRESULT, TESTMAC, testTa)
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : keySet, opclass : TEE-OPERATION-AE >
   C .
 
 --- MAC finalization resets both operation state and the top-level handle.
 search [1] in COMPLETION-TEST :
-  macComputeFinal(handleId(1, testTa), randomData, testTa)
-  < taOid(1, testTa) : CryptoOperation |
+  macComputeFinal(oid(101, testTa), randomData, testTa)
+  < oid(1, testTa) : CryptoOperation |
       keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)),
       acc-data : randomData, algorithm : TEE-ALG-HMAC-SHA256,
       state : TEE-OPERATION-STATE-ACTIVE >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : init keySet, opclass : TEE-OPERATION-MAC >
 =>*
   finishMacComputeFinal(CIPHERRESULT, testTa)
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : keySet, opclass : TEE-OPERATION-MAC >
   C .
 
@@ -606,24 +606,24 @@ search [1] in COMPLETION-TEST :
   < testTa : TaKernel | status : normal, api-call : noCall,
                         api-return : noReturn, api-state : started,
                         current-api : CipherUpdate,
-                        current-params : (handle(handleId(1, testTa)),
+                        current-params : (handle(oid(101, testTa)),
                                           data(randomData)) >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       opclass : TEE-OPERATION-MAC >
 =>*
   < testTa : TaKernel | status : panic, api-call : noCall,
                         api-return : noReturn, api-state : finished,
                         current-api : CipherUpdate,
-                        current-params : (handle(handleId(1, testTa)),
+                        current-params : (handle(oid(101, testTa)),
                                           data(randomData)) > C .
 
 --- ResetOperation without configured key material is a programmer error.
 search [1] in COMPLETION-TEST :
-  resetOperation(handleId(1, testTa), testTa)
+  resetOperation(oid(101, testTa), testTa)
   < testTa : TaKernel | status : normal, api-state : waitResetOperation,
                         current-api : ResetOperation >
-  < taOid(1, testTa) : CryptoOperation | >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(1, testTa) : CryptoOperation | >
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : noHandleState >
 =>1
   < testTa : TaKernel | status : panic, api-state : finished,
@@ -634,13 +634,13 @@ search [1] in COMPLETION-TEST :
   < testTa : TaKernel | status : normal, api-call : noCall,
                         api-return : noReturn, api-state : started,
                         current-api : SetOperationKey,
-                        current-params : (handle(handleId(1, testTa)),
-                                          keyHandle(TEE-HANDLE-NULL)) >
-  < taOid(1, testTa) : CryptoOperation |
+                        current-params : (handle(oid(101, testTa)),
+                                          keyHandle(null)) >
+  < oid(1, testTa) : CryptoOperation |
       attributes : teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal),
       keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)),
       state : TEE-OPERATION-STATE-ACTIVE >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : keySet, key-material-set : true >
 =>1
   < testTa : TaKernel | status : normal, api-state : finished,
@@ -652,9 +652,9 @@ search [1] in COMPLETION-TEST :
   < testTa : TaKernel | status : normal, api-call : noCall,
                         api-return : noReturn, api-state : started,
                         current-api : SetOperationKey,
-                        current-params : (handle(handleId(1, testTa)),
-                                          keyHandle(TEE-HANDLE-NULL)) >
-  < handleId(1, testTa) : OperationHandle | state : init >
+                        current-params : (handle(oid(1, testTa)),
+                                          keyHandle(null)) >
+  < oid(1, testTa) : OperationHandle | state : init >
 =>1
   < testTa : TaKernel | status : panic, api-state : finished,
                         current-api : SetOperationKey,
@@ -662,21 +662,21 @@ search [1] in COMPLETION-TEST :
 
 --- GP 6.2.6: a non-null key object must be initialized.
 search [1] in COMPLETION-TEST :
-  reqAttribute(handleId(2, testTa), testTa)
+  reqAttribute(oid(102, testTa), testTa)
   < testTa : TaKernel | status : normal, api-state : waitReqAttribute,
                         current-api : SetOperationKey >
-  < taOid(2, testTa) : TransientObject | initialized : false >
-  < handleId(2, testTa) : ObjectHandle | oid : taOid(2, testTa) >
+  < oid(2, testTa) : TransientObject | initialized : false >
+  < oid(102, testTa) : ObjectHandle | oid : oid(2, testTa) >
 =>1
   < testTa : TaKernel | status : panic, api-state : finished,
                         current-api : SetOperationKey > C .
 
 search [1] in COMPLETION-INVISIBLE-TEST :
-  resetOperation(handleId(1, testTa), testTa)
+  resetOperation(oid(101, testTa), testTa)
   < testTa : TaKernel | status : normal, api-state : waitResetOperation,
                         current-api : ResetOperation >
-  < taOid(1, testTa) : CryptoOperation | >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(1, testTa) : CryptoOperation | >
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : noHandleState >
 =>*
   < testTa : TaKernel | status : panic, api-state : finished,
@@ -684,12 +684,12 @@ search [1] in COMPLETION-INVISIBLE-TEST :
 
 --- Other algorithms cannot accept the two-key API.
 search [1] in COMPLETION-TEST :
-  installOperationKeys(handleId(1, testTa),
+  installOperationKeys(oid(101, testTa),
     TEE-TYPE-AES, TEE-USAGE-ENCRYPT, empty,
     TEE-TYPE-AES, TEE-USAGE-ENCRYPT, empty, testTa)
   < testTa : TaKernel | status : normal, api-state : waitSetOperationKey,
                         current-api : SetOperationKey2 >
-  < taOid(1, testTa) : CryptoOperation |
+  < oid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-AES-CTR, mode : TEE-MODE-ENCRYPT,
       max-size : 128 Bits >
 =>*
@@ -698,16 +698,16 @@ search [1] in COMPLETION-TEST :
 
 --- Equal-sized, distinct AES-XTS key material reaches handle installation.
 search [1] in COMPLETION-TEST :
-  installOperationKeys(handleId(1, testTa), TEE-TYPE-AES, TEE-USAGE-ENCRYPT,
+  installOperationKeys(oid(101, testTa), TEE-TYPE-AES, TEE-USAGE-ENCRYPT,
     teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1)),
     TEE-TYPE-AES, TEE-USAGE-ENCRYPT,
     teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 2)), testTa)
-  < taOid(1, testTa) : CryptoOperation |
+  < oid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-AES-XTS, mode : TEE-MODE-ENCRYPT,
       max-size : 128 Bits, attributes : empty, keys : nil >
 =>1
-  finishInstallTopOperationKeys(handleId(1, testTa), testTa)
-  < taOid(1, testTa) : CryptoOperation |
+  finishInstallTopOperationKeys(oid(101, testTa), testTa)
+  < oid(1, testTa) : CryptoOperation |
     algorithm : TEE-ALG-AES-XTS, mode : TEE-MODE-ENCRYPT,
     max-size : 128 Bits,
     attributes : (teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1)),
@@ -717,13 +717,13 @@ search [1] in COMPLETION-TEST :
 
 --- A valid AES-XTS key pair still panics when it exceeds operation maxKeySize.
 search [1] in COMPLETION-TEST :
-  installOperationKeys(handleId(1, testTa), TEE-TYPE-AES, TEE-USAGE-ENCRYPT,
+  installOperationKeys(oid(101, testTa), TEE-TYPE-AES, TEE-USAGE-ENCRYPT,
     teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(256, 1)),
     TEE-TYPE-AES, TEE-USAGE-ENCRYPT,
     teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(256, 2)), testTa)
   < testTa : TaKernel | status : normal, api-state : waitSetOperationKey,
                         current-api : SetOperationKey2 >
-  < taOid(1, testTa) : CryptoOperation |
+  < oid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-AES-XTS, mode : TEE-MODE-ENCRYPT,
       max-size : 128 Bits >
 =>*
@@ -732,16 +732,16 @@ search [1] in COMPLETION-TEST :
 
 --- The invisible reduction performs the same AES-XTS installation atomically.
 search [1] in COMPLETION-INVISIBLE-TEST :
-  installOperationKeys(handleId(1, testTa), TEE-TYPE-AES, TEE-USAGE-ENCRYPT,
+  installOperationKeys(oid(101, testTa), TEE-TYPE-AES, TEE-USAGE-ENCRYPT,
     teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1)),
     TEE-TYPE-AES, TEE-USAGE-ENCRYPT,
     teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 2)), testTa)
-  < taOid(1, testTa) : CryptoOperation |
+  < oid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-AES-XTS, mode : TEE-MODE-ENCRYPT,
       max-size : 128 Bits, attributes : empty, keys : nil >
 =>*
-  finishInstallTopOperationKeys(handleId(1, testTa), testTa)
-  < taOid(1, testTa) : CryptoOperation |
+  finishInstallTopOperationKeys(oid(101, testTa), testTa)
+  < oid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-AES-XTS, mode : TEE-MODE-ENCRYPT,
       max-size : 128 Bits,
       attributes : (teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1)),
@@ -753,30 +753,30 @@ search [1] in COMPLETION-INVISIBLE-TEST :
 --- after trusted storage reports a normal state.
 search [1] in COMPLETION-TEST :
   retTrustedOS(storageStatus(storageNormal), testTa)
-  resumeSetOperationKey2(handleId(2, testTa), TEE-TYPE-AES,
+  resumeSetOperationKey2(oid(2, testTa), TEE-TYPE-AES,
     TEE-USAGE-ENCRYPT, teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal), testTa)
   < testTa : TaKernel | api-state : waitStorageCheck,
       current-api : SetOperationKey2,
-      current-params : (handle(handleId(1, testTa)), keyHandle(handleId(3, testTa)),
-                        secondKeyHandle(handleId(2, testTa))) >
+      current-params : (handle(oid(1, testTa)), keyHandle(oid(3, testTa)),
+                        secondKeyHandle(oid(2, testTa))) >
 =>1
-  reqAttribute(handleId(2, testTa), testTa)
+  reqAttribute(oid(2, testTa), testTa)
   < testTa : TaKernel | api-state : waitReqAttribute,
       current-api : SetOperationKey2,
-      current-params : (handle(handleId(1, testTa)), keyHandle(handleId(3, testTa)),
-        secondKeyHandle(handleId(2, testTa)),
+      current-params : (handle(oid(1, testTa)), keyHandle(oid(3, testTa)),
+        secondKeyHandle(oid(2, testTa)),
         attrs(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)),
         type(TEE-TYPE-AES), usages(TEE-USAGE-ENCRYPT)) > C .
 
 --- A persistent second key continues into the common two-key validator.
 search [1] in COMPLETION-TEST :
   retTrustedOS(storageStatus(storageNormal), testTa)
-  installStoredOperationKeys(handleId(1, testTa), TEE-TYPE-AES,
+  installStoredOperationKeys(oid(1, testTa), TEE-TYPE-AES,
     TEE-USAGE-ENCRYPT, empty, TEE-TYPE-AES, TEE-USAGE-ENCRYPT, empty, testTa)
   < testTa : TaKernel | api-state : waitStorageCheck,
                         current-api : SetOperationKey2 >
 =>1
-  installOperationKeys(handleId(1, testTa), TEE-TYPE-AES,
+  installOperationKeys(oid(1, testTa), TEE-TYPE-AES,
     TEE-USAGE-ENCRYPT, empty, TEE-TYPE-AES, TEE-USAGE-ENCRYPT, empty, testTa)
   < testTa : TaKernel | api-state : waitSetOperationKey,
                         current-api : SetOperationKey2 > C .
@@ -784,30 +784,30 @@ search [1] in COMPLETION-TEST :
 --- Invisible reduction preserves the first persistent-key storage barrier.
 search [1] in COMPLETION-INVISIBLE-TEST :
   retTrustedOS(storageStatus(storageNormal), testTa)
-  resumeSetOperationKey2(handleId(2, testTa), TEE-TYPE-AES,
+  resumeSetOperationKey2(oid(2, testTa), TEE-TYPE-AES,
     TEE-USAGE-ENCRYPT, teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal), testTa)
   < testTa : TaKernel | api-state : waitStorageCheck,
       current-api : SetOperationKey2,
-      current-params : (handle(handleId(1, testTa)), keyHandle(handleId(3, testTa)),
-                        secondKeyHandle(handleId(2, testTa))) >
+      current-params : (handle(oid(1, testTa)), keyHandle(oid(3, testTa)),
+                        secondKeyHandle(oid(2, testTa))) >
 =>*
-  reqAttribute(handleId(2, testTa), testTa)
+  reqAttribute(oid(2, testTa), testTa)
   < testTa : TaKernel | api-state : waitReqAttribute,
       current-api : SetOperationKey2,
-      current-params : (handle(handleId(1, testTa)), keyHandle(handleId(3, testTa)),
-        secondKeyHandle(handleId(2, testTa)),
+      current-params : (handle(oid(1, testTa)), keyHandle(oid(3, testTa)),
+        secondKeyHandle(oid(2, testTa)),
         attrs(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)),
         type(TEE-TYPE-AES), usages(TEE-USAGE-ENCRYPT)) > C .
 
 --- Invisible reduction also resumes after validating persistent key2.
 search [1] in COMPLETION-INVISIBLE-TEST :
   retTrustedOS(storageStatus(storageNormal), testTa)
-  installStoredOperationKeys(handleId(1, testTa), TEE-TYPE-AES,
+  installStoredOperationKeys(oid(1, testTa), TEE-TYPE-AES,
     TEE-USAGE-ENCRYPT, empty, TEE-TYPE-AES, TEE-USAGE-ENCRYPT, empty, testTa)
   < testTa : TaKernel | api-state : waitStorageCheck,
                         current-api : SetOperationKey2 >
 =>*
-  installOperationKeys(handleId(1, testTa), TEE-TYPE-AES,
+  installOperationKeys(oid(1, testTa), TEE-TYPE-AES,
     TEE-USAGE-ENCRYPT, empty, TEE-TYPE-AES, TEE-USAGE-ENCRYPT, empty, testTa)
   < testTa : TaKernel | api-state : waitSetOperationKey,
                         current-api : SetOperationKey2 > C .
@@ -816,35 +816,35 @@ search [1] in COMPLETION-INVISIBLE-TEST :
 search [1] in COMPLETION-TEST :
   < testTa : TaKernel | status : normal, api-call : noCall,
       api-return : noReturn, api-state : started, current-api : SetOperationKey2,
-      current-params : (handle(handleId(1, testTa)), keyHandle(TEE-HANDLE-NULL),
-                        secondKeyHandle(TEE-HANDLE-NULL)) >
-  < taOid(1, testTa) : CryptoOperation | algorithm : TEE-ALG-AES-CTR >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      current-params : (handle(oid(101, testTa)), keyHandle(null),
+                        secondKeyHandle(null)) >
+  < oid(1, testTa) : CryptoOperation | algorithm : TEE-ALG-AES-CTR >
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : noHandleState >
 =>1
   < testTa : TaKernel | status : panic, api-call : noCall,
       api-return : noReturn, api-state : finished, current-api : SetOperationKey2,
-      current-params : (handle(handleId(1, testTa)), keyHandle(TEE-HANDLE-NULL),
-                        secondKeyHandle(TEE-HANDLE-NULL)) >
-  < taOid(1, testTa) : CryptoOperation | algorithm : TEE-ALG-AES-CTR >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+      current-params : (handle(oid(101, testTa)), keyHandle(null),
+                        secondKeyHandle(null)) >
+  < oid(1, testTa) : CryptoOperation | algorithm : TEE-ALG-AES-CTR >
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : noHandleState > C .
 
 --- GP 6.2.6 replaces an existing single key while the operation is initial.
 search [1] in COMPLETION-TEST :
-  reqSetOperationKey(handleId(1, testTa), TEE-TYPE-AES,
+  reqSetOperationKey(oid(101, testTa), TEE-TYPE-AES,
     teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 2)),
     TEE-USAGE-ENCRYPT, testTa)
-  < taOid(1, testTa) : CryptoOperation |
+  < oid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-AES-CTR, mode : TEE-MODE-ENCRYPT,
       max-size : 128 Bits,
       attributes : teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1)),
       keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1))),
       state : TEE-OPERATION-STATE-INITIAL >
 =>1
-  installTopOperationKey(handleId(1, testTa), taOid(1, testTa),
+  installTopOperationKey(oid(101, testTa), oid(1, testTa),
     teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 2)), testTa)
-  < taOid(1, testTa) : CryptoOperation |
+  < oid(1, testTa) : CryptoOperation |
       algorithm : TEE-ALG-AES-CTR, mode : TEE-MODE-ENCRYPT,
       max-size : 128 Bits,
       attributes : teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 2)),
@@ -852,43 +852,43 @@ search [1] in COMPLETION-TEST :
       state : TEE-OPERATION-STATE-INITIAL > .
 
 search [1] in COMPLETION-TEST :
-  installTopOperationKey(handleId(1, testTa), taOid(1, testTa), empty, testTa)
-  < handleId(1, testTa) : OperationHandle | state : keySet,
+  installTopOperationKey(oid(101, testTa), oid(1, testTa), empty, testTa)
+  < oid(101, testTa) : OperationHandle | state : keySet,
       key-material-set : true >
 =>1
   finishSetOperationKey(testTa)
-  < handleId(1, testTa) : OperationHandle | state : keySet,
+  < oid(101, testTa) : OperationHandle | state : keySet,
       key-material-set : true > .
 
 --- GP 6.2.7 applies the same replacement behavior to a two-key operation.
 search [1] in COMPLETION-TEST :
-  finishInstallTopOperationKeys(handleId(1, testTa), testTa)
-  < handleId(1, testTa) : OperationHandle | state : keySet,
+  finishInstallTopOperationKeys(oid(1, testTa), testTa)
+  < oid(1, testTa) : OperationHandle | state : keySet,
       key-material-set : true >
 =>1
   finishSetOperationKey2(testTa)
-  < handleId(1, testTa) : OperationHandle | state : keySet,
+  < oid(1, testTa) : OperationHandle | state : keySet,
       key-material-set : true > .
 
 --- Invisible reduction returns the complete GP multi-key information structure.
 search [1] in COMPLETION-INVISIBLE-TEST :
   < testTa : TaKernel | api-call : noCall, api-return : noReturn,
       api-state : started, current-api : GetOperationInfoMultiple,
-      current-params : handle(handleId(1, testTa)) >
-  < taOid(1, testTa) : CryptoOperation |
+      current-params : handle(oid(101, testTa)) >
+  < oid(1, testTa) : CryptoOperation |
       keys :
         key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1)))
         key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 2))),
       max-size : 256 Bits, algorithm : TEE-ALG-AES-XTS,
       mode : TEE-MODE-ENCRYPT,
       state : TEE-OPERATION-STATE-INITIAL >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : keySet, key-material-set : true,
       opclass : TEE-OPERATION-CIPHER >
 =>*
   < testTa : TaKernel | api-call : noCall,
       api-state : finished, current-api : GetOperationInfoMultiple,
-      current-params : handle(handleId(1, testTa)),
+      current-params : handle(oid(101, testTa)),
       api-return : apiReturn(GetOperationInfoMultiple, TEE-SUCCESS,
         teeOpInfoMultiple(teeOperationInfoMultiple(TEE-ALG-AES-XTS,
           TEE-OPERATION-CIPHER, TEE-MODE-ENCRYPT, dataSize(0), 256 Bits,
@@ -901,19 +901,19 @@ search [1] in COMPLETION-INVISIBLE-TEST :
 search [1] in COMPLETION-TEST :
   < testTa : TaKernel | api-call : noCall, api-return : noReturn,
       api-state : started, current-api : GetOperationInfo,
-      current-params : handle(handleId(1, testTa)) >
-  < taOid(1, testTa) : CryptoOperation |
+      current-params : handle(oid(101, testTa)) >
+  < oid(1, testTa) : CryptoOperation |
       keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1))),
       max-size : 256 Bits, algorithm : TEE-ALG-AES-CTR,
       mode : TEE-MODE-ENCRYPT,
       state : TEE-OPERATION-STATE-INITIAL >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : keySet, key-material-set : true,
       opclass : TEE-OPERATION-CIPHER >
 =>*
   < testTa : TaKernel | api-call : noCall, api-state : finished,
       current-api : GetOperationInfo,
-      current-params : handle(handleId(1, testTa)),
+      current-params : handle(oid(101, testTa)),
       api-return : apiReturn(GetOperationInfo, noReturnCode,
         teeOpInfo(teeOperationInfo(TEE-ALG-AES-CTR, TEE-OPERATION-CIPHER,
           TEE-MODE-ENCRYPT, dataSize(0), 256 Bits, 128 Bits,
@@ -923,19 +923,19 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-INVISIBLE-TEST :
   < testTa : TaKernel | api-call : noCall, api-return : noReturn,
       api-state : started, current-api : GetOperationInfo,
-      current-params : handle(handleId(1, testTa)) >
-  < taOid(1, testTa) : CryptoOperation |
+      current-params : handle(oid(101, testTa)) >
+  < oid(1, testTa) : CryptoOperation |
       keys : key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1))),
       max-size : 256 Bits, algorithm : TEE-ALG-AES-CTR,
       mode : TEE-MODE-ENCRYPT,
       state : TEE-OPERATION-STATE-INITIAL >
-  < handleId(1, testTa) : OperationHandle | oid : taOid(1, testTa),
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : keySet, key-material-set : true,
       opclass : TEE-OPERATION-CIPHER >
 =>*
   < testTa : TaKernel | api-call : noCall, api-state : finished,
       current-api : GetOperationInfo,
-      current-params : handle(handleId(1, testTa)),
+      current-params : handle(oid(101, testTa)),
       api-return : apiReturn(GetOperationInfo, noReturnCode,
         teeOpInfo(teeOperationInfo(TEE-ALG-AES-CTR, TEE-OPERATION-CIPHER,
           TEE-MODE-ENCRYPT, dataSize(0), 256 Bits, 128 Bits,
@@ -950,10 +950,10 @@ search [1] in COMPLETION-INVISIBLE-TEST :
     teeOperationInfoKey(128 Bits, TEE-USAGE-ENCRYPT) ; noKeyInformation), testTa)
   < testTa : TaKernel | api-call : noCall, api-return : noReturn,
       api-state : waitOperationAttr, current-api : GetOperationInfoMultiple,
-      current-params : (handle(handleId(1, testTa)), capacity(dataSize(1))) >
+      current-params : (handle(oid(1, testTa)), capacity(dataSize(1))) >
 =>*
   < testTa : TaKernel | api-call : noCall, api-state : finished,
       current-api : GetOperationInfoMultiple,
-      current-params : (handle(handleId(1, testTa)), capacity(dataSize(1))),
+      current-params : (handle(oid(1, testTa)), capacity(dataSize(1))),
       api-return : apiReturn(GetOperationInfoMultiple, TEE-ERROR-SHORT-BUFFER,
         size(dataSize(2))) > C .

@@ -13,7 +13,7 @@ omod TEE-OS-BEHAVIOR is
   var SIL : List{Service} .
   var SOL : List{ServiceReturn} .
   var NESOL : NeList{ServiceReturn} .
-  var TK : TaInstId .
+  var TK : Oid .
   var TN : AppId .
   var STATUS : StorageStatus .
   var SESS : Map{SessionId,Oid} .
@@ -25,13 +25,13 @@ omod TEE-OS-BEHAVIOR is
   var P : Program .
   var N : Nat .
 
-  msg reqTrustedOS : List{Service} TaInstId AppId -> Msg .
-  msg retTrustedOS : List{ServiceReturn} TaInstId -> Msg .
+  msg reqTrustedOS : List{Service} Oid AppId -> Msg .
+  msg retTrustedOS : List{ServiceReturn} Oid -> Msg .
 
   rl [service-receive] :
     reqTrustedOS(SIL , TK , TN)
     < KI : TeeOSKernel | service-in : nil , service-out : nil ,
-                         service-request-ta : noAppId , service-request-ta-inst : noInstId >
+                         service-request-ta : noAppId , service-request-ta-inst : noOid >
     =>
     < KI : TeeOSKernel | service-in : SIL ,
                          service-request-ta : TN , service-request-ta-inst : TK >
@@ -42,7 +42,7 @@ omod TEE-OS-BEHAVIOR is
                          service-request-ta : TN , service-request-ta-inst : TK >
     =>
     < KI : TeeOSKernel | service-out : nil ,
-                         service-request-ta : noAppId , service-request-ta-inst : noInstId >
+                         service-request-ta : noAppId , service-request-ta-inst : noOid >
     retTrustedOS(NESOL , TK)
   .
 
@@ -142,15 +142,15 @@ omod TEE-OS-BEHAVIOR is
     < KI : TeeOSKernel | service-in : (openTASession(TN) SIL) , service-out : SOL , ta-prog-map : (TN |-> [P] , PROGC) ,
                          sess : SESS , session-counter : N >
     =>
-    < KI : TeeOSKernel | service-in : SIL , service-out : (SOL openSessionSuccess(trustAppId(N))) ,
-                         sess : (sessionId(N) |-> trustAppId(N) , SESS) , session-counter : N + 1 >
-    < trustAppId(N) : TrustApp | proc : none , prog : P , running : false ,
+    < KI : TeeOSKernel | service-in : SIL , service-out : (SOL openSessionSuccess(oid(N, KI))) ,
+                         sess : (sessionId(N) |-> oid(N, KI) , SESS) , session-counter : N + 1 >
+    < oid(N, KI) : TrustApp | proc : none , prog : P , running : false ,
                                  status : normal , api-call : noCall , api-return : noReturn ,
-                                 current-api : noApi , api-state : noState , current-params : empty , counter : 0 ,
-                                 storage : storageId(N) , os-kernel : KI ,
+                                 current-api : noApi , api-state : noState , current-params : empty , counter : 1 ,
+                                 storage : oid(0, oid(N, KI)) , os-kernel : KI ,
                                  trust-app-id : TN ,
                                  client-service : noClientService ,
                                  task : noTask , task-counter : 0 >
-    < storageId(N) : Storage | status : storageNormal , files : empty , counter : 0 >
+    < oid(0, oid(N, KI)) : Storage | status : storageNormal , files : empty , counter : 0 >
   .
 endom

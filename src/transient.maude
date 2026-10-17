@@ -18,10 +18,10 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 
   var N : Nat .
   vars MAXOBJSIZE KEYSIZE : CryptoKeySize .
-  var TK : TaInstId .
+  var TK : Oid .
   var TN : AppId .
-  var OI : TaObjectId .
-  vars HANDLE HANDLE1 HANDLE2 : HandleId .
+  var OI : Oid .
+  vars HANDLE HANDLE1 HANDLE2 : Oid .
   var ATTRS : Set{TeeAttribute} .
   vars IDS IDS2 : Set{AttrId} .
   var ID : AttrId .
@@ -199,12 +199,12 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
                       counter : N , trust-app-id : TN >
     =>
     < TK : TaKernel | api-state : finished , counter : N + 2 ,
-                      api-return : apiReturn(AllocateTransientObject , TEE-SUCCESS, handle(handleId(N + 1 , TK))) >
-    < taOid(N , TK) : TransientObject | type : OBJTYPE , max-size : MAXOBJSIZE ,
+                      api-return : apiReturn(AllocateTransientObject , TEE-SUCCESS, handle(oid(N + 1 , TK))) >
+    < oid(N , TK) : TransientObject | type : OBJTYPE , max-size : MAXOBJSIZE ,
                                         attributes : empty , usages : allObjectUsages,
                                         initialized : false,
                                         trust-app-id : TN >
-    freshTransientHandle(N + 1 , TK , taOid(N , TK))
+    freshTransientHandle(N + 1 , TK , oid(N , TK))
   if supported(OBJTYPE, MAXOBJSIZE)
   .
 
@@ -238,8 +238,8 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 
 --- The following three rules delete the transient object pointed by the valid input handle.
 
-  msg deleteTransient : HandleId TaInstId -> Msg .
-  msg finishDeleteTransient : TaInstId -> Msg .
+  msg deleteTransient : Oid Oid -> Msg .
+  msg finishDeleteTransient : Oid -> Msg .
 
   crl [free-transient-not-null-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -276,7 +276,7 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
                       current-params : handle(HANDLE) >
     =>
     < TK : TaKernel | api-state : finished ,
-                      api-return : apiReturn(FreeTransientObject , handle(TEE-HANDLE-NULL)) >
+                      api-return : apiReturn(FreeTransientObject , handle(null)) >
   if nullHandle(HANDLE)
   .
 
@@ -289,8 +289,8 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 
 --- The following three rules reset the transient object pointed by the valid input handle.
 
-  msg reqResetTransient : HandleId TaInstId -> Msg .
-  msg retResetTransient : TaInstId -> Msg .
+  msg reqResetTransient : Oid Oid -> Msg .
+  msg retResetTransient : Oid -> Msg .
 
   crl [reset-transient-not-null-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -343,8 +343,8 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 --- The following three rules populates the transient object pointed by the input handle with input attributes when
 --- the given object type (OBJTYPE) supports the input attributes (ATTRS).
 
-  msg reqPopulateTransient : HandleId Set{TeeAttribute} TaInstId -> Msg .
-  msg retPopulateTransient : TaInstId -> Msg .
+  msg reqPopulateTransient : Oid Set{TeeAttribute} Oid -> Msg .
+  msg retPopulateTransient : Oid -> Msg .
 
   rl [populate-transient-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -562,8 +562,8 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 
 --- The following three rules populate the transient object pointed by the input handle with an encrypted key material.
 
-  msg reqGenerateKey : HandleId CryptoKeySize Set{TeeAttribute} TaInstId -> Msg .
-  msg retGenerateKey : TaInstId -> Msg .
+  msg reqGenerateKey : Oid CryptoKeySize Set{TeeAttribute} Oid -> Msg .
+  msg retGenerateKey : Oid -> Msg .
 
   rl [generate-key-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
@@ -684,10 +684,10 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
 
   var N : Nat .
   vars MAXOBJSIZE KEYSIZE : CryptoKeySize .
-  var TK : TaInstId .
+  var TK : Oid .
   var TN : AppId .
-  var OI : TaObjectId .
-  vars HANDLE HANDLE1 HANDLE2 : HandleId .
+  var OI : Oid .
+  vars HANDLE HANDLE1 HANDLE2 : Oid .
   var ATTRS : Set{TeeAttribute} .
   var REF : AttrRef .
   var VAL : AttrVal .
@@ -706,12 +706,12 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
                       counter : N , trust-app-id : TN >
     =
     < TK : TaKernel | api-state : finished , counter : N + 2 ,
-                      api-return : apiReturn(AllocateTransientObject, TEE-SUCCESS, handle(handleId(N + 1 , TK))) >
-    < taOid(N , TK) : TransientObject | type : OBJTYPE , max-size : MAXOBJSIZE ,
+                      api-return : apiReturn(AllocateTransientObject, TEE-SUCCESS, handle(oid(N + 1 , TK))) >
+    < oid(N , TK) : TransientObject | type : OBJTYPE , max-size : MAXOBJSIZE ,
                                         attributes : empty , usages : allObjectUsages,
                                         initialized : false,
                                         trust-app-id : TN >
-    freshTransientHandle(N + 1 , TK , taOid(N , TK))
+    freshTransientHandle(N + 1 , TK , oid(N , TK))
   if supported(OBJTYPE, MAXOBJSIZE)
   .
 
@@ -809,7 +809,7 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
   eq
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : ResetTransientObject ,
-                      current-params : handle(TEE-HANDLE-NULL) >
+                      current-params : handle(null) >
     =
     < TK : TaKernel | api-state : finished ,
                       api-return : apiReturn(ResetTransientObject) >

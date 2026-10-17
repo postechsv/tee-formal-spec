@@ -7,8 +7,8 @@ omod TEE-CLIENT-API-BEHAVIOR is
   pr RETURN-IMP-VALUE .
 
   vars KI RI : Oid .
-  var TI : TaInstId .
-  var TK : TaInstId .
+  var TI : Oid .
+  var TK : Oid .
   var SID : SessionId .
   var SMAP : Map{SessionId,Oid} .
   var FUNC : FuncId .
@@ -137,11 +137,11 @@ omod TEE-INTERNAL-CLIENT-API-BEHAVIOR is
   pr TEE-INTERNAL-CLIENT-FUNC .
 
   var N : Nat .
-  var TK RK : TaInstId .
+  var TK RK : Oid .
   var TN TA : AppId .
-  var HANDLE : HandleId .
+  var HANDLE : Oid .
   var FUNC : FuncId .
-  var OI : TaObjectId .
+  var OI : Oid .
   var VL : ValueList .
   --- var TEEID : TeeUUID .
   var PARAMS : Set{TeeApiParam} .
@@ -168,11 +168,11 @@ omod TEE-INTERNAL-CLIENT-API-BEHAVIOR is
     retTrustedOS(openSessionSuccess(RK), TK)
     < TK : TaKernel | status : normal , api-state : TeeOpenTASession(PARAMS) # 1 , counter : N >
     =>
-    < TK : TaKernel | api-return : apiReturn(TeeOpenTASession , TEE-SUCCESS , (handle(handleId(N + 1, TK)) , returnOrig(TEE-ORIGIN-TRUSTED-APP))) ,
+    < TK : TaKernel | api-return : apiReturn(TeeOpenTASession , TEE-SUCCESS , (handle(oid(N + 1, TK)) , returnOrig(TEE-ORIGIN-TRUSTED-APP))) ,
                       api-state : finished , counter : N + 2 >
-    < taOid(N , TK) : Session |
+    < oid(N , TK) : Session |
       req : noReq , ret : noRet , ta-id : RK >
-    freshSessionHandle(N + 1, TK, taOid(N, TK))
+    freshSessionHandle(N + 1, TK, oid(N, TK))
   .
 
 ------------------------------------------------------------
@@ -182,8 +182,8 @@ omod TEE-INTERNAL-CLIENT-API-BEHAVIOR is
 --- The 'TEE_InvokeTACommand' function invokes a command within a session opened between the client Trusted Application instance and a destination Trusted Application instance.
 --- See page 101 of the G.P. documentation for more details.
 
-  msg reqInvoke : HandleId FuncId ValueList TaInstId -> Msg .
-  msg finishReqInvoke : HandleId FuncId TaInstId ValueList -> Msg .
+  msg reqInvoke : Oid FuncId ValueList Oid -> Msg .
+  msg finishReqInvoke : Oid FuncId Oid ValueList -> Msg .
 
   rl [invoke-ta-command-subroutine] :
     < TK : TaKernel | status : normal , api-call : noCall , api-return : noReturn ,
@@ -226,7 +226,7 @@ omod TEE-INTERNAL-CLIENT-API-BEHAVIOR is
   ---   retTrustedOS(openSessionSuccess, TK)
   ---   < TK : TaKernel | status : normal , api-state : TeeOpenTASession(PARAMS) # 1 , counter : N >
   ---   =>
-  ---   < TK : TaKernel | api-return : apiReturn(TeeOpenTASession , TEE-SUCCESS , (handle(handleId(N + 1, TK)) , returnOrig(TEE-ORIGIN-TRUSTED-APP))) ,
+  ---   < TK : TaKernel | api-return : apiReturn(TeeOpenTASession , TEE-SUCCESS , (handle(oid(N + 1, TK)) , returnOrig(TEE-ORIGIN-TRUSTED-APP))) ,
   ---                     api-state : finished , counter : N + 2 >
   --- .
 

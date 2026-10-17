@@ -183,7 +183,7 @@ endfm
 
 --- This module defines IMP call and return for TEE API.
 
-fmod TEE-API-IMP-CALL is
+mod TEE-API-IMP-CALL is
   pr TEE-API .
   pr TEE-API-CALL .
   pr TEE-API-RETURN .
@@ -192,7 +192,7 @@ fmod TEE-API-IMP-CALL is
 
   op makeCall : TeeApi ValueList -> TeeApiCall .
   op makeReturnStmt : TeeApi ReturnCode? Set{TeeApiParam} ExpList -> Stmt .
-endfm
+endm
 
 fmod TEE-IMP-STRUCT-DECL is
   pr IMP-PROGRAM .
@@ -219,7 +219,6 @@ endfm
 mod TRANSIENT-OBJECT-TEE-CALL is
   pr TEE-API-IMP-CALL .
   pr TRANSIENT-OBJECT-FUNC .
-  pr TA-OBJECT .
   pr HANDLE .
   pr HANDLE-ID-GEN .
   pr ID-IMP-VALUE .
@@ -231,7 +230,7 @@ mod TRANSIENT-OBJECT-TEE-CALL is
 
   var OBJTYPE : ObjectType .
   var KEYSIZE : CryptoKeySize .
-  vars HANDLE HANDLE1 HANDLE2 : HandleId .
+  vars HANDLE HANDLE1 HANDLE2 : Oid .
   var REF : AttrRef .
   var VAL : AttrVal .
   var V : AttrContent .
@@ -268,8 +267,8 @@ mod TRANSIENT-OBJECT-TEE-CALL is
 
   eq makeCall(FreeTransientObject , (# HANDLE)) = apiCall(FreeTransientObject , handle(HANDLE)) .
   eq makeReturnStmt(FreeTransientObject , noReturnCode , empty , nil) = skip .
-  --- TODO: Problem - No canonical states when FreeTransientObject(# TEE-HANDLE-NULL) 
-  eq makeReturnStmt(FreeTransientObject , noReturnCode , handle(TEE-HANDLE-NULL) , nil) = skip .
+  --- TODO: Problem - No canonical states when FreeTransientObject(# null) 
+  eq makeReturnStmt(FreeTransientObject , noReturnCode , handle(null) , nil) = skip .
 
   op FreeTransientObjectLib : -> Program .
   eq FreeTransientObjectLib 
@@ -327,7 +326,7 @@ mod PERSISTENT-OBJECT-TEE-CALL is
   var STORID : StorageIdentifier .
   var FILE : FileId .
   var DATAFLAGS : Set{DataFlag} .
-  vars HANDLE OPTHANDLE : HandleId .
+  vars HANDLE OPTHANDLE : Oid .
   var DATA : List{Data} .
   var DATASIZE : DataSize .
   var RET : ReturnCode .
@@ -429,7 +428,7 @@ mod GENERIC-OBJECT-TEE-CALL is
   pr DATA-STREAM-OBJECT-IMP-VALUE .
   pr TEE-IMP-STRUCT-DECL .
 
-  var HANDLE : HandleId .
+  var HANDLE : Oid .
   var RET : ReturnCode .
   var OBJTYPE : ObjectType .
   vars OBJSIZE MAXOBJSIZE : CryptoKeySize .
@@ -482,7 +481,7 @@ mod GENERIC-OBJECT-TEE-CALL is
 
   eq makeCall(CloseObject , (# HANDLE)) = apiCall(CloseObject , handle(HANDLE)) .
   eq makeReturnStmt(CloseObject , noReturnCode , empty , E) = skip .
-  eq makeReturnStmt(CloseObject , noReturnCode , handle(TEE-HANDLE-NULL) , E) = skip .
+  eq makeReturnStmt(CloseObject , noReturnCode , handle(null) , E) = skip .
 endm
 
 --- This module defines IMP call and return for persistent object enumeration functions.
@@ -499,7 +498,7 @@ mod ENUMERATOR-OBJECT-TEE-CALL is
   pr DATA-STREAM-OBJECT-IMP-VALUE .
   pr TEE-IMP-STRUCT-DECL .
 
-  var HANDLE : HandleId .
+  var HANDLE : Oid .
   var RET : ReturnCode .
   var STORID : StorageIdentifier .
   var OBJTYPE : ObjectType .
@@ -525,7 +524,7 @@ mod ENUMERATOR-OBJECT-TEE-CALL is
 
   eq makeCall(FreePersistentObjectEnumerator , (# HANDLE)) = apiCall(FreePersistentObjectEnumerator , handle(HANDLE)) .
   eq makeReturnStmt(FreePersistentObjectEnumerator , noReturnCode , empty , E) = skip .
-  eq makeReturnStmt(FreePersistentObjectEnumerator , noReturnCode , handle(TEE-HANDLE-NULL) , E) = skip .
+  eq makeReturnStmt(FreePersistentObjectEnumerator , noReturnCode , handle(null) , E) = skip .
 
 ------------------------------------------------------------
 --- 'TEE_ResetPersistentObjectEnumerator' Syscall
@@ -565,7 +564,7 @@ mod DATA-STREAM-OBJECT-TEE-CALL is
   pr PERSISTENT-OBJECT-IMP-VALUE .
   pr DATA-STREAM-OBJECT-IMP-VALUE .
 
-  var HANDLE : HandleId .
+  var HANDLE : Oid .
   var DATASIZE : DataSize .
   var OFST : Int .
   var DATA : List{Data} .
@@ -616,7 +615,7 @@ mod TEE-INTERNAL-CLIENT-CALL is
   pr TEE-API-IMP-PROG-AUX .
 
   var EL : ExpList .
-  var HANDLE : HandleId .
+  var HANDLE : Oid .
   var TA : AppId .
   var TO : TaCancelTimeOut .
   var RO : ReturnOrigin .

@@ -2,15 +2,20 @@ load ../../src/main
 
 --- Focused checks derived from GlobalPlatform TEE Internal Core API v1.3.1.
 
---- The paper-level null Oid normalizes to the GP null handle constant.
-red in HANDLE-ID-GEN : null == TEE-HANDLE-NULL .
+--- null is a constructor of Oid distinct from every generated oid.
+red in HANDLE : not (null == oid(0, null)) .
 
---- Equal counters in different storage namespaces produce distinct Oids.
-red in ID-GEN :
-  not (storageOid(0, storageId(0)) == storageOid(0, storageId(1))) .
+--- A TA instance oid(N, KI) owns its Storage oid(0, TA instance); distinct TA instances
+--- own distinct Storages.
+red in HANDLE :
+  not (oid(0, oid(0, null)) == oid(0, oid(1, null))) .
 
-red in ID-GEN :
-  not (storageOid(0, storageId(0)) == taOid(0, trustAppId(0))) .
+--- The Storage oid(0, TA) never equals a TA-owned object oid(N, TA) with N >= 1.
+red in HANDLE :
+  not (oid(0, oid(0, null)) == oid(1, oid(0, null))) .
+
+--- newOid(N, O) is the generator for oid(N, O).
+red in HANDLE : newOid(2, oid(0, null)) == oid(2, oid(0, null)) .
 
 red in TRUSTED-STORAGE-OBJECT-AUX :
   typeCompatible(TEE-TYPE-ECDSA-KEYPAIR, TEE-TYPE-ECDSA-PUBLIC-KEY) .

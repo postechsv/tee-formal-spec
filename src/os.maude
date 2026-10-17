@@ -15,10 +15,10 @@ endv
 --- This module defines calls to invoke TA.
 
 omod INVOKE-TA-CALL is
-  pr TA-INSTANCE-ID .
+  pr OBJECT-ID .
   pr INVOKE-MESSAGE .
 
-  msg invokeTA : TaInstId InvokeMessage Oid -> Msg .
+  msg invokeTA : Oid InvokeMessage Oid -> Msg .
   msg invokeTAReturn : InvokeMessage Oid -> Msg .
 endom
 
@@ -131,7 +131,8 @@ view ProgramCell from TRIV to PROGRAM-CELL is
   sort Elt to ProgramCell .
 endv
 
-view Oid from TRIV to CONFIGURATION is
+--- OBJECT-ID gives Oid its constructors (the sort itself is CONFIGURATION's).
+view Oid from TRIV to OBJECT-ID is
   sort Elt to Oid .
 endv
 
@@ -139,18 +140,16 @@ endv
 
 omod TEE-OS is
   pr NAT .
-  pr STORAGE-OBJECT-ID .
+  pr OBJECT-ID .
   pr STORAGE-STATUS .
   pr SET{FileId} .
-  pr TA-INSTANCE-ID .
   pr MAP{AppId,ProgramCell} .
   pr MAP{SessionId,Oid} .
   pr MAP{SessionId,List{SmcArgument}} .
-  pr MAP{AppId,Set{TaObjectId}} * (op undefined to noObject) .
+  pr MAP{AppId,Set{Oid}} * (op undefined to noObject) .
   pr LIST{Service} .
   pr LIST{ServiceReturn} .
 
-  subsort StorageId < Oid .
   
 --- Paper-level classes. TeeOSKernel refines TrustedOS with executable service
 --- queues; TA storage state is held by separate Storage objects.
@@ -159,19 +158,19 @@ omod TEE-OS is
 
 --- Actual Implemenation
   class TeeOSKernel | session-counter : Nat,
-                      service-request-ta : AppId?, service-request-ta-inst : TaInstId?,
+                      service-request-ta : AppId?, service-request-ta-inst : Oid?,
                       service-in : List{Service}, service-out : List{ServiceReturn},
-                      temporary-objects : Map{AppId,Set{TaObjectId}},
+                      temporary-objects : Map{AppId,Set{Oid}},
                       ta-prog-map : Map{AppId,ProgramCell} .
   subclass TeeOSKernel < TrustedOS .
 endom
 
-fmod TEE-OS-SERVICE is
+mod TEE-OS-SERVICE is
   pr SERVICE .
   pr STORAGE-STATUS .
   pr SET{FileId} .
   pr APP-ID .
-  pr TA-INSTANCE-ID .
+  pr OBJECT-ID .
 
   op getStorageStatus : -> Service [ctor] .
   op storageStatus : StorageStatus -> ServiceReturn [ctor] .
@@ -192,36 +191,26 @@ fmod TEE-OS-SERVICE is
 
 --- Session
   op openTASession : AppId -> Service [ctor] .
-  op openSessionSuccess : TaInstId -> ServiceReturn [ctor] .
-endfm
+  op openSessionSuccess : Oid -> ServiceReturn [ctor] .
+endm
 
 --- This module defines a device class, modeling storage devices.
 
 omod DEVICE is
-  pr DEVICE-ID .
+  pr OBJECT-ID .
   pr EXECUTION-ENV .
 
-  subsort DeviceId < Oid .
   class Device | execution-envs : Env .
 
 endom
 
 --- This module defines id generators for TEE APIs.
 
-fmod ID-GEN is
+mod ID-GEN is
   pr NAT .
-  pr STORAGE-OBJECT-ID .
+  pr OBJECT-ID .
   pr APP-ID .
-  pr TA-INSTANCE-ID .
-  pr TA-OBJECT-ID .
-  pr DEVICE-ID .
   pr SESSION-ID .
 
-  op taOid : Nat TaInstId -> TaObjectId [ctor] .
-  op storageOid : Nat StorageId -> TaObjectId [ctor] .
-  op richAppId : Nat -> AppId [ctor] .
-  op trustAppId : Nat -> TaInstId [ctor] .
-  op storageId : Nat -> StorageId [ctor] .
-  op deviceId : Nat -> DeviceId [ctor] .
   op sessionId : Nat -> SessionId [ctor] .
-endfm
+endm

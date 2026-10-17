@@ -1,0 +1,43 @@
+--- Panic conditions for the data stream access APIs.
+--- The nullHandlePanics equations of these APIs are in GENERAL-PANIC.
+
+omod DATA-STREAM-PANIC is
+  inc GENERAL-PANIC .
+
+  var TK : TaInstId .
+  var HANDLE : HandleId .
+  var PARAMS : Set{TeeApiParam} .
+  var DATAFLAGS : Set{DataFlag} .
+
+  --- Persistent data-stream access rights are preconditions.  Violating them
+  --- panics before the normal storage request can be issued.
+  crl [read-access-panic] :
+    < TK : TaKernel | status : normal, api-state : started,
+                      current-api : ReadObjectData,
+                      current-params : handle(HANDLE), PARAMS >
+    < HANDLE : ObjectHandle | flags : DATAFLAGS >
+    =>
+    < TK : TaKernel | status : panic, api-state : finished >
+    < HANDLE : ObjectHandle | >
+  if not (TEE-DATA-FLAG-ACCESS-READ in DATAFLAGS) .
+
+  crl [write-access-panic] :
+    < TK : TaKernel | status : normal, api-state : started,
+                      current-api : WriteObjectData,
+                      current-params : handle(HANDLE), PARAMS >
+    < HANDLE : ObjectHandle | flags : DATAFLAGS >
+    =>
+    < TK : TaKernel | status : panic, api-state : finished >
+    < HANDLE : ObjectHandle | >
+  if not (TEE-DATA-FLAG-ACCESS-WRITE in DATAFLAGS) .
+
+  crl [truncate-access-panic] :
+    < TK : TaKernel | status : normal, api-state : started,
+                      current-api : TruncateObjectData,
+                      current-params : handle(HANDLE), PARAMS >
+    < HANDLE : ObjectHandle | flags : DATAFLAGS >
+    =>
+    < TK : TaKernel | status : panic, api-state : finished >
+    < HANDLE : ObjectHandle | >
+  if not (TEE-DATA-FLAG-ACCESS-WRITE in DATAFLAGS) .
+endom

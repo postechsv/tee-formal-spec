@@ -1,0 +1,33 @@
+--- Panic conditions for the persistent object APIs.
+--- The nullHandlePanics equations of these APIs are in GENERAL-PANIC.
+
+omod PERSISTENT-PANIC is
+  inc GENERAL-PANIC .
+
+  var TK : TaInstId .
+  var HANDLE : HandleId .
+  var PARAMS : Set{TeeApiParam} .
+  var DATAFLAGS : Set{DataFlag} .
+
+  --- Persistent object access rights are preconditions.  Violating them
+  --- panics before the normal storage request can be issued.
+  crl [delete-access-panic] :
+    < TK : TaKernel | status : normal, api-state : started,
+                      current-api : CloseAndDeletePersistentObject1,
+                      current-params : handle(HANDLE), PARAMS >
+    < HANDLE : ObjectHandle | flags : DATAFLAGS >
+    =>
+    < TK : TaKernel | status : panic, api-state : finished >
+    < HANDLE : ObjectHandle | >
+  if not (TEE-DATA-FLAG-ACCESS-WRITE-META in DATAFLAGS) .
+
+  crl [rename-access-panic] :
+    < TK : TaKernel | status : normal, api-state : started,
+                      current-api : RenamePersistentObject,
+                      current-params : handle(HANDLE), PARAMS >
+    < HANDLE : ObjectHandle | flags : DATAFLAGS >
+    =>
+    < TK : TaKernel | status : panic, api-state : finished >
+    < HANDLE : ObjectHandle | >
+  if not (TEE-DATA-FLAG-ACCESS-WRITE-META in DATAFLAGS) .
+endom

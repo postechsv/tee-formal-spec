@@ -57,6 +57,12 @@ fmod TEE-API-IMP-PROG-AUX is
   op mkEval : ExpList -> ExpList .
   eq mkEval(E, EL) = E, mkEval(EL) .
   eq mkEval(nil) = nil .
+
+  --- Library constants of the storage groups.  They are declared here so that
+  --- TEE-API-IMP-PROGRAM does not import the storage TEE-CALL modules; each group
+  --- defines its constant in its own TEE-CALL module, which is dropped with the group.
+  op TransientLibs : -> Program .
+  op PersistLibs : -> Program .
 endfm
 
 --- This module defines IMP values for TEE client API.
@@ -152,25 +158,6 @@ fmod DATA-STREAM-OBJECT-IMP-VALUE is
 
   op #_ : DataPosition -> Value [ctor] .
   op #_ : SeekType -> Value [ctor] .
-endfm
-
-------------------------------------------------------------
---- Cryptographic object IMP
-------------------------------------------------------------
-
---- This module defines IMP values for cryptographic object.
-
-fmod CRYPTO-OPERATION-OBJECT-IMP-VALUE is
-  pr IMP-VALUE .
-  pr ALGORITHM-IDENTIFIER .
-  pr OPERATION-CLASS .
-  pr OPERATION-MODE .
-  pr CRYPTO-ELEMENT .
-
-  op #_ : AlgorithmIdentifier -> Value [ctor] .
-  op #_ : OperationClass -> Value [ctor] .
-  op #_ : OperationMode -> Value [ctor] .
-  op #_ : CryptoElement -> Value [ctor] .
 endfm
 
 ------------------------------------------------------------
@@ -317,7 +304,6 @@ mod TRANSIENT-OBJECT-TEE-CALL is
   eq makeReturnStmt(GenerateKey , RET , empty , E) = $assign(# RET , E) .
 
 
-  op TransientLibs : -> Program .
   eq TransientLibs = 
     AllocateTransientObjectLib
     FreeTransientObjectLib
@@ -420,7 +406,6 @@ mod PERSISTENT-OBJECT-TEE-CALL is
   eq makeReturnStmt(RenamePersistentObject , RET , empty , R) = $assign(# RET , R) .
 
 
-  op PersistLibs : -> Program .
   eq PersistLibs = 
     OpenPersistentObjectLib
     CreatePersistentObjectLib 
@@ -617,177 +602,6 @@ mod DATA-STREAM-OBJECT-TEE-CALL is
   eq makeCall(SeekObjectData , (# HANDLE , # OFST , # WHENCE)) = apiCall(SeekObjectData , (handle(HANDLE) , offset(OFST) , type(WHENCE))) .
   eq makeReturnStmt(SeekObjectData , RET , empty , E) = $assign(# RET , E) .
 endm
-
---- This module defines IMP call and return for cryptographic operation functions.
-
-mod CRYPTO-OPERATION-TEE-CALL is  
-  pr TEE-API-IMP-CALL .
-  pr HANDLE .
-  pr HANDLE-ID-GEN .
-  pr ID-IMP-VALUE .
-  pr CRYPTO-OPERATION-FUNC .
-  --- pr CRYPTO-OPERATION .
-  pr CRYPTO-OPERATION-OBJECT-IMP-VALUE .
-  --- pr TRUST-APP .
-  pr RETURN-IMP-VALUE .
-  pr GENERIC-OBJECT-IMP-VALUE .
-  pr PERSISTENT-OBJECT-IMP-VALUE .
-
-  vars N N1 N2 : Nat .
-  var TI : AppId .
-  vars HANDLE HANDLE1 HANDLE2 : HandleId .
-  var ALGO : AlgorithmIdentifier .
-  var OM : OperationMode .
-  var OC : OperationClass .
-  vars OS OS1 OS2 : OperationState .
-  var ATTRS : Set{TeeAttribute} .
-  vars MAXKEYSIZE KEYSIZE : CryptoKeySize .
-  var OBJTYPE : ObjectType .
-  var OBJUSAGES : Set{ObjectUsage} .
-  vars DATA DL IV MAC : List{Data} .
-  vars DATASIZE DATASIZE2 : DataSize .
-  vars SRC DEST : BufferRegion .
-  op #_ : BufferRegion -> Value [ctor] .
-  var ELEM : CryptoElement .
-  var RET : ReturnCode .
-  vars E E' : Exp .
-  var EL : ExpList .
-
---- Generic
-  eq makeCall(AllocateOperation , (# ALGO , # OM , # KEYSIZE)) = apiCall(AllocateOperation , (alg(ALGO) , mode(OM) , size(KEYSIZE))) .
-  eq makeReturnStmt(AllocateOperation , RET , handle(HANDLE) , EL) = $assign((# RET , # HANDLE) , EL) .
-  eq makeReturnStmt(AllocateOperation , RET , empty , (E , E')) = $assign(# RET , E) .
-  
-  eq makeCall(FreeOperation , (# HANDLE)) = apiCall(FreeOperation , handle(HANDLE)) .
-  eq makeReturnStmt(FreeOperation , noReturnCode , empty , E) = skip .
-  eq makeReturnStmt(FreeOperation , noReturnCode , handle(TEE-HANDLE-NULL) , E) = skip .
-  
-  eq makeCall(ResetOperation , (# HANDLE)) = apiCall(ResetOperation , handle(HANDLE)) .
-  eq makeReturnStmt(ResetOperation , noReturnCode , empty , nil) = skip .
-
-  eq makeCall(SetOperationKey , (# HANDLE1 , # HANDLE2)) = apiCall(SetOperationKey , (handle(HANDLE1) , keyHandle(HANDLE2))) .
-  eq makeReturnStmt(SetOperationKey , RET , empty , E) = $assign(# RET , E) .
-
---- TODO: NEED TO UPDATE RETURN
-  eq makeCall(GetOperationInfo , (# HANDLE)) = apiCall(GetOperationInfo , handle(HANDLE)) .
-  --- eq makeReturnStmt(GetOperationInfoReturn(void , teeOperationInfo()) , (E))
-  --- = E . 'algorithm = # ALGO ; ... .
-
-  eq makeCall(GetOperationInfoMultiple , (# HANDLE)) = apiCall(GetOperationInfoMultiple , handle(HANDLE)) .
-  eq makeCall(GetOperationInfoMultiple , (# HANDLE , # DATASIZE)) =
-    apiCall(GetOperationInfoMultiple , (handle(HANDLE) , capacity(DATASIZE))) .
-    --- eq makeReturnStmt(GetOperationInfoMultipleReturn(TEE-SUCCESS , teeOperationInfoMultiple()) , (E , E'))
-  --- = $assign(# TEE-SUCCESS , E) ;
-  ---   E' . 'algorithm = # ALGO ; ... .
-  --- eq makeReturnStmt(GetOperationInfoMultipleReturn(RET) , (E , E')) = $assign(# RET , E) .
-
-  eq makeCall(SetOperationKey2 , (# HANDLE , # HANDLE1 , # HANDLE2)) = apiCall(SetOperationKey2 , (handle(HANDLE) , keyHandle(HANDLE1) , secondKeyHandle(HANDLE2))) .
-  eq makeReturnStmt(SetOperationKey2 , RET , empty , E) = $assign(# RET , E) .
-
-  eq makeCall(CopyOperation , (# HANDLE1 , # HANDLE2)) = apiCall(CopyOperation , (trgHandle(HANDLE1) , srcHandle(HANDLE2))) .
-  eq makeReturnStmt(CopyOperation , noReturnCode , empty , nil) = skip .
-
-  eq makeCall(IsAlgorithmSupported , (# ALGO , # ELEM)) = apiCall(IsAlgorithmSupported , (alg(ALGO) , cryptoElement(ELEM))) .
-  eq makeReturnStmt(IsAlgorithmSupported , RET , empty , E) = $assign(# RET , E) .
-
---- Message Digest
-  eq makeCall(DigestUpdate , (# HANDLE , # DATA)) = apiCall(DigestUpdate , (handle(HANDLE) , data(DATA))) .
-  eq makeReturnStmt(DigestUpdate , noReturnCode , empty , nil) = skip .
-  
-  eq makeCall(DigestDoFinal , (# HANDLE , # DATA)) = apiCall(DigestDoFinal , (handle(HANDLE) , data(DATA))) .
-  eq makeCall(DigestDoFinal , (# HANDLE , # DATA , # DATASIZE)) = apiCall(DigestDoFinal , (handle(HANDLE) , data(DATA) , capacity(DATASIZE))) .
-  eq makeReturnStmt(DigestDoFinal , TEE-SUCCESS , data(DATA) , EL) = $assign((# TEE-SUCCESS , # DATA) , EL) .
-  eq makeReturnStmt(DigestDoFinal , RET , size(DATASIZE) , (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
-  eq makeReturnStmt(DigestDoFinal , RET , empty , (E , E')) = $assign(# RET , E) .
-  
-  eq makeCall(DigestExtract , (# HANDLE)) = apiCall(DigestExtract , handle(HANDLE)) .
-  eq makeCall(DigestExtract , (# HANDLE , # DATASIZE)) = apiCall(DigestExtract , (handle(HANDLE) , capacity(DATASIZE))) .
-  eq makeReturnStmt(DigestExtract , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
-  eq makeReturnStmt(DigestExtract , RET , size(DATASIZE) , (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
-
---- Symmetric Cipher
-  eq makeCall(CipherInit , (# HANDLE , # IV)) = apiCall(CipherInit , (handle(HANDLE) , iv(IV))) .
-  eq makeReturnStmt(CipherInit , noReturnCode , empty , nil) = skip .
-
-  eq makeCall(CipherUpdate , (# HANDLE , # DL)) = apiCall(CipherUpdate , (handle(HANDLE) , data(DL))) .
-  eq makeCall(CipherUpdate , (# HANDLE , # DL , # DATASIZE)) = apiCall(CipherUpdate , (handle(HANDLE) , data(DL) , capacity(DATASIZE))) .
-  eq makeCall(CipherUpdate , (# HANDLE , # DL , # DATASIZE , # SRC , # DEST)) = apiCall(CipherUpdate , (handle(HANDLE) , data(DL) , capacity(DATASIZE) , srcRegion(SRC) , destRegion(DEST))) .
-  eq makeReturnStmt(CipherUpdate , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
-  eq makeReturnStmt(CipherUpdate , RET , size(DATASIZE) , (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
-  eq makeReturnStmt(CipherUpdate , RET , empty , (E, E')) = $assign(# RET , E) .
-  
-  eq makeCall(CipherDoFinal , (# HANDLE , # DL)) = apiCall(CipherDoFinal , (handle(HANDLE) , data(DL))) .
-  eq makeCall(CipherDoFinal , (# HANDLE , # DL , # DATASIZE)) = apiCall(CipherDoFinal , (handle(HANDLE) , data(DL) , capacity(DATASIZE))) .
-  eq makeCall(CipherDoFinal , (# HANDLE , # DL , # DATASIZE , # SRC , # DEST)) = apiCall(CipherDoFinal , (handle(HANDLE) , data(DL) , capacity(DATASIZE) , srcRegion(SRC) , destRegion(DEST))) .
-  eq makeReturnStmt(CipherDoFinal , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
-  eq makeReturnStmt(CipherDoFinal , RET , size(DATASIZE) , (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
-
---- MAC
-  eq makeCall(MACInit , (# HANDLE , # IV)) = apiCall(MACInit , (handle(HANDLE) , iv(IV))) .
-  eq makeReturnStmt(MACInit , noReturnCode , empty , nil) = skip .
-
-  eq makeCall(MACUpdate , (# HANDLE , # DL)) = apiCall(MACUpdate , (handle(HANDLE) , data(DL))) .
-  eq makeReturnStmt(MACUpdate , noReturnCode , empty , nil) = skip .
-
-  eq makeCall(MACComputeFinal , (# HANDLE , # DL)) = apiCall(MACComputeFinal , (handle(HANDLE) , data(DL))) .
-  eq makeCall(MACComputeFinal , (# HANDLE , # DL , # DATASIZE)) = apiCall(MACComputeFinal , (handle(HANDLE) , data(DL) , capacity(DATASIZE))) .
-  eq makeReturnStmt(MACComputeFinal , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
-  eq makeReturnStmt(MACComputeFinal , RET , size(DATASIZE) , (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
-
-  eq makeCall(MACCompareFinal , (# HANDLE , # DL , # MAC)) = apiCall(MACCompareFinal , (handle(HANDLE) , data(DL) , mac(MAC))) .
-  eq makeReturnStmt(MACCompareFinal , RET , empty , E) = $assign(# RET , E) .
-
---- AE
-  eq makeCall(AEInit , (# HANDLE , # IV)) = apiCall(AEInit , (handle(HANDLE) , iv(IV))) .
-  eq makeReturnStmt(AEInit , RET , empty , E) = $assign(# RET , E) .
-
-  eq makeCall(AEUpdateAAD , (# HANDLE , # DL)) = apiCall(AEUpdateAAD , (handle(HANDLE) , data(DL))) .
-  eq makeReturnStmt(AEUpdateAAD , noReturnCode , empty , E) = skip .
-
-  eq makeCall(AEUpdate , (# HANDLE , # DL)) = apiCall(AEUpdate , (handle(HANDLE) , data(DL))) .
-  eq makeCall(AEUpdate , (# HANDLE , # DL , # DATASIZE)) = apiCall(AEUpdate , (handle(HANDLE) , data(DL) , capacity(DATASIZE))) .
-  eq makeCall(AEUpdate , (# HANDLE , # DL , # DATASIZE , # SRC , # DEST)) = apiCall(AEUpdate , (handle(HANDLE) , data(DL) , capacity(DATASIZE) , srcRegion(SRC) , destRegion(DEST))) .
-  eq makeReturnStmt(AEUpdate , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
-  eq makeReturnStmt(AEUpdate , RET , size(DATASIZE) , (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
-
-  eq makeCall(AEEncryptFinal , (# HANDLE , # DL)) = apiCall(AEEncryptFinal , (handle(HANDLE) , data(DL))) .
-  eq makeCall(AEEncryptFinal , (# HANDLE , # DL , # DATASIZE , # DATASIZE2)) = apiCall(AEEncryptFinal , (handle(HANDLE) , data(DL) , capacity(DATASIZE) , tagCapacity(DATASIZE2))) .
-  eq makeCall(AEEncryptFinal , (# HANDLE , # DL , # DATASIZE , # DATASIZE2 , # SRC , # DEST)) = apiCall(AEEncryptFinal , (handle(HANDLE) , data(DL) , capacity(DATASIZE) , tagCapacity(DATASIZE2) , srcRegion(SRC) , destRegion(DEST))) .
-  eq makeReturnStmt(AEEncryptFinal , RET , (data(DL) , mac(MAC)) , EL) = $assign((# RET , # DL , # MAC) , EL) .
-  eq makeReturnStmt(AEEncryptFinal , RET , (size(DATASIZE) , tagSize(DATASIZE2)) , (E , E')) = $assign((# RET , # DATASIZE , # DATASIZE2) , (E , E')) .
-  eq makeCall(AEDecryptFinal , (# HANDLE , # DL , # MAC)) = apiCall(AEDecryptFinal , (handle(HANDLE) , data(DL) , mac(MAC))) .
-  eq makeCall(AEDecryptFinal , (# HANDLE , # DL , # MAC , # DATASIZE)) = apiCall(AEDecryptFinal , (handle(HANDLE) , data(DL) , mac(MAC) , capacity(DATASIZE))) .
-  eq makeCall(AEDecryptFinal , (# HANDLE , # DL , # MAC , # DATASIZE , # SRC , # DEST)) = apiCall(AEDecryptFinal , (handle(HANDLE) , data(DL) , mac(MAC) , capacity(DATASIZE) , srcRegion(SRC) , destRegion(DEST))) .
-  eq makeReturnStmt(AEDecryptFinal , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
-  eq makeReturnStmt(AEDecryptFinal , RET , size(DATASIZE) , (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
-  eq makeReturnStmt(AEDecryptFinal , RET , empty , (E , E')) = $assign(# RET , E) .
-
---- Asymmetic Cipher
-  eq makeCall(AsymmetricEncrypt , (# HANDLE , # DL)) = apiCall(AsymmetricEncrypt , (handle(HANDLE) , data(DL))) .
-  eq makeCall(AsymmetricEncrypt , (# HANDLE , # DL , # DATASIZE)) = apiCall(AsymmetricEncrypt , (handle(HANDLE) , data(DL) , capacity(DATASIZE))) .
-  eq makeReturnStmt(AsymmetricEncrypt , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
-  eq makeReturnStmt(AsymmetricEncrypt , RET , size(DATASIZE) , (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
-
-  eq makeCall(AsymmetricDecrypt , (# HANDLE , # DL)) = apiCall(AsymmetricDecrypt , (handle(HANDLE) , data(DL))) .
-  eq makeCall(AsymmetricDecrypt , (# HANDLE , # DL , # DATASIZE)) = apiCall(AsymmetricDecrypt , (handle(HANDLE) , data(DL) , capacity(DATASIZE))) .
-  eq makeReturnStmt(AsymmetricDecrypt , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
-  eq makeReturnStmt(AsymmetricDecrypt , RET , size(DATASIZE) , (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
-
-  eq makeCall(AsymmetricSignDigest , (# HANDLE , # DL)) = apiCall(AsymmetricSignDigest , (handle(HANDLE) , data(DL))) .
-  eq makeCall(AsymmetricSignDigest , (# HANDLE , # DL , # DATASIZE)) = apiCall(AsymmetricSignDigest , (handle(HANDLE) , data(DL) , capacity(DATASIZE))) .
-  eq makeReturnStmt(AsymmetricSignDigest , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
-  eq makeReturnStmt(AsymmetricSignDigest , RET , size(DATASIZE) , (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
-
-  eq makeCall(AsymmetricDecrypt , (# HANDLE , # DL)) = apiCall(AsymmetricDecrypt , (handle(HANDLE) , data(DL))) .
-  eq makeReturnStmt(AsymmetricDecrypt , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
-
---- Misc
-  eq makeCall(DeriveKey , (# HANDLE , # ATTRS , # HANDLE2)) = apiCall(DeriveKey , (handle(HANDLE) , attrs(ATTRS) , trgHandle(HANDLE2))) .
-  eq makeReturnStmt(DeriveKey , noReturnCode , empty , nil) = skip .
-  eq makeCall(GenerateRandom , nil) = apiCall(GenerateRandom , empty) .
-  eq makeReturnStmt(GenerateRandom , noReturnCode , data(DL) , E) = $assign(# DL , E) .
-endm
-
 --- This module defines IMP call and return for internal client API functions.
 
 mod TEE-INTERNAL-CLIENT-CALL is
@@ -856,8 +670,7 @@ mod TEE-INTERNAL-CLIENT-CALL is
 endm
 
 mod TEE-API-IMP-PROGRAM is
-  pr TRANSIENT-OBJECT-TEE-CALL .
-  pr PERSISTENT-OBJECT-TEE-CALL .
+  pr TEE-API-IMP-PROG-AUX .
   pr TEE-INTERNAL-CLIENT-CALL .
 
   op Params : -> Type [ctor] .

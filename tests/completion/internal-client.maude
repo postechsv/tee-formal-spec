@@ -15,9 +15,7 @@ endm
 --- TeeOpenTASession creates a top-level session handle linked to its owner.
 search [1] in COMPLETION-TEST :
   retTrustedOS(openSessionSuccess(testTa), testTa)
-  < testTa : TAKernel | status : (normal).AppStatus, api-return : noReturn,
-                        api-state : TeeOpenTASession(uuid(TESTTA)) # 1,
-                        counter : 1 >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(apiCall(TeeOpenTASession , empty)), counter : 1 >
 =>1
   < oid(1, testTa) : Session |
       req : noReq, ret : noRet, ta-id : testTa >
@@ -34,8 +32,7 @@ search [1] in COMPLETION-TEST :
   < oid(0, osId) : TrustedApp |
       status : (normal).AppStatus, os-kernel : osId,
       storage : oid(0, oid(0, osId)), counter : 1,
-      api-call : noCall, api-return : noReturn,
-      current-api : noApi, api-state : noState, current-params : empty,
+      api-call : noCall,
       prog : P, proc : none, running : false,
       client-service : noClientService, task : noTask, task-counter : 0 >
   < oid(0, oid(0, osId)) : Storage |
@@ -56,7 +53,7 @@ search [1] in COMPLETION-TEST :
 --- TeeInvokeTACommand resolves a top-level session handle in both directions.
 --- The session object is oid(1, testTa); its handle is oid(2, testTa).
 search [1] in COMPLETION-TEST :
-  reqInvoke(oid(2, testTa), main, nil, testTa)
+  (msg reqInvoke[^ main ^ (nil).ImpList] from testTa to oid(2, testTa))
   < oid(1, testTa) : Session | req : noReq >
   < oid(2, testTa) : TaSessionHandle | oid : oid(1, testTa) >
 =>1
@@ -67,5 +64,5 @@ search [1] in COMPLETION-TEST :
       ret : {oid(2, testTa), main, testTa, nil} >
   < oid(2, testTa) : TaSessionHandle | oid : oid(1, testTa) >
 =>1
-  finishReqInvoke(oid(2, testTa), main, testTa, nil)
+  (msg finishReqInvoke[^ main ^ (nil).ImpList] from oid(2, testTa) to testTa)
   C .

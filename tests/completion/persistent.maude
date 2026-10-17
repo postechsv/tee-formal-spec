@@ -15,90 +15,50 @@ endm
 --- Top-level operation-handle regression coverage appears below.
 --- Unimplemented and illegal trusted-storage identifiers report ITEM_NOT_FOUND.
 search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : noCall, api-return : noReturn,
-                        api-state : started, current-api : OpenPersistentObject,
-                        current-params : storageId(storagePerso) >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(OpenPersistentObject , storageId(storagePerso))) >
 =>*
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : noCall,
-                        api-state : finished, current-api : OpenPersistentObject,
-                        current-params : storageId(storagePerso),
-                        api-return : apiReturn(OpenPersistentObject, errorItemNotFound,
-                                               handle(null)) > .
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : return(apiCall(OpenPersistentObject , (retCode(errorItemNotFound) , handle(null)))) > .
 
 search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : noCall, api-return : noReturn,
-                        api-state : started, current-api : CreatePersistentObject,
-                        current-params : storageId(storageProtected) >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(CreatePersistentObject , storageId(storageProtected))) >
 =>*
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : noCall,
-                        api-state : finished, current-api : CreatePersistentObject,
-                        current-params : storageId(storageProtected),
-                        api-return : apiReturn(CreatePersistentObject, errorItemNotFound,
-                                               handle(null)) > .
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : return(apiCall(CreatePersistentObject , (retCode(errorItemNotFound) , handle(null)))) > .
 
 --- Creating a persistent object can consume a paper-level top-level transient handle.
 search [1] in COMPLETION-TEST :
-  reqAttributeAndDelete(oid(101, testTa), testTa)
-  < oid(1, testTa) : TransientObject | initialized : true,
-      type : typeAes, attributes : empty,
-      usages : usageExtractable >
-  < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa) >
-=>1
-  retAttributeAndDelete(empty, typeAes,
-                        usageExtractable, testTa) .
-
---- Transforming a transient object notifies and advances its Storage object.
-search [1] in COMPLETION-TEST :
-  retAttributeAndDelete(attr(secretValue, randomAttrVal),
-                        typeAes,
-                        usageExtractable, testTa)
-  < testTa : TAKernel |
-      status : (normal).AppStatus, api-call : noCall, api-return : noReturn,
-      current-api : CreatePersistentObject,
-      api-state : waitReqAttributeAndDelete,
-      current-params : (fileId(testFileId), handle(oid(1, testTa)),
-                        flags(accessRead), data(nil),
-                        size(dataSize(0))),
-      storage : oid(0, testTa), counter : 0 >
-  < osId : TrustedOS |
-      service-in : nil, service-out : nil,
-      service-request-ta-inst : noOid >
-  < oid(0, testTa) : Storage |
-      status : (normal).StorageStatus, files : empty, counter : 0 >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(CreatePersistentObject , (fileId(testFileId), handle(oid(101, testTa)), flags(accessRead), data(nil), size(dataSize(0)), opt(null)))), storage : oid(0, testTa), counter : 0, TA-ATTS:AttributeSet >
+  < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa), flags : empty, pos : pos(0) >
+  < oid(1, testTa) : TransientObject | initialized : true, type : typeAes, attributes : empty, usages : usageExtractable, max-size : 128 >
+  < oid(0, testTa) : Storage | status : (normal).StorageStatus, files : empty, counter : 0 >
 =>*
-  < testTa : TAKernel |
-      status : (normal).AppStatus, api-call : noCall,
-      current-api : CreatePersistentObject, api-state : finished,
-      current-params : (fileId(testFileId), handle(oid(1, testTa)),
-                        flags(accessRead), data(nil),
-                        size(dataSize(0)), openedHandle(oid(0, testTa))),
-      storage : oid(0, testTa), counter : 1,
-      api-return : apiReturn(CreatePersistentObject, success,
-                             handle(oid(0, testTa))) >
-  < oid(0, testTa) : Storage |
-      status : (normal).StorageStatus, files : testFileId, counter : 2 >
-  C .
+  < testTa : TAKernel | api-call : return(apiCall(CreatePersistentObject , (retCode(success) , handle(oid(0, oid(0, testTa)))))), TA-ATTS:AttributeSet > C:Configuration .
+
+--- Transforming a transient object advances its Storage object (three identifiers per persistent object).
+search [1] in COMPLETION-TEST :
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(CreatePersistentObject , (fileId(testFileId), handle(oid(101, testTa)), flags(accessRead), data(nil), size(dataSize(0)), opt(null)))), storage : oid(0, testTa), counter : 0, TA-ATTS:AttributeSet >
+  < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa), flags : empty, pos : pos(0) >
+  < oid(1, testTa) : TransientObject | initialized : true, type : typeAes, attributes : empty, usages : usageExtractable, max-size : 128 >
+  < oid(0, testTa) : Storage | status : (normal).StorageStatus, files : empty, counter : 0 >
+=>*
+  < oid(0, testTa) : Storage | files : testFileId, counter : 3, STO-ATTS:AttributeSet > C:Configuration .
 
 --- OpenPersistentObject resolves a paper-level object through the handle's oid relation.
 search [1] in COMPLETION-TEST :
-  openPersistentHandle(oid(0, testTa), testFileId, accessRead,
-                       3, testTa)
+  (msg openPersistentHandle[^ testFileId ^ accessRead ^ 3] from testTa to oid(0, testTa))
   < oid(1, oid(0, testTa)) : PersistentObject | file-name : testFileId >
 =>*
-  finishOpenPersistentHandle(oid(3, testTa), testTa)
+  (msg finishOpenPersistentHandle[^ oid(3, testTa)] from oid(0, testTa) to testTa)
   C .
 
 --- A second open conflicts when an existing reader did not share read access.
 search [1] in COMPLETION-TEST :
-  openPersistentHandle(oid(0, testTa), testFileId,
-                       (accessRead,
-                        shareRead),
-                       2, testTa)
+  (msg openPersistentHandle[^ testFileId ^ (accessRead,
+                        shareRead) ^ 2] from testTa to oid(0, testTa))
   < oid(1, oid(0, testTa)) : PersistentObject | file-name : testFileId >
   < oid(1, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
       flags : accessRead >
 =>*
-  failOpenPersistentHandle(testTa)
+  (msg failOpenPersistentHandle[] from oid(0, testTa) to testTa)
   < oid(1, oid(0, testTa)) : PersistentObject | file-name : testFileId >
   < oid(1, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
       flags : accessRead > .
@@ -106,12 +66,11 @@ search [1] in COMPLETION-TEST :
 --- Opening is scoped to the TA's Storage even when another Storage contains
 --- an object with the same file identifier.
 search [1] in COMPLETION-TEST :
-  openPersistentHandle(oid(0, otherTa), testFileId,
-                       accessRead, 4, testTa)
+  (msg openPersistentHandle[^ testFileId ^ accessRead ^ 4] from testTa to oid(0, otherTa))
   < oid(0, oid(0, testTa)) : PersistentObject | file-name : testFileId >
   < oid(0, oid(0, otherTa)) : PersistentObject | file-name : testFileId >
 =>*
-  finishOpenPersistentHandle(oid(4, testTa), testTa)
+  (msg finishOpenPersistentHandle[^ oid(4, testTa)] from oid(0, otherTa) to testTa)
   < oid(4, testTa) : ObjectHandle |
       oid : oid(0, oid(0, otherTa)),
       flags : accessRead,
@@ -121,25 +80,19 @@ search [1] in COMPLETION-TEST :
 
 --- Overwrite removes only the old object in the TA's Storage namespace.
 search [1] in COMPLETION-TEST :
-  deleteOldPersistent(oid(0, otherTa), testFileId, testTa)
-  < oid(0, oid(0, testTa)) : PersistentObject |
-      file-name : testFileId, data-stream-id : oid(1, testTa) >
-  < oid(1, testTa) : DataStreamObject |
-      persistent-owner-id : oid(0, oid(0, testTa)) >
-  < oid(0, oid(0, otherTa)) : PersistentObject |
-      file-name : testFileId, data-stream-id : oid(2, testTa) >
-  < oid(2, testTa) : DataStreamObject |
-      persistent-owner-id : oid(0, oid(0, otherTa)) >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(CreatePersistentObject , (fileId(testFileId), flags((accessRead , overwrite)), handle(null), data(nil), size(dataSize(0)), opt(null)))), storage : oid(0, testTa), counter : 0, TA-ATTS:AttributeSet >
+  < oid(0, testTa) : Storage | status : (normal).StorageStatus, files : testFileId, counter : 0 >
+  < oid(0, oid(0, testTa)) : PersistentObject | file-name : testFileId, data-stream-id : oid(1, oid(0, testTa)), REST1:AttributeSet >
+  < oid(1, oid(0, testTa)) : DataStreamObject | persistent-owner-id : oid(0, oid(0, testTa)), data-size : dataSize(0), content : empty, REST2:AttributeSet >
+  < oid(0, oid(0, otherTa)) : PersistentObject | file-name : testFileId, data-stream-id : oid(1, oid(0, otherTa)), REST3:AttributeSet >
+  < oid(1, oid(0, otherTa)) : DataStreamObject | persistent-owner-id : oid(0, oid(0, otherTa)), data-size : dataSize(0), content : empty, REST4:AttributeSet >
 =>*
-  finishDeleteOldPersistent(testTa)
-  < oid(0, oid(0, testTa)) : PersistentObject |
-      file-name : testFileId, data-stream-id : oid(1, testTa) >
-  < oid(1, testTa) : DataStreamObject |
-      persistent-owner-id : oid(0, oid(0, testTa)) > .
+  < testTa : TAKernel | api-call : return(apiCall(CreatePersistentObject , (retCode(success) , handle(oid(0, oid(0, testTa)))))), TA-ATTS:AttributeSet >
+  < oid(0, oid(0, otherTa)) : PersistentObject | file-name : testFileId, data-stream-id : oid(1, oid(0, otherTa)), REST3:AttributeSet > C:Configuration .
 
 --- CloseAndDelete invalidates every top-level handle that references the owner.
 search [1] in COMPLETION-TEST :
-  deletePersistent(oid(101, testTa), testTa, oid(0, testTa))
+  (msg deletePersistent[^ oid(0, testTa)] from testTa to oid(101, testTa))
   < oid(1, oid(0, testTa)) : PersistentObject |
       data-stream-id : oid(2, testTa), file-name : testFileId >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
@@ -147,75 +100,61 @@ search [1] in COMPLETION-TEST :
   < oid(102, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)) >
   < oid(2, testTa) : DataStreamObject | persistent-owner-id : oid(1, oid(0, testTa)) >
 =>*
-  finishDeletePersistent(testFileId, testTa) .
+  (msg finishDeletePersistent[^ testFileId] from oid(101, testTa) to testTa) .
 
 --- RenamePersistentObject authorizes through a top-level write-meta handle.
 search [1] in COMPLETION-TEST :
-  renamePersistent(oid(101, testTa), newTestFileId, testTa, oid(0, testTa))
+  (msg renamePersistent[^ newTestFileId ^ oid(0, testTa)] from testTa to oid(101, testTa))
   < oid(1, testTa) : PersistentObject |
       file-name : testFileId >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa),
       flags : accessWriteMeta >
 =>*
-  finishRenamePersistent(testFileId, testTa)
+  (msg finishRenamePersistent[^ testFileId] from oid(1, testTa) to testTa)
   C .
 
 --- Persistent attributes are available through a top-level object handle.
 search [1] in COMPLETION-TEST :
-  reqAttribute(oid(101, testTa), testTa)
+  (msg getAttrs[] from testTa to oid(101, testTa))
   < oid(1, testTa) : PersistentObject |
       type : typeAes, attributes : empty,
       usages : usageExtractable >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa) >
 =>1
-  retAttributePr(empty, typeAes, usageExtractable, testTa)
+  (msg retAttrsPr[^ typeAes ^ (empty).Set{CryptoAttribute} ^ usageExtractable] from oid(101, testTa) to testTa)
   C .
 
---- Storage services follow the TA's Oid reference instead of an OS-side map.
+--- Storage-side file bookkeeping: the TA's storage removes a deleted file from its file set.
 search [1] in COMPLETION-TEST :
-  < osId : TrustedOS |
-      service-in : notifyFileCreation(testFileId), service-out : nil,
-      service-request-ta-inst : testTa >
+  (msg notifyFileDeletion[^ testFileId] from testTa to oid(0, testTa))
   < testTa : TAKernel | storage : oid(0, testTa) >
-  < oid(0, testTa) : Storage | files : empty, counter : 0 >
+  < oid(0, testTa) : Storage | files : (testFileId, newTestFileId), counter : 2 >
 =>1
-  < osId : TrustedOS |
-      service-in : nil, service-out : acceptNotification,
-      service-request-ta-inst : testTa >
+  (msg acceptNotification[] from oid(0, testTa) to testTa)
+  < testTa : TAKernel | storage : oid(0, testTa) >
+  < oid(0, testTa) : Storage | files : newTestFileId, counter : 2 >
+  C .
+
+--- Storage-side rename: the old file name is replaced by the new one.
+search [1] in COMPLETION-TEST :
+  (msg notifyFileRename[^ testFileId ^ newTestFileId] from testTa to oid(0, testTa))
   < testTa : TAKernel | storage : oid(0, testTa) >
   < oid(0, testTa) : Storage | files : testFileId, counter : 2 >
+=>1
+  (msg acceptNotification[] from oid(0, testTa) to testTa)
+  < testTa : TAKernel | storage : oid(0, testTa) >
+  < oid(0, testTa) : Storage | files : newTestFileId, counter : 2 >
   C .
 
---- Consecutive creations reserve disjoint object/data-stream Oid pairs.
+--- A notification changes only the Storage it is sent to.
 search [1] in COMPLETION-TEST :
-  < osId : TrustedOS |
-      service-in : (notifyFileCreation(testFileId)
-                    notifyFileCreation(newTestFileId)),
-      service-out : nil,
-      service-request-ta-inst : testTa >
+  (msg notifyFileDeletion[^ testFileId] from testTa to oid(0, testTa))
   < testTa : TAKernel | storage : oid(0, testTa) >
-  < oid(0, testTa) : Storage | files : empty, counter : 0 >
-=>*
-  < osId : TrustedOS |
-      service-in : nil,
-      service-out : (acceptNotification acceptNotification),
-      service-request-ta-inst : testTa >
-  < testTa : TAKernel | storage : oid(0, testTa) >
-  < oid(0, testTa) : Storage |
-      files : (testFileId, newTestFileId), counter : 4 > .
-
---- A notification advances only the Storage referenced by the requesting TA.
-search [1] in COMPLETION-TEST :
-  < osId : TrustedOS |
-      service-in : notifyFileCreation(testFileId), service-out : nil,
-      service-request-ta-inst : testTa >
-  < testTa : TAKernel | storage : oid(0, otherTa) >
-  < oid(0, testTa) : Storage | files : empty, counter : 0 >
-  < oid(0, otherTa) : Storage | files : empty, counter : 6 >
+  < oid(0, testTa) : Storage | files : testFileId, counter : 0 >
+  < oid(0, otherTa) : Storage | files : testFileId, counter : 6 >
 =>1
-  < osId : TrustedOS |
-      service-in : nil, service-out : acceptNotification,
-      service-request-ta-inst : testTa >
-  < testTa : TAKernel | storage : oid(0, otherTa) >
+  (msg acceptNotification[] from oid(0, testTa) to testTa)
+  < testTa : TAKernel | storage : oid(0, testTa) >
   < oid(0, testTa) : Storage | files : empty, counter : 0 >
-  < oid(0, otherTa) : Storage | files : testFileId, counter : 8 > .
+  < oid(0, otherTa) : Storage | files : testFileId, counter : 6 >
+  C .

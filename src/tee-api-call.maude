@@ -18,6 +18,7 @@ mod TEE-API-PARAM is
   pr APP-ID .
   pr RETURN-ORIGIN .
   pr TEE-PARAM-TYPE .
+  pr RETURN-CODE .
   pr TEE-CANCEL-REQ-TIME .
   pr IMP-FUNC-SIG .
   pr IMP-EXP-LIST .
@@ -70,173 +71,33 @@ mod TEE-API-PARAM is
   op taCancelReqTime : TaCancelTimeOut -> TeeApiParam [ctor] .
   op funcId : FuncId -> TeeApiParam [ctor] .
   op values : ValueList -> TeeApiParam [ctor] .
+
+--- Return code of a finished call, carried in the parameter set of its return(...) status.
+  op retCode : ReturnCode? -> TeeApiParam [ctor] .
 endm
 
 view TeeApiParam from TRIV to TEE-API-PARAM is
   sort Elt to TeeApiParam .
 endv
 
+--- This module defines API calls and the call status of a TA kernel.
+--- A call is apiCall(F, PARAMS) for the TEE API function F. The status of the call is
+--- one of the paper's statuses: noCall, init(Call), exec(Call, Nat) (the Nat is the
+--- call's step), final(Call) and return(Call). The return code of a finished call is
+--- the retCode(RC) item in the parameter set of return(...).
+
 mod TEE-API-CALL is
   pr TEE-API .
+  pr TEE-API-PARAM .
   pr SET{TeeApiParam} .
 
-  sorts TeeApiCall TeeApiCall? .
-  subsort TeeApiCall < TeeApiCall? .
+  sorts TeeApiCall CallStatus .
 
   op apiCall : TeeApi Set{TeeApiParam} -> TeeApiCall [ctor] .
-  op noCall : -> TeeApiCall? [ctor] .
 
-  op _(_) : TeeApi Set{TeeApiParam} -> TeeApiCall [ctor] .
-endm
-
-mod TEE-API-RETURN is
-  pr TEE-API .
-  pr RETURN-CODE .
-  pr SET{TeeApiParam} .
-
-  sorts TeeApiReturn TeeApiReturn? .
-  subsort TeeApiReturn < TeeApiReturn? .
-
-  var API : TeeApi .
-  var R : ReturnCode .
-  var PARAMS : Set{TeeApiParam} .
-
-  op noReturn : -> TeeApiReturn? [ctor] .
-  op apiReturn : TeeApi ReturnCode? Set{TeeApiParam} -> TeeApiReturn [ctor] .
-
-  op apiReturn : TeeApi ReturnCode -> TeeApiReturn .
-  eq apiReturn(API , R) = apiReturn(API , R , empty) .
-
-  op apiReturn : TeeApi Set{TeeApiParam} -> TeeApiReturn .
-  eq apiReturn(API , PARAMS) = apiReturn(API , noReturnCode , PARAMS) .
-
-  op apiReturn : TeeApi -> TeeApiReturn .
-  eq apiReturn(API) = apiReturn(API , noReturnCode , empty) .
-endm
-
-mod TEE-API-STATE is
-  pr NAT .
-  pr TEE-API-CALL .
-
-  sorts TeeApiState TeeApiState? .
-  subsort TeeApiState < TeeApiState? .
-
---- TODO: will be outdated later
-  op noState : -> TeeApiState? [ctor] .
-  op started : -> TeeApiState [ctor] .
-  op finished : -> TeeApiState [ctor] .
-
---- with step
-  op _#_ : TeeApiCall Nat -> TeeApiState [ctor] .
-endm
-
-mod TRUSTED-STORAGE-FUNC-STATE is
-  pr TEE-API-STATE .
-
-  op waitStorageCheck : -> TeeApiState [ctor] .
-  op waitReqAttribute : -> TeeApiState [ctor] .
-endm
-
---- This module defines states for Transient API.
-
-mod TRANSIENT-OBJECT-FUNC-STATE is
-  pr TEE-API-STATE .
-
-  op waitDeleteTransient : -> TeeApiState [ctor] .
-  op waitResetTransient : -> TeeApiState [ctor] .
-  op waitPopulateTransient : -> TeeApiState [ctor] .
-  op waitCopyAttribute : -> TeeApiState [ctor] .
-  op waitReqGenerateKey : -> TeeApiState [ctor] .
-endm
-
---- This module defines states for Persistent API.
-
-mod PERSISTENT-OBJECT-FUNC-STATE is
-  pr TEE-API-STATE .
-
-  op waitOpenPersistent : -> TeeApiState [ctor] .
-
-  --- CreatePersistentObject
-  op creationReady : -> TeeApiState [ctor] .
-  op creationNotReady : -> TeeApiState [ctor] .
-  op accessRightConflict : -> TeeApiState [ctor] .
-  op waitDeleteOldPersistent : -> TeeApiState [ctor] .
-  op createPureData : -> TeeApiState [ctor] .
-  op transformTransient : -> TeeApiState [ctor] .
-  op createPersistent : -> TeeApiState [ctor] .
-  op waitReqAttributeAndDelete : -> TeeApiState [ctor] .
-  op createPersistentUsingAttrs : -> TeeApiState [ctor] .
-  op waitNotifyFileCreation : -> TeeApiState [ctor] .
-
-  --- CloseAndDeletePersistentObject1
-  op waitDeletePersistent : -> TeeApiState [ctor] .
-  op waitNotifyFileDeletion : -> TeeApiState [ctor] .
-
-  --- RenamePersistentObject
-  op waitRenamePersistent : -> TeeApiState [ctor] .
-  op waitNotifyFileRename : -> TeeApiState [ctor] .
-endm
-
---- This module defines states for Generic API.
-
-mod GENERIC-OBJECT-FUNC-STATE is
-  pr TEE-API-STATE .
-
-  op waitObjectInfo : -> TeeApiState [ctor] .
-  op waitCloseObject : -> TeeApiState [ctor] .
-  op waitRestrictObjectUsage : -> TeeApiState [ctor] .
-  op waitGetBufferAttribute : -> TeeApiState [ctor] .
-  op waitGetValueAttribute : -> TeeApiState [ctor] .
-endm
-
---- This module defines states for Persistent Enumerator API.
-
-mod ENUMERATOR-OBJECT-FUNC-STATE is
-  pr TEE-API-STATE .
-
-  op waitDeleteEnumerator : -> TeeApiState [ctor] .  
-  op waitResetEnumerator : -> TeeApiState [ctor] .
-  op waitStartEnumerator : -> TeeApiState [ctor] .
-  op waitGetNextObjectId : -> TeeApiState [ctor] .
-  op waitGetNextObject : -> TeeApiState [ctor] .
-endm
-
---- This module defines states for Data Stream API.
-
-mod DATA-STREAM-OBJECT-FUNC-STATE is
-  pr TEE-API-STATE .
-
-  op waitReadObjectData : -> TeeApiState [ctor] .
-  op waitWriteObjectData : -> TeeApiState [ctor] .
-  op waitTruncateObjectData : -> TeeApiState [ctor] .
-  op waitSeekObjectData : -> TeeApiState [ctor] .
-endm
-
---- This module defines states for Cryptographic Operations API.
-
-mod CRYPTO-OPERATION-FUNC-STATE is
-  pr TEE-API-STATE .
-
-  op waitDeleteOperationObject : -> TeeApiState [ctor] .
-  op waitOperationAttr : -> TeeApiState [ctor] .
-  op waitResetOperation : -> TeeApiState [ctor] .
-  op waitSetOperationKey : -> TeeApiState [ctor] .
-  op waitReqCopyOperation : -> TeeApiState [ctor] .
-  op waitDigestUpdate : -> TeeApiState [ctor] .
-  op waitDigestDoFinal : -> TeeApiState [ctor] .
-  op waitDigestExtract : -> TeeApiState [ctor] .
-  op waitInitOperation : -> TeeApiState [ctor] .
-  op waitCipherUpdate : -> TeeApiState [ctor] .
-  op waitCipherDoFinal : -> TeeApiState [ctor] .
-  op waitMacUpdate : -> TeeApiState [ctor] .
-  op waitMacComputeFinal : -> TeeApiState [ctor] .
-  op waitAEUpdateAAD : -> TeeApiState [ctor] .
-  op waitAEUpdate : -> TeeApiState [ctor] .
-  op waitAEEncryptFinal : -> TeeApiState [ctor] .
-  op waitAEDecryptFinal : -> TeeApiState [ctor] .
-  op waitDeriveKey : -> TeeApiState [ctor] .
-  op waitAsymEncrypt : -> TeeApiState [ctor] .
-  op waitAsymDecrypt : -> TeeApiState [ctor] .
-  op waitAsymSignDigest : -> TeeApiState [ctor] .
-  op waitAsymVerifDigest : -> TeeApiState [ctor] .
+  op noCall : -> CallStatus [ctor] .
+  op init : TeeApiCall -> CallStatus [ctor] .
+  op exec : TeeApiCall Nat -> CallStatus [ctor] .
+  op final : TeeApiCall -> CallStatus [ctor] .
+  op return : TeeApiCall -> CallStatus [ctor] .
 endm

@@ -14,7 +14,7 @@ endm
 
 --- ReadObjectData resolves and advances a top-level persistent handle.
 search [1] in COMPLETION-TEST :
-  readObjectData(oid(101, testTa), dataSize(1), testTa, oid(0, testTa))
+  (msg read[^ dataSize(1)] from testTa to oid(101, testTa))
   < oid(1, oid(0, testTa)) : PersistentObject |
       data-stream-id : oid(2, oid(0, testTa)) >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
@@ -23,12 +23,12 @@ search [1] in COMPLETION-TEST :
   < oid(2, oid(0, testTa)) : DataStreamObject | data-size : dataSize(1),
       content : newContent(randomData) >
 =>*
-  finishReadData(randomData, testTa)
+  (msg retData[^ randomData] from oid(101, testTa) to testTa)
   C .
 
 --- WriteObjectData updates the top-level handle position and stream contents.
 search [1] in COMPLETION-TEST :
-  writeObjectData(oid(101, testTa), randomData, testTa, oid(0, testTa))
+  (msg writeObjectData[^ randomData ^ oid(0, testTa)] from testTa to oid(101, testTa))
   < oid(1, oid(0, testTa)) : PersistentObject |
       data-stream : nil, data-stream-id : oid(2, oid(0, testTa)) >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
@@ -37,7 +37,7 @@ search [1] in COMPLETION-TEST :
   < oid(2, oid(0, testTa)) : DataStreamObject | data-size : dataSize(0),
       content : empty >
 =>*
-  finishWriteData(testTa)
+  (msg finishWriteData[] from oid(2, oid(0, testTa)) to testTa)
   < oid(1, oid(0, testTa)) : PersistentObject |
       data-stream : randomData, data-stream-id : oid(2, oid(0, testTa)) >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
@@ -48,7 +48,7 @@ search [1] in COMPLETION-TEST :
 
 --- TruncateObjectData updates a persistent stream through a top-level handle.
 search [1] in COMPLETION-TEST :
-  truncateObjectData(oid(101, testTa), dataSize(3), testTa, oid(0, testTa))
+  (msg truncateObjectData[^ dataSize(3) ^ oid(0, testTa)] from testTa to oid(101, testTa))
   < oid(1, oid(0, testTa)) : PersistentObject |
       data-stream : randomData, data-stream-id : oid(2, oid(0, testTa)) >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
@@ -56,7 +56,7 @@ search [1] in COMPLETION-TEST :
   < oid(2, oid(0, testTa)) : DataStreamObject | data-size : dataSize(1),
       content : newContent(randomData) >
 =>*
-  finishTruncateData(testTa)
+  (msg finishTruncateData[] from oid(2, oid(0, testTa)) to testTa)
   < oid(1, oid(0, testTa)) : PersistentObject |
       data-stream : (randomData zeroData zeroData),
       data-stream-id : oid(2, oid(0, testTa)) >
@@ -68,48 +68,36 @@ search [1] in COMPLETION-TEST :
 
 --- SeekObjectData obtains the stream size and updates the top-level handle.
 search [1] in COMPLETION-TEST :
-  seekObjectData(oid(101, testTa), 2, seekEnd,
-                 testTa, oid(0, testTa))
+  (msg seekObjectData[^ 2 ^ seekEnd ^ oid(0, testTa)] from testTa to oid(101, testTa))
   < oid(1, oid(0, testTa)) : PersistentObject |
       data-stream-id : oid(2, oid(0, testTa)) >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
       pos : pos(0) >
   < oid(2, oid(0, testTa)) : DataStreamObject | data-size : dataSize(3) >
 =>*
-  finishSeekData(testTa)
+  (msg finishSeekData[] from oid(101, testTa) to testTa)
   < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
       pos : pos(5) >
   C .
 
 --- The top-level seek path preserves the handle and reports position overflow.
 search [1] in COMPLETION-TEST :
-  seekObjectData(oid(101, testTa), 1, seekCur,
-                 testTa, oid(0, testTa))
-  < testTa : TAKernel | api-return : noReturn, api-state : waitSeekObjectData,
-                        current-api : SeekObjectData >
+  (msg seekObjectData[^ 1 ^ seekCur ^ oid(0, testTa)] from testTa to oid(101, testTa))
+  < testTa : TAKernel | api-call : final(apiCall(SeekObjectData , empty)) >
   < oid(1, oid(0, testTa)) : PersistentObject |
       data-stream-id : oid(2, oid(0, testTa)) >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
       pos : pos(4294967295) >
   < oid(2, oid(0, testTa)) : DataStreamObject | data-size : dataSize(1) >
 =>*
-  < testTa : TAKernel | api-state : finished,
-                        current-api : SeekObjectData,
-                        api-return : apiReturn(SeekObjectData,
-                          errorOverflow, empty) >
+  < testTa : TAKernel | api-call : return(apiCall(SeekObjectData , retCode(errorOverflow))) >
   C .
 
 search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : noCall,
-                        api-return : noReturn, api-state : started,
-                        current-api : ReadObjectData,
-                        current-params : (handle(oid(101, testTa)), size(dataSize(1))) >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(ReadObjectData , (handle(oid(101, testTa)), size(dataSize(1))))) >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
       flags : accessWrite >
 =>1
-  < testTa : TAKernel | status : panic, api-call : noCall,
-                        api-return : noReturn, api-state : finished,
-                        current-api : ReadObjectData,
-                        current-params : (handle(oid(101, testTa)), size(dataSize(1))) >
+  < testTa : TAKernel | status : panic, api-call : init(apiCall(ReadObjectData , (handle(oid(101, testTa)), size(dataSize(1))))) >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
       flags : accessWrite > .

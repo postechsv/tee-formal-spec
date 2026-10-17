@@ -7,14 +7,10 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   pr TA-KERNEL .
   pr TRANSIENT-OBJECT .
   pr TRANSIENT-OBJECT-FUNC .
-  pr TRANSIENT-OBJECT-FUNC-STATE .
   pr PERSISTENT-OBJECT .
   pr PERSISTENT-OBJECT-FUNC .
-  pr PERSISTENT-OBJECT-FUNC-STATE .
-  pr TRUSTED-STORAGE-FUNC-STATE .
-  pr TRUSTED-STORAGE-MSG .
+  pr TEE-MSG .
   pr DATA-STREAM-OBJECT .
-  pr TRUSTED-STORAGE-MSG .
   pr DATA-STREAM-OPERATOR .
   pr HANDLE-AUX .
   pr OBJECT-HANDLE .
@@ -35,12 +31,17 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   var DATALIST : List{Data} .
   var DATASIZE : DataSize .
   var STATUS : StorageStatus .
-  var EXISTENCE : ServiceReturn .
   var PARAMS : Set{TeeApiParam} .
   var STORID : StorageIdentifier .
   var OBJ : Object .
   var MSG : Msg .
   var PORTAL : Portal .
+  var PI : Oid .
+  var HI : Oid .
+  var FLAGS : Set{DataAccessFlag} .
+  var FILES : Set{FileName} .
+  var METHOD : CreateMethod .
+  var NEWHI NEWPI NEWDS : Oid .
 
 ------------------------------------------------------------
 --- 'TEE_OpenPersistentObject' Sharing Rules
@@ -103,117 +104,119 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
 
 --- The following four rules create a new persistent object handle.
 
-  msg openPersistentHandle : Oid FileName Set{DataAccessFlag} Nat Oid -> Msg .
-  msg finishOpenPersistentHandle : Oid Oid -> Msg .
-  msg failOpenPersistentHandle : Oid -> Msg .
+  op openPersistentHandle : -> ReqId [ctor] .
+  op finishOpenPersistentHandle : -> ReqId [ctor] .
+  op failOpenPersistentHandle : -> ReqId [ctor] .
 
   rl [open-persistent-default-private-storage] :
-    < TK : TAKernel | api-state : started , current-api : OpenPersistentObject ,
-                      current-params : (fileId(FILE) , flags(DATAFLAGS)) >
+    < TK : TAKernel | api-call : init(apiCall(OpenPersistentObject , (fileId(FILE) , flags(DATAFLAGS)))) >
     =>
-    < TK : TAKernel | current-params : (storageId(storagePrivate) , fileId(FILE) , flags(DATAFLAGS)) >
+    < TK : TAKernel | api-call : init(apiCall(OpenPersistentObject , (storageId(storagePrivate) , fileId(FILE) , flags(DATAFLAGS)))) >
   .
 
   crl [open-persistent-subroutine] :
-    < TK : TAKernel | status : (normal).AppStatus , api-call : noCall , api-return : noReturn ,
-                      api-state : started , current-api : OpenPersistentObject ,
-                      current-params : (storageId(STORID) , fileId(FILE) , PARAMS) >
+    < TK : TAKernel | status : (normal).AppStatus ,
+                      api-call : init(apiCall(OpenPersistentObject , (storageId(STORID) , fileId(FILE) , PARAMS))) , storage : SI >
     =>
-    < TK : TAKernel | api-state : waitStorageCheck >
-    reqTrustedOS(getStorageStatus checkFileExist(FILE) , TK)
+    < TK : TAKernel | api-call : exec(apiCall(OpenPersistentObject , (storageId(STORID) , fileId(FILE) , PARAMS)) , 0) >
+    (msg getStatus[] from TK to SI)
   if supportedStorage(STORID)
   .
 
-  crl [open-persistent-storage-id-not-found] :
-    < TK : TAKernel | status : (normal).AppStatus , api-call : noCall , api-return : noReturn ,
-                      api-state : started , current-api : OpenPersistentObject ,
-                      current-params : (storageId(STORID) , PARAMS) >
+--- Stage 0: the storage status. A normal storage is asked whether the file exists (stage 1).
+
+  rl [open-persistent-status-normal] :
+    (msg retStatus[^ (normal).StorageStatus] from SI to TK)
+    < TK : TAKernel | status : (normal).AppStatus ,
+                      api-call : exec(apiCall(OpenPersistentObject , (storageId(STORID) , fileId(FILE) , PARAMS)) , 0) , storage : SI >
     =>
-    < TK : TAKernel | api-state : finished ,
-                      api-return : apiReturn(OpenPersistentObject , errorItemNotFound , handle(null)) >
+    < TK : TAKernel | api-call : exec(apiCall(OpenPersistentObject , (storageId(STORID) , fileId(FILE) , PARAMS)) , 1) >
+    (msg checkFileExist[^ FILE] from TK to SI)
+  .
+
+  crl [open-persistent-storage-id-not-found] :
+    < TK : TAKernel | status : (normal).AppStatus ,
+                      api-call : init(apiCall(OpenPersistentObject , (storageId(STORID) , PARAMS))) >
+    =>
+    < TK : TAKernel | api-call : return(apiCall(OpenPersistentObject , (retCode(errorItemNotFound) , handle(null)))) >
   if not supportedStorage(STORID)
   .
 
   rl [open-persistent-subroutine] :
-    retTrustedOS(storageStatus(normal) fileExist , TK)
+    (msg retFileExist[^ true] from SI to TK)
     < TK : TAKernel | status : (normal).AppStatus ,
-                      api-state : waitStorageCheck , current-api : OpenPersistentObject ,
-                      current-params : storageId(STORID) , fileId(FILE) , flags(DATAFLAGS) ,
+                      api-call : exec(apiCall(OpenPersistentObject , (storageId(STORID) , fileId(FILE) , flags(DATAFLAGS))) , 1) ,
                       storage : SI , counter : N >
     =>
-    < TK : TAKernel | api-state : waitOpenPersistent , counter : N + 1 >
-    openPersistentHandle(SI , FILE , DATAFLAGS , N , TK)
+    < TK : TAKernel | api-call : final(apiCall(OpenPersistentObject , (storageId(STORID) , fileId(FILE) , flags(DATAFLAGS)))) ,
+                      counter : N + 1 >
+    (msg openPersistentHandle[^ FILE ^ DATAFLAGS ^ N] from TK to SI)
   .
 
   crl [open-persistent-top-level-handle] :
-    openPersistentHandle(SI , FILE , DATAFLAGS , N , TK)
+    (msg openPersistentHandle[^ FILE ^ DATAFLAGS ^ N] from TK to SI)
     < oid(M, SI) : PersistentObject | file-name : FILE >
     HS
     =>
     < oid(M, SI) : PersistentObject | >
     HS
     freshPersistentHandle(N, TK, DATAFLAGS, oid(M, SI))
-    finishOpenPersistentHandle(oid(N, TK), TK)
+    (msg finishOpenPersistentHandle[^ oid(N, TK)] from SI to TK)
   if persistentHandlesCompatible(oid(M, SI), DATAFLAGS, HS)
   .
 
   crl [open-persistent-top-level-conflict] :
-    openPersistentHandle(SI , FILE , DATAFLAGS , N , TK)
+    (msg openPersistentHandle[^ FILE ^ DATAFLAGS ^ N] from TK to SI)
     < oid(M, SI) : PersistentObject | file-name : FILE >
     HS
     =>
     < oid(M, SI) : PersistentObject | >
     HS
-    failOpenPersistentHandle(TK)
+    (msg failOpenPersistentHandle[] from SI to TK)
   if not persistentHandlesCompatible(oid(M, SI), DATAFLAGS, HS)
   .
 
   rl [open-persistent-success] :
-    finishOpenPersistentHandle(HANDLE , TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-state : waitOpenPersistent ,
-                      current-api : OpenPersistentObject >
+    (msg finishOpenPersistentHandle[^ HANDLE] from SI to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(apiCall(OpenPersistentObject , PARAMS)) >
     =>
-    < TK : TAKernel | api-state : finished , api-return : apiReturn(OpenPersistentObject , success , handle(HANDLE)) >
+    < TK : TAKernel | api-call : return(apiCall(OpenPersistentObject , (retCode(success) , handle(HANDLE)))) >
   .
 
 --- The following two rules return TEE_ERROR_ACCESS_CONFLICT if an access right conflict was detected.
 
   rl [open-persistent-fail] :
-    failOpenPersistentHandle(TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-state : waitOpenPersistent ,
-                      current-api : OpenPersistentObject >
+    (msg failOpenPersistentHandle[] from SI to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(apiCall(OpenPersistentObject , PARAMS)) >
     =>
-    < TK : TAKernel | api-state : finished , api-return : apiReturn(OpenPersistentObject , errorAccessConflict , handle(null)) >
+    < TK : TAKernel | api-call : return(apiCall(OpenPersistentObject , (retCode(errorAccessConflict) , handle(null)))) >
   .
 
 --- This rule returns TEE_ERROR_ITEM_NOT_FOUND if the object identifier cannot be found in the storage.
 
   rl [open-persistent-file-err] :
-    retTrustedOS(storageStatus(normal) noFileExist , TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-state : waitStorageCheck ,
-                      current-api : OpenPersistentObject >
+    (msg retFileExist[^ false] from SI to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : exec(apiCall(OpenPersistentObject , PARAMS) , 1) >
     =>
-    < TK : TAKernel | api-state : finished , api-return : apiReturn(OpenPersistentObject , errorItemNotFound , handle(null)) >
+    < TK : TAKernel | api-call : return(apiCall(OpenPersistentObject , (retCode(errorItemNotFound) , handle(null)))) >
   .
 
 --- This rule returns TEE_ERROR_OUT_OF_MEMORY if there is not enough memory to complete the operation.
 
   rl [open-persistent-memory-err] :
-    < TK : TAKernel | status : outOfMemory , api-call : noCall , api-return : noReturn ,
-                      current-api : OpenPersistentObject >
+    < TK : TAKernel | status : outOfMemory , api-call : init(apiCall(OpenPersistentObject , PARAMS)) >
     =>
-    < TK : TAKernel | api-state : finished , api-return : apiReturn(OpenPersistentObject , errorOutOfMemory , handle(null)) >
+    < TK : TAKernel | api-call : return(apiCall(OpenPersistentObject , (retCode(errorOutOfMemory) , handle(null)))) >
   .
 
 --- This rule returns TEE_ERROR_CORRUPT_OBJECT if the storage or object is corrupt.
 --- This rule returns TEE_ERROR_STORAGE_NOT_AVAILABLE if the persistent object is stored in a storage area which is currently inaccessible.
 
   crl [open-persistent-storage-err] :
-    retTrustedOS(storageStatus(STATUS) noFileExist , TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-state : waitStorageCheck ,
-                      current-api : OpenPersistentObject >
+    (msg retStatus[^ STATUS] from SI to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : exec(apiCall(OpenPersistentObject , PARAMS) , 0) >
     =>
-    < TK : TAKernel | api-state : finished , api-return : apiReturn(OpenPersistentObject , storageErrCode(STATUS) , handle(null)) >
+    < TK : TAKernel | api-call : return(apiCall(OpenPersistentObject , (retCode(storageErrCode(STATUS)) , handle(null)))) >
   if abnormalStorage(STATUS)
   .
 
@@ -223,329 +226,221 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
 
 --- The 'TEE_CreatePersistenObject' function creates a persistent object with the initial attributes and an initial data stream content.
 --- See page 159 of the G.P. documentation for more details.
+--- The flow follows Figures 9 and 10 and Table 2 of the paper. The TA sends create to the storage. The storage either
+--- reports an abnormal status (createAbnormal), rejects the request (createFail), overwrites the object with the same name
+--- See: (forwarding create to that object), or creates the object directly when no object has the same name.
+--- A new persistent object takes three storage identifiers: the handle (N), the object (N + 1) and its data stream (N + 2).
 
---- Version In Paper
-  --- op mkCreationMsg : FileName Set{DataAccessFlag} Oid Data Oid Oid Oid -> Configuration .
-  --- eq mkCreationMsg(FILE , FLAGS , null , DATA , OPT , SI , TK) = (msg create[pure FILE FLAGS null DATA] from TK to SI) .
-  --- ceq mkCreationMsg(FILE , FLAGS , HI , DATA , OPT , SI , TK) =
-  ---   if OPT =/= null
-  ---   then (msg create[transform FILE FLAGS HI DATA] from TK to SI)
-  ---   else (msg create[persist FILE FLAGS HI DATA] from TK to SI)
-  ---   fi if HI =/= null .
+  sort CreateMethod .
+  ops methodPure methodTransform methodPersist : -> CreateMethod [ctor] .
+  op ^_ : CreateMethod -> Arg [ctor] .
 
-  --- rl [create-persistent-determine-case] :
-  ---   < TK : TAKernel | api-call : createPersistent(FILE , FLAGS , HI , DATA , OPT) , storage : SI >
-  ---   =>
-  ---   < TK : TAKernel | api-call : createPersistent(FILE , FLAGS , HI , DATA , OPT) # 1 >
-  ---   mkCreationMsg(FILE , FLAGS , HI , DATA , OPT , SI , TK)
-  --- .
+  op chooseMethod : Oid Oid -> CreateMethod .
+  ceq chooseMethod(H, OPT) = methodPure if nullHandle(H) .
+  ceq chooseMethod(H, OPT) = methodTransform if not nullHandle(H) /\ nullHandle(OPT) .
+  ceq chooseMethod(H, OPT) = methodPersist if not nullHandle(H) /\ not nullHandle(OPT) .
 
-  --- crl [create-persist-overwrite-check] :
-  ---   (msg create[METHOD FILE FLAGS HI DATA] from TK to SI)
-  ---   < PI : PersistObj | file-name : FILE >
-  ---   < SI : Storage | status : normal , files : FILES , counter : N >
-  ---   =>
-  ---   < PI : PersistObj | >
-  ---   if overwrite in FLAGS
-  ---   then < SI : Storage | counter : N + 2 >
-  ---        (msg create[METHOD FILE FLAGS HI DATA N TK] from SI to PI)
-  ---   else < SI : Storage | >
-  ---        (msg createFail from SI to TK)
-  ---   fi if FILE in FILES
-  --- .
+  op create : -> ReqId [ctor] .
+  op createSuccess : -> ReqId [ctor] .
+  op createFail : -> ReqId [ctor] .
+  op createAbnormal : -> ReqId [ctor] .
 
---- Model/Implementation Specific Version (2 rules)
-  rl [create-persistent-default-private-storage] :
-    < TK : TAKernel | api-state : started , current-api : CreatePersistentObject ,
-                      current-params : (fileId(FILE) , flags(DATAFLAGS) , handle(HANDLE) ,
-                                        data(DATALIST) , size(DATASIZE) , opt(OPTHANDLE)) >
+--- Determine the method and send create to the storage (paper: create-persistent-determine-case).
+
+  crl [create-persistent-determine-case] :
+    < TK : TAKernel | status : (normal).AppStatus , storage : SI ,
+                      api-call : init(apiCall(CreatePersistentObject , (storageId(STORID) , fileId(FILE) , flags(DATAFLAGS) ,
+                                                                         handle(HANDLE) , data(DATALIST) , size(DATASIZE) , opt(OPTHANDLE)))) >
     =>
-    < TK : TAKernel | current-params : (storageId(storagePrivate) , fileId(FILE) , flags(DATAFLAGS) ,
-                                        handle(HANDLE) , data(DATALIST) , size(DATASIZE) , opt(OPTHANDLE)) >
-  .
-
-  crl [create-persistent-subroutine] :
-    < TK : TAKernel | status : (normal).AppStatus , api-call : noCall , api-return : noReturn ,
-                      api-state : started , current-api : CreatePersistentObject ,
-                      current-params : storageId(STORID) , fileId(FILE) , PARAMS >
-    =>
-    < TK : TAKernel | api-state : waitStorageCheck >
-    reqTrustedOS(getStorageStatus checkFileExist(FILE) , TK)
+    < TK : TAKernel | api-call : final(apiCall(CreatePersistentObject , (storageId(STORID) , fileId(FILE) , flags(DATAFLAGS) ,
+                                                                         handle(HANDLE) , data(DATALIST) , size(DATASIZE) , opt(OPTHANDLE)))) >
+    (msg create[^ chooseMethod(HANDLE , OPTHANDLE) ^ FILE ^ DATAFLAGS ^ HANDLE ^ DATALIST ^ DATASIZE] from TK to SI)
   if supportedStorage(STORID)
   .
 
-  crl [create-persistent-storage-id-not-found] :
-    < TK : TAKernel | status : (normal).AppStatus , api-call : noCall , api-return : noReturn ,
-                      api-state : started , current-api : CreatePersistentObject ,
-                      current-params : (storageId(STORID) , PARAMS) >
+  rl [create-persistent-default-private-storage] :
+    < TK : TAKernel | api-call : init(apiCall(CreatePersistentObject , (fileId(FILE) , flags(DATAFLAGS) , handle(HANDLE) ,
+                                                                         data(DATALIST) , size(DATASIZE) , opt(OPTHANDLE)))) >
     =>
-    < TK : TAKernel | api-state : finished ,
-                      api-return : apiReturn(CreatePersistentObject , errorItemNotFound , handle(null)) >
+    < TK : TAKernel | api-call : init(apiCall(CreatePersistentObject , (storageId(storagePrivate) , fileId(FILE) , flags(DATAFLAGS) ,
+                                                                         handle(HANDLE) , data(DATALIST) , size(DATASIZE) , opt(OPTHANDLE)))) >
+  .
+
+  crl [create-persistent-storage-id-not-found] :
+    < TK : TAKernel | status : (normal).AppStatus ,
+                      api-call : init(apiCall(CreatePersistentObject , (storageId(STORID) , PARAMS))) >
+    =>
+    < TK : TAKernel | api-call : return(apiCall(CreatePersistentObject , (retCode(errorItemNotFound) , handle(null)))) >
   if not supportedStorage(STORID)
   .
 
-  op nextState : ServiceReturn Set{DataAccessFlag} -> TeeApiState .
-  eq nextState(noFileExist , DATAFLAGS) = creationReady .
-  eq nextState(fileExist , (overwrite , DATAFLAGS)) = creationNotReady .
-  ---@dmc owise recurse(sep=_,_, empty=empty)
-  eq nextState(fileExist , DATAFLAGS) = accessRightConflict [owise] .
+--- Storage: an abnormal storage status ends the creation.
 
-  rl [create-persistent-subroutine] :
-    retTrustedOS(storageStatus(normal) EXISTENCE , TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-state : waitStorageCheck ,
-                      current-api : CreatePersistentObject ,
-                      current-params : flags(DATAFLAGS) , PARAMS >
+  crl [create-persist-abnormal-storage] :
+    (msg create[^ METHOD ^ FILE ^ FLAGS ^ HI ^ DATALIST ^ DATASIZE] from TK to SI)
+    < SI : Storage | status : STATUS >
     =>
-    < TK : TAKernel | api-state : nextState(EXISTENCE , DATAFLAGS) >
+    (msg createAbnormal[^ STATUS] from SI to TK)
+    < SI : Storage | >
+  if abnormalStorage(STATUS)
   .
 
---- Version In Paper
-  --- crl [create-persist-transform] :
-  ---   (msg create[transform FILE FLAGS HI DATA N TK] from SI to PI)
-  ---   < HI : ObjHandle | oid : OI >
-  ---   < OI : TransObj | type : TYPE , usages : USAGES , max-size : M , attributes : ATTRS >
-  ---   < PI : PersistObj | file-name : FILE >
-  ---   =>
-  ---   < NEW-HI : ObjHandle | oid : NEW-PI , flags : FLAGS >
-  ---   < NEW-PI : PersistObj | type : TYPE , usages : USAGES , max-size : M ,
-  ---                           attributes : ATTRS , data-stream : DATA ,
-  ---                           file-name : FILE >
-  ---   (msg createSuccess[NEW-HI] from NEW-PI to TK)
-  --- if NEW-HI := newOid(N , SI) /\ NEW-PI := newOid(N + 1 , SI)
-  --- .
+--- Storage: the file exists. The object is overwritten when the overwrite flag is set, and rejected otherwise (Fig. 10).
 
---- Model/Implementation Specific Version (3 rules)
-  msg reqAttributeAndDelete : Oid Oid -> Msg .
-  msg retAttributeAndDelete : Set{CryptoAttribute} Type Set{Usage} Oid -> Msg .
-
-  rl [create-persistent-subroutine-2] :
-    < TK : TAKernel | status : (normal).AppStatus , api-state : transformTransient ,
-                      current-api : CreatePersistentObject ,
-                      current-params : handle(HANDLE) , PARAMS >
+  crl [create-persist-overwrite-check] :
+    (msg create[^ METHOD ^ FILE ^ FLAGS ^ HI ^ DATALIST ^ DATASIZE] from TK to SI)
+    < PI : PersistentObject | file-name : FILE >
+    < SI : Storage | status : (normal).StorageStatus , files : FILES , counter : N >
     =>
-    < TK : TAKernel | api-state : waitReqAttributeAndDelete >
-    reqAttributeAndDelete(HANDLE , TK)
+    < PI : PersistentObject | >
+    (if overwrite in FLAGS
+     then < SI : Storage | counter : N + 3 >
+          (msg create[^ METHOD ^ FILE ^ FLAGS ^ HI ^ DATALIST ^ DATASIZE ^ N ^ TK] from SI to PI)
+     else < SI : Storage | >
+          (msg createFail[] from SI to TK) fi)
+  if FILE in FILES
   .
 
+--- Storage: the file does not exist. The method decides how the object is created.
 
-  rl [create-persistent-top-level-source] :
-    reqAttributeAndDelete(HANDLE, TK)
-    < OI : TransientObject | initialized : true,
-                             type : OBJTYPE, attributes : ATTRS,
-                             usages : OBJUSAGES >
-    < HANDLE : ObjectHandle | oid : OI >
-  => retAttributeAndDelete(ATTRS, OBJTYPE, OBJUSAGES, TK) .
-
-  rl [create-persistent-sucess] :
-    retAttributeAndDelete(ATTRS, OBJTYPE, OBJUSAGES, TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-state : waitReqAttributeAndDelete ,
-                      current-api : CreatePersistentObject ,
-                      current-params : (fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) , PARAMS) ,
-                      storage : SIDX, counter : N  >
-    < SIDX : Storage | counter : M >
+  crl [create-persist-pure-new] :
+    (msg create[^ methodPure ^ FILE ^ FLAGS ^ HI ^ DATALIST ^ DATASIZE] from TK to SI)
+    < SI : Storage | status : (normal).StorageStatus , files : FILES , counter : N >
     =>
-    < TK : TAKernel | api-state : waitNotifyFileCreation , counter : N + 1 ,
-                      current-params : (fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) , PARAMS , openedHandle(oid(N, TK))) ,
-                      api-return : noReturn >
-    < SIDX : Storage | >
-    < oid(M, SIDX) : PersistentObject |
-                                         file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
-                                         type : OBJTYPE , max-size : keySize(ATTRS) ,
-                                         attributes : ATTRS , usages : OBJUSAGES ,
-                                         data-stream-id : oid(M + 1, SIDX) >
-    freshPersistentHandle(N, TK , DATAFLAGS , oid(M, SIDX))
-    < oid(M + 1, SIDX) : DataStreamObject | persistent-owner-id : oid(M, SIDX) ,
-                                             data-size : DATASIZE , content : newContent(DATALIST) >
-    reqTrustedOS(notifyFileCreation(FILE) , TK)
+    < SI : Storage | files : (FILE , FILES) , counter : N + 3 >
+    < NEWHI : ObjectHandle | oid : NEWPI , flags : FLAGS , pos : pos(0) >
+    < NEWPI : PersistentObject | type : pureData , usages : empty , max-size : 0 , attributes : empty ,
+                                 file-name : FILE , data-stream : read(pos(0), DATASIZE, newContent(DATALIST)) ,
+                                 data-stream-id : NEWDS >
+    < NEWDS : DataStreamObject | persistent-owner-id : NEWPI , data-size : DATASIZE , content : newContent(DATALIST) >
+    (msg createSuccess[^ NEWHI] from NEWPI to TK)
+  if not (FILE in FILES) /\ NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI) /\ NEWDS := newOid(N + 2, SI)
   .
 
---- Version In Paper
-  --- rl [create-persist-success] :
-  ---   (msg createSuccess[HI] from PI to TK)
-  ---   < TK : TAKernel | status : normal , api-call : createPersistent(VL) >
-  ---   =>
-  ---   < TK : TAKernel | api-call : return(createPersistent , HI) >
-  --- .
-
---- Model/Implementation Specific Version
-  rl [create-persistent-success] :
-    retTrustedOS(acceptNotification, TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-state : waitNotifyFileCreation ,
-                      current-api : CreatePersistentObject ,
-                      current-params : openedHandle(HANDLE) , PARAMS  >
+  crl [create-persist-transform-new] :
+    (msg create[^ methodTransform ^ FILE ^ FLAGS ^ HI ^ DATALIST ^ DATASIZE] from TK to SI)
+    < HI : ObjectHandle | oid : OI >
+    < OI : TransientObject | type : OBJTYPE , usages : OBJUSAGES , attributes : ATTRS , initialized : true >
+    < SI : Storage | status : (normal).StorageStatus , files : FILES , counter : N >
     =>
-    < TK : TAKernel | api-state : finished , api-return : apiReturn(CreatePersistentObject , success , handle(HANDLE)) >
+    < SI : Storage | files : (FILE , FILES) , counter : N + 3 >
+    < NEWHI : ObjectHandle | oid : NEWPI , flags : FLAGS , pos : pos(0) >
+    < NEWPI : PersistentObject | type : OBJTYPE , usages : OBJUSAGES , max-size : keySize(ATTRS) ,
+                                 attributes : ATTRS , file-name : FILE , data-stream : read(pos(0), DATASIZE, newContent(DATALIST)) ,
+                                 data-stream-id : NEWDS >
+    < NEWDS : DataStreamObject | persistent-owner-id : NEWPI , data-size : DATASIZE , content : newContent(DATALIST) >
+    (msg createSuccess[^ NEWHI] from NEWPI to TK)
+  if not (FILE in FILES) /\ NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI) /\ NEWDS := newOid(N + 2, SI)
   .
 
---- Version In Paper
-  --- rl [create-persist-fail] :
-  ---   (msg createFail from SI to TK)
-  ---   < TK : TAKernel | status : normal , api-call : createPersistent(VL) >
-  ---   =>
-  ---   < TK : TAKernel | api-call : return(createPersistent , errorAccessConflict) >
-  --- .
-
-  --- rl [create-persist-mem-err] :
-  ---   < TK : TAKernel | status : outOfMemory , api-call : createPersistent(VL) >
-  ---   =>
-  ---   < TK : TAKernel | api-call : return(createPersistent , errorOutOfMemory) >
-  --- .
-
---- Model/Implementation Specific Version (In Order)
-
---- This rule returns TEE_ERROR_ACCESS_CONFLICT if an access conflict was detected.
-
-  rl [create-persistent-err] :
-    < TK : TAKernel | api-state : accessRightConflict , current-api : CreatePersistentObject >
+  crl [create-persist-persist-new] :
+    (msg create[^ methodPersist ^ FILE ^ FLAGS ^ HI ^ DATALIST ^ DATASIZE] from TK to SI)
+    < HI : ObjectHandle | oid : OI >
+    < OI : CryptoObj | type : OBJTYPE , usages : OBJUSAGES , attributes : ATTRS >
+    < SI : Storage | status : (normal).StorageStatus , files : FILES , counter : N >
     =>
-    < TK : TAKernel | api-state : finished , api-return : apiReturn(CreatePersistentObject , errorAccessConflict , handle(null)) >
+    < SI : Storage | files : (FILE , FILES) , counter : N + 3 >
+    < NEWHI : ObjectHandle | oid : NEWPI , flags : FLAGS , pos : pos(0) >
+    < NEWPI : PersistentObject | type : OBJTYPE , usages : OBJUSAGES , max-size : keySize(ATTRS) ,
+                                 attributes : ATTRS , file-name : FILE , data-stream : read(pos(0), DATASIZE, newContent(DATALIST)) ,
+                                 data-stream-id : NEWDS >
+    < NEWDS : DataStreamObject | persistent-owner-id : NEWPI , data-size : DATASIZE , content : newContent(DATALIST) >
+    (msg createSuccess[^ NEWHI] from NEWPI to TK)
+  if not (FILE in FILES) /\ NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI) /\ NEWDS := newOid(N + 2, SI)
+  .
+
+--- Storage: the forwarded create reaches the old object, which is replaced by the new one (Fig. 10 methods, paper Table 2).
+--- The old object, its data stream and the handles opened on it are removed.
+
+  crl [create-persist-pure] :
+    (msg create[^ methodPure ^ FILE ^ FLAGS ^ HI ^ DATALIST ^ DATASIZE ^ N ^ TK] from SI to PI)
+    < PI : PersistentObject | file-name : FILE , data-stream-id : DI >
+    < DI : DataStreamObject | persistent-owner-id : PI >
+    HS
+    =>
+    removePersistentHandles(PI , HS)
+    < NEWHI : ObjectHandle | oid : NEWPI , flags : FLAGS , pos : pos(0) >
+    < NEWPI : PersistentObject | type : pureData , usages : empty , max-size : 0 , attributes : empty ,
+                                 file-name : FILE , data-stream : read(pos(0), DATASIZE, newContent(DATALIST)) ,
+                                 data-stream-id : NEWDS >
+    < NEWDS : DataStreamObject | persistent-owner-id : NEWPI , data-size : DATASIZE , content : newContent(DATALIST) >
+    (msg createSuccess[^ NEWHI] from NEWPI to TK)
+  if NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI) /\ NEWDS := newOid(N + 2, SI)
+  .
+
+  crl [create-persist-transform] :
+    (msg create[^ methodTransform ^ FILE ^ FLAGS ^ HI ^ DATALIST ^ DATASIZE ^ N ^ TK] from SI to PI)
+    < PI : PersistentObject | file-name : FILE , data-stream-id : DI >
+    < DI : DataStreamObject | persistent-owner-id : PI >
+    < HI : ObjectHandle | oid : OI >
+    < OI : TransientObject | type : OBJTYPE , usages : OBJUSAGES , attributes : ATTRS , initialized : true >
+    HS
+    =>
+    removePersistentHandles(PI , HS)
+    < NEWHI : ObjectHandle | oid : NEWPI , flags : FLAGS , pos : pos(0) >
+    < NEWPI : PersistentObject | type : OBJTYPE , usages : OBJUSAGES , max-size : keySize(ATTRS) ,
+                                 attributes : ATTRS , file-name : FILE , data-stream : read(pos(0), DATASIZE, newContent(DATALIST)) ,
+                                 data-stream-id : NEWDS >
+    < NEWDS : DataStreamObject | persistent-owner-id : NEWPI , data-size : DATASIZE , content : newContent(DATALIST) >
+    (msg createSuccess[^ NEWHI] from NEWPI to TK)
+  if NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI) /\ NEWDS := newOid(N + 2, SI)
+  .
+
+  crl [create-persist-persist] :
+    (msg create[^ methodPersist ^ FILE ^ FLAGS ^ HI ^ DATALIST ^ DATASIZE ^ N ^ TK] from SI to PI)
+    < PI : PersistentObject | file-name : FILE , data-stream-id : DI >
+    < DI : DataStreamObject | persistent-owner-id : PI >
+    < HI : ObjectHandle | oid : OI >
+    < OI : CryptoObj | type : OBJTYPE , usages : OBJUSAGES , attributes : ATTRS >
+    HS
+    =>
+    removePersistentHandles(PI , HS)
+    < HI : ObjectHandle | >
+    < OI : CryptoObj | >
+    < NEWHI : ObjectHandle | oid : NEWPI , flags : FLAGS , pos : pos(0) >
+    < NEWPI : PersistentObject | type : OBJTYPE , usages : OBJUSAGES , max-size : keySize(ATTRS) ,
+                                 attributes : ATTRS , file-name : FILE , data-stream : read(pos(0), DATASIZE, newContent(DATALIST)) ,
+                                 data-stream-id : NEWDS >
+    < NEWDS : DataStreamObject | persistent-owner-id : NEWPI , data-size : DATASIZE , content : newContent(DATALIST) >
+    (msg createSuccess[^ NEWHI] from NEWPI to TK)
+  if NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI) /\ NEWDS := newOid(N + 2, SI)
+  .
+
+--- The TA receives the result of create (Fig. 10 post-processing).
+
+  rl [create-persist-success] :
+    (msg createSuccess[^ HI] from PI to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(apiCall(CreatePersistentObject , PARAMS)) >
+    =>
+    < TK : TAKernel | api-call : return(apiCall(CreatePersistentObject , (retCode(success) , handle(HI)))) >
+  .
+
+  rl [create-persist-fail] :
+    (msg createFail[] from SI to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(apiCall(CreatePersistentObject , PARAMS)) >
+    =>
+    < TK : TAKernel | api-call : return(apiCall(CreatePersistentObject , (retCode(errorAccessConflict) , handle(null)))) >
+  .
+
+  rl [create-persist-storage-err] :
+    (msg createAbnormal[^ STATUS] from SI to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(apiCall(CreatePersistentObject , PARAMS)) >
+    =>
+    < TK : TAKernel | api-call : return(apiCall(CreatePersistentObject , (retCode(storageErrCode(STATUS)) , handle(null)))) >
   .
 
 --- This rule returns TEE_ERROR_OUT_OF_MEMORY if there is not enough memory to complete the operation.
 
-  rl [create-persistent-memory-err] :
-    < TK : TAKernel | status : outOfMemory , api-call : noCall , api-return : noReturn ,
-                      current-api : CreatePersistentObject >
+  rl [create-persist-mem-err] :
+    < TK : TAKernel | status : outOfMemory , api-call : init(apiCall(CreatePersistentObject , PARAMS)) >
     =>
-    < TK : TAKernel | api-state : finished , api-return : apiReturn(CreatePersistentObject , errorOutOfMemory , handle(null))  >
+    < TK : TAKernel | api-call : return(apiCall(CreatePersistentObject , (retCode(errorOutOfMemory) , handle(null)))) >
   .
 
---- The following four rules define when an object already exists and overwrite flag exist.
-
-  msg deleteOldPersistent : Oid FileName Oid -> Msg .
-  msg finishDeleteOldPersistent : Oid -> Msg .
-
-  rl [create-persistent-subroutine] :
-    < TK : TAKernel | status : (normal).AppStatus , api-state : creationNotReady ,
-                      current-api : CreatePersistentObject ,
-                      current-params : fileId(FILE) , PARAMS ,
-                      storage : SI >
+  rl [create-persist-mem-err-final] :
+    < TK : TAKernel | status : outOfMemory , api-call : final(apiCall(CreatePersistentObject , PARAMS)) >
     =>
-    < TK : TAKernel | api-state : waitDeleteOldPersistent >
-    deleteOldPersistent(SI , FILE , TK)
-  .
-
-  rl [create-persistent-subroutine] :
-    deleteOldPersistent(SI , FILE , TK)
-    < oid(M, SI) : PersistentObject | file-name : FILE , data-stream-id : DI >
-    < DI : DataStreamObject | persistent-owner-id : oid(M, SI) >
-    HS
-    =>
-    removePersistentHandles(oid(M, SI), HS)
-    finishDeleteOldPersistent(TK)
-  .
-
-  rl [create-persistent-subroutine] :
-    finishDeleteOldPersistent(TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-state : waitDeleteOldPersistent ,
-                      current-api : CreatePersistentObject >
-    =>
-    < TK : TAKernel | api-state : creationReady >
-  .
-
-  op determineCreation : Oid Oid -> TeeApiState .
-  ceq determineCreation(H, OPT) = createPureData if nullHandle(H) /\ not nullHandle(OPT) .
-  ceq determineCreation(H, OPT) = createPureData if nullHandle(H) /\ nullHandle(OPT) .
-  ceq determineCreation(H, OPT) = transformTransient if not nullHandle(H) /\ nullHandle(OPT) .
-  ceq determineCreation(H, OPT) = createPersistent if not nullHandle(H) /\ not nullHandle(OPT) .
-
-  rl [create-persistent-subroutine] :
-    < TK : TAKernel | status : (normal).AppStatus , api-state : creationReady ,
-                      current-api : CreatePersistentObject ,
-                      current-params : handle(HANDLE) , opt(OPTHANDLE) , PARAMS >
-    =>
-    < TK : TAKernel | api-state : determineCreation(HANDLE , OPTHANDLE) >
-  .
-
---- This rule creates a new pure persistent data object.
-
-  rl [create-persistent-subroutine] :
-    < TK : TAKernel | status : (normal).AppStatus , api-state : createPureData ,
-                      current-api : CreatePersistentObject ,
-                      current-params : (fileId(FILE) , data(DATALIST) , size(DATASIZE) , flags(DATAFLAGS) , PARAMS) ,
-                      storage : SIDX, counter : N  >
-    < SIDX : Storage | counter : M >
-    =>
-    < TK : TAKernel | api-state : waitNotifyFileCreation , counter : N + 1 ,
-                      current-params : (fileId(FILE) , data(DATALIST) , size(DATASIZE) , flags(DATAFLAGS) ,
-                                        PARAMS , openedHandle(oid(N, TK))) >
-    < SIDX : Storage | >
-    < oid(M, SIDX) : PersistentObject |
-                                         file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
-                                         type : pureData , max-size : 0 ,
-                                         attributes : empty , usages : empty ,
-                                         data-stream-id : oid(M + 1, SIDX) >
-    freshPersistentHandle(N, TK , DATAFLAGS , oid(M, SIDX))
-    < oid(M + 1, SIDX) : DataStreamObject | persistent-owner-id : oid(M, SIDX) ,
-                                             data-size : DATASIZE , content : newContent(DATALIST) >
-    reqTrustedOS(notifyFileCreation(FILE) , TK)
-  .
-
---- The following four rules copy object from handles and use it to make a new persistent object.
-
-  rl [create-persistent-subroutine-3] :
-    < TK : TAKernel | status : (normal).AppStatus , api-state : createPersistent ,
-                      current-api : CreatePersistentObject ,
-                      current-params : handle(HANDLE) , PARAMS >
-    =>
-    < TK : TAKernel | api-state : waitReqAttribute >
-    reqAttribute(HANDLE , TK)
-  .
-
-  rl [create-persistent-subroutine-3] :
-    retAttributeTr(ATTRS, OBJTYPE, OBJUSAGES, TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-state : waitReqAttribute ,
-                      current-api : CreatePersistentObject ,
-                      current-params : PARAMS >
-    =>
-    < TK : TAKernel | api-state : createPersistentUsingAttrs ,
-                      current-params : attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) , PARAMS >
-  .
-
-  rl [create-persistent-subroutine-3] :
-    retAttributePr(ATTRS, OBJTYPE, OBJUSAGES, TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-state : waitReqAttribute ,
-                      current-api : CreatePersistentObject ,
-                      current-params : PARAMS >
-    =>
-    < TK : TAKernel | api-state : createPersistentUsingAttrs ,
-                      current-params : attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) , PARAMS >
-  .
-
-  rl [create-persistent-subroutine-3] :
-    < TK : TAKernel | status : (normal).AppStatus , api-state : createPersistentUsingAttrs ,
-                      current-api : CreatePersistentObject ,
-                      current-params : (fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) ,
-                                        attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) , PARAMS) ,
-                      storage : SIDX, counter : N  >
-    < SIDX : Storage | counter : M >
-    =>
-    < TK : TAKernel | api-state : waitNotifyFileCreation , counter : N + 1 ,
-                      current-params : fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) ,
-                                       attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) , PARAMS , openedHandle(oid(N, TK)) >
-    < SIDX : Storage | >
-    < oid(M, SIDX) : PersistentObject |
-                                         file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
-                                         type : OBJTYPE , max-size : keySize(ATTRS) ,
-                                         attributes : ATTRS , usages : OBJUSAGES ,
-                                         data-stream-id : oid(M + 1, SIDX) >
-    freshPersistentHandle(N, TK , DATAFLAGS , oid(M, SIDX))
-    < oid(M + 1, SIDX) : DataStreamObject | persistent-owner-id : oid(M, SIDX) ,
-                                             data-size : DATASIZE , content : newContent(DATALIST) >
-    reqTrustedOS(notifyFileCreation(FILE) , TK)
-  .
-
---- This rule returns TEE_ERROR_STORAGE_NO_SPACE if insufficient space is available to create the persistent object.
---- This rule returns TEE_ERROR_CORRUPT_OBJECT if the storage is corrupt.
---- This rule returns TEE_ERROR_STORAGE_NOT_AVAILABLE if the persistent object is stored in a storage area which is currently inaccessible.
-
-  crl [create-persistent-abnormal-storage-err] :
-    retTrustedOS(storageStatus(STATUS) EXISTENCE, TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-state : waitStorageCheck ,
-                      current-api : CreatePersistentObject >
-    =>
-    < TK : TAKernel | api-state : finished , api-return : apiReturn(CreatePersistentObject , storageErrCode(STATUS) , handle(null)) >
-  if abnormalStorage(STATUS)
+    < TK : TAKernel | api-call : return(apiCall(CreatePersistentObject , (retCode(errorOutOfMemory) , handle(null)))) >
   .
 
 ------------------------------------------------------------
@@ -558,116 +453,102 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
 
 --- The following five rules close and delete the persistent object.
 
+  op deletePersistent : -> ReqId [ctor] .
+  op finishDeletePersistent : -> ReqId [ctor] .
+  op failDeletePersistent : -> ReqId [ctor] .
+
   crl [close-and-delete-persistent-subroutine] :
-    < TK : TAKernel | api-call : noCall , api-return : noReturn ,
-                      api-state : started , current-api : CloseAndDeletePersistentObject1 ,
-                      current-params : handle(HANDLE) >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(apiCall(CloseAndDeletePersistentObject1 , handle(HANDLE))) , storage : SI >
     =>
-    < TK : TAKernel | api-state : waitStorageCheck >
-    reqTrustedOS(getStorageStatus , TK)
+    < TK : TAKernel | api-call : exec(apiCall(CloseAndDeletePersistentObject1 , handle(HANDLE)) , 0) >
+    (msg getStatus[] from TK to SI)
   if not nullHandle(HANDLE)
   .
 
-  msg deletePersistent : Oid Oid Oid -> Msg .
-  msg finishDeletePersistent : FileName Oid -> Msg .
-  msg failDeletePersistent : Oid -> Msg .
-
-  rl [close-and-delete-persistent-subroutine] :
-    retTrustedOS(storageStatus(normal) , TK)
-    < TK : TAKernel | api-state : waitStorageCheck , current-api : CloseAndDeletePersistentObject1 ,
-                      current-params : handle(HANDLE) ,
+  rl [close-and-delete-persistent-top-level-start-ok] :
+    (msg retStatus[^ (normal).StorageStatus] from SI to TK)
+    < TK : TAKernel | api-call : exec(apiCall(CloseAndDeletePersistentObject1 , handle(HANDLE)) , 0) ,
                       storage : SI >
     =>
-    < TK : TAKernel | api-state : waitDeletePersistent >
-    deletePersistent(HANDLE , TK , SI)
+    < TK : TAKernel | api-call : exec(apiCall(CloseAndDeletePersistentObject1 , handle(HANDLE)) , 1) >
+    (msg deletePersistent[^ SI] from TK to HANDLE)
   .
 
   rl [close-and-delete-persistent-corrupt-subroutine] :
-    retTrustedOS(storageStatus(corrupted) , TK)
-    < TK : TAKernel | api-state : waitStorageCheck,
-                      current-api : CloseAndDeletePersistentObject1,
-                      current-params : handle(HANDLE), storage : SI >
+    (msg retStatus[^ (corrupted).StorageStatus] from SI to TK)
+    < TK : TAKernel | api-call : exec(apiCall(CloseAndDeletePersistentObject1 , handle(HANDLE)) , 0) ,
+                      storage : SI >
     =>
-    < TK : TAKernel | api-state : waitDeletePersistent >
-    deletePersistent(HANDLE, TK, SI)
+    < TK : TAKernel | api-call : exec(apiCall(CloseAndDeletePersistentObject1 , handle(HANDLE)) , 1) >
+    (msg deletePersistent[^ SI] from TK to HANDLE)
   .
 
   op hasWriteMeta : Set{DataAccessFlag} -> Bool .
   eq hasWriteMeta((accessWriteMeta , DATAFLAGS)) = true .
 
   crl [close-and-delete-persistent-top-level-start] :
-    deletePersistent(HANDLE, TK, SI)
-    < oid(M, SI) : PersistentObject |
-                              data-stream-id : DI, file-name : FILE >
+    (msg deletePersistent[^ SI] from TK to HANDLE)
+    < oid(M, SI) : PersistentObject | data-stream-id : DI, file-name : FILE >
     < DI : DataStreamObject | persistent-owner-id : oid(M, SI) >
     < HANDLE : ObjectHandle | oid : oid(M, SI), flags : DATAFLAGS >
     HS
     =>
     removePersistentHandles(oid(M, SI), HS)
-    finishDeletePersistent(FILE, TK)
+    (msg finishDeletePersistent[^ FILE] from HANDLE to TK)
   if hasWriteMeta(DATAFLAGS)
   .
 
   crl [close-and-delete-persistent-top-level-fail] :
-    deletePersistent(HANDLE, TK, SI)
+    (msg deletePersistent[^ SI] from TK to HANDLE)
     < oid(M, SI) : PersistentObject | >
     < HANDLE : ObjectHandle | oid : oid(M, SI), flags : DATAFLAGS >
     =>
     < oid(M, SI) : PersistentObject | >
     < HANDLE : ObjectHandle | >
-    failDeletePersistent(TK)
+    (msg failDeletePersistent[] from HANDLE to TK)
   if not hasWriteMeta(DATAFLAGS)
   .
 
-  rl [close-and-delete-persistent-subroutine] :
-    finishDeletePersistent(FILE , TK)
-    < TK : TAKernel | api-state : waitDeletePersistent >
+  rl [close-and-delete-persistent-subroutine-notify] :
+    (msg finishDeletePersistent[^ FILE] from HANDLE to TK)
+    < TK : TAKernel | api-call : exec(apiCall(CloseAndDeletePersistentObject1 , PARAMS) , 1) , storage : SI >
     =>
-    < TK : TAKernel | api-state : waitNotifyFileDeletion >
-    reqTrustedOS(notifyFileDeletion(FILE) , TK)
+    < TK : TAKernel | api-call : final(apiCall(CloseAndDeletePersistentObject1 , PARAMS)) >
+    (msg notifyFileDeletion[^ FILE] from TK to SI)
   .
 
   rl [close-and-delete-persistent-success] :
-    retTrustedOS(acceptNotification , TK)
-    < TK : TAKernel | api-state : waitNotifyFileDeletion ,
-                      current-api : CloseAndDeletePersistentObject1 >
+    (msg acceptNotification[] from SI to TK)
+    < TK : TAKernel | api-call : final(apiCall(CloseAndDeletePersistentObject1 , PARAMS)) >
     =>
-    < TK : TAKernel | api-state : finished ,
-                      api-return : apiReturn(CloseAndDeletePersistentObject1 , success) >
+    < TK : TAKernel | api-call : return(apiCall(CloseAndDeletePersistentObject1 , retCode(success))) >
   .
 
 --- The following two rules panic the TA if handle is not opened with the write-meta access right.
 
-
   rl [close-and-delete-persistent-panic] :
-    failDeletePersistent(TK)
-    < TK : TAKernel | api-state : waitDeletePersistent ,
-                     current-api : CloseAndDeletePersistentObject1 >
+    (msg failDeletePersistent[] from HANDLE to TK)
+    < TK : TAKernel | api-call : exec(apiCall(CloseAndDeletePersistentObject1 , PARAMS) , 1) >
     =>
     < TK : TAKernel | status : panic >
   .
 
 --- This rule does nothing when the input handle is TEE_HANDLE_NULL.
 
-  crl [close-and-delete-persistent-success] :
-    < TK : TAKernel | api-call : noCall , api-return : noReturn ,
-                      api-state : started , current-api : CloseAndDeletePersistentObject1 ,
-                      current-params : handle(HANDLE) >
+  crl [close-and-delete-persistent-null-success] :
+    < TK : TAKernel | api-call : init(apiCall(CloseAndDeletePersistentObject1 , handle(HANDLE))) >
     =>
-    < TK : TAKernel | api-state : finished ,
-                      api-return : apiReturn(CloseAndDeletePersistentObject1 , success , handle(HANDLE)) >
+    < TK : TAKernel | api-call : return(apiCall(CloseAndDeletePersistentObject1 , (retCode(success) , handle(HANDLE)))) >
   if nullHandle(HANDLE)
   .
 
 --- This rule returns TEE_ERROR_STORAGE_NOT_AVAILABLE if the persistent object is stored in a storage area which is currently inaccessible.
 
   rl [close-and-delete-persistent-storage-err] :
-    retTrustedOS(storageStatus(notAvailable) , TK)
-    < TK : TAKernel | api-state : waitStorageCheck ,
-                     current-api : CloseAndDeletePersistentObject1 >
+    (msg retStatus[^ (notAvailable).StorageStatus] from SI to TK)
+    < TK : TAKernel | api-call : exec(apiCall(CloseAndDeletePersistentObject1 , PARAMS) , 0) >
     =>
-    < TK : TAKernel | api-state : finished ,
-                      api-return : apiReturn(CloseAndDeletePersistentObject1 , errorStorageNotAvailable) >
+    < TK : TAKernel | api-call : return(apiCall(CloseAndDeletePersistentObject1 , retCode(errorStorageNotAvailable))) >
   .
 
 ------------------------------------------------------------
@@ -679,152 +560,132 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
 
 --- The following five rules rename the persistent object's id when there does not exist a persistent object with the same id as the input id.
 
-  msg renamePersistent : Oid FileName Oid Oid -> Msg .
-  msg renamePersistentOwner : FileName Oid Oid -> Msg .
-  msg finishRenamePersistent : FileName Oid -> Msg .
+  op renamePersistent : -> ReqId [ctor] .
+  op renamePersistentOwner : -> ReqId [ctor] .
+  op finishRenamePersistent : -> ReqId [ctor] .
 
   rl [rename-persistent-subroutine] :
-    < TK : TAKernel | api-call : noCall , api-return : noReturn ,
-                      api-state : started , current-api : RenamePersistentObject ,
-                      current-params : (fileId(FILE) , PARAMS) >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(apiCall(RenamePersistentObject , (fileId(FILE) , PARAMS))) , storage : SI >
     =>
-    < TK : TAKernel | api-state : waitStorageCheck >
-    reqTrustedOS(getStorageStatus checkFileExist(FILE) , TK)
+    < TK : TAKernel | api-call : exec(apiCall(RenamePersistentObject , (fileId(FILE) , PARAMS)) , 0) >
+    (msg getStatus[] from TK to SI)
   .
 
-  rl [rename-persistent-subroutine] :
-    retTrustedOS(storageStatus(normal) noFileExist , TK)
-    < TK : TAKernel | api-state : waitStorageCheck ,
-                      current-api : RenamePersistentObject ,
-                      current-params : (handle(HANDLE) , fileId(FILE)) ,
+  rl [rename-persistent-status-normal] :
+    (msg retStatus[^ (normal).StorageStatus] from SI to TK)
+    < TK : TAKernel | api-call : exec(apiCall(RenamePersistentObject , (fileId(FILE) , PARAMS)) , 0) , storage : SI >
+    =>
+    < TK : TAKernel | api-call : exec(apiCall(RenamePersistentObject , (fileId(FILE) , PARAMS)) , 1) >
+    (msg checkFileExist[^ FILE] from TK to SI)
+  .
+
+  rl [rename-persistent-subroutine-ok] :
+    (msg retFileExist[^ false] from SI to TK)
+    < TK : TAKernel | api-call : exec(apiCall(RenamePersistentObject , (handle(HANDLE) , fileId(FILE))) , 1) ,
                       storage : SI >
     =>
-    < TK : TAKernel | api-state : waitRenamePersistent >
-    renamePersistent(HANDLE , FILE , TK , SI)
+    < TK : TAKernel | api-call : exec(apiCall(RenamePersistentObject , (handle(HANDLE) , fileId(FILE))) , 2) >
+    (msg renamePersistent[^ FILE ^ SI] from TK to HANDLE)
   .
 
-
   crl [rename-persistent-top-level-check-handle] :
-    renamePersistent(HANDLE, FILE, TK, SI)
+    (msg renamePersistent[^ FILE ^ SI] from TK to HANDLE)
     < HANDLE : ObjectHandle | oid : OI, flags : DATAFLAGS >
     =>
     < HANDLE : ObjectHandle | >
-    renamePersistentOwner(FILE, TK, OI)
+    (msg renamePersistentOwner[^ FILE] from TK to OI)
   if hasWriteMeta(DATAFLAGS)
   .
 
   rl [rename-persistent-top-level-update-owner] :
-    renamePersistentOwner(FILE, TK, OI)
+    (msg renamePersistentOwner[^ FILE] from TK to OI)
     < OI : PersistentObject | file-name : FILE' >
     =>
     < OI : PersistentObject | file-name : FILE >
-    finishRenamePersistent(FILE', TK)
+    (msg finishRenamePersistent[^ FILE'] from OI to TK)
   .
 
-  rl [rename-persistent-subroutine] :
-    finishRenamePersistent(FILE' , TK)
-    < TK : TAKernel | api-state : waitRenamePersistent ,
-                      current-api : RenamePersistentObject ,
-                      current-params : fileId(FILE) , PARAMS >
+  rl [rename-persistent-subroutine-notify] :
+    (msg finishRenamePersistent[^ FILE'] from OI to TK)
+    < TK : TAKernel | api-call : exec(apiCall(RenamePersistentObject , (fileId(FILE) , PARAMS)) , 2) , storage : SI >
     =>
-    < TK : TAKernel | api-state : waitNotifyFileRename >
-    reqTrustedOS(notifyFileRename(FILE' , FILE) , TK)
+    < TK : TAKernel | api-call : final(apiCall(RenamePersistentObject , (fileId(FILE) , PARAMS))) >
+    (msg notifyFileRename[^ FILE' ^ FILE] from TK to SI)
   .
 
   rl [rename-persistent-success] :
-    retTrustedOS(acceptNotification, TK)
-    < TK : TAKernel | api-state : waitNotifyFileRename ,
-                      current-api : RenamePersistentObject >
+    (msg acceptNotification[] from SI to TK)
+    < TK : TAKernel | api-call : final(apiCall(RenamePersistentObject , PARAMS)) >
     =>
-    < TK : TAKernel | api-state : finished , api-return : apiReturn(RenamePersistentObject , success) >
+    < TK : TAKernel | api-call : return(apiCall(RenamePersistentObject , retCode(success))) >
   .
 
 --- This rule returns TEE_ERROR_ACCESS_CONFLICT if an object with the same identifier already exists.
 
   rl [rename-persistent-access-conflict] :
-    retTrustedOS(storageStatus(normal) fileExist , TK)
-    < TK : TAKernel | api-state : waitStorageCheck ,
-                      current-api : RenamePersistentObject >
+    (msg retFileExist[^ true] from SI to TK)
+    < TK : TAKernel | api-call : exec(apiCall(RenamePersistentObject , PARAMS) , 1) >
     =>
-    < TK : TAKernel | api-state : finished , api-return : apiReturn(RenamePersistentObject , errorAccessConflict) >
+    < TK : TAKernel | api-call : return(apiCall(RenamePersistentObject , retCode(errorAccessConflict))) >
   .
 
 --- This rule returns TEE_ERROR_CORRUPT_OBJECT if the object is corrupt.
 --- This rule returns TEE_ERROR_STORAGE_NOT_AVAILABLE if the persistent object is stored in a storage area which is currently inaccessible.
 
   crl [rename-persistent-storage-err] :
-    retTrustedOS(storageStatus(STATUS) EXISTENCE , TK)
-    < TK : TAKernel | api-state : waitStorageCheck ,
-                      current-api : RenamePersistentObject >
+    (msg retStatus[^ STATUS] from SI to TK)
+    < TK : TAKernel | api-call : exec(apiCall(RenamePersistentObject , PARAMS) , 0) >
     =>
-    < TK : TAKernel | api-state : finished , api-return : apiReturn(RenamePersistentObject , storageErrCode(STATUS)) >
+    < TK : TAKernel | api-call : return(apiCall(RenamePersistentObject , retCode(storageErrCode(STATUS)))) >
   if abnormalStorage(STATUS)
   .
 
 ------------------------------------------------------------
---- 'TEE_CopyObjectAttributes1'
+--- 'TEE_CopyObjectAttributes1' (persistent source)
 ------------------------------------------------------------
 
---- The following three rules acquire attributes from a persistent object & check storage status before populating an object
+--- A persistent source answers getAttrs with retAttrsPr. The TA then checks the storage status before
+--- sending setAttrs, so a corrupt or unavailable storage returns its error code.
 
-
-  rl [copy-object-attributes-top-level-handle] :
-    reqAttribute(HANDLE, TK)
-    < OI : PersistentObject | type : OBJTYPE, attributes : ATTRS,
-                              usages : OBJUSAGES >
+  rl [copy-object-attrs-try-ret-attrs-persistent] :
+    (msg getAttrs[] from TK to HANDLE)
+    < OI : PersistentObject | type : OBJTYPE, attributes : ATTRS, usages : OBJUSAGES >
     < HANDLE : ObjectHandle | oid : OI >
     =>
     < OI : PersistentObject | >
     < HANDLE : ObjectHandle | >
-    retAttributePr(ATTRS, OBJTYPE, OBJUSAGES, TK)
+    (msg retAttrsPr[^ OBJTYPE ^ ATTRS ^ OBJUSAGES] from HANDLE to TK)
   .
 
   rl [copy-object-attributes-subroutine] :
-    retAttributePr(ATTRS , OBJTYPE , OBJUSAGES , TK)
-    < TK : TAKernel | api-state : waitReqAttribute ,
-                      current-api : CopyObjectAttributes1 , current-params : PARAMS >
+    (msg retAttrsPr[^ OBJTYPE ^ ATTRS ^ OBJUSAGES] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus ,
+                      api-call : exec(apiCall(CopyObjectAttributes1 , (trgHandle(HI) , srcHandle(HANDLE))) , 0) , storage : SI >
     =>
-    < TK : TAKernel | api-state : waitStorageCheck ,
-                      current-params : PARAMS , attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) >
-    reqTrustedOS(getStorageStatus , TK)
+    < TK : TAKernel | api-call : exec(apiCall(CopyObjectAttributes1 ,
+                                  (trgHandle(HI) , srcHandle(HANDLE) , attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES))) , 1) >
+    (msg getStatus[] from TK to SI)
   .
 
-  rl [copy-object-attributes-subroutine] :
-    retTrustedOS(storageStatus(normal) , TK)
-    < TK : TAKernel | api-state : waitStorageCheck ,
-                      current-api : CopyObjectAttributes1 ,
-                      current-params : trgHandle(HANDLE) , attrs(ATTRS) ,
-                                       type(OBJTYPE) , usages(OBJUSAGES) , PARAMS >
+  rl [copy-object-attributes-storage-ok] :
+    (msg retStatus[^ (normal).StorageStatus] from SI to TK)
+    < TK : TAKernel | api-call : exec(apiCall(CopyObjectAttributes1 ,
+                                  (trgHandle(HI) , srcHandle(HANDLE) , attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES))) , 1) >
     =>
-    < TK : TAKernel | api-state : waitCopyAttribute >
-    reqCopyAttribute(HANDLE , ATTRS , OBJTYPE , OBJUSAGES , TK)
+    < TK : TAKernel | api-call : final(apiCall(CopyObjectAttributes1 ,
+                                  (trgHandle(HI) , srcHandle(HANDLE) , attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES)))) >
+    (msg setAttrs[^ OBJTYPE ^ ATTRS ^ OBJUSAGES] from TK to HI)
   .
 
 --- This rule returns TEE_ERROR_CORRUPT_OBJECT when the persistent object is corrupt.
 --- This rule returns TEE_ERROR_STORAGE_NOT_AVAILABLE when the persistent object is stored in a storage area which is currently inaccessible.
 
   crl [copy-object-attributes-storage-err] :
-    retTrustedOS(storageStatus(STATUS) , TK)
-    < TK : TAKernel | api-state : waitStorageCheck ,
-                      current-api : CopyObjectAttributes1 >
+    (msg retStatus[^ STATUS] from SI to TK)
+    < TK : TAKernel | api-call : exec(apiCall(CopyObjectAttributes1 , PARAMS) , 1) >
     =>
-    < TK : TAKernel | api-state : finished , api-return : apiReturn(CopyObjectAttributes1 , storageErrCode(STATUS)) >
+    < TK : TAKernel | api-call : return(apiCall(CopyObjectAttributes1 , retCode(storageErrCode(STATUS)))) >
   if abnormalStorage(STATUS)
   .
-
-------------------------------------------------------------
---- Clean
-------------------------------------------------------------
-
-  --- op removeHandle : AppId Configuration -> Configuration .
-  --- eq removeHandle(TI , < HANDLE : ObjectHandle | ta-instance-id : TI > CF) = removeHandle(TI , CF) .
-  --- eq removeHandle(TI , CF) = CF [owise] .
-
-  --- rl [clean-persistent-handle] :
-  ---   cleanResources(TI , TN , OI)
-  ---   < OI : PersistentObject | trust-app-id : TN >
-  ---   =>
-  ---   < OI : PersistentObject | >
-  --- .
 
 endom

@@ -107,59 +107,11 @@ def split_searches(text: str) -> tuple[str, list[tuple[str, str]]]:
     return header, tests
 
 
-def matching_paren(text: str, opening: int) -> int:
-    depth = 0
-    for index in range(opening, len(text)):
-        if text[index] == "(":
-            depth += 1
-        elif text[index] == ")":
-            depth -= 1
-            if depth == 0:
-                return index
-    raise TestFailure("unbalanced apiReturn expression")
-
-
-def top_level_arguments(text: str) -> list[str]:
-    args, depth, start = [], 0, 0
-    for index, char in enumerate(text):
-        if char == "(":
-            depth += 1
-        elif char == ")":
-            depth -= 1
-        elif char == "," and depth == 0:
-            args.append(text[start:index].strip())
-            start = index + 1
-    args.append(text[start:].strip())
-    return args
-
-
-def canonical_returns(target: str) -> str:
-    cursor = 0
-    while True:
-        found = target.find("apiReturn(", cursor)
-        if found < 0:
-            return target
-        opening = found + len("apiReturn")
-        closing = matching_paren(target, opening)
-        args = top_level_arguments(target[opening + 1:closing])
-        if len(args) == 1:
-            args.extend(("noReturnCode", "empty"))
-        elif len(args) == 2:
-            if args[1].startswith(("success", "error")):
-                args.append("empty")
-            else:
-                args.insert(1, "noReturnCode")
-        replacement = "apiReturn({})".format(" , ".join(args))
-        target = target[:found] + replacement + target[closing + 1:]
-        cursor = found + len(replacement)
-
-
 def api_query(command: str, number: int) -> str:
     marker = "=>*"
     if marker not in command:
         raise TestFailure("API test does not use =>*")
     source, target = command.split(marker, 1)
-    target = canonical_returns(target)
     # Object patterns list only the attributes relevant to the assertion.  Make
     # the omitted attributes explicit, as required by configuration matching.
     kernel = re.compile(r"(<\s*ta\s*:\s*TAKernel\s*\|.*?)(>\s*\.)", re.DOTALL)

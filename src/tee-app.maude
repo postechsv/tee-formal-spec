@@ -153,22 +153,13 @@ omod TRUST-APP-IMP-BEHAVIOR is
   --- .
 
 
---- Model/Implementation Specific Version (2 rules)
+--- Implementation: the IMP call starts the paper's init status; the API rules move it on.
   rl [tee-api-call] :
     < TI : TrustedApp | proc : (k($in(VL) ~> $waitSysCall(TEEAPI) ~> K) KS) ,
-                      api-state : noState , api-call : noCall , api-return : noReturn ,
-                      current-api : noApi , current-params : empty >
-    => 
+                      api-call : noCall >
+    =>
     < TI : TrustedApp | proc : (k($waitSysCall(TEEAPI) ~> K) KS) ,
-                      api-call : makeCall(TEEAPI , VL), state-changed : false > 
-  .
-
-  rl [tee-api-call-accept] :
-    < TI : TrustedApp | api-call : apiCall(TEEAPI , PARAMS) , api-state : noState , 
-                      current-api : noApi , current-params : empty >
-    => 
-    < TI : TrustedApp | api-call : noCall , api-state : started ,
-                      current-api : TEEAPI , current-params : PARAMS, state-changed : false >
+                      api-call : init(makeCall(TEEAPI , VL)), state-changed : false >
   .
 
 --- Version In Paper
@@ -180,14 +171,13 @@ omod TRUST-APP-IMP-BEHAVIOR is
   --- if isTeeApi(FUNC) /\ STMT := makeRetStmt(VL , XL) 
   --- .
 
---- Actual Implemenation
+--- Implementation: the return status hands the results back to the IMP program.
   rl [tee-api-call-return] :
-    < TI : TrustedApp | proc : (k($waitSysCall(TEEAPI) ~> $out(EL) ~> K) KS) , api-state : finished ,
-                      api-return : apiReturn(TEEAPI , RET , PARAMS) , current-api : TEEAPI >
-    => 
+    < TI : TrustedApp | proc : (k($waitSysCall(TEEAPI) ~> $out(EL) ~> K) KS) ,
+                      api-call : return(apiCall(TEEAPI , (retCode(RET) , PARAMS))) >
+    =>
     < TI : TrustedApp | proc : (k(makeReturnStmt(TEEAPI , RET , PARAMS , EL) ~> K) KS) ,
-                      api-state : noState , api-return : noReturn , 
-                      current-api : noApi , current-params : empty, state-changed : false > 
+                      api-call : noCall, state-changed : false >
   .
 
 endom

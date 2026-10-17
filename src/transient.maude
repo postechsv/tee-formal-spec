@@ -7,14 +7,15 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
   pr TA-KERNEL .
   pr TRANSIENT-OBJECT .
   pr TRANSIENT-OBJECT-FUNC .
-  pr TRANSIENT-OBJECT-FUNC-STATE .
-  pr TRUSTED-STORAGE-FUNC-STATE .
-  pr TRUSTED-STORAGE-MSG .
+  pr TEE-MSG .
   pr HANDLE-AUX .
   pr BASIC-DATA .
   pr TRUSTED-STORAGE-OBJECT-AUX .
   pr POSSIBLE-CRYPTO-KEY-SIZE .
   pr TEE-ATTRIBUTE-AUX .
+
+  ops deleteTransient finishDeleteTransient reqResetTransient retResetTransient : -> ReqId [ctor] .
+  ops reqPopulateTransient retPopulateTransient reqGenerateKey retGenerateKey : -> ReqId [ctor] .
 
   var N : Nat .
   vars MAXOBJSIZE KEYSIZE : Nat .
@@ -29,6 +30,14 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
   var V : AttrValue .
   vars OBJTYPE OBJTYPE' : Type .
   vars OBJUSAGES OBJUSAGES' : Set{Usage} .
+  vars TYPE TYPE' : Type .
+  vars USAGES USAGES' : Set{Usage} .
+  var HI : Oid .
+  var O : Oid .
+  var B : Bool .
+  var ARGS : ArgList .
+  var PARAMS : Set{TeeApiParam} .
+  var KEYSIZE' : Nat .
 
 ------------------------------------------------------------
 --- Auxilary Functions
@@ -192,13 +201,12 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 --- This rule allocates an uninitialized transient object of object type (OBJTYPE) with max object size (MAXOBJSIZE).
 
   crl [allocate-transient-success] :
-    < TK : TAKernel | status : (normal).AppStatus , api-call : noCall , api-return : noReturn ,
-                      api-state : started , current-api : AllocateTransientObject ,
-                      current-params : type(OBJTYPE) , size(MAXOBJSIZE) ,
+    < TK : TAKernel | status : (normal).AppStatus ,
+                      api-call : init(apiCall(AllocateTransientObject , (type(OBJTYPE) , size(MAXOBJSIZE)))) ,
                       counter : N  >
     =>
-    < TK : TAKernel | api-state : finished , counter : N + 2 ,
-                      api-return : apiReturn(AllocateTransientObject , success, handle(oid(N + 1 , TK))) >
+    < TK : TAKernel | api-call : return(apiCall(AllocateTransientObject , (retCode(success) , handle(oid(N + 1 , TK))))) ,
+                      counter : N + 2 >
     < oid(N , TK) : TransientObject | type : OBJTYPE , max-size : MAXOBJSIZE ,
                                         attributes : empty , usages : allObjectUsages,
                                         initialized : false >
@@ -209,20 +217,19 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 --- This rule returns TEE_ERROR_OUT_OF_MEMORY if not enough resources are available to allocate the handle.
 
   rl [allocate-transient-out-of-memory-err] :
-    < TK : TAKernel | status : outOfMemory , api-call : noCall , api-return : noReturn ,
-                      current-api : AllocateTransientObject >
+    < TK : TAKernel | status : outOfMemory ,
+                      api-call : init(apiCall(AllocateTransientObject , PARAMS)) >
     =>
-    < TK : TAKernel | api-state : finished , api-return : apiReturn(AllocateTransientObject , errorOutOfMemory) >
+    < TK : TAKernel | api-call : return(apiCall(AllocateTransientObject , retCode(errorOutOfMemory))) >
   .
 
 --- This rule returns TEE_ERROR_NOT_SUPPORTED if the key size or obj size is not supported.
 
   crl [allocate-transient-not-supported-err] :
-    < TK : TAKernel | status : (normal).AppStatus , api-call : noCall , api-return : noReturn ,
-                      api-state : started , current-api : AllocateTransientObject ,
-                      current-params : type(OBJTYPE) , size(MAXOBJSIZE) >
+    < TK : TAKernel | status : (normal).AppStatus ,
+                      api-call : init(apiCall(AllocateTransientObject , (type(OBJTYPE) , size(MAXOBJSIZE)))) >
     =>
-    < TK : TAKernel | api-state : finished , api-return : apiReturn(AllocateTransientObject , errorNotSupported) >
+    < TK : TAKernel | api-call : return(apiCall(AllocateTransientObject , retCode(errorNotSupported))) >
   if not supported(OBJTYPE, MAXOBJSIZE)
   .
 
@@ -236,45 +243,35 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 
 --- The following three rules delete the transient object pointed by the valid input handle.
 
-  msg deleteTransient : Oid Oid -> Msg .
-  msg finishDeleteTransient : Oid -> Msg .
-
   crl [free-transient-not-null-subroutine] :
-    < TK : TAKernel | api-call : noCall , api-return : noReturn ,
-                      api-state : started , current-api : FreeTransientObject ,
-                      current-params : handle(HANDLE) >
+    < TK : TAKernel | api-call : init(apiCall(FreeTransientObject , handle(HANDLE))) >
     =>
-    < TK : TAKernel | api-state : waitDeleteTransient >
-    deleteTransient(HANDLE , TK)
+    < TK : TAKernel | api-call : final(apiCall(FreeTransientObject , handle(HANDLE))) >
+    (msg deleteTransient[] from TK to HANDLE)
   if not nullHandle(HANDLE)
   .
 
-
   rl [free-transient-top-level-handle] :
-    deleteTransient(HANDLE , TK)
+    (msg deleteTransient[] from TK to HANDLE)
     < OI : TransientObject | >
     < HANDLE : ObjectHandle | oid : OI >
     =>
-    finishDeleteTransient(TK)
+    (msg finishDeleteTransient[] from HANDLE to TK)
   .
 
   rl [free-transient-not-null-success] :
-    finishDeleteTransient(TK)
-    < TK : TAKernel | api-state : waitDeleteTransient ,
-                      current-api : FreeTransientObject >
+    (msg finishDeleteTransient[] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(apiCall(FreeTransientObject , PARAMS)) >
     =>
-    < TK : TAKernel | api-state : finished , api-return : apiReturn(FreeTransientObject) >
+    < TK : TAKernel | api-call : return(apiCall(FreeTransientObject , retCode(noReturnCode))) >
   .
 
 --- This rule does nothing when the input handle is null (TEE_HANDLE_NULL).
 
   crl [free-transient-null-success] :
-    < TK : TAKernel | api-call : noCall , api-return : noReturn ,
-                      api-state : started , current-api : FreeTransientObject ,
-                      current-params : handle(HANDLE) >
+    < TK : TAKernel | api-call : init(apiCall(FreeTransientObject , handle(HANDLE))) >
     =>
-    < TK : TAKernel | api-state : finished ,
-                      api-return : apiReturn(FreeTransientObject , handle(null)) >
+    < TK : TAKernel | api-call : return(apiCall(FreeTransientObject , (retCode(noReturnCode) , handle(null)))) >
   if nullHandle(HANDLE)
   .
 
@@ -287,47 +284,38 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 
 --- The following three rules reset the transient object pointed by the valid input handle.
 
-  msg reqResetTransient : Oid Oid -> Msg .
-  msg retResetTransient : Oid -> Msg .
-
   crl [reset-transient-not-null-subroutine] :
-    < TK : TAKernel | api-call : noCall , api-return : noReturn ,
-                      api-state : started , current-api : ResetTransientObject ,
-                      current-params : handle(HANDLE) >
+    < TK : TAKernel | api-call : init(apiCall(ResetTransientObject , handle(HANDLE))) >
     =>
-    < TK : TAKernel | api-state : waitResetTransient >
-    reqResetTransient(HANDLE , TK)
+    < TK : TAKernel | api-call : final(apiCall(ResetTransientObject , handle(HANDLE))) >
+    (msg reqResetTransient[] from TK to HANDLE)
   if not nullHandle(HANDLE)
   .
 
-
   rl [reset-transient-top-level-handle] :
-    reqResetTransient(HANDLE , TK)
+    (msg reqResetTransient[] from TK to HANDLE)
     < OI : TransientObject | >
     < HANDLE : ObjectHandle | oid : OI >
     =>
     < OI : TransientObject | initialized : false,
                              attributes : empty , usages : allObjectUsages >
     < HANDLE : ObjectHandle | >
-    retResetTransient(TK)
+    (msg retResetTransient[] from HANDLE to TK)
   .
 
   rl [reset-transient-not-null-success] :
-    retResetTransient(TK)
-    < TK : TAKernel | api-state : waitResetTransient ,
-                      current-api : ResetTransientObject >
+    (msg retResetTransient[] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(apiCall(ResetTransientObject , PARAMS)) >
     =>
-    < TK : TAKernel | api-state : finished , api-return : apiReturn(ResetTransientObject) >
+    < TK : TAKernel | api-call : return(apiCall(ResetTransientObject , retCode(noReturnCode))) >
   .
 
 --- This rule does nothing when the input handle is null (TEE_HANDLE_NULL).
 
   crl [reset-transient-null-success] :
-    < TK : TAKernel | api-call : noCall , api-return : noReturn ,
-                      api-state : started , current-api : ResetTransientObject ,
-                      current-params : handle(HANDLE) >
+    < TK : TAKernel | api-call : init(apiCall(ResetTransientObject , handle(HANDLE))) >
     =>
-    < TK : TAKernel | api-state : finished , api-return : apiReturn(ResetTransientObject) >
+    < TK : TAKernel | api-call : return(apiCall(ResetTransientObject , retCode(noReturnCode))) >
   if nullHandle(HANDLE)
   .
 
@@ -341,21 +329,15 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 --- The following three rules populates the transient object pointed by the input handle with input attributes when
 --- the given object type (OBJTYPE) supports the input attributes (ATTRS).
 
-  msg reqPopulateTransient : Oid Set{CryptoAttribute} Oid -> Msg .
-  msg retPopulateTransient : Oid -> Msg .
-
   rl [populate-transient-subroutine] :
-    < TK : TAKernel | api-call : noCall , api-return : noReturn ,
-                      api-state : started , current-api : PopulateTransientObject ,
-                      current-params : handle(HANDLE) , attrs(ATTRS) >
+    < TK : TAKernel | api-call : init(apiCall(PopulateTransientObject , (handle(HANDLE) , attrs(ATTRS)))) >
     =>
-    < TK : TAKernel | api-state : waitPopulateTransient >
-    reqPopulateTransient(HANDLE , ATTRS , TK)
+    < TK : TAKernel | api-call : final(apiCall(PopulateTransientObject , (handle(HANDLE) , attrs(ATTRS)))) >
+    (msg reqPopulateTransient[^ ATTRS] from TK to HANDLE)
   .
 
-
   crl [populate-transient-top-level-handle] :
-    reqPopulateTransient(HANDLE , ATTRS , TK)
+    (msg reqPopulateTransient[^ ATTRS] from TK to HANDLE)
     < OI : TransientObject | initialized : false,
                              type : OBJTYPE >
     < HANDLE : ObjectHandle | oid : OI  >
@@ -363,42 +345,41 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
     < OI : TransientObject | initialized : true,
                              attributes : ATTRS >
     < HANDLE : ObjectHandle | >
-    retPopulateTransient(TK)
+    (msg retPopulateTransient[] from HANDLE to TK)
   if checkCompatible(OBJTYPE , ATTRS)
   .
 
   crl [populate-transient-invalid-attributes-panic] :
-    reqPopulateTransient(HANDLE , ATTRS , TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-state : waitPopulateTransient ,
-                      current-api : PopulateTransientObject >
+    (msg reqPopulateTransient[^ ATTRS] from TK to HANDLE)
+    < TK : TAKernel | status : (normal).AppStatus ,
+                      api-call : final(apiCall(PopulateTransientObject , PARAMS)) >
     < OI : TransientObject | initialized : false,
                              type : OBJTYPE >
     < HANDLE : ObjectHandle | oid : OI  >
     =>
-    < TK : TAKernel | status : panic , api-state : finished >
+    < TK : TAKernel | status : panic >
     < OI : TransientObject | initialized : true >
     < HANDLE : ObjectHandle | >
   if not checkCompatible(OBJTYPE , ATTRS)
   .
 
   rl [populate-transient-initialized-object-panic] :
-    reqPopulateTransient(HANDLE , ATTRS , TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-state : waitPopulateTransient ,
-                      current-api : PopulateTransientObject >
+    (msg reqPopulateTransient[^ ATTRS] from TK to HANDLE)
+    < TK : TAKernel | status : (normal).AppStatus ,
+                      api-call : final(apiCall(PopulateTransientObject , PARAMS)) >
     < OI : TransientObject | >
     < HANDLE : ObjectHandle | oid : OI  >
     =>
-    < TK : TAKernel | status : panic , api-state : finished >
+    < TK : TAKernel | status : panic >
     < OI : TransientObject | >
     < HANDLE : ObjectHandle | >
   .
 
   rl [populate-transient-success] :
-    retPopulateTransient(TK)
-    < TK : TAKernel | api-state : waitPopulateTransient ,
-                      current-api : PopulateTransientObject , api-return : noReturn >
+    (msg retPopulateTransient[] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(apiCall(PopulateTransientObject , PARAMS)) >
     =>
-    < TK : TAKernel | api-state : finished , api-return : apiReturn(PopulateTransientObject , success) >
+    < TK : TAKernel | api-call : return(apiCall(PopulateTransientObject , retCode(success))) >
   .
 
 --- TODO : NEED TO UPDATE
@@ -409,14 +390,6 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
   --- op validAttrValues : Type Set{CryptoAttribute} -> Bool .
   --- eq validAttrValues(OBJTYPE , ATTRS) = true .
 
-  --- crl [populate-transient-bad-params-err] :
-  ---   apiCall(PopulateTransientObjectCall(HANDLE , ATTRS) , TI)
-  ---                            type : OBJTYPE , max-size : MAXOBJSIZE >
-  ---   =>
-  ---   apiReturn(PopulateTransientObjectReturn(errorBadParameters) , TI)
-  --- if validAttributes(OBJTYPE , MAXOBJSIZE , ATTRS) /\ not validAttrValues(OBJTYPE , ATTRS)
-  --- .
-
 ------------------------------------------------------------
 --- TEE_InitRefAttribute and TEE_InitValueAttribute
 ------------------------------------------------------------
@@ -426,21 +399,15 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 --- The following two rules creates a buffer attribute and a value attribute, respectively:
 
   rl [init-ref-attribute] :
-    < TK : TAKernel | api-call : noCall , api-return : noReturn ,
-                      api-state : started , current-api : InitRefAttribute ,
-                      current-params : constId(REF) , constVal(V) >
+    < TK : TAKernel | api-call : init(apiCall(InitRefAttribute , (constId(REF) , constVal(V)))) >
     =>
-    < TK : TAKernel | api-state : finished ,
-                      api-return : apiReturn(InitRefAttribute , attrs(attr(REF , V))) >
+    < TK : TAKernel | api-call : return(apiCall(InitRefAttribute , (retCode(noReturnCode) , attrs(attr(REF , V))))) >
   .
 
   rl [init-value-attribute] :
-    < TK : TAKernel | api-call : noCall , api-return : noReturn ,
-                      api-state : started , current-api : InitValueAttribute ,
-                      current-params : constId(VAL) , constVal(V) >
+    < TK : TAKernel | api-call : init(apiCall(InitValueAttribute , (constId(VAL) , constVal(V)))) >
     =>
-    < TK : TAKernel | api-state : finished ,
-                      api-return : apiReturn(InitValueAttribute , attrs(attr(VAL , V))) >
+    < TK : TAKernel | api-call : return(apiCall(InitValueAttribute , (retCode(noReturnCode) , attrs(attr(VAL , V))))) >
   .
 
 ------------------------------------------------------------
@@ -450,105 +417,83 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 --- The 'TEE_CopyObjectAttributes1' function populates an uninitialized object handle with the attributes of another object handle; that is,
 --- it populates the attributes of destObject with the attributes of srcObject.
 --- See page 151 of the G.P. documentation for more details.
+--- The flow follows Figure 27 and Table 17 of the paper: getAttrs to the source handle, retAttrs or getAttrsFail,
+--- setAttrs to the target handle, then setAttrsSuccess or setAttrsFail.
 
---- The following five rules populates an object with attributes acquired from a (transient) object.
---- Note: rules acquiring attributes from a persistent object is in persistent.maude file.
-
-  crl [copy-object-attributes-subroutine] :
-    < TK : TAKernel | api-call : noCall , api-return : noReturn ,
-                      api-state : started , current-api : CopyObjectAttributes1 ,
-                      current-params : srcHandle(HANDLE2) , trgHandle(HANDLE1) >
+  crl [copy-object-attrs-get-attrs] :
+    < TK : TAKernel | api-call : init(apiCall(CopyObjectAttributes1 , (srcHandle(HANDLE2) , trgHandle(HANDLE1)))) >
     =>
-    < TK : TAKernel | api-state : waitReqAttribute >
-    reqAttribute(HANDLE2 , TK)
+    < TK : TAKernel | api-call : exec(apiCall(CopyObjectAttributes1 , (srcHandle(HANDLE2) , trgHandle(HANDLE1))) , 0) >
+    (msg getAttrs[] from TK to HANDLE2)
   if not nullHandle(HANDLE1) /\ not nullHandle(HANDLE2)
   .
 
-
-  rl [copy-object-attributes-from-top-level-handle] :
-    reqAttribute(HANDLE , TK)
-    < OI : TransientObject | initialized : true,
-                             type : OBJTYPE , attributes : ATTRS ,
-                             usages : OBJUSAGES >
-    < HANDLE : ObjectHandle | oid : OI  >
-    =>
-    < OI : TransientObject | >
-    < HANDLE : ObjectHandle | >
-    retAttributeTr(ATTRS , OBJTYPE , OBJUSAGES , TK)
-  .
-
-  --- GP programmer errors: the source must be initialized.
-  rl [copy-object-attributes-uninitialized-source-panic] :
-    reqAttribute(HANDLE , TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-state : waitReqAttribute ,
-                      current-api : CopyObjectAttributes1 >
-    < OI : TransientObject | initialized : false >
+  --- Source is a transient object.  The source must be initialized (GP programmer error otherwise).
+  rl [copy-object-attrs-try-ret-attrs-transient] :
+    (msg getAttrs[] from TK to HANDLE)
     < HANDLE : ObjectHandle | oid : OI >
+    < OI : TransientObject | type : TYPE , attributes : ATTRS ,
+                             usages : USAGES , initialized : B >
     =>
-    < TK : TAKernel | status : panic , api-state : finished >
+    < HANDLE : ObjectHandle | >
     < OI : TransientObject | >
-    < HANDLE : ObjectHandle | >
+    (if B then (msg retAttrs[^ TYPE ^ ATTRS ^ USAGES] from HANDLE to TK)
+     else (msg getAttrsFail[] from HANDLE to TK) fi)
   .
 
-  rl [copy-object-attributes-subroutine]:
-    retAttributeTr(ATTRS , OBJTYPE , OBJUSAGES , TK)
-    < TK : TAKernel | api-state : waitReqAttribute ,
-                      current-api : CopyObjectAttributes1 ,
-                      current-params : srcHandle(HANDLE2) , trgHandle(HANDLE1) >
-    =>
-    < TK : TAKernel | api-state : waitCopyAttribute >
-    reqCopyAttribute(HANDLE1 , ATTRS , OBJTYPE , OBJUSAGES , TK)
+  rl [copy-object-attrs-req-set-attrs] :
+    (msg retAttrs[ARGS] from HANDLE to TK)
+    < TK : TAKernel | api-call : exec(apiCall(CopyObjectAttributes1 , (trgHandle(HI) , srcHandle(HANDLE))) , 0) ,
+                      status : normal >
+  =>
+    < TK : TAKernel | api-call : final(apiCall(CopyObjectAttributes1 , (trgHandle(HI) , srcHandle(HANDLE)))) >
+    (msg setAttrs[ARGS] from TK to HI)
   .
 
-
-  crl [copy-object-attributes-to-top-level-handle] :
-    reqCopyAttribute(HANDLE , ATTRS , OBJTYPE , OBJUSAGES , TK)
-    < OI : TransientObject | initialized : false,
-                             type : OBJTYPE' , usages : OBJUSAGES' >
-    < HANDLE : ObjectHandle | oid : OI  >
-    =>
-    < OI : TransientObject | initialized : true,
-                             usages : updateObjectUsage(OBJUSAGES' , OBJUSAGES) ,
-                             attributes : ATTRS >
-    < HANDLE : ObjectHandle | >
-    finishCopyAttribute(TK)
-  if typeCompatible(OBJTYPE', OBJTYPE)
+  rl [copy-object-attrs-set-attrs-panic] :
+    (msg getAttrsFail[] from HANDLE to TK)
+    < TK : TAKernel | api-call : exec(apiCall(CopyObjectAttributes1 , (trgHandle(HI) , srcHandle(HANDLE))) , 0) ,
+                      status : normal >
+  =>
+    < TK : TAKernel | status : panic >
   .
 
-  --- GP programmer errors: the destination must be uninitialized and its
-  --- type must be compatible with the source object type.
-  rl [copy-object-attributes-initialized-destination-panic] :
-    reqCopyAttribute(HANDLE , ATTRS , OBJTYPE , OBJUSAGES , TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-state : waitCopyAttribute ,
-                      current-api : CopyObjectAttributes1 >
-    < OI : TransientObject | initialized : true >
-    < HANDLE : ObjectHandle | oid : OI  >
+  --- Target handle: copy the attributes when the target is uninitialized and the types are compatible
+  --- See: (typeCompatible(target, source), as in the paper's copy rule).
+  rl [copy-object-attrs-copy-attrs] :
+    (msg setAttrs[^ TYPE' ^ ATTRS ^ USAGES'] from O to HI)
+    < OI : TransientObject | type : TYPE , usages : USAGES , initialized : false >
+    < HI : ObjectHandle | oid : OI >
     =>
-    < TK : TAKernel | status : panic , api-state : finished >
-    < OI : TransientObject | >
-    < HANDLE : ObjectHandle | >
+    (if typeCompatible(TYPE , TYPE')
+     then < OI : TransientObject | usages : intersection(USAGES , USAGES') ,
+                                   initialized : true , attributes : ATTRS >
+          (msg setAttrsSuccess[] from HI to O)
+     else < OI : TransientObject | >
+          (msg setAttrsFail[] from HI to O) fi)
+    < HI : ObjectHandle | >
   .
 
-  crl [copy-object-attributes-incompatible-type-panic] :
-    reqCopyAttribute(HANDLE , ATTRS , OBJTYPE , OBJUSAGES , TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-state : waitCopyAttribute ,
-                      current-api : CopyObjectAttributes1 >
-    < OI : TransientObject | initialized : false,
-                             type : OBJTYPE' >
-    < HANDLE : ObjectHandle | oid : OI  >
+  rl [copy-object-attrs-copy-attrs-fail] :
+    (msg setAttrs[ARGS] from O to HI)
+    < HI : ObjectHandle | oid : OI > < OI : TransientObject | initialized : true >
     =>
-    < TK : TAKernel | status : panic , api-state : finished >
-    < OI : TransientObject | >
-    < HANDLE : ObjectHandle | >
-  if not typeCompatible(OBJTYPE', OBJTYPE)
+    < OI : TransientObject | > < HI : ObjectHandle | >
+    (msg setAttrsFail[] from HI to O)
   .
 
-  rl [copy-object-attributes-success]:
-    finishCopyAttribute(TK)
-    < TK : TAKernel | api-state : waitCopyAttribute ,
-                      current-api : CopyObjectAttributes1 >
+  rl [copy-object-attrs-success] :
+    (msg setAttrsSuccess[] from HI to O)
+    < O : TAKernel | api-call : final(apiCall(CopyObjectAttributes1 , PARAMS)) , status : normal >
     =>
-    < TK : TAKernel | api-state : finished , api-return : apiReturn(CopyObjectAttributes1 , success) >
+    < O : TAKernel | api-call : return(apiCall(CopyObjectAttributes1 , retCode(success))) >
+  .
+
+  rl [copy-object-attrs-panic] :
+    (msg setAttrsFail[] from HI to O)
+    < O : TAKernel | api-call : final(apiCall(CopyObjectAttributes1 , PARAMS)) , status : normal >
+    =>
+    < O : TAKernel | status : panic >
   .
 
 ------------------------------------------------------------
@@ -557,24 +502,17 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 
 --- The 'TEE_GenerateKey' function generates a random key or a key-pair and populates a transient key object with the generated key material.
 --- See page 153 of the G.P. documentation for more details.
-
 --- The following three rules populate the transient object pointed by the input handle with an encrypted key material.
 
-  msg reqGenerateKey : Oid Nat Set{CryptoAttribute} Oid -> Msg .
-  msg retGenerateKey : Oid -> Msg .
-
   rl [generate-key-subroutine] :
-    < TK : TAKernel | api-call : noCall , api-return : noReturn ,
-                      api-state : started , current-api : GenerateKey ,
-                      current-params : handle(HANDLE) , size(KEYSIZE) , attrs(ATTRS) >
+    < TK : TAKernel | api-call : init(apiCall(GenerateKey , (handle(HANDLE) , size(KEYSIZE) , attrs(ATTRS)))) >
     =>
-    < TK : TAKernel | api-state : waitReqGenerateKey >
-    reqGenerateKey(HANDLE , KEYSIZE , ATTRS , TK)
+    < TK : TAKernel | api-call : final(apiCall(GenerateKey , (handle(HANDLE) , size(KEYSIZE) , attrs(ATTRS)))) >
+    (msg reqGenerateKey[^ KEYSIZE ^ ATTRS] from TK to HANDLE)
   .
 
-
   crl [generate-key-top-level-handle] :
-    reqGenerateKey(HANDLE , KEYSIZE , ATTRS , TK)
+    (msg reqGenerateKey[^ KEYSIZE ^ ATTRS] from TK to HANDLE)
     < OI : TransientObject | initialized : false,
                              type : OBJTYPE , max-size : MAXOBJSIZE >
     < HANDLE : ObjectHandle | oid : OI  >
@@ -582,48 +520,48 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
     < OI : TransientObject | initialized : true,
                              attributes : randomAttributes(OBJTYPE , ATTRS) >
     < HANDLE : ObjectHandle | >
-    retGenerateKey(TK)
+    (msg retGenerateKey[] from HANDLE to TK)
   if KEYSIZE <= MAXOBJSIZE /\ validKeySizeForGeneration(OBJTYPE , KEYSIZE)
      /\ mandatoryParamsForKeyGen(OBJTYPE , ATTRS)
   .
 
   crl [generate-key-oversized-key-panic] :
-    reqGenerateKey(HANDLE , KEYSIZE , ATTRS , TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-state : waitReqGenerateKey ,
-                      current-api : GenerateKey >
+    (msg reqGenerateKey[^ KEYSIZE ^ ATTRS] from TK to HANDLE)
+    < TK : TAKernel | status : (normal).AppStatus ,
+                      api-call : final(apiCall(GenerateKey , PARAMS)) >
     < OI : TransientObject | initialized : false,
                              type : OBJTYPE , max-size : MAXOBJSIZE >
     < HANDLE : ObjectHandle | oid : OI  >
     =>
-    < TK : TAKernel | status : panic , api-state : finished >
+    < TK : TAKernel | status : panic >
     < OI : TransientObject | >
     < HANDLE : ObjectHandle | >
   if not (KEYSIZE <= MAXOBJSIZE)
   .
 
   crl [generate-key-unsupported-key-size-panic] :
-    reqGenerateKey(HANDLE , KEYSIZE , ATTRS , TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-state : waitReqGenerateKey ,
-                      current-api : GenerateKey >
+    (msg reqGenerateKey[^ KEYSIZE ^ ATTRS] from TK to HANDLE)
+    < TK : TAKernel | status : (normal).AppStatus ,
+                      api-call : final(apiCall(GenerateKey , PARAMS)) >
     < OI : TransientObject | initialized : false,
                              type : OBJTYPE , max-size : MAXOBJSIZE >
     < HANDLE : ObjectHandle | oid : OI  >
     =>
-    < TK : TAKernel | status : panic , api-state : finished >
+    < TK : TAKernel | status : panic >
     < OI : TransientObject | >
     < HANDLE : ObjectHandle | >
   if KEYSIZE <= MAXOBJSIZE /\ not validKeySizeForGeneration(OBJTYPE , KEYSIZE)
   .
 
   crl [generate-key-missing-parameters-panic] :
-    reqGenerateKey(HANDLE , KEYSIZE , ATTRS , TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-state : waitReqGenerateKey ,
-                      current-api : GenerateKey >
+    (msg reqGenerateKey[^ KEYSIZE ^ ATTRS] from TK to HANDLE)
+    < TK : TAKernel | status : (normal).AppStatus ,
+                      api-call : final(apiCall(GenerateKey , PARAMS)) >
     < OI : TransientObject | initialized : false,
                              type : OBJTYPE , max-size : MAXOBJSIZE >
     < HANDLE : ObjectHandle | oid : OI  >
     =>
-    < TK : TAKernel | status : panic , api-state : finished >
+    < TK : TAKernel | status : panic >
     < OI : TransientObject | initialized : true >
     < HANDLE : ObjectHandle | >
   if KEYSIZE <= MAXOBJSIZE /\ validKeySizeForGeneration(OBJTYPE , KEYSIZE)
@@ -631,23 +569,22 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
   .
 
   rl [generate-key-initialized-object-panic] :
-    reqGenerateKey(HANDLE , KEYSIZE , ATTRS , TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-state : waitReqGenerateKey ,
-                      current-api : GenerateKey >
+    (msg reqGenerateKey[^ KEYSIZE ^ ATTRS] from TK to HANDLE)
+    < TK : TAKernel | status : (normal).AppStatus ,
+                      api-call : final(apiCall(GenerateKey , PARAMS)) >
     < OI : TransientObject | >
     < HANDLE : ObjectHandle | oid : OI  >
     =>
-    < TK : TAKernel | status : panic , api-state : finished >
+    < TK : TAKernel | status : panic >
     < OI : TransientObject | >
     < HANDLE : ObjectHandle | >
   .
 
   rl [generate-key-success] :
-    retGenerateKey(TK)
-    < TK : TAKernel | api-state : waitReqGenerateKey ,
-                      current-api : GenerateKey >
+    (msg retGenerateKey[] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(apiCall(GenerateKey , PARAMS)) >
     =>
-    < TK : TAKernel | api-state : finished , api-return : apiReturn(GenerateKey , success) >
+    < TK : TAKernel | api-call : return(apiCall(GenerateKey , retCode(success))) >
   .
 
 --- TODO: NEED TO UPDATE
@@ -655,22 +592,5 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 
   --- op validParamValues : Type Set{CryptoAttribute} -> Bool .
   --- eq validParamValues(OBJTYPE , ATTRS) = true .
-
-  --- crl [generate-key-bad-params-err] :
-  ---   apiCall(GenerateKeyCall(HANDLE , KEYSIZE , ATTRS) , TI)
-  ---                            type : OBJTYPE , max-size : MAXOBJSIZE >
-  ---   =>
-  ---   apiReturn(GenerateKeyReturn(errorBadParameters) , TI)
-  --- if validParamsForKeyGen(OBJTYPE , MAXOBJSIZE , ATTRS , KEYSIZE) /\ not validParamValues(OBJTYPE , ATTRS)
-  --- .
-
-------------------------------------------------------------
---- Clean
-------------------------------------------------------------
-
-  --- rl [kill-ta-resource] :
-  ---   cleanResources(TI , TN , OI)
-  ---   < OI : TransientObject | trust-app-id : TN >
-  ---   => cleanFinish(TI , TN , OI) .
 
 endom

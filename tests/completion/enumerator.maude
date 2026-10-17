@@ -13,38 +13,25 @@ mod COMPLETION-TEST is
 endm
 
 search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | api-call : noCall, api-return : noReturn,
-                        api-state : started, current-api : StartPersistentObjectEnumerator,
-                        current-params : storageId(storageIllegalValue) >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(StartPersistentObjectEnumerator , storageId(storageIllegalValue))) >
 =>*
-  < testTa : TAKernel | api-call : noCall,
-                        api-state : finished, current-api : StartPersistentObjectEnumerator,
-                        current-params : storageId(storageIllegalValue),
-                        api-return : apiReturn(StartPersistentObjectEnumerator,
-                                               errorItemNotFound, empty) > .
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : return(apiCall(StartPersistentObjectEnumerator , retCode(errorItemNotFound))) > .
 
 --- Enumerator handles use the same top-level object representation.
 search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | api-call : noCall, api-return : noReturn,
-                        api-state : started,
-                        current-api : ResetPersistentObjectEnumerator,
-                        current-params : handle(oid(101, testTa)) >
+  < testTa : TAKernel | api-call : init(apiCall(ResetPersistentObjectEnumerator , handle(oid(101, testTa)))) >
   < oid(1, testTa) : EnumeratorObject |
       persistent-objects : testFileId, enumerating : true >
   < oid(101, testTa) : ObjectEnumHandle | oid : oid(1, testTa) >
 =>*
-  < testTa : TAKernel | api-call : noCall, api-state : finished,
-                        current-api : ResetPersistentObjectEnumerator,
-                        current-params : handle(oid(101, testTa)),
-                        api-return : apiReturn(ResetPersistentObjectEnumerator,
-                                               noReturnCode, empty) >
+  < testTa : TAKernel | api-call : return(apiCall(ResetPersistentObjectEnumerator , retCode(noReturnCode))) >
   < oid(1, testTa) : EnumeratorObject |
       persistent-objects : empty, enumerating : false >
   < oid(101, testTa) : ObjectEnumHandle | oid : oid(1, testTa) > .
 
 --- Enumeration resolves duplicate file identifiers in the TA's Storage only.
 search [1] in COMPLETION-TEST :
-  reqNextObject(oid(0, otherTa), testFileId, testTa)
+  (msg reqNextObject[^ testFileId] from testTa to oid(0, otherTa))
   < oid(0, oid(0, testTa)) : PersistentObject |
       type : typeDes, max-size : 64, attributes : empty,
       usages : empty, data-stream-id : oid(1, testTa),
@@ -56,7 +43,6 @@ search [1] in COMPLETION-TEST :
       file-name : testFileId >
   < oid(2, testTa) : DataStreamObject | data-size : dataSize(2) >
 =>1
-  retNextObject(teeObjectInfo(typeAes, keySize(empty), 128,
-                              usageEncrypt, dataSize(2), pos(0), empty),
-                testTa)
+  (msg retNextObject[^ teeObjectInfo(typeAes, keySize(empty), 128,
+                              usageEncrypt, dataSize(2), pos(0), empty)] from oid(0, otherTa) to testTa)
   C .

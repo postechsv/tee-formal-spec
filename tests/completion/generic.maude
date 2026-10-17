@@ -13,51 +13,33 @@ mod COMPLETION-TEST is
 endm
 
 search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | api-call : noCall, api-return : noReturn,
-                        api-state : waitGetBufferAttribute,
-                        current-api : GetObjectBufferAttribute,
-                        current-params : (constId(rsaModulus),
+  < testTa : TAKernel | api-call : exec(apiCall(GetObjectBufferAttribute , (constId(rsaModulus),
                           attrs(attr(rsaModulus, randomAttrVal)),
-                          usages(usageExtractable), capacity(dataSize(0))) >
+                          usages(usageExtractable), capacity(dataSize(0)))) , 2) >
 =>*
-  < testTa : TAKernel | api-call : noCall, api-state : finished,
-                        current-api : GetObjectBufferAttribute,
-                        current-params : (constId(rsaModulus),
-                          attrs(attr(rsaModulus, randomAttrVal)),
-                          usages(usageExtractable), capacity(dataSize(0))),
-                        api-return : apiReturn(GetObjectBufferAttribute,
-                          errorShortBuffer, size(dataSize(1))) > .
+  < testTa : TAKernel | api-call : return(apiCall(GetObjectBufferAttribute , (retCode(errorShortBuffer) , size(dataSize(1))))) > .
 
 search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | api-call : noCall, api-return : noReturn,
-                        api-state : waitGetBufferAttribute,
-                        current-api : GetObjectBufferAttribute,
-                        current-params : (constId(rsaModulus),
+  < testTa : TAKernel | api-call : exec(apiCall(GetObjectBufferAttribute , (constId(rsaModulus),
                           attrs(attr(rsaModulus, randomAttrVal)),
-                          usages(usageExtractable), capacity(dataSize(1))) >
+                          usages(usageExtractable), capacity(dataSize(1)))) , 2) >
 =>*
-  < testTa : TAKernel | api-call : noCall, api-state : finished,
-                        current-api : GetObjectBufferAttribute,
-                        current-params : (constId(rsaModulus),
-                          attrs(attr(rsaModulus, randomAttrVal)),
-                          usages(usageExtractable), capacity(dataSize(1))),
-                        api-return : apiReturn(GetObjectBufferAttribute, success,
-                          (constVal(randomAttrVal), size(dataSize(1)))) > .
+  < testTa : TAKernel | api-call : return(apiCall(GetObjectBufferAttribute , (retCode(success) , constVal(randomAttrVal), size(dataSize(1))))) > .
 
 --- Closing one persistent handle removes only that ID and its top-level object.
 search [1] in COMPLETION-TEST :
-  closeObject(oid(101, testTa), testTa)
+  (msg closeObject[] from testTa to oid(101, testTa))
   < oid(1, testTa) : PersistentObject | >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa) >
   < oid(2, testTa) : ObjectHandle | oid : oid(1, testTa) >
 =>1
-  finishCloseObject(testTa)
+  (msg finishCloseObject[] from oid(1, testTa) to testTa)
   < oid(1, testTa) : PersistentObject | >
   < oid(2, testTa) : ObjectHandle | oid : oid(1, testTa) > .
 
 --- GetObjectInfo1 combines a persistent owner, top-level handle, and stream.
 search [1] in COMPLETION-TEST :
-  reqObjectInfo(oid(101, testTa), testTa, oid(0, testTa))
+  (msg reqObjectInfo[^ oid(0, testTa)] from testTa to oid(101, testTa))
   < oid(1, oid(0, testTa)) : PersistentObject |
       type : typeAes, max-size : 256,
       attributes : attr(secretValue, randomAttrVal),
@@ -68,29 +50,21 @@ search [1] in COMPLETION-TEST :
       pos : pos(2) >
   < oid(2, oid(0, testTa)) : DataStreamObject | data-size : dataSize(5) >
 =>1
-  retObjectInfoPr(typeAes, keySize(
-      attr(secretValue, randomAttrVal)), 256,
-      usageExtractable, dataSize(5), pos(2),
-      accessRead, testTa)
+  (msg retObjectInfoPr[^ typeAes ^ keySize(
+      attr(secretValue, randomAttrVal)) ^ 256 ^ usageExtractable ^ dataSize(5) ^ pos(2) ^ accessRead] from oid(101, testTa) to testTa)
   C .
 
 --- RestrictObjectUsage1 updates a persistent owner through its top-level handle.
 search [1] in COMPLETION-TEST :
-  restrictUsage(oid(101, testTa), usageEncrypt, testTa)
+  (msg restrictUsage[^ usageEncrypt] from testTa to oid(101, testTa))
   < oid(1, testTa) : PersistentObject |
       usages : (usageEncrypt, usageDecrypt) >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa) >
 =>1
-  finishRestrictUsage(testTa)
+  (msg finishRestrictUsage[] from oid(101, testTa) to testTa)
   C .
 
 search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : noCall,
-                        api-return : noReturn, api-state : started,
-                        current-api : GetObjectInfo1,
-                        current-params : handle(null) >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(GetObjectInfo1 , handle(null))) >
 =>1
-  < testTa : TAKernel | status : panic, api-call : noCall,
-                        api-return : noReturn, api-state : finished,
-                        current-api : GetObjectInfo1,
-                        current-params : handle(null) > .
+  < testTa : TAKernel | status : panic, api-call : init(apiCall(GetObjectInfo1 , handle(null))) > .

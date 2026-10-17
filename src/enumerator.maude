@@ -3,12 +3,11 @@
 --- This module defines EnumeratorObject class, modeling the object enumerator of the G.P. documentation.
 
 omod ENUMERATOR-OBJECT is
-  pr TA-OBJECT .
+  pr OBJECT-ID .
   pr SET{FileId} .
 
   class EnumeratorObject | persistent-objects : Set{FileId},
                            enumerating : Bool .
-  subclass EnumeratorObject < TaObject .
 endom
 
 --- This module defines the persistent object enumeration APIs, defined in chapter 5 section 8 of G.P. documentation.
@@ -29,7 +28,6 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
   vars N M : Nat .
   var HANDLE : Oid .
   var TK : Oid .
-  var TN : AppId .
   vars OI EI DI : Oid .
   var SI : Oid .
   var FILE : FileId .
@@ -57,13 +55,12 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
   rl [alloc-enumerator-success] :
     < TK : TaKernel | status : normal , api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : AllocatePersistentObjectEnumerator ,
-                      counter : N , trust-app-id : TN >
+                      counter : N  >
     =>
     < TK : TaKernel | api-state : finished , counter : N + 2 ,
                       api-return : apiReturn(AllocatePersistentObjectEnumerator , TEE-SUCCESS, handle(oid(N + 1 , TK))) >
     < oid(N , TK) : EnumeratorObject |
-                                         persistent-objects : empty , enumerating : false ,
-                                         trust-app-id : TN >
+                                         persistent-objects : empty , enumerating : false >
     freshEnumeratorHandle(N + 1 , TK , oid(N , TK))
   .
 
@@ -201,11 +198,10 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
   crl [start-enumerator-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : StartPersistentObjectEnumerator ,
-                      current-params : (storageId(STORID) , PARAMS) ,
-                      trust-app-id : TN >
+                      current-params : (storageId(STORID) , PARAMS) >
     =>
     < TK : TaKernel | api-state : waitStorageCheck >
-    reqTrustedOS(getStorageStatus getPersistentList(TN) , TK , TN)
+    reqTrustedOS(getStorageStatus getPersistentList , TK)
   if supportedStorage(STORID)
   .
 
@@ -282,11 +278,10 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
 
   rl [get-next-persistent-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
-                      api-state : started , current-api : GetNextPersistentObject ,
-                      trust-app-id : TN >
+                      api-state : started , current-api : GetNextPersistentObject >
     =>
     < TK : TaKernel | api-state : waitStorageCheck >
-    reqTrustedOS(getStorageStatus , TK , TN)
+    reqTrustedOS(getStorageStatus , TK)
   .
 
   rl [get-next-persistent-subroutine] :
@@ -314,7 +309,7 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
     retNextObjectId(FILE , TK)
   .
 
-  msg reqNextObject : Oid FileId Oid AppId -> Msg .
+  msg reqNextObject : Oid FileId Oid -> Msg .
   msg retNextObject : TeeObjectInfo Oid -> Msg .
 
   rl [get-next-persistent-subroutine] :
@@ -322,19 +317,19 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
     < TK : TaKernel | api-state : waitGetNextObjectId ,
                       current-api : GetNextPersistentObject ,
                       current-params : PARAMS ,
-                      storage : SI , trust-app-id : TN >
+                      storage : SI >
     =>
     < TK : TaKernel | api-state : waitGetNextObject ,
                       current-params : PARAMS , fileId(FILE) >
-    reqNextObject(SI , FILE , TK , TN)
+    reqNextObject(SI , FILE , TK)
   .
 
 --- Resolve the identifier only inside the TA's paper-level Storage relation.
   rl [get-next-persistent-subroutine] :
-    reqNextObject(SI , FILE , TK , TN)
+    reqNextObject(SI , FILE , TK)
     < oid(M, SI) : PersistentObject | type : OBJTYPE , max-size : MAXOBJSIZE , attributes : ATTRS ,
                               usages : OBJUSAGES , data-stream-id : DI ,
-                              file-name : FILE , trust-app-id : TN >
+                              file-name : FILE >
     < DI : DataStreamObject | data-size : DATASIZE >
     =>
     < oid(M, SI) : PersistentObject | >

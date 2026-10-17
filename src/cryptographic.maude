@@ -56,7 +56,7 @@ endm
 --- This module defines CryptoOperation class, modeling the cryptographic operation of the G.P. documentation.
 
 omod CRYPTO-OPERATION is
-  pr TA-OBJECT .
+  pr OBJECT-ID .
   pr LIST{Data} .
   pr LIST{CryptoKey} .
   pr SET{TeeAttribute} .
@@ -81,7 +81,7 @@ omod CRYPTO-OPERATION is
 --- between multiple GP keys while the paper-level attribute set stays exact.
   class CryptoOperation | keys : List{CryptoKey},
                           initialization-vector : List{Data} .
-  subclass CryptoOperation < CryptoOp TaObject .
+  subclass CryptoOperation < CryptoOp .
 
   var KEYATTRS : Set{TeeAttribute} .
   var KEYLIST : List{CryptoKey} .
@@ -213,7 +213,6 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   vars B1 B2 B3 B1' B2' B3' : Bool .
   vars N M P Q : Nat .
-  var TN : AppId .
   var TK : Oid .
   vars CI OI OI2 : Oid .
   vars HANDLE KEY : Oid .
@@ -761,7 +760,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | status : normal , api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : AllocateOperation ,
                       current-params : (alg(ALGO) , mode(MODE) , size(KEYSIZE)) ,
-                      counter : N , trust-app-id : TN >
+                      counter : N  >
     =>
     < TK : TaKernel | api-state : finished , counter : N + 2 ,
                       api-return : apiReturn(AllocateOperation , TEE-SUCCESS , handle(oid(N + 1 , TK))) >
@@ -770,8 +769,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                                         acc-data : nil ,
                                         algorithm : ALGO , mode : MODE ,
                                         initialization-vector : nil ,
-                                        state : TEE-OPERATION-STATE-INITIAL ,
-                                        trust-app-id : TN >
+                                        state : TEE-OPERATION-STATE-INITIAL >
     freshOperationHandle(N + 1 , TK , oid(N , TK), determineOpClass(ALGO))
   if validParams(ALGO , MODE , KEYSIZE)
   .
@@ -1200,11 +1198,10 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     retAttributePr(ATTRS, OBJTYPE, OBJUSAGES, TK)
     < TK : TaKernel | api-state : waitReqAttribute ,
                       current-api : SetOperationKey ,
-                      current-params : (handle(HANDLE) , PARAMS , attrs(ATTRS) , type(OBJTYPE)) ,
-                      trust-app-id : TN >
+                      current-params : (handle(HANDLE) , PARAMS , attrs(ATTRS) , type(OBJTYPE)) >
     =>
     < TK : TaKernel | api-state : waitStorageCheck , current-params : usages(OBJUSAGES) , PARAMS >
-    reqTrustedOS(getStorageStatus , TK , TN)
+    reqTrustedOS(getStorageStatus , TK)
   .
 
   rl [set-operation-key-subroutine-2] :
@@ -1319,10 +1316,10 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     retAttributePr(ATTRS , OBJTYPE , OBJUSAGES , TK)
     < TK : TaKernel | api-state : waitReqAttribute , current-api : SetOperationKey2,
                       current-params : handle(HANDLE) , keyHandle(KEY1),
-                                       secondKeyHandle(KEY2), trust-app-id : TN >
+                                       secondKeyHandle(KEY2) >
     => < TK : TaKernel | api-state : waitStorageCheck >
        resumeSetOperationKey2(KEY2 , OBJTYPE , OBJUSAGES , ATTRS , TK)
-       reqTrustedOS(getStorageStatus , TK , TN) .
+       reqTrustedOS(getStorageStatus , TK) .
 
   rl [set-operation-key2-first-persistent-key-ready] :
     retTrustedOS(storageStatus(storageNormal) , TK)
@@ -1350,11 +1347,11 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < TK : TaKernel | api-state : waitReqAttribute , current-api : SetOperationKey2,
                       current-params : (handle(HANDLE), keyHandle(KEY1),
                         secondKeyHandle(KEY2), attrs(ATTRS), type(OBJTYPE),
-                        usages(OBJUSAGES)), trust-app-id : TN >
+                        usages(OBJUSAGES)) >
     => < TK : TaKernel | api-state : waitStorageCheck >
        installStoredOperationKeys(HANDLE , OBJTYPE , OBJUSAGES , ATTRS,
                                   OBJTYPE2 , OBJUSAGES2 , ATTRS2 , TK)
-       reqTrustedOS(getStorageStatus , TK , TN) .
+       reqTrustedOS(getStorageStatus , TK) .
 
   rl [set-operation-key2-second-persistent-key-ready] :
     retTrustedOS(storageStatus(storageNormal) , TK)
@@ -3078,7 +3075,6 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
 
   vars B1 B2 B3 B1' B2' B3' : Bool .
   var N : Nat .
-  var TN : AppId .
   var TK : Oid .
   vars OI CI CI2 : Oid .
   vars HANDLE KEY KEY1 KEY2 : Oid .
@@ -3265,7 +3261,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | status : normal , api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : AllocateOperation ,
                       current-params : (alg(ALGO) , mode(MODE) , size(KEYSIZE)) ,
-                      counter : N , trust-app-id : TN >
+                      counter : N  >
     =
     < TK : TaKernel | api-state : finished , counter : N + 2 ,
                       api-return : apiReturn(AllocateOperation , TEE-SUCCESS , handle(oid(N + 1 , TK))) >
@@ -3274,8 +3270,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
                                         acc-data : nil ,
                                         algorithm : ALGO , mode : MODE ,
                                         initialization-vector : nil ,
-                                        state : TEE-OPERATION-STATE-INITIAL ,
-                                        trust-app-id : TN >
+                                        state : TEE-OPERATION-STATE-INITIAL >
     freshOperationHandle(N + 1 , TK , oid(N , TK), determineOpClass(ALGO))
   if validParams(ALGO , MODE , KEYSIZE)
   .
@@ -3518,11 +3513,10 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     retAttributePr(ATTRS, OBJTYPE, OBJUSAGES, TK)
     < TK : TaKernel | api-state : waitReqAttribute ,
                       current-api : SetOperationKey ,
-                      current-params : (handle(HANDLE) , PARAMS , attrs(ATTRS) , type(OBJTYPE)) ,
-                      trust-app-id : TN >
+                      current-params : (handle(HANDLE) , PARAMS , attrs(ATTRS) , type(OBJTYPE)) >
     =
     < TK : TaKernel | api-state : waitStorageCheck , current-params : usages(OBJUSAGES) , PARAMS >
-    reqTrustedOS(getStorageStatus , TK , TN)
+    reqTrustedOS(getStorageStatus , TK)
   .
 
   eq
@@ -3628,11 +3622,11 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     retAttributePr(ATTRS, OBJTYPE, OBJUSAGES, TK)
     < TK : TaKernel | api-state : waitReqAttribute, current-api : SetOperationKey2,
                       current-params : handle(HANDLE), keyHandle(KEY1),
-                                       secondKeyHandle(KEY2), trust-app-id : TN >
+                                       secondKeyHandle(KEY2) >
     =
     < TK : TaKernel | api-state : waitStorageCheck >
     resumeSetOperationKey2(KEY2, OBJTYPE, OBJUSAGES, ATTRS, TK)
-    reqTrustedOS(getStorageStatus, TK, TN) .
+    reqTrustedOS(getStorageStatus, TK) .
 
   eq
     retTrustedOS(storageStatus(storageNormal), TK)
@@ -3663,12 +3657,12 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | api-state : waitReqAttribute, current-api : SetOperationKey2,
                       current-params : (handle(HANDLE), keyHandle(KEY1),
                         secondKeyHandle(KEY2), attrs(ATTRS), type(OBJTYPE),
-                        usages(OBJUSAGES)), trust-app-id : TN >
+                        usages(OBJUSAGES)) >
     =
     < TK : TaKernel | api-state : waitStorageCheck >
     installStoredOperationKeys(HANDLE, OBJTYPE, OBJUSAGES, ATTRS,
                                OBJTYPE2, OBJUSAGES2, ATTRS2, TK)
-    reqTrustedOS(getStorageStatus, TK, TN) .
+    reqTrustedOS(getStorageStatus, TK) .
 
   eq
     retTrustedOS(storageStatus(storageNormal), TK)

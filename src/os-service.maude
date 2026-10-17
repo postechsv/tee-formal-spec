@@ -25,24 +25,24 @@ omod TEE-OS-BEHAVIOR is
   var P : Program .
   var N : Nat .
 
-  msg reqTrustedOS : List{Service} Oid AppId -> Msg .
+  msg reqTrustedOS : List{Service} Oid -> Msg .
   msg retTrustedOS : List{ServiceReturn} Oid -> Msg .
 
   rl [service-receive] :
-    reqTrustedOS(SIL , TK , TN)
+    reqTrustedOS(SIL , TK)
     < KI : TeeOSKernel | service-in : nil , service-out : nil ,
-                         service-request-ta : noAppId , service-request-ta-inst : noOid >
+                         service-request-ta-inst : noOid >
     =>
     < KI : TeeOSKernel | service-in : SIL ,
-                         service-request-ta : TN , service-request-ta-inst : TK >
+                         service-request-ta-inst : TK >
   .
 
   rl [service-finish] :
     < KI : TeeOSKernel | service-in : nil , service-out : NESOL ,
-                         service-request-ta : TN , service-request-ta-inst : TK >
+                         service-request-ta-inst : TK >
     =>
     < KI : TeeOSKernel | service-out : nil ,
-                         service-request-ta : noAppId , service-request-ta-inst : noOid >
+                         service-request-ta-inst : noOid >
     retTrustedOS(NESOL , TK)
   .
 
@@ -64,7 +64,7 @@ omod TEE-OS-BEHAVIOR is
 
   rl [get-storage-status] :
     < KI : TeeOSKernel | service-in : (getStorageStatus SIL) , service-out : SOL ,
-                         service-request-ta : TN , service-request-ta-inst : TK >
+                         service-request-ta-inst : TK >
     < TK : TaKernel | storage : SI >
     < SI : Storage | status : STATUS >
     =>
@@ -80,7 +80,7 @@ omod TEE-OS-BEHAVIOR is
 
   rl [check-file-exist] :
     < KI : TeeOSKernel | service-in : (checkFileExist(FILE) SIL) , service-out : SOL ,
-                         service-request-ta : TN , service-request-ta-inst : TK >
+                         service-request-ta-inst : TK >
     < TK : TaKernel | storage : SI >
     < SI : Storage | files : FL >
     =>
@@ -111,7 +111,7 @@ omod TEE-OS-BEHAVIOR is
 
   crl [notify-file-manipulation] :
     < KI : TeeOSKernel | service-in : (S SIL) , service-out : SOL ,
-                         service-request-ta : TN , service-request-ta-inst : TK >
+                         service-request-ta-inst : TK >
     < TK : TaKernel | storage : SI >
     < SI : Storage | files : FL , counter : N >
     =>
@@ -128,8 +128,8 @@ omod TEE-OS-BEHAVIOR is
   eq acquire(FL) = filesInStorage(FL) [owise] .
 
   rl [get-persistent-list] :
-    < KI : TeeOSKernel | service-in : (getPersistentList(TN) SIL) , service-out : SOL ,
-                         service-request-ta : TN , service-request-ta-inst : TK >
+    < KI : TeeOSKernel | service-in : (getPersistentList SIL) , service-out : SOL ,
+                         service-request-ta-inst : TK >
     < TK : TaKernel | storage : SI >
     < SI : Storage | files : FL >
     =>
@@ -148,8 +148,7 @@ omod TEE-OS-BEHAVIOR is
                                  status : normal , api-call : noCall , api-return : noReturn ,
                                  current-api : noApi , api-state : noState , current-params : empty , counter : 1 ,
                                  storage : oid(0, oid(N, KI)) , os-kernel : KI ,
-                                 trust-app-id : TN ,
-                                 client-service : noClientService ,
+                                                                  client-service : noClientService ,
                                  task : noTask , task-counter : 0 >
     < oid(0, oid(N, KI)) : Storage | status : storageNormal , files : empty , counter : 0 >
   .

@@ -21,7 +21,8 @@ omod GENERIC-OBJECT-BEHAVIOR is
 
   var TK : Oid .
   var N : Nat .
-  var TN : AppId .
+  var SI : Oid .
+  var M : Nat .
   var HANDLE : Oid .
   vars OI DI : Oid .
   var OBJTYPE : ObjectType .
@@ -90,17 +91,17 @@ omod GENERIC-OBJECT-BEHAVIOR is
 --- The 'TEE_GetObjectInfo1' function returns the characteristics of an object.
 --- See page 132 of the G.P. documentation for more details.
 
-  msg reqObjectInfo : Oid Oid AppId -> Msg .
+  msg reqObjectInfo : Oid Oid Oid -> Msg .
   msg retObjectInfoTr : ObjectType CryptoKeySize CryptoKeySize Set{ObjectUsage} Oid -> Msg .
   msg retObjectInfoPr : ObjectType CryptoKeySize CryptoKeySize Set{ObjectUsage} DataSize DataPosition Set{DataFlag} Oid -> Msg .
 
   crl [get-obj-info-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : GetObjectInfo1 ,
-                      current-params : handle(HANDLE) , trust-app-id : TN >
+                      current-params : handle(HANDLE) , storage : SI >
     =>
     < TK : TaKernel | api-state : waitObjectInfo >
-    reqObjectInfo(HANDLE , TK , TN)
+    reqObjectInfo(HANDLE , TK , SI)
   if not nullHandle(HANDLE)
   .
 
@@ -108,14 +109,13 @@ omod GENERIC-OBJECT-BEHAVIOR is
 
 
   rl [get-obj-info-transient-top-level-handle] :
-    reqObjectInfo(HANDLE , TK , TN)
-    < OI : TransientObject |
+    reqObjectInfo(HANDLE , TK , SI)
+    < oid(N , TK) : TransientObject |
                              type : OBJTYPE , max-size : MAXOBJSIZE ,
-                             attributes : ATTRS , usages : OBJUSAGES ,
-                             trust-app-id : TN >
-    < HANDLE : ObjectHandle | oid : OI >
+                             attributes : ATTRS , usages : OBJUSAGES >
+    < HANDLE : ObjectHandle | oid : oid(N , TK) >
     =>
-    < OI : TransientObject | >
+    < oid(N , TK) : TransientObject | >
     < HANDLE : ObjectHandle | >
     retObjectInfoTr(OBJTYPE , keySize(ATTRS) , MAXOBJSIZE , OBJUSAGES , TK)
   .
@@ -133,16 +133,16 @@ omod GENERIC-OBJECT-BEHAVIOR is
 
 
   rl [get-obj-info-persistent-top-level-handle] :
-    reqObjectInfo(HANDLE, TK, TN)
-    < OI : PersistentObject |
+    reqObjectInfo(HANDLE, TK, SI)
+    < oid(M, SI) : PersistentObject |
                               type : OBJTYPE, max-size : MAXOBJSIZE,
                               attributes : ATTRS, usages : OBJUSAGES,
-                              data-stream-id : DI, trust-app-id : TN >
-    < HANDLE : ObjectHandle | oid : OI, flags : DATAFLAGS,
+                              data-stream-id : DI >
+    < HANDLE : ObjectHandle | oid : oid(M, SI), flags : DATAFLAGS,
                               pos : DATAPOS >
     < DI : DataStreamObject | data-size : DATASIZE >
     =>
-    < OI : PersistentObject | >
+    < oid(M, SI) : PersistentObject | >
     < HANDLE : ObjectHandle | >
     < DI : DataStreamObject | >
     retObjectInfoPr(OBJTYPE, keySize(ATTRS), MAXOBJSIZE, OBJUSAGES,
@@ -152,12 +152,11 @@ omod GENERIC-OBJECT-BEHAVIOR is
   rl [get-obj-info-persistent-subroutine] :
     retObjectInfoPr(OBJTYPE , KEYSIZE , MAXOBJSIZE , OBJUSAGES , DATASIZE , DATAPOS , DATAFLAGS , TK)
     < TK : TaKernel | api-state : waitObjectInfo ,
-                      current-api : GetObjectInfo1 , current-params : PARAMS , 
-                      trust-app-id : TN >
+                      current-api : GetObjectInfo1 , current-params : PARAMS >
     =>
     < TK : TaKernel | api-state : waitStorageCheck , 
                       current-params : PARAMS , info(teeObjectInfo(OBJTYPE , KEYSIZE , MAXOBJSIZE , OBJUSAGES , DATASIZE , DATAPOS , DATAFLAGS)) >
-    reqTrustedOS(getStorageStatus , TK , TN)
+    reqTrustedOS(getStorageStatus , TK)
   .
 
   rl [get-obj-info-persistent-success] :
@@ -245,12 +244,11 @@ omod GENERIC-OBJECT-BEHAVIOR is
   rl [restrict-object-usage-subroutine] :
     retAttributePr(ATTRS , OBJTYPE , OBJUSAGES , TK)
     < TK : TaKernel | api-state : waitReqAttribute , current-api : RestrictObjectUsage1 , 
-                      current-params : PARAMS , 
-                      trust-app-id : TN >
+                      current-params : PARAMS >
     =>
     < TK : TaKernel | api-state : waitStorageCheck ,
                       current-params : PARAMS , srcUsages(OBJUSAGES) >
-    reqTrustedOS(getStorageStatus , TK , TN) 
+    reqTrustedOS(getStorageStatus , TK) 
   .
 
   rl [restrict-object-usage-subroutine] :
@@ -342,12 +340,11 @@ omod GENERIC-OBJECT-BEHAVIOR is
   rl [get-object-buffer-attribute-subroutine] :
     retAttributePr(ATTRS , OBJTYPE , OBJUSAGES , TK)
     < TK : TaKernel | api-state : waitReqAttribute , current-api : GetObjectBufferAttribute , 
-                      current-params : PARAMS , 
-                      trust-app-id : TN >
+                      current-params : PARAMS >
     =>
     < TK : TaKernel | api-state : waitStorageCheck ,
                       current-params : PARAMS , attrs(ATTRS) , usages(OBJUSAGES) >
-    reqTrustedOS(getStorageStatus , TK , TN) 
+    reqTrustedOS(getStorageStatus , TK) 
   .
 
   rl [get-object-buffer-attribute-subroutine] :
@@ -427,12 +424,11 @@ omod GENERIC-OBJECT-BEHAVIOR is
   rl [get-object-value-attribute-subroutine] :
     retAttributePr(ATTRS , OBJTYPE , OBJUSAGES , TK)
     < TK : TaKernel | api-state : waitReqAttribute , current-api : GetObjectValueAttribute , 
-                      current-params : PARAMS , 
-                      trust-app-id : TN >
+                      current-params : PARAMS >
     =>
     < TK : TaKernel | api-state : waitStorageCheck ,
                       current-params : PARAMS , attrs(ATTRS) , usages(OBJUSAGES) >
-    reqTrustedOS(getStorageStatus , TK , TN) 
+    reqTrustedOS(getStorageStatus , TK) 
   .
 
   rl [get-object-value-attribute-subroutine] :
@@ -535,7 +531,9 @@ omod GENERIC-OBJECT-BEHAVIOR-INVISIBLE is
   pr GENERIC-OBJECT-BEHAVIOR .
 
   var TK : Oid .
-  var TN : AppId .
+  var N : Nat .
+  var SI : Oid .
+  var M : Nat .
   var HANDLE : Oid .
   vars OI DI : Oid .
   var OBJTYPE : ObjectType .
@@ -557,23 +555,22 @@ omod GENERIC-OBJECT-BEHAVIOR-INVISIBLE is
   ceq
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : GetObjectInfo1 ,
-                      current-params : handle(HANDLE) , trust-app-id : TN >
+                      current-params : handle(HANDLE) , storage : SI >
     =
     < TK : TaKernel | api-state : waitObjectInfo >
-    reqObjectInfo(HANDLE , TK , TN)
+    reqObjectInfo(HANDLE , TK , SI)
   if not nullHandle(HANDLE)
   .
 
 
   eq
-    reqObjectInfo(HANDLE , TK , TN)
-    < OI : TransientObject |
+    reqObjectInfo(HANDLE , TK , SI)
+    < oid(N , TK) : TransientObject |
                              type : OBJTYPE , max-size : MAXOBJSIZE ,
-                             attributes : ATTRS , usages : OBJUSAGES ,
-                             trust-app-id : TN >
-    < HANDLE : ObjectHandle | oid : OI >
+                             attributes : ATTRS , usages : OBJUSAGES >
+    < HANDLE : ObjectHandle | oid : oid(N , TK) >
     =
-    < OI : TransientObject | >
+    < oid(N , TK) : TransientObject | >
     < HANDLE : ObjectHandle | >
     retObjectInfoTr(OBJTYPE , keySize(ATTRS) , MAXOBJSIZE , OBJUSAGES , TK)
   .
@@ -589,16 +586,16 @@ omod GENERIC-OBJECT-BEHAVIOR-INVISIBLE is
 
 
   eq
-    reqObjectInfo(HANDLE, TK, TN)
-    < OI : PersistentObject |
+    reqObjectInfo(HANDLE, TK, SI)
+    < oid(M, SI) : PersistentObject |
                               type : OBJTYPE, max-size : MAXOBJSIZE,
                               attributes : ATTRS, usages : OBJUSAGES,
-                              data-stream-id : DI, trust-app-id : TN >
-    < HANDLE : ObjectHandle | oid : OI, flags : DATAFLAGS,
+                              data-stream-id : DI >
+    < HANDLE : ObjectHandle | oid : oid(M, SI), flags : DATAFLAGS,
                               pos : DATAPOS >
     < DI : DataStreamObject | data-size : DATASIZE >
     =
-    < OI : PersistentObject | >
+    < oid(M, SI) : PersistentObject | >
     < HANDLE : ObjectHandle | >
     < DI : DataStreamObject | >
     retObjectInfoPr(OBJTYPE, keySize(ATTRS), MAXOBJSIZE, OBJUSAGES,
@@ -608,12 +605,11 @@ omod GENERIC-OBJECT-BEHAVIOR-INVISIBLE is
   eq
     retObjectInfoPr(OBJTYPE , KEYSIZE , MAXOBJSIZE , OBJUSAGES , DATASIZE , DATAPOS , DATAFLAGS , TK)
     < TK : TaKernel | api-state : waitObjectInfo ,
-                      current-api : GetObjectInfo1 , current-params : PARAMS , 
-                      trust-app-id : TN >
+                      current-api : GetObjectInfo1 , current-params : PARAMS >
     =
     < TK : TaKernel | api-state : waitStorageCheck , 
                       current-params : PARAMS , info(teeObjectInfo(OBJTYPE , KEYSIZE , MAXOBJSIZE , OBJUSAGES , DATASIZE , DATAPOS , DATAFLAGS)) >
-    reqTrustedOS(getStorageStatus , TK , TN)
+    reqTrustedOS(getStorageStatus , TK)
   .
 
   eq

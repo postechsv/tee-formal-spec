@@ -59,10 +59,10 @@ search [1] in COMPLETION-TEST :
       current-params : (fileId(testFileId), handle(oid(1, testTa)),
                         flags(TEE-DATA-FLAG-ACCESS-READ), data(nil),
                         size(dataSize(0))),
-      storage : oid(0, testTa), counter : 0, trust-app-id : TESTTA >
+      storage : oid(0, testTa), counter : 0 >
   < osId : TeeOSKernel |
       service-in : nil, service-out : nil,
-      service-request-ta : noAppId, service-request-ta-inst : noOid >
+      service-request-ta-inst : noOid >
   < oid(0, testTa) : Storage |
       status : storageNormal, files : empty, counter : 0 >
 =>*
@@ -72,7 +72,7 @@ search [1] in COMPLETION-TEST :
       current-params : (fileId(testFileId), handle(oid(1, testTa)),
                         flags(TEE-DATA-FLAG-ACCESS-READ), data(nil),
                         size(dataSize(0)), openedHandle(oid(0, testTa))),
-      storage : oid(0, testTa), counter : 1, trust-app-id : TESTTA,
+      storage : oid(0, testTa), counter : 1,
       api-return : apiReturn(CreatePersistentObject, TEE-SUCCESS,
                              handle(oid(0, testTa))) >
   < oid(0, testTa) : Storage |
@@ -121,43 +121,39 @@ search [1] in COMPLETION-TEST :
 
 --- Overwrite removes only the old object in the TA's Storage namespace.
 search [1] in COMPLETION-TEST :
-  deleteOldPersistent(oid(0, otherTa), testFileId, testTa, TESTTA)
+  deleteOldPersistent(oid(0, otherTa), testFileId, testTa)
   < oid(0, oid(0, testTa)) : PersistentObject |
-      file-name : testFileId, data-stream-id : oid(1, testTa),
-      trust-app-id : TESTTA >
+      file-name : testFileId, data-stream-id : oid(1, testTa) >
   < oid(1, testTa) : DataStreamObject |
       persistent-owner-id : oid(0, oid(0, testTa)) >
   < oid(0, oid(0, otherTa)) : PersistentObject |
-      file-name : testFileId, data-stream-id : oid(2, testTa),
-      trust-app-id : TESTTA >
+      file-name : testFileId, data-stream-id : oid(2, testTa) >
   < oid(2, testTa) : DataStreamObject |
       persistent-owner-id : oid(0, oid(0, otherTa)) >
 =>*
   finishDeleteOldPersistent(testTa)
   < oid(0, oid(0, testTa)) : PersistentObject |
-      file-name : testFileId, data-stream-id : oid(1, testTa),
-      trust-app-id : TESTTA >
+      file-name : testFileId, data-stream-id : oid(1, testTa) >
   < oid(1, testTa) : DataStreamObject |
       persistent-owner-id : oid(0, oid(0, testTa)) > .
 
 --- CloseAndDelete invalidates every top-level handle that references the owner.
 search [1] in COMPLETION-TEST :
-  deletePersistent(oid(101, testTa), testTa, TESTTA)
-  < oid(1, testTa) : PersistentObject |
-      data-stream-id : oid(2, testTa), file-name : testFileId,
-      trust-app-id : TESTTA >
-  < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa),
+  deletePersistent(oid(101, testTa), testTa, oid(0, testTa))
+  < oid(1, oid(0, testTa)) : PersistentObject |
+      data-stream-id : oid(2, testTa), file-name : testFileId >
+  < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
       flags : TEE-DATA-FLAG-ACCESS-WRITE-META >
-  < oid(102, testTa) : ObjectHandle | oid : oid(1, testTa) >
-  < oid(2, testTa) : DataStreamObject | persistent-owner-id : oid(1, testTa) >
+  < oid(102, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)) >
+  < oid(2, testTa) : DataStreamObject | persistent-owner-id : oid(1, oid(0, testTa)) >
 =>*
   finishDeletePersistent(testFileId, testTa) .
 
 --- RenamePersistentObject authorizes through a top-level write-meta handle.
 search [1] in COMPLETION-TEST :
-  renamePersistent(oid(101, testTa), newTestFileId, testTa, TESTTA)
+  renamePersistent(oid(101, testTa), newTestFileId, testTa, oid(0, testTa))
   < oid(1, testTa) : PersistentObject |
-      file-name : testFileId, trust-app-id : TESTTA >
+      file-name : testFileId >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa),
       flags : TEE-DATA-FLAG-ACCESS-WRITE-META >
 =>*
@@ -179,13 +175,13 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   < osId : TeeOSKernel |
       service-in : notifyFileCreation(testFileId), service-out : nil,
-      service-request-ta : TESTTA, service-request-ta-inst : testTa >
+      service-request-ta-inst : testTa >
   < testTa : TaKernel | storage : oid(0, testTa) >
   < oid(0, testTa) : Storage | files : empty, counter : 0 >
 =>1
   < osId : TeeOSKernel |
       service-in : nil, service-out : acceptNotification,
-      service-request-ta : TESTTA, service-request-ta-inst : testTa >
+      service-request-ta-inst : testTa >
   < testTa : TaKernel | storage : oid(0, testTa) >
   < oid(0, testTa) : Storage | files : testFileId, counter : 2 >
   C .
@@ -196,14 +192,14 @@ search [1] in COMPLETION-TEST :
       service-in : (notifyFileCreation(testFileId)
                     notifyFileCreation(newTestFileId)),
       service-out : nil,
-      service-request-ta : TESTTA, service-request-ta-inst : testTa >
+      service-request-ta-inst : testTa >
   < testTa : TaKernel | storage : oid(0, testTa) >
   < oid(0, testTa) : Storage | files : empty, counter : 0 >
 =>*
   < osId : TeeOSKernel |
       service-in : nil,
       service-out : (acceptNotification acceptNotification),
-      service-request-ta : TESTTA, service-request-ta-inst : testTa >
+      service-request-ta-inst : testTa >
   < testTa : TaKernel | storage : oid(0, testTa) >
   < oid(0, testTa) : Storage |
       files : (testFileId, newTestFileId), counter : 4 > .
@@ -212,14 +208,14 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   < osId : TeeOSKernel |
       service-in : notifyFileCreation(testFileId), service-out : nil,
-      service-request-ta : TESTTA, service-request-ta-inst : testTa >
+      service-request-ta-inst : testTa >
   < testTa : TaKernel | storage : oid(0, otherTa) >
   < oid(0, testTa) : Storage | files : empty, counter : 0 >
   < oid(0, otherTa) : Storage | files : empty, counter : 6 >
 =>1
   < osId : TeeOSKernel |
       service-in : nil, service-out : acceptNotification,
-      service-request-ta : TESTTA, service-request-ta-inst : testTa >
+      service-request-ta-inst : testTa >
   < testTa : TaKernel | storage : oid(0, otherTa) >
   < oid(0, testTa) : Storage | files : empty, counter : 0 >
   < oid(0, otherTa) : Storage | files : testFileId, counter : 8 > .

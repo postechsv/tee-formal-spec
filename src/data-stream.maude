@@ -16,9 +16,10 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   pr TEE-OS-BEHAVIOR .
 
   var TK : Oid .
-  var TN : AppId .
   vars OI DI : Oid .
   var HANDLE : Oid .
+  var SI : Oid .
+  var M : Nat .
   var DATAPOS : DataPosition .
   vars DS DATASIZE : DataSize .
   var OFST : Int .
@@ -63,16 +64,15 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   --- .
 
 --- Model/Implementation Specific Version
-  msg readObjectData : Oid DataSize Oid AppId -> Msg .
+  msg readObjectData : Oid DataSize Oid Oid -> Msg .
   msg finishReadData : List{Data} Oid -> Msg .
 
   rl [read-object-data-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
-                      api-state : started , current-api : ReadObjectData ,
-                      trust-app-id : TN >
+                      api-state : started , current-api : ReadObjectData >
     => 
     < TK : TaKernel | api-state : waitStorageCheck >
-    reqTrustedOS(getStorageStatus , TK , TN)
+    reqTrustedOS(getStorageStatus , TK)
   .
 
 --- Version In Paper
@@ -92,11 +92,11 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
     retTrustedOS(storageStatus(storageNormal) , TK)
     < TK : TaKernel | api-state : waitStorageCheck , 
                       current-api : ReadObjectData ,
-                      current-params : handle(HANDLE) , size(DATASIZE) , 
-                      trust-app-id : TN >
+                      current-params : handle(HANDLE) , size(DATASIZE) ,
+                      storage : SI >
     =>
     < TK : TaKernel | api-state : waitReadObjectData >
-    readObjectData(HANDLE , DATASIZE , TK , TN)
+    readObjectData(HANDLE , DATASIZE , TK , SI)
   .
 
 --- This rule returns TEE_ERROR_CORRUPT_OBJECT if the object is corrupt.
@@ -125,14 +125,14 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 --- Model/Implementation Specific Version
 
   crl [read-object-data-top-level-handle] :
-    readObjectData(HANDLE , DATASIZE , TK , TN)
-    < OI : PersistentObject |
-                              data-stream-id : DI , trust-app-id : TN >
-    < HANDLE : ObjectHandle | oid : OI, flags : DATAFLAGS,
+    readObjectData(HANDLE , DATASIZE , TK , SI)
+    < oid(M, SI) : PersistentObject |
+                              data-stream-id : DI >
+    < HANDLE : ObjectHandle | oid : oid(M, SI), flags : DATAFLAGS,
                               pos : DATAPOS >
     < DI : DataStreamObject | data-size : DS , content : DM >
     =>
-    < OI : PersistentObject | >
+    < oid(M, SI) : PersistentObject | >
     < HANDLE : ObjectHandle | pos : updatePos(DATAPOS, DATASIZE, DS) >
     < DI : DataStreamObject | >
     finishReadData(read(DATAPOS, DATASIZE, DM), TK)
@@ -163,8 +163,8 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 --- The 'TEE_WriteObjectData' function reads size bytes of data from the buffer and writes the data to the data stream object.
 --- See page 173 of the G.P. documentation for more details.
 
-  msg writeObjectData : Oid List{Data} Oid AppId -> Msg .
-  msg writeObjectDataTop : Oid List{Data} Oid AppId Oid Oid -> Msg .
+  msg writeObjectData : Oid List{Data} Oid Oid -> Msg .
+  msg writeObjectDataTop : Oid List{Data} Oid Oid Oid Oid -> Msg .
   msg writeObjectStreamTop : List{Data} DataPosition Oid Oid Oid -> Msg .
   msg writeObjectOwnerTop : List{Data} DataPosition Oid Oid Oid DataSize Map{DataPosition,Data} -> Msg .
   msg writeDataStreamTop : List{Data} DataPosition Oid Oid -> Msg .
@@ -173,11 +173,10 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 
   rl [write-object-data-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
-                      api-state : started , current-api : WriteObjectData ,
-                      trust-app-id : TN >
+                      api-state : started , current-api : WriteObjectData >
     => 
     < TK : TaKernel | api-state : waitStorageCheck >
-    reqTrustedOS(getStorageStatus , TK , TN)
+    reqTrustedOS(getStorageStatus , TK)
   .
 
   rl [write-object-data-subroutine] :
@@ -185,22 +184,22 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
     < TK : TaKernel | api-state : waitStorageCheck , 
                       current-api : WriteObjectData ,
                       current-params : handle(HANDLE) , data(DATA) , 
-                      trust-app-id : TN >
+                      storage : SI >
     =>
     < TK : TaKernel | api-state : waitWriteObjectData >
-    writeObjectData(HANDLE , DATA , TK , TN)
+    writeObjectData(HANDLE , DATA , TK , SI)
   .
 
 
   crl [write-object-data-top-level-handle] :
-    writeObjectData(HANDLE , DATA , TK , TN)
-    < OI : PersistentObject |
-                              data-stream-id : DI , trust-app-id : TN >
-    < HANDLE : ObjectHandle | oid : OI, flags : DATAFLAGS,
+    writeObjectData(HANDLE , DATA , TK , SI)
+    < oid(M, SI) : PersistentObject |
+                              data-stream-id : DI >
+    < HANDLE : ObjectHandle | oid : oid(M, SI), flags : DATAFLAGS,
                               pos : DATAPOS >
     < DI : DataStreamObject | data-size : DS , content : DM >
     =>
-    < OI : PersistentObject |
+    < oid(M, SI) : PersistentObject |
       data-stream : read(pos(0), updateSize(DS, DATAPOS, sizeOfData(DATA)),
         writeStream(DATA, DATAPOS, DS, DM)) >
     < HANDLE : ObjectHandle |
@@ -213,16 +212,16 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   .
 
   rl [write-object-data-top-level-resolve-owner] :
-    writeObjectData(HANDLE, DATA, TK, TN)
-    < OI : PersistentObject |
-                              data-stream-id : DI, trust-app-id : TN >
+    writeObjectData(HANDLE, DATA, TK, SI)
+    < oid(M, SI) : PersistentObject |
+                              data-stream-id : DI >
     =>
-    < OI : PersistentObject | >
-    writeObjectDataTop(HANDLE, DATA, TK, TN, OI, DI)
+    < oid(M, SI) : PersistentObject | >
+    writeObjectDataTop(HANDLE, DATA, TK, SI, oid(M, SI), DI)
   .
 
   crl [write-object-data-top-level-update-handle] :
-    writeObjectDataTop(HANDLE, DATA, TK, TN, OI, DI)
+    writeObjectDataTop(HANDLE, DATA, TK, SI, OI, DI)
     < HANDLE : ObjectHandle | oid : OI, flags : DATAFLAGS,
                               pos : DATAPOS >
     =>
@@ -233,7 +232,7 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   .
 
   crl [write-object-data-top-level-detect-overflow] :
-    writeObjectDataTop(HANDLE, DATA, TK, TN, OI, DI)
+    writeObjectDataTop(HANDLE, DATA, TK, SI, OI, DI)
     < HANDLE : ObjectHandle | oid : OI, flags : DATAFLAGS,
                               pos : DATAPOS >
     =>
@@ -304,13 +303,13 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 
 
   crl [write-object-data-top-level-overflow] :
-    writeObjectData(HANDLE , DATA , TK , TN)
+    writeObjectData(HANDLE , DATA , TK , SI)
     < TK : TaKernel | api-state : waitWriteObjectData , current-api : WriteObjectData >
-    < OI : PersistentObject | trust-app-id : TN >
-    < HANDLE : ObjectHandle | oid : OI, flags : DATAFLAGS,
+    < oid(M, SI) : PersistentObject | >
+    < HANDLE : ObjectHandle | oid : oid(M, SI), flags : DATAFLAGS,
                               pos : DATAPOS >
     =>
-    < OI : PersistentObject | >
+    < oid(M, SI) : PersistentObject | >
     < HANDLE : ObjectHandle | >
     < TK : TaKernel | api-state : finished , current-api : WriteObjectData,
                       api-return : apiReturn(WriteObjectData, TEE-ERROR-OVERFLOW) >
@@ -337,8 +336,8 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 --- The 'TEE_TruncateObjectData' function changes the size of a data stream.
 --- See page 175 of the G.P. documentation for more details.
 
-  msg truncateObjectData : Oid DataSize Oid AppId -> Msg .
-  msg truncateObjectDataTop : Oid DataSize Oid AppId Oid Oid -> Msg .
+  msg truncateObjectData : Oid DataSize Oid Oid -> Msg .
+  msg truncateObjectDataTop : Oid DataSize Oid Oid Oid Oid -> Msg .
   msg truncateObjectStreamTop : DataSize Oid Oid Oid -> Msg .
   msg truncateObjectOwnerTop : DataSize Oid Oid Oid DataSize Map{DataPosition,Data} -> Msg .
   msg truncateDataStreamTop : DataSize Oid Oid DataSize Map{DataPosition,Data} -> Msg .
@@ -346,11 +345,10 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 
   rl [truncate-object-data-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
-                      api-state : started , current-api : TruncateObjectData ,
-                      trust-app-id : TN >
+                      api-state : started , current-api : TruncateObjectData >
     => 
     < TK : TaKernel | api-state : waitStorageCheck >
-    reqTrustedOS(getStorageStatus , TK , TN)
+    reqTrustedOS(getStorageStatus , TK)
   .
 
   rl [truncate-object-data-subroutine] :
@@ -358,10 +356,10 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
     < TK : TaKernel | api-state : waitStorageCheck , 
                       current-api : TruncateObjectData ,
                       current-params : handle(HANDLE) , size(DATASIZE) , 
-                      trust-app-id : TN >
+                      storage : SI >
     =>
     < TK : TaKernel | api-state : waitTruncateObjectData >
-    truncateObjectData(HANDLE , DATASIZE , TK , TN)
+    truncateObjectData(HANDLE , DATASIZE , TK , SI)
   .
 
 --- This rule finds the persistent object pointed to by the input handle and its associated data stream, and
@@ -369,16 +367,16 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 
 
   rl [truncate-object-data-top-level-resolve-owner] :
-    truncateObjectData(HANDLE, DATASIZE, TK, TN)
-    < OI : PersistentObject |
-                              data-stream-id : DI, trust-app-id : TN >
+    truncateObjectData(HANDLE, DATASIZE, TK, SI)
+    < oid(M, SI) : PersistentObject |
+                              data-stream-id : DI >
     =>
-    < OI : PersistentObject | >
-    truncateObjectDataTop(HANDLE, DATASIZE, TK, TN, OI, DI)
+    < oid(M, SI) : PersistentObject | >
+    truncateObjectDataTop(HANDLE, DATASIZE, TK, SI, oid(M, SI), DI)
   .
 
   crl [truncate-object-data-top-level-check-handle] :
-    truncateObjectDataTop(HANDLE, DATASIZE, TK, TN, OI, DI)
+    truncateObjectDataTop(HANDLE, DATASIZE, TK, SI, OI, DI)
     < HANDLE : ObjectHandle | oid : OI, flags : DATAFLAGS >
     =>
     < HANDLE : ObjectHandle | >
@@ -440,19 +438,18 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 --- The 'TEE_SeekObjectData' function sets the data position indicator associated with the object handle.
 --- See page 176 of the G.P. documentation for more details.
 
-  msg seekObjectData : Oid Int SeekType Oid AppId -> Msg .
-  msg seekObjectDataTop : Oid Int SeekType Oid AppId Oid Oid -> Msg .
+  msg seekObjectData : Oid Int SeekType Oid Oid -> Msg .
+  msg seekObjectDataTop : Oid Int SeekType Oid Oid Oid Oid -> Msg .
   msg seekObjectHandleTop : Oid Int SeekType Oid Oid DataSize -> Msg .
   msg seekObjectOverflowTop : Oid -> Msg .
   msg finishSeekData : Oid -> Msg .
 
   rl [seek-object-data-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
-                      api-state : started , current-api : SeekObjectData ,
-                      trust-app-id : TN >
+                      api-state : started , current-api : SeekObjectData >
     => 
     < TK : TaKernel | api-state : waitStorageCheck >
-    reqTrustedOS(getStorageStatus , TK , TN)
+    reqTrustedOS(getStorageStatus , TK)
   .
 
   rl [seek-object-data-subroutine] :
@@ -460,10 +457,10 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
     < TK : TaKernel | api-state : waitStorageCheck , 
                       current-api : SeekObjectData ,
                       current-params : handle(HANDLE) , offset(OFST) , type(WHENCE) ,
-                      trust-app-id : TN >
+                      storage : SI >
     =>
     < TK : TaKernel | api-state : waitSeekObjectData >
-    seekObjectData(HANDLE , OFST , WHENCE , TK , TN)
+    seekObjectData(HANDLE , OFST , WHENCE , TK , SI)
   .
 
 --- This rule sets the data position to input offset (OFST) when 'whence' is TEE_DATA_SEEK_SET.
@@ -472,16 +469,16 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 
 
   rl [seek-object-data-top-level-resolve-owner] :
-    seekObjectData(HANDLE, OFST, WHENCE, TK, TN)
-    < OI : PersistentObject |
-                              data-stream-id : DI, trust-app-id : TN >
+    seekObjectData(HANDLE, OFST, WHENCE, TK, SI)
+    < oid(M, SI) : PersistentObject |
+                              data-stream-id : DI >
     =>
-    < OI : PersistentObject | >
-    seekObjectDataTop(HANDLE, OFST, WHENCE, TK, TN, OI, DI)
+    < oid(M, SI) : PersistentObject | >
+    seekObjectDataTop(HANDLE, OFST, WHENCE, TK, SI, oid(M, SI), DI)
   .
 
   rl [seek-object-data-top-level-resolve-stream] :
-    seekObjectDataTop(HANDLE, OFST, WHENCE, TK, TN, OI, DI)
+    seekObjectDataTop(HANDLE, OFST, WHENCE, TK, SI, OI, DI)
     < DI : DataStreamObject | data-size : DATASIZE >
     =>
     < DI : DataStreamObject | >
@@ -546,9 +543,10 @@ omod DATA-STREAM-OBJECT-BEHAVIOR-INVISIBLE is
   pr DATA-STREAM-OBJECT-BEHAVIOR .
 
   var TK : Oid .
-  var TN : AppId .
   vars OI DI : Oid .
   var HANDLE : Oid .
+  var SI : Oid .
+  var M : Nat .
   var DATAPOS : DataPosition .
   vars DS DATASIZE : DataSize .
   var DATA : List{Data} .
@@ -563,11 +561,10 @@ omod DATA-STREAM-OBJECT-BEHAVIOR-INVISIBLE is
 
   eq
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
-                      api-state : started , current-api : ReadObjectData ,
-                      trust-app-id : TN >
+                      api-state : started , current-api : ReadObjectData >
     =
     < TK : TaKernel | api-state : waitStorageCheck >
-    reqTrustedOS(getStorageStatus , TK , TN)
+    reqTrustedOS(getStorageStatus , TK)
   .
 
   eq
@@ -575,22 +572,22 @@ omod DATA-STREAM-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | api-state : waitStorageCheck , 
                       current-api : ReadObjectData ,
                       current-params : handle(HANDLE) , size(DATASIZE) , 
-                      trust-app-id : TN >
+                      storage : SI >
     =
     < TK : TaKernel | api-state : waitReadObjectData >
-    readObjectData(HANDLE , DATASIZE , TK , TN)
+    readObjectData(HANDLE , DATASIZE , TK , SI)
   .
 
 
   ceq
-    readObjectData(HANDLE , DATASIZE , TK , TN)
-    < OI : PersistentObject |
-                              data-stream-id : DI , trust-app-id : TN >
-    < HANDLE : ObjectHandle | oid : OI, flags : DATAFLAGS,
+    readObjectData(HANDLE , DATASIZE , TK , SI)
+    < oid(M, SI) : PersistentObject |
+                              data-stream-id : DI >
+    < HANDLE : ObjectHandle | oid : oid(M, SI), flags : DATAFLAGS,
                               pos : DATAPOS >
     < DI : DataStreamObject | data-size : DS , content : DM >
     =
-    < OI : PersistentObject | >
+    < oid(M, SI) : PersistentObject | >
     < HANDLE : ObjectHandle | pos : updatePos(DATAPOS, DATASIZE, DS) >
     < DI : DataStreamObject | >
     finishReadData(read(DATAPOS, DATASIZE, DM), TK)
@@ -620,11 +617,10 @@ omod DATA-STREAM-OBJECT-BEHAVIOR-INVISIBLE is
 
   eq
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
-                      api-state : started , current-api : WriteObjectData ,
-                      trust-app-id : TN >
+                      api-state : started , current-api : WriteObjectData >
     =
     < TK : TaKernel | api-state : waitStorageCheck >
-    reqTrustedOS(getStorageStatus , TK , TN)
+    reqTrustedOS(getStorageStatus , TK)
   .
 
   eq
@@ -632,22 +628,22 @@ omod DATA-STREAM-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | api-state : waitStorageCheck , 
                       current-api : WriteObjectData ,
                       current-params : handle(HANDLE) , data(DATA) , 
-                      trust-app-id : TN >
+                      storage : SI >
     =
     < TK : TaKernel | api-state : waitWriteObjectData >
-    writeObjectData(HANDLE , DATA , TK , TN)
+    writeObjectData(HANDLE , DATA , TK , SI)
   .
 
 
   ceq
-    writeObjectData(HANDLE , DATA , TK , TN)
-    < OI : PersistentObject |
-                              data-stream-id : DI , trust-app-id : TN >
-    < HANDLE : ObjectHandle | oid : OI, flags : DATAFLAGS,
+    writeObjectData(HANDLE , DATA , TK , SI)
+    < oid(M, SI) : PersistentObject |
+                              data-stream-id : DI >
+    < HANDLE : ObjectHandle | oid : oid(M, SI), flags : DATAFLAGS,
                               pos : DATAPOS >
     < DI : DataStreamObject | data-size : DS , content : DM >
     =
-    < OI : PersistentObject |
+    < oid(M, SI) : PersistentObject |
       data-stream : read(pos(0), updateSize(DS, DATAPOS, sizeOfData(DATA)),
         writeStream(DATA, DATAPOS, DS, DM)) >
     < HANDLE : ObjectHandle |
@@ -661,13 +657,13 @@ omod DATA-STREAM-OBJECT-BEHAVIOR-INVISIBLE is
 
 
   ceq
-    writeObjectData(HANDLE , DATA , TK , TN)
+    writeObjectData(HANDLE , DATA , TK , SI)
     < TK : TaKernel | api-state : waitWriteObjectData , current-api : WriteObjectData >
-    < OI : PersistentObject | trust-app-id : TN >
-    < HANDLE : ObjectHandle | oid : OI, flags : DATAFLAGS,
+    < oid(M, SI) : PersistentObject | >
+    < HANDLE : ObjectHandle | oid : oid(M, SI), flags : DATAFLAGS,
                               pos : DATAPOS >
     =
-    < OI : PersistentObject | >
+    < oid(M, SI) : PersistentObject | >
     < HANDLE : ObjectHandle | >
     < TK : TaKernel | api-state : finished , current-api : WriteObjectData,
                       api-return : apiReturn(WriteObjectData, TEE-ERROR-OVERFLOW) >
@@ -675,16 +671,16 @@ omod DATA-STREAM-OBJECT-BEHAVIOR-INVISIBLE is
   .
 
   eq
-    writeObjectData(HANDLE, DATA, TK, TN)
-    < OI : PersistentObject |
-                              data-stream-id : DI, trust-app-id : TN >
+    writeObjectData(HANDLE, DATA, TK, SI)
+    < oid(M, SI) : PersistentObject |
+                              data-stream-id : DI >
     =
-    < OI : PersistentObject | >
-    writeObjectDataTop(HANDLE, DATA, TK, TN, OI, DI)
+    < oid(M, SI) : PersistentObject | >
+    writeObjectDataTop(HANDLE, DATA, TK, SI, oid(M, SI), DI)
   .
 
   ceq
-    writeObjectDataTop(HANDLE, DATA, TK, TN, OI, DI)
+    writeObjectDataTop(HANDLE, DATA, TK, SI, OI, DI)
     < HANDLE : ObjectHandle | oid : OI, flags : DATAFLAGS,
                               pos : DATAPOS >
     =
@@ -696,7 +692,7 @@ omod DATA-STREAM-OBJECT-BEHAVIOR-INVISIBLE is
   --- A write that would exceed TEE_DATA_MAX_POSITION completes through the
   --- top-level handle overflow path.
   ceq
-    writeObjectDataTop(HANDLE, DATA, TK, TN, OI, DI)
+    writeObjectDataTop(HANDLE, DATA, TK, SI, OI, DI)
     < HANDLE : ObjectHandle | oid : OI, flags : DATAFLAGS,
                               pos : DATAPOS >
     =

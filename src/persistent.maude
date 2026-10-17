@@ -2,7 +2,7 @@
 
 --- This module defines the persistent object APIs, defined in chapter 5 section 7 of the G.P. documentation.
 
-omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
+omod PERSISTENT-OBJECT-BEHAVIOR is
   pr ID-GEN .
   pr TA-KERNEL .
   pr TRANSIENT-OBJECT .
@@ -26,7 +26,6 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
   vars OI DI : Oid .
   var SI : Oid .
   vars FILE FILE' : FileId .
-  var TN : AppId .
   var TK : Oid .
   vars DATAFLAGS DATAFLAGS2 : Set{DataFlag} .
   var HS : Configuration .
@@ -118,11 +117,10 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
   crl [open-persistent-subroutine] :
     < TK : TaKernel | status : normal , api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : OpenPersistentObject ,
-                      current-params : (storageId(STORID) , fileId(FILE) , PARAMS) ,
-                      trust-app-id : TN >
+                      current-params : (storageId(STORID) , fileId(FILE) , PARAMS) >
     =>
     < TK : TaKernel | api-state : waitStorageCheck >
-    reqTrustedOS(getStorageStatus checkFileExist(FILE) , TK , TN)
+    reqTrustedOS(getStorageStatus checkFileExist(FILE) , TK)
   if supportedStorage(STORID)
   .
 
@@ -269,11 +267,10 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
   crl [create-persistent-subroutine] :
     < TK : TaKernel | status : normal , api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : CreatePersistentObject ,
-                      current-params : storageId(STORID) , fileId(FILE) , PARAMS ,
-                      trust-app-id : TN >
+                      current-params : storageId(STORID) , fileId(FILE) , PARAMS >
     =>
     < TK : TaKernel | api-state : waitStorageCheck >
-    reqTrustedOS(getStorageStatus checkFileExist(FILE) , TK , TN)
+    reqTrustedOS(getStorageStatus checkFileExist(FILE) , TK)
   if supportedStorage(STORID)
   .
 
@@ -344,7 +341,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     < TK : TaKernel | status : normal , api-state : waitReqAttributeAndDelete ,
                       current-api : CreatePersistentObject ,
                       current-params : (fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) , PARAMS) ,
-                      storage : SIDX, counter : N , trust-app-id : TN >
+                      storage : SIDX, counter : N  >
     < SIDX : Storage | counter : M >
     =>
     < TK : TaKernel | api-state : waitNotifyFileCreation , counter : N + 1 ,
@@ -355,12 +352,11 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
                                          file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
                                          type : OBJTYPE , max-size : keySize(ATTRS) ,
                                          attributes : ATTRS , usages : OBJUSAGES ,
-                                         data-stream-id : oid(M + 1, SIDX) ,
-                                         trust-app-id : TN >
+                                         data-stream-id : oid(M + 1, SIDX) >
     freshPersistentHandle(N, TK , DATAFLAGS , oid(M, SIDX))
     < oid(M + 1, SIDX) : DataStreamObject | persistent-owner-id : oid(M, SIDX) ,
                                              data-size : DATASIZE , content : newContent(DATALIST) >
-    reqTrustedOS(notifyFileCreation(FILE) , TK , TN)
+    reqTrustedOS(notifyFileCreation(FILE) , TK)
   .
 
 --- Version In Paper
@@ -416,22 +412,22 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 
 --- The following four rules define when an object already exists and overwrite flag exist.
 
-  msg deleteOldPersistent : Oid FileId Oid AppId -> Msg .
+  msg deleteOldPersistent : Oid FileId Oid -> Msg .
   msg finishDeleteOldPersistent : Oid -> Msg .
 
   rl [create-persistent-subroutine] :
     < TK : TaKernel | status : normal , api-state : creationNotReady ,
                       current-api : CreatePersistentObject ,
                       current-params : fileId(FILE) , PARAMS ,
-                      storage : SI , trust-app-id : TN >
+                      storage : SI >
     =>
     < TK : TaKernel | api-state : waitDeleteOldPersistent >
-    deleteOldPersistent(SI , FILE , TK , TN)
+    deleteOldPersistent(SI , FILE , TK)
   .
 
   rl [create-persistent-subroutine] :
-    deleteOldPersistent(SI , FILE , TK , TN)
-    < oid(M, SI) : PersistentObject | file-name : FILE , data-stream-id : DI , trust-app-id : TN >
+    deleteOldPersistent(SI , FILE , TK)
+    < oid(M, SI) : PersistentObject | file-name : FILE , data-stream-id : DI >
     < DI : DataStreamObject | persistent-owner-id : oid(M, SI) >
     HS
     =>
@@ -467,7 +463,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     < TK : TaKernel | status : normal , api-state : createPureData ,
                       current-api : CreatePersistentObject ,
                       current-params : (fileId(FILE) , data(DATALIST) , size(DATASIZE) , flags(DATAFLAGS) , PARAMS) ,
-                      storage : SIDX, counter : N , trust-app-id : TN >
+                      storage : SIDX, counter : N  >
     < SIDX : Storage | counter : M >
     =>
     < TK : TaKernel | api-state : waitNotifyFileCreation , counter : N + 1 ,
@@ -478,12 +474,11 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
                                          file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
                                          type : TEE-TYPE-DATA , max-size : 0 Bits ,
                                          attributes : empty , usages : empty ,
-                                         data-stream-id : oid(M + 1, SIDX) ,
-                                         trust-app-id : TN >
+                                         data-stream-id : oid(M + 1, SIDX) >
     freshPersistentHandle(N, TK , DATAFLAGS , oid(M, SIDX))
     < oid(M + 1, SIDX) : DataStreamObject | persistent-owner-id : oid(M, SIDX) ,
                                              data-size : DATASIZE , content : newContent(DATALIST) >
-    reqTrustedOS(notifyFileCreation(FILE) , TK , TN)
+    reqTrustedOS(notifyFileCreation(FILE) , TK)
   .
 
 --- The following four rules copy object from handles and use it to make a new persistent object.
@@ -522,7 +517,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
                       current-api : CreatePersistentObject ,
                       current-params : (fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) ,
                                         attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) , PARAMS) ,
-                      storage : SIDX, counter : N , trust-app-id : TN >
+                      storage : SIDX, counter : N  >
     < SIDX : Storage | counter : M >
     =>
     < TK : TaKernel | api-state : waitNotifyFileCreation , counter : N + 1 ,
@@ -533,12 +528,11 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
                                          file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
                                          type : OBJTYPE , max-size : keySize(ATTRS) ,
                                          attributes : ATTRS , usages : OBJUSAGES ,
-                                         data-stream-id : oid(M + 1, SIDX) ,
-                                         trust-app-id : TN >
+                                         data-stream-id : oid(M + 1, SIDX) >
     freshPersistentHandle(N, TK , DATAFLAGS , oid(M, SIDX))
     < oid(M + 1, SIDX) : DataStreamObject | persistent-owner-id : oid(M, SIDX) ,
                                              data-size : DATASIZE , content : newContent(DATALIST) >
-    reqTrustedOS(notifyFileCreation(FILE) , TK , TN)
+    reqTrustedOS(notifyFileCreation(FILE) , TK)
   .
 
 --- This rule returns TEE_ERROR_STORAGE_NO_SPACE if insufficient space is available to create the persistent object.
@@ -567,15 +561,14 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
   crl [close-and-delete-persistent-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : CloseAndDeletePersistentObject1 ,
-                      current-params : handle(HANDLE) ,
-                      trust-app-id : TN >
+                      current-params : handle(HANDLE) >
     =>
     < TK : TaKernel | api-state : waitStorageCheck >
-    reqTrustedOS(getStorageStatus , TK , TN)
+    reqTrustedOS(getStorageStatus , TK)
   if not nullHandle(HANDLE)
   .
 
-  msg deletePersistent : Oid Oid AppId -> Msg .
+  msg deletePersistent : Oid Oid Oid -> Msg .
   msg finishDeletePersistent : FileId Oid -> Msg .
   msg failDeletePersistent : Oid -> Msg .
 
@@ -583,45 +576,44 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     retTrustedOS(storageStatus(storageNormal) , TK)
     < TK : TaKernel | api-state : waitStorageCheck , current-api : CloseAndDeletePersistentObject1 ,
                       current-params : handle(HANDLE) ,
-                      trust-app-id : TN >
+                      storage : SI >
     =>
     < TK : TaKernel | api-state : waitDeletePersistent >
-    deletePersistent(HANDLE , TK , TN)
+    deletePersistent(HANDLE , TK , SI)
   .
 
   rl [close-and-delete-persistent-corrupt-subroutine] :
     retTrustedOS(storageStatus(storageCorrupt) , TK)
     < TK : TaKernel | api-state : waitStorageCheck,
                       current-api : CloseAndDeletePersistentObject1,
-                      current-params : handle(HANDLE), trust-app-id : TN >
+                      current-params : handle(HANDLE), storage : SI >
     =>
     < TK : TaKernel | api-state : waitDeletePersistent >
-    deletePersistent(HANDLE, TK, TN)
+    deletePersistent(HANDLE, TK, SI)
   .
 
   op hasWriteMeta : Set{DataFlag} -> Bool .
   eq hasWriteMeta((TEE-DATA-FLAG-ACCESS-WRITE-META , DATAFLAGS)) = true .
 
   crl [close-and-delete-persistent-top-level-start] :
-    deletePersistent(HANDLE, TK, TN)
-    < OI : PersistentObject |
-                              data-stream-id : DI, file-name : FILE,
-                              trust-app-id : TN >
-    < DI : DataStreamObject | persistent-owner-id : OI >
-    < HANDLE : ObjectHandle | oid : OI, flags : DATAFLAGS >
+    deletePersistent(HANDLE, TK, SI)
+    < oid(M, SI) : PersistentObject |
+                              data-stream-id : DI, file-name : FILE >
+    < DI : DataStreamObject | persistent-owner-id : oid(M, SI) >
+    < HANDLE : ObjectHandle | oid : oid(M, SI), flags : DATAFLAGS >
     HS
     =>
-    removePersistentHandles(OI, HS)
+    removePersistentHandles(oid(M, SI), HS)
     finishDeletePersistent(FILE, TK)
   if hasWriteMeta(DATAFLAGS)
   .
 
   crl [close-and-delete-persistent-top-level-fail] :
-    deletePersistent(HANDLE, TK, TN)
-    < OI : PersistentObject | trust-app-id : TN >
-    < HANDLE : ObjectHandle | oid : OI, flags : DATAFLAGS >
+    deletePersistent(HANDLE, TK, SI)
+    < oid(M, SI) : PersistentObject | >
+    < HANDLE : ObjectHandle | oid : oid(M, SI), flags : DATAFLAGS >
     =>
-    < OI : PersistentObject | >
+    < oid(M, SI) : PersistentObject | >
     < HANDLE : ObjectHandle | >
     failDeletePersistent(TK)
   if not hasWriteMeta(DATAFLAGS)
@@ -629,11 +621,10 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 
   rl [close-and-delete-persistent-subroutine] :
     finishDeletePersistent(FILE , TK)
-    < TK : TaKernel | api-state : waitDeletePersistent ,
-                      trust-app-id : TN >
+    < TK : TaKernel | api-state : waitDeletePersistent >
     =>
     < TK : TaKernel | api-state : waitNotifyFileDeletion >
-    reqTrustedOS(notifyFileDeletion(FILE) , TK , TN)
+    reqTrustedOS(notifyFileDeletion(FILE) , TK)
   .
 
   rl [close-and-delete-persistent-success] :
@@ -661,8 +652,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
   crl [close-and-delete-persistent-success] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : CloseAndDeletePersistentObject1 ,
-                      current-params : handle(HANDLE) ,
-                      trust-app-id : TN >
+                      current-params : handle(HANDLE) >
     =>
     < TK : TaKernel | api-state : finished ,
                       api-return : apiReturn(CloseAndDeletePersistentObject1 , TEE-SUCCESS , handle(HANDLE)) >
@@ -689,18 +679,17 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
 
 --- The following five rules rename the persistent object's id when there does not exist a persistent object with the same id as the input id.
 
-  msg renamePersistent : Oid FileId Oid AppId -> Msg .
+  msg renamePersistent : Oid FileId Oid Oid -> Msg .
   msg renamePersistentOwner : FileId Oid Oid -> Msg .
   msg finishRenamePersistent : FileId Oid -> Msg .
 
   rl [rename-persistent-subroutine] :
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : RenamePersistentObject ,
-                      current-params : (fileId(FILE) , PARAMS) ,
-                      trust-app-id : TN >
+                      current-params : (fileId(FILE) , PARAMS) >
     =>
     < TK : TaKernel | api-state : waitStorageCheck >
-    reqTrustedOS(getStorageStatus checkFileExist(FILE) , TK , TN)
+    reqTrustedOS(getStorageStatus checkFileExist(FILE) , TK)
   .
 
   rl [rename-persistent-subroutine] :
@@ -708,15 +697,15 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     < TK : TaKernel | api-state : waitStorageCheck ,
                       current-api : RenamePersistentObject ,
                       current-params : (handle(HANDLE) , fileId(FILE)) ,
-                      trust-app-id : TN >
+                      storage : SI >
     =>
     < TK : TaKernel | api-state : waitRenamePersistent >
-    renamePersistent(HANDLE , FILE , TK , TN)
+    renamePersistent(HANDLE , FILE , TK , SI)
   .
 
 
   crl [rename-persistent-top-level-check-handle] :
-    renamePersistent(HANDLE, FILE, TK, TN)
+    renamePersistent(HANDLE, FILE, TK, SI)
     < HANDLE : ObjectHandle | oid : OI, flags : DATAFLAGS >
     =>
     < HANDLE : ObjectHandle | >
@@ -736,11 +725,10 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
     finishRenamePersistent(FILE' , TK)
     < TK : TaKernel | api-state : waitRenamePersistent ,
                       current-api : RenamePersistentObject ,
-                      current-params : fileId(FILE) , PARAMS ,
-                      trust-app-id : TN >
+                      current-params : fileId(FILE) , PARAMS >
     =>
     < TK : TaKernel | api-state : waitNotifyFileRename >
-    reqTrustedOS(notifyFileRename(FILE' , FILE) , TK , TN)
+    reqTrustedOS(notifyFileRename(FILE' , FILE) , TK)
   .
 
   rl [rename-persistent-success] :
@@ -794,12 +782,11 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR is
   rl [copy-object-attributes-subroutine] :
     retAttributePr(ATTRS , OBJTYPE , OBJUSAGES , TK)
     < TK : TaKernel | api-state : waitReqAttribute ,
-                      current-api : CopyObjectAttributes1 , current-params : PARAMS ,
-                      trust-app-id : TN >
+                      current-api : CopyObjectAttributes1 , current-params : PARAMS >
     =>
     < TK : TaKernel | api-state : waitStorageCheck ,
                       current-params : PARAMS , attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) >
-    reqTrustedOS(getStorageStatus , TK , TN)
+    reqTrustedOS(getStorageStatus , TK)
   .
 
   rl [copy-object-attributes-subroutine] :
@@ -844,8 +831,8 @@ endom
 
 --- This module provides invisible reduction for persistent object API.
 
-omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
-  pr UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR .
+omod PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
+  pr PERSISTENT-OBJECT-BEHAVIOR .
 
   vars N M : Nat .
   var SIDX : Oid .
@@ -853,7 +840,6 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
   vars OI DI : Oid .
   var SI : Oid .
   var FILE : FileId .
-  var TN : AppId .
   var TK : Oid .
   vars DATAFLAGS DATAFLAGS2 : Set{DataFlag} .
   var HS : Configuration .
@@ -874,11 +860,10 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
   ceq
     < TK : TaKernel | status : normal , api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : OpenPersistentObject ,
-                      current-params : (storageId(STORID) , fileId(FILE) , PARAMS) ,
-                      trust-app-id : TN >
+                      current-params : (storageId(STORID) , fileId(FILE) , PARAMS) >
     =
     < TK : TaKernel | api-state : waitStorageCheck >
-    reqTrustedOS(getStorageStatus checkFileExist(FILE) , TK , TN)
+    reqTrustedOS(getStorageStatus checkFileExist(FILE) , TK)
   if supportedStorage(STORID)
   .
 
@@ -984,11 +969,10 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
   ceq
     < TK : TaKernel | status : normal , api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : CreatePersistentObject ,
-                      current-params : storageId(STORID) , fileId(FILE) , PARAMS ,
-                      trust-app-id : TN >
+                      current-params : storageId(STORID) , fileId(FILE) , PARAMS >
     =
     < TK : TaKernel | api-state : waitStorageCheck >
-    reqTrustedOS(getStorageStatus checkFileExist(FILE) , TK , TN)
+    reqTrustedOS(getStorageStatus checkFileExist(FILE) , TK)
   if supportedStorage(STORID)
   .
 
@@ -1025,15 +1009,15 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | status : normal , api-state : creationNotReady ,
                       current-api : CreatePersistentObject ,
                       current-params : fileId(FILE) , PARAMS ,
-                      storage : SI , trust-app-id : TN >
+                      storage : SI >
     =
     < TK : TaKernel | api-state : waitDeleteOldPersistent >
-    deleteOldPersistent(SI , FILE , TK , TN)
+    deleteOldPersistent(SI , FILE , TK)
   .
 
   eq
-    deleteOldPersistent(SI , FILE , TK , TN)
-    < oid(M, SI) : PersistentObject | file-name : FILE , data-stream-id : DI , trust-app-id : TN >
+    deleteOldPersistent(SI , FILE , TK)
+    < oid(M, SI) : PersistentObject | file-name : FILE , data-stream-id : DI >
     < DI : DataStreamObject | persistent-owner-id : oid(M, SI) >
     HS
     =
@@ -1063,7 +1047,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | status : normal , api-state : createPureData ,
                       current-api : CreatePersistentObject ,
                       current-params : (fileId(FILE) , data(DATALIST) , size(DATASIZE) , flags(DATAFLAGS) , PARAMS) ,
-                      storage : SIDX, counter : N , trust-app-id : TN >
+                      storage : SIDX, counter : N  >
     < SIDX : Storage | counter : M >
     =
     < TK : TaKernel | api-state : waitNotifyFileCreation , counter : N + 1 ,
@@ -1074,12 +1058,11 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
                                          file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
                                          type : TEE-TYPE-DATA , max-size : 0 Bits ,
                                          attributes : empty , usages : empty ,
-                                         data-stream-id : oid(M + 1, SIDX) ,
-                                         trust-app-id : TN >
+                                         data-stream-id : oid(M + 1, SIDX) >
     freshPersistentHandle(N, TK , DATAFLAGS , oid(M, SIDX))
     < oid(M + 1, SIDX) : DataStreamObject | persistent-owner-id : oid(M, SIDX) ,
                                              data-size : DATASIZE , content : newContent(DATALIST) >
-    reqTrustedOS(notifyFileCreation(FILE) , TK , TN)
+    reqTrustedOS(notifyFileCreation(FILE) , TK)
   .
 
 --- 3.3. HANDLE != NULL /\ OPTHANDLE == NULL : if handle object is transient, transform object into a persistent object
@@ -1098,7 +1081,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | status : normal , api-state : waitReqAttributeAndDelete ,
                       current-api : CreatePersistentObject ,
                       current-params : (fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) , PARAMS) ,
-                      storage : SIDX, counter : N , trust-app-id : TN >
+                      storage : SIDX, counter : N  >
     < SIDX : Storage | counter : M >
     =
     < TK : TaKernel | api-state : waitNotifyFileCreation , counter : N + 1 ,
@@ -1109,12 +1092,11 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
                                          file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
                                          type : OBJTYPE , max-size : keySize(ATTRS) ,
                                          attributes : ATTRS , usages : OBJUSAGES ,
-                                         data-stream-id : oid(M + 1, SIDX) ,
-                                         trust-app-id : TN >
+                                         data-stream-id : oid(M + 1, SIDX) >
     freshPersistentHandle(N, TK , DATAFLAGS , oid(M, SIDX))
     < oid(M + 1, SIDX) : DataStreamObject | persistent-owner-id : oid(M, SIDX) ,
                                              data-size : DATASIZE , content : newContent(DATALIST) >
-    reqTrustedOS(notifyFileCreation(FILE) , TK , TN)
+    reqTrustedOS(notifyFileCreation(FILE) , TK)
   .
 
 --- 3.4. HANDLE != NULL /\ OPTHANDLE != NULL : copy object from handle and use it to make a new persistent object
@@ -1153,7 +1135,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
                       current-api : CreatePersistentObject ,
                       current-params : (fileId(FILE) , handle(HANDLE) , flags(DATAFLAGS) , data(DATALIST) , size(DATASIZE) ,
                                         attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) , PARAMS) ,
-                      storage : SIDX, counter : N , trust-app-id : TN >
+                      storage : SIDX, counter : N  >
     < SIDX : Storage | counter : M >
     =
     < TK : TaKernel | api-state : waitNotifyFileCreation , counter : N + 1 ,
@@ -1164,12 +1146,11 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
                                          file-name : FILE, data-stream : read(pos(0), DATASIZE, newContent(DATALIST)),
                                          type : OBJTYPE , max-size : keySize(ATTRS) ,
                                          attributes : ATTRS , usages : OBJUSAGES ,
-                                         data-stream-id : oid(M + 1, SIDX) ,
-                                         trust-app-id : TN >
+                                         data-stream-id : oid(M + 1, SIDX) >
     freshPersistentHandle(N, TK , DATAFLAGS , oid(M, SIDX))
     < oid(M + 1, SIDX) : DataStreamObject | persistent-owner-id : oid(M, SIDX) ,
                                              data-size : DATASIZE , content : newContent(DATALIST) >
-    reqTrustedOS(notifyFileCreation(FILE) , TK , TN)
+    reqTrustedOS(notifyFileCreation(FILE) , TK)
   .
 
   eq
@@ -1204,19 +1185,17 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
   ceq
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : CloseAndDeletePersistentObject1 ,
-                      current-params : handle(HANDLE) ,
-                      trust-app-id : TN >
+                      current-params : handle(HANDLE) >
     =
     < TK : TaKernel | api-state : waitStorageCheck >
-    reqTrustedOS(getStorageStatus , TK , TN)
+    reqTrustedOS(getStorageStatus , TK)
   if not nullHandle(HANDLE)
   .
 
   ceq
     < TK : TaKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : CloseAndDeletePersistentObject1 ,
-                      current-params : handle(HANDLE) ,
-                      trust-app-id : TN >
+                      current-params : handle(HANDLE) >
     =
     < TK : TaKernel | api-state : finished ,
                       api-return : apiReturn(CloseAndDeletePersistentObject1 , TEE-SUCCESS , handle(HANDLE)) >
@@ -1228,10 +1207,10 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | status : normal ,
                       api-state : waitStorageCheck , current-api : CloseAndDeletePersistentObject1 ,
                       current-params : handle(HANDLE) ,
-                      trust-app-id : TN >
+                      storage : SI >
     =
     < TK : TaKernel | api-state : waitDeletePersistent >
-    deletePersistent(HANDLE , TK , TN)
+    deletePersistent(HANDLE , TK , SI)
   .
 
 
@@ -1241,19 +1220,18 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TaKernel | status : normal,
                       api-state : waitStorageCheck,
                       current-api : CloseAndDeletePersistentObject1,
-                      current-params : handle(HANDLE), trust-app-id : TN >
+                      current-params : handle(HANDLE), storage : SI >
     =
     < TK : TaKernel | api-state : waitDeletePersistent >
-    deletePersistent(HANDLE, TK, TN)
+    deletePersistent(HANDLE, TK, SI)
   .
 
   eq
     finishDeletePersistent(FILE , TK)
-    < TK : TaKernel | api-state : waitDeletePersistent ,
-                      trust-app-id : TN >
+    < TK : TaKernel | api-state : waitDeletePersistent >
     =
     < TK : TaKernel | api-state : waitNotifyFileDeletion >
-    reqTrustedOS(notifyFileDeletion(FILE) , TK , TN)
+    reqTrustedOS(notifyFileDeletion(FILE) , TK)
   .
 
   eq
@@ -1283,25 +1261,24 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
   .
 
   ceq
-    deletePersistent(HANDLE, TK, TN)
-    < OI : PersistentObject |
-                              data-stream-id : DI, file-name : FILE,
-                              trust-app-id : TN >
-    < DI : DataStreamObject | persistent-owner-id : OI >
-    < HANDLE : ObjectHandle | oid : OI, flags : DATAFLAGS >
+    deletePersistent(HANDLE, TK, SI)
+    < oid(M, SI) : PersistentObject |
+                              data-stream-id : DI, file-name : FILE >
+    < DI : DataStreamObject | persistent-owner-id : oid(M, SI) >
+    < HANDLE : ObjectHandle | oid : oid(M, SI), flags : DATAFLAGS >
     HS
     =
-    removePersistentHandles(OI, HS)
+    removePersistentHandles(oid(M, SI), HS)
     finishDeletePersistent(FILE, TK)
   if hasWriteMeta(DATAFLAGS)
   .
 
   ceq
-    deletePersistent(HANDLE, TK, TN)
-    < OI : PersistentObject | trust-app-id : TN >
-    < HANDLE : ObjectHandle | oid : OI, flags : DATAFLAGS >
+    deletePersistent(HANDLE, TK, SI)
+    < oid(M, SI) : PersistentObject | >
+    < HANDLE : ObjectHandle | oid : oid(M, SI), flags : DATAFLAGS >
     =
-    < OI : PersistentObject | >
+    < oid(M, SI) : PersistentObject | >
     < HANDLE : ObjectHandle | >
     failDeletePersistent(TK)
   if not hasWriteMeta(DATAFLAGS)
@@ -1315,12 +1292,11 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
   eq
     retAttributePr(ATTRS , OBJTYPE , OBJUSAGES , TK)
     < TK : TaKernel | api-state : waitReqAttribute ,
-                      current-api : CopyObjectAttributes1 , current-params : PARAMS ,
-                      trust-app-id : TN >
+                      current-api : CopyObjectAttributes1 , current-params : PARAMS >
     =
     < TK : TaKernel | api-state : waitStorageCheck ,
                       current-params : PARAMS , attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) >
-    reqTrustedOS(getStorageStatus , TK , TN)
+    reqTrustedOS(getStorageStatus , TK)
   .
 
   eq
@@ -1337,8 +1313,7 @@ omod UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
   ceq
     retTrustedOS(storageStatus(STATUS) , TK)
     < TK : TaKernel | api-state : waitStorageCheck ,
-                      current-api : CopyObjectAttributes1 ,
-                      trust-app-id : TN >
+                      current-api : CopyObjectAttributes1 >
     =
     < TK : TaKernel | api-state : finished , api-return : apiReturn(CopyObjectAttributes1 , storageErrCode(STATUS)) >
   if abnormalStorage(STATUS)

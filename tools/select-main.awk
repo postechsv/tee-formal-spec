@@ -2,6 +2,9 @@
 #
 # Only active lines are considered: "load X" and "pr M ." at the start of a line
 # (after indentation). Lines starting with "---" are comments and never match.
+# Commented-out code, i.e. "--- pr M ." or "--- load X" (a "---" comment whose text is
+# one of the commands below), is removed from the output. Other "---" lines (prose
+# headers and notes) are kept.
 #
 #   -v skip_loads="F ..."   drop "load F" lines
 #   -v skip_mods="M ..."    drop "pr M ." lines
@@ -21,6 +24,7 @@ BEGIN {
 
 {
     sub(/\r$/, "")
+    if ($0 ~ /^[ \t]*---[ \t]+(pr|load|inc|including|extending|protecting)[ \t]/) next
     if ($0 ~ /^[ \t]*load[ \t]+/) {
         if ($2 in drop_load) next
     } else if ($0 ~ /^[ \t]*pr[ \t]+/) {

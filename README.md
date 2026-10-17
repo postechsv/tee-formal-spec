@@ -109,9 +109,12 @@ make test                  # build build/default and run every test suite
 make NAME=nocrypto CRYPTO=0 test   # same, without the cryptographic operation APIs
 make WITHOUT="M1 M2"       # drop modules (pr lines) from main.maude
 make DMC=1 test           # DM-Check-compatible build (gen-dmc output), then the test suites
+make V=1 test             # verbose: stream the Maude output of each test file as it runs
 make check-dmc             # regenerate the DMC build and run gen-dmc's ground checks
 make help                  # features, test selection, targets
 ```
+
+`V=1` (or `VERBOSE=1`) shows the full Maude output of each API test file and each check file while it runs, and echoes the build commands. Without it, only the summary lines (`[test-suite] API-level: ...`, `[checks] FILE: ...`) are printed. `V` is a display option: it is not cached in `build/$(NAME)/config.mk` and does not trigger a rebuild. The runners also accept `-v` directly, e.g. `python3 tests/run-checks.py -v FILE...`.
 
 Each build lives in `build/$(NAME)/` with `src/` and `tests/` holding the final tree (a copy of the selected sources, or the DM-Check output with `DMC=1`), and its settings are remembered in `build/$(NAME)/config.mk`. With `DMC=1` the generator's bookkeeping (reflection cache and `manifest.json`) is kept in `build/$(NAME)/.dmc-cache/`, outside `src/`, and survives rebuilds until `make clean`. Features and the tests that need them are declared in `mk/features.mk`; tests of disabled features are skipped.
 

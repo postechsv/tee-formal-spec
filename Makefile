@@ -8,6 +8,9 @@
 #   make NAME=t test        build, then run test-api and test-checks in build/t/tests
 #   make test-api           API-level black-box tests (tests/api/test-*.maude)
 #   make test-checks        search/red checks (completion/*.maude, gp-conformance/*.maude)
+#   make V=1 test           verbose: stream the Maude output of each test file / check file as it
+#                           runs, and echo the build commands (VERBOSE=1 is the same). Display
+#                           only: not cached, does not change the build; V=0 is the default
 #   make dmc                same as make DMC=1 (the setting is cached like the features)
 #   make check-dmc          regenerate the DMC build and run gen-dmc's ground checks (exit 2 on mismatch)
 #   make help               list features, test selection and current values
@@ -50,11 +53,25 @@ include mk/features.mk
 # DM-Check transform (tools/gen-dmc.py). Not a spec feature: it does not drop any files.
 DMC ?= 0
 
+# Verbose output (V=1 or VERBOSE=1): the test runners stream Maude's output and the recipes
+# are echoed. Display only, so it is not written to config.want or the cache, and changing it
+# does not rebuild. Like NAME, an inherited environment value is ignored.
+ifneq ($(filter environment%,$(origin V)),)
+V := 0
+endif
+ifneq ($(filter environment%,$(origin VERBOSE)),)
+VERBOSE := 0
+endif
+V ?= $(or $(VERBOSE),0)
+Q = $(if $(filter 1,$(V)),,@)
+VFLAG = $(if $(filter 1,$(V)),-v)
+
 .PHONY: all src test test-api test-checks dmc check-dmc help config clean distclean FORCE
 
 all: src
 
 # Stop early on invalid values or unmet requirements.
+$(if $(filter-out 0 1,$(V)),$(error V must be 0 or 1, got '$(V)'))
 $(if $(filter-out 0 1,$(DMC)),$(error DMC must be 0 or 1, got '$(DMC)'))
 $(foreach F,$(FEATURES),\
   $(if $(filter-out 0 1,$($(F))),$(error $(F) must be 0 or 1, got '$($(F))'))\
@@ -103,19 +120,19 @@ src: $(FINAL_STAMP)
 # Stage, then the final tree, then the stage is removed. A failure before the touch
 # leaves the stamp old, so the next run rebuilds (and starts by removing the stage).
 $(FINAL_STAMP): $(FINAL_INPUTS) | $(OUT)
-	@rm -rf $(STAGE) $(OUT)/tests
-	@mkdir -p $(STAGE)/src $(STAGE)/tests
-	@awk -v skip_loads='$(DROP_LOADS)' -v skip_mods='$(DROP_MODULES)' -v without='$(WITHOUT)' \
+	$(Q)rm -rf $(STAGE) $(OUT)/tests
+	$(Q)mkdir -p $(STAGE)/src $(STAGE)/tests
+	$(Q)awk -v skip_loads='$(DROP_LOADS)' -v skip_mods='$(DROP_MODULES)' -v without='$(WITHOUT)' \
 		-f tools/select-main.awk $(MAIN_SRC) > $(STAGE)/src/main.maude
-	@$(if $(SRC_FILES),cp $(SRC_FILES) $(STAGE)/src/)
-	@cp -R tests/. $(STAGE)/tests/
-	@if [ '$(DMC)' = 1 ]; then \
+	$(Q)$(if $(SRC_FILES),cp $(SRC_FILES) $(STAGE)/src/)
+	$(Q)cp -R tests/. $(STAGE)/tests/
+	$(Q)if [ '$(DMC)' = 1 ]; then \
 		rm -rf $(OUT)/src && $(GEN_DMC); \
 	else \
 		rm -rf $(OUT)/src && cp -R $(STAGE)/src $(OUT)/src && cp -R $(STAGE)/tests $(OUT)/tests; \
 	fi
-	@rm -rf $(STAGE)
-	@touch $@
+	$(Q)rm -rf $(STAGE)
+	$(Q)touch $@
 
 # Run both suites in $(OUT)/tests. Each runs even if the other fails; the exit status
 # is nonzero if either fails.
@@ -126,10 +143,10 @@ test: src
 	exit $$status
 
 test-api: src
-	@if [ -z '$(API_TESTS)' ]; then echo '[test-suite] no API tests selected'; else python3 $(OUT)/tests/run-api-suite.py $(API_ARGS); fi
+	@if [ -z '$(API_TESTS)' ]; then echo '[test-suite] no API tests selected'; else python3 $(OUT)/tests/run-api-suite.py $(VFLAG) $(API_ARGS); fi
 
 test-checks: src
-	@if [ -z '$(CHECK_TESTS)' ]; then echo '[checks] no check files selected'; else python3 $(OUT)/tests/run-checks.py $(CHECK_ARGS); fi
+	@if [ -z '$(CHECK_TESTS)' ]; then echo '[checks] no check files selected'; else python3 $(OUT)/tests/run-checks.py $(VFLAG) $(CHECK_ARGS); fi
 
 # The DMC build is a cached setting, like the features: DMC=1 stays until DMC=0 is given.
 dmc:
@@ -144,12 +161,13 @@ help config:
 	@echo "features:"
 	@$(foreach F,$(FEATURES),echo '  $(F)=$($(F))';) echo '  WITHOUT=$(WITHOUT)'
 	@echo "  DMC=$(DMC)"
+	@echo "  V=$(V)  (display only: not cached; V=1 streams test output)"
 	@echo "tests (relative to tests/):"
 	@echo "  api:    $(API_TESTS)"
 	@echo "  checks: $(CHECK_TESTS)"
 	@echo "targets:"
 	@echo "  make [src]     build $(OUT)/src and $(OUT)/tests (DMC=1: gen-dmc output)"
-	@echo "  make test      test-api and test-checks"
+	@echo "  make test      test-api and test-checks (V=1: stream each file's Maude output)"
 	@echo "  make test-api  API-level tests (run-api-suite.py)"
 	@echo "  make test-checks  search/red checks (run-checks.py)"
 	@echo "  make dmc       same as DMC=1 (cached)"

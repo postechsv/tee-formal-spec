@@ -28,8 +28,10 @@ import argparse
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
+import threading
 
 
 COMMAND = re.compile(r"^(search|red|reduce)\b")
@@ -52,25 +54,54 @@ def commands(lines: list[str]) -> list[tuple[int, str, str]]:
     return found
 
 
-def run_file(path: Path, maude: str) -> bool:
-    text = path.read_text(encoding="utf-8")
-    cmds = commands(text.splitlines())
-    try:
-        # Maude resolves a relative file argument through $PWD, which subprocess
-        # does not update when cwd= is given, so PWD is set explicitly.
-        env = dict(os.environ, PWD=str(path.parent))
+def run_maude(maude: str, path: Path, verbose: bool) -> tuple[str, str]:
+    """Run Maude on the file path (from its directory); return (stdout, stderr).
+
+    With verbose, each stdout line is printed as soon as Maude writes it (stdbuf
+    makes the pipe line-buffered where available); the result is the same."""
+    # Maude resolves a relative file argument through $PWD, which subprocess
+    # does not update when cwd= is given, so PWD is set explicitly.
+    env = dict(os.environ, PWD=str(path.parent))
+    command = [maude, "-no-banner", "-no-advise", path.name]
+    if not verbose:
         result = subprocess.run(
-            [maude, "-no-banner", "-no-advise", path.name],
-            cwd=path.parent, env=env, stdin=subprocess.DEVNULL,
+            command, cwd=path.parent, env=env, stdin=subprocess.DEVNULL,
             capture_output=True, text=True, encoding="utf-8",
         )
+        return result.stdout, result.stderr
+    if shutil.which("stdbuf"):
+        command = ["stdbuf", "-oL"] + command
+    proc = subprocess.Popen(
+        command, cwd=path.parent, env=env, stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",
+    )
+    errors: list[str] = []
+    # stderr is drained by a thread so Maude cannot block on a full pipe.
+    reader = threading.Thread(target=lambda: errors.append(proc.stderr.read()), daemon=True)
+    reader.start()
+    lines: list[str] = []
+    for line in proc.stdout:
+        print(line, end="", flush=True)
+        lines.append(line)
+    proc.wait()
+    reader.join()
+    return "".join(lines), errors[0] if errors else ""
+
+
+def run_file(path: Path, maude: str, verbose: bool = False) -> bool:
+    text = path.read_text(encoding="utf-8")
+    cmds = commands(text.splitlines())
+    if verbose:
+        print("== {}: {} commands ==".format(path.name, len(cmds)), flush=True)
+    try:
+        stdout, stderr = run_maude(maude, path, verbose)
     except OSError as error:
         raise CheckError("cannot run Maude '{}': {}".format(maude, error))
 
     problems = []
-    if result.stderr.strip():
-        problems.append("stderr: " + result.stderr.strip().replace("\n", "\n    "))
-    diagnostics = DIAGNOSTIC.findall(result.stdout)
+    if stderr.strip():
+        problems.append("stderr: " + stderr.strip().replace("\n", "\n    "))
+    diagnostics = DIAGNOSTIC.findall(stdout)
     if diagnostics:
         problems.append("Maude printed {} Warning/Error line(s)".format(len(diagnostics)))
 
@@ -78,8 +109,8 @@ def run_file(path: Path, maude: str) -> bool:
     # matched with the command's own keyword.
     searches = [c for c in cmds if c[1] == "search"]
     reduces = [c for c in cmds if c[1] != "search"]
-    search_out = SEARCH_RESULT.findall(result.stdout)
-    reduce_out = REDUCE_RESULT.findall(result.stdout)
+    search_out = SEARCH_RESULT.findall(stdout)
+    reduce_out = REDUCE_RESULT.findall(stdout)
     if len(search_out) != len(searches) or len(reduce_out) != len(reduces):
         problems.append(
             "result count mismatch: {} search results for {} search commands, "
@@ -116,6 +147,8 @@ def main() -> int:
             "Exit status 0 means every file passed; otherwise 1."
         ),
     )
+    parser.add_argument("-v", "--verbose", action="store_true",
+                        help="print the Maude output of each file as it runs")
     parser.add_argument("files", nargs="+", metavar="FILE", help="Maude check files")
     args = parser.parse_args()
 
@@ -128,7 +161,7 @@ def main() -> int:
             status = 1
             continue
         try:
-            if not run_file(path, maude):
+            if not run_file(path, maude, args.verbose):
                 status = 1
         except CheckError as error:
             print("[checks] {}: error ({})".format(path.name, error))

@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -44,6 +45,43 @@ def find_maude() -> Path:
     raise TestFailure(
         "Maude executable not found; set MAUDE_BIN or install Maude on PATH"
     )
+
+
+def run_maude(maude: Path, program: str, cwd: Path, env: dict, verbose: bool):
+    """Run Maude with program on stdin; return (returncode, stdout, stderr).
+
+    With verbose, each stdout line is printed as soon as Maude writes it (stdbuf
+    makes the pipe line-buffered where available); the result is the same."""
+    command = [str(maude), "-no-banner", "-no-advise"]
+    if not verbose:
+        result = subprocess.run(
+            command, cwd=cwd, env=env, input=program, text=True, encoding="utf-8",
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        return result.returncode, result.stdout, result.stderr
+    if shutil.which("stdbuf"):
+        command = ["stdbuf", "-oL"] + command
+    proc = subprocess.Popen(
+        command, cwd=cwd, env=env, text=True, encoding="utf-8",
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    errors: list[str] = []
+    # Pipes are drained by threads so neither Maude nor the program write can block.
+    threads = [
+        threading.Thread(target=lambda: errors.append(proc.stderr.read()), daemon=True),
+        threading.Thread(target=lambda: (proc.stdin.write(program), proc.stdin.close()),
+                         daemon=True),
+    ]
+    for thread in threads:
+        thread.start()
+    lines: list[str] = []
+    for line in proc.stdout:
+        print(line, end="", flush=True)
+        lines.append(line)
+    proc.wait()
+    for thread in threads:
+        thread.join()
+    return proc.returncode, "".join(lines), errors[0] if errors else ""
 
 
 def split_searches(text: str) -> tuple[str, list[tuple[str, str]]]:
@@ -138,7 +176,7 @@ def default_api_files() -> list[Path]:
     return sorted((SPEC / "tests" / "api").glob("test-*.maude"))
 
 
-def run_api(files: list[Path], check_count: bool) -> int:
+def run_api(files: list[Path], check_count: bool, verbose: bool = False) -> int:
     maude = find_maude()
     total = passed = 0
     failures: list[str] = []
@@ -149,17 +187,17 @@ def run_api(files: list[Path], check_count: bool) -> int:
         total += len(tests)
         commands = [api_query(command, index + 1) for index, (_, command) in enumerate(tests)]
         program = header + "\n".join(commands)
-        result = subprocess.run(
-            [str(maude), "-no-banner", "-no-advise"], cwd=ROOT,
+        if verbose:
+            print("== {}: {} searches ==".format(path.name, len(tests)), flush=True)
+        returncode, stdout, stderr = run_maude(
+            maude, program, ROOT,
             # Maude resolves relative loads through $PWD, which cwd= does not update.
-            env=dict(os.environ, PWD=str(ROOT)),
-            input=program, text=True, encoding="utf-8",
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            dict(os.environ, PWD=str(ROOT)), verbose,
         )
-        outcomes = re.findall(r"^(Solution 1 \(state \d+\)|No solution\.)", result.stdout,
+        outcomes = re.findall(r"^(Solution 1 \(state \d+\)|No solution\.)", stdout,
                               re.MULTILINE)
-        if result.returncode != 0 or result.stderr.strip():
-            raise TestFailure("{}: Maude failed: {}".format(path.name, result.stderr.strip()))
+        if returncode != 0 or stderr.strip():
+            raise TestFailure("{}: Maude failed: {}".format(path.name, stderr.strip()))
         if len(outcomes) != len(tests):
             raise TestFailure("{}: expected {} outcomes, found {}".format(
                 path.name, len(tests), len(outcomes)))
@@ -190,6 +228,8 @@ def main() -> int:
             "The runner uses MAUDE_BIN for the Maude binary."
         ),
     )
+    parser.add_argument("-v", "--verbose", action="store_true",
+                        help="print the Maude output of each file as it runs")
     parser.add_argument("files", nargs="*", metavar="FILE",
                         help="API test files to run (default: all of tests/api)")
     args = parser.parse_args()
@@ -199,9 +239,9 @@ def main() -> int:
             for path in files:
                 if not path.is_file():
                     raise TestFailure("not a file: {}".format(path))
-            run_api(files, check_count=False)
+            run_api(files, check_count=False, verbose=args.verbose)
         else:
-            run_api(default_api_files(), check_count=True)
+            run_api(default_api_files(), check_count=True, verbose=args.verbose)
         return 0
     except TestFailure as error:
         print("test suite: fail ({})".format(error), file=sys.stderr)

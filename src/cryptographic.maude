@@ -108,6 +108,7 @@ fmod MESSAGE-DIGEST is
 
   op digestMessage : List{Data} -> List{Data} .
   eq digestMessage(nil) = nil .
+  ---@dmc owise drop
   eq digestMessage(D DL) = hashed(D) digestMessage(DL) [owise] .
 
   op digestByte : AlgorithmIdentifier List{Data} -> Data [ctor] .
@@ -141,6 +142,7 @@ fmod ENCRYPTION is
   op cipherSuccess : AlgorithmIdentifier OperationMode List{CryptoKey} List{Data} -> Bool .
   eq cipherSuccess(ALGO , TEE-MODE-DECRYPT , KEYS , encrypted(DATA, ALGO, KEYS)) = true .
   eq cipherSuccess(ALGO , TEE-MODE-ENCRYPT , KEYS , DATA) = true .
+  ---@dmc owise enumerate(arg2, arg4)
   eq cipherSuccess(ALGO , MODE , KEYS , DATA) = false [owise] .
 endfm
 
@@ -166,6 +168,7 @@ fmod MAC is
   eq repeatMacByte(D , s(N)) = D repeatMacByte(D , N) .
   eq computeMAC(TEE-ALG-HMAC-SHA256 , KEYS , DATA) =
     repeatMacByte(macByte(DATA , TEE-ALG-HMAC-SHA256 , KEYS) , 32) .
+  ---@dmc owise enumerate(arg1)
   eq computeMAC(ALGO , KEYS , DATA) = macValue(DATA , ALGO , KEYS) [owise] .
 endfm
 
@@ -244,10 +247,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   op hasOutputCapacity : Set{TeeApiParam} -> Bool .
   eq hasOutputCapacity((capacity(DATASIZE) , PARAMS)) = true .
+  ---@dmc owise recurse(sep=_,_, empty=empty)
   eq hasOutputCapacity(PARAMS) = false [owise] .
 
   op outputCapacityFits : Set{TeeApiParam} List{Data} -> Bool .
   eq outputCapacityFits((capacity(DATASIZE) , PARAMS) , DATA) = dataSizeFits(DATASIZE , outputSize(DATA)) .
+  ---@dmc owise cond(not hasOutputCapacity(PARAMS))
   eq outputCapacityFits(PARAMS , DATA) = false [owise] .
 
   op dataSizeFits : DataSize DataSize -> Bool .
@@ -255,14 +260,17 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   op outputSize : List{Data} -> DataSize .
   eq outputSize(macValue(DATA , ALGO , KEYS)) = dataSize(1) .
+  ---@dmc owise enumerate(DATA)
   eq outputSize(DATA) = dataSize(size(DATA)) [owise] .
 
   op hasTagCapacity : Set{TeeApiParam} -> Bool .
   eq hasTagCapacity((tagCapacity(DATASIZE) , PARAMS)) = true .
+  ---@dmc owise recurse(sep=_,_, empty=empty)
   eq hasTagCapacity(PARAMS) = false [owise] .
 
   op tagCapacityFits : Set{TeeApiParam} List{Data} -> Bool .
   eq tagCapacityFits((tagCapacity(DATASIZE) , PARAMS) , DATA) = dataSizeFits(DATASIZE , outputSize(DATA)) .
+  ---@dmc owise cond(not hasTagCapacity(PARAMS))
   eq tagCapacityFits(PARAMS , DATA) = true [owise] .
 
   op signatureSize : CryptoKeySize -> DataSize .
@@ -271,12 +279,14 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   op outputCapacityFitsSize : Set{TeeApiParam} DataSize -> Bool .
   eq outputCapacityFitsSize((capacity(DATASIZE) , PARAMS) , DATASIZE2) =
     dataSizeFits(DATASIZE , DATASIZE2) .
+  ---@dmc owise cond(not hasOutputCapacity(PARAMS))
   eq outputCapacityFitsSize(PARAMS , DATASIZE) = false [owise] .
 
   op invalidBufferOverlap : Set{TeeApiParam} -> Bool .
   eq invalidBufferOverlap((srcRegion(bufferRegion(N , M)),
                            destRegion(bufferRegion(P , Q)), PARAMS)) =
     N =/= P and N < P + Q and P < N + M .
+  ---@dmc owise recurse(sep=_,_, empty=empty)
   eq invalidBufferOverlap(PARAMS) = false [owise] .
 
   op overlapSensitive : TeeApi -> Bool .
@@ -285,6 +295,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   eq overlapSensitive(AEUpdate) = true .
   eq overlapSensitive(AEEncryptFinal) = true .
   eq overlapSensitive(AEDecryptFinal) = true .
+  ---@dmc owise enumerate(API)
   eq overlapSensitive(API) = false [owise] .
 
   crl [overlapping-buffer-panic] :
@@ -298,6 +309,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   op validSignatureDigestLength : AlgorithmIdentifier List{Data} -> Bool .
   eq validSignatureDigestLength(TEE-ALG-RSASSA-PKCS1-V1-5-SHA256 , DATA) =
     size(DATA) == 32 .
+  ---@dmc owise enumerate(ALGO)
   eq validSignatureDigestLength(ALGO , DATA) = true [owise] .
 
   op rsaHashLength : AlgorithmIdentifier -> Nat .
@@ -315,6 +327,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   op validRsaCiphertextSize : CryptoKeySize List{Data} -> Bool .
   eq validRsaCiphertextSize(KEYSIZE , encrypted(DATA , ALGO , KEYS)) = true .
+  ---@dmc owise enumerate(DATA)
   eq validRsaCiphertextSize(KEYSIZE , DATA) = size(DATA) == rsaKeyBytes(KEYSIZE) [owise] .
 
   op validRsaCiphertext : AlgorithmIdentifier List{CryptoKey} List{Data} -> Bool .
@@ -368,6 +381,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   eq compatibleMode(TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA1 , TEE-MODE-DECRYPT) = true .
   eq compatibleMode(TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA224 , TEE-MODE-ENCRYPT) = true .
   eq compatibleMode(TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA224 , TEE-MODE-DECRYPT) = true .
+  ---@dmc owise enumerate(arg1, arg2)
   eq compatibleMode(ALGO , MODE) = false [owise] .
 
 --- The parameter maxKeySize SHALL be a valid value as defined in Table 5-9 for the algorithm, for algorithms referened in Table 5-9.
@@ -406,6 +420,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     supported(TEE-TYPE-RSA-PUBLIC-KEY , KEYSIZE) .
   eq validKeySize(TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA224 , KEYSIZE) =
     supported(TEE-TYPE-RSA-PUBLIC-KEY , KEYSIZE) .
+  ---@dmc owise enumerate(arg1, arg2)
   eq validKeySize(ALGO , KEYSIZE) = false [owise] .
 
   op validParams : AlgorithmIdentifier OperationMode CryptoKeySize -> Bool .
@@ -435,6 +450,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     TEE-USAGE-ENCRYPT in OBJUSAGES and TEE-USAGE-VERIFY in OBJUSAGES .
   eq operationUsageCompatible(TEE-ALG-RSA-NOPAD , OBJUSAGES , TEE-MODE-DECRYPT) =
     TEE-USAGE-DECRYPT in OBJUSAGES and TEE-USAGE-SIGN in OBJUSAGES .
+  ---@dmc owise enumerate(arg1, arg3)
   eq operationUsageCompatible(ALGO , OBJUSAGES , MODE) =
     modeUsageCompatible(OBJUSAGES , MODE) [owise] .
 
@@ -443,16 +459,23 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     (TEE-USAGE-ENCRYPT , TEE-USAGE-VERIFY) .
   eq requiredOperationUsage(TEE-ALG-RSA-NOPAD , TEE-MODE-DECRYPT) =
     (TEE-USAGE-DECRYPT , TEE-USAGE-SIGN) .
+  ---@dmc owise enumerate(arg1, arg2)
   eq requiredOperationUsage(ALGO , TEE-MODE-ENCRYPT) = TEE-USAGE-ENCRYPT [owise] .
+  ---@dmc owise enumerate(arg1, arg2)
   eq requiredOperationUsage(ALGO , TEE-MODE-DECRYPT) = TEE-USAGE-DECRYPT [owise] .
+  ---@dmc owise enumerate(arg1, arg2)
   eq requiredOperationUsage(ALGO , TEE-MODE-MAC) = TEE-USAGE-MAC [owise] .
+  ---@dmc owise enumerate(arg1, arg2)
   eq requiredOperationUsage(ALGO , TEE-MODE-SIGN) = TEE-USAGE-SIGN [owise] .
+  ---@dmc owise enumerate(arg1, arg2)
   eq requiredOperationUsage(ALGO , TEE-MODE-VERIFY) = TEE-USAGE-VERIFY [owise] .
+  ---@dmc owise enumerate(arg1, arg2)
   eq requiredOperationUsage(ALGO , TEE-MODE-DERIVE) = TEE-USAGE-DERIVE [owise] .
 
   op operationDigestLength : AlgorithmIdentifier -> DataSize .
   eq operationDigestLength(TEE-ALG-SHA256) = dataSize(32) .
   eq operationDigestLength(TEE-ALG-HMAC-SHA256) = dataSize(32) .
+  ---@dmc owise enumerate(ALGO)
   eq operationDigestLength(ALGO) = dataSize(0) [owise] .
 
   op operationKeyCount : AlgorithmIdentifier OperationClass -> Nat .
@@ -462,10 +485,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   op operationInfoKeySet : OperationClass Bool -> Bool .
   eq operationInfoKeySet(TEE-OPERATION-DIGEST , B1) = true .
+  ---@dmc owise enumerate(OC)
   eq operationInfoKeySet(OC , B1) = B1 [owise] .
 
   op operationInfoInitialized : OperationClass Bool -> Bool .
   eq operationInfoInitialized(TEE-OPERATION-DIGEST , B1) = true .
+  ---@dmc owise enumerate(OC)
   eq operationInfoInitialized(OC , B1) = B1 [owise] .
 
   op operationKeyInformation : List{CryptoKey} Set{ObjectUsage} Nat
@@ -480,10 +505,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   op singleInfoKeySize : Nat TeeOperationInfoKeyList -> CryptoKeySize .
   eq singleInfoKeySize(1 , teeOperationInfoKey(KEYSIZE , OBJUSAGES) ; OPINFOKEYS) = KEYSIZE .
+  ---@dmc owise enumerate(arg1, arg2)
   eq singleInfoKeySize(N , OPINFOKEYS) = 0 Bits [owise] .
 
   op singleInfoKeyUsage : Nat TeeOperationInfoKeyList -> Set{ObjectUsage} .
   eq singleInfoKeyUsage(1 , teeOperationInfoKey(KEYSIZE , OBJUSAGES) ; OPINFOKEYS) = OBJUSAGES .
+  ---@dmc owise enumerate(arg1, arg2)
   eq singleInfoKeyUsage(N , OPINFOKEYS) = empty [owise] .
 
   op singleOperationInfo : TeeOperationInfoMultiple -> TeeOperationInfo .
@@ -560,6 +587,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   eq typeModeCompatible(TEE-TYPE-SM2-PKE-PUBLIC-KEY , TEE-MODE-DECRYPT) = true .
   eq typeModeCompatible(TEE-TYPE-SM2-PKE-KEYPAIR , TEE-MODE-ENCRYPT) = true .
   eq typeModeCompatible(TEE-TYPE-SM2-PKE-KEYPAIR , TEE-MODE-DECRYPT) = true .
+  ---@dmc owise enumerate(arg1, arg2)
   eq typeModeCompatible(OBJTYPE , MODE) = false [owise] .
 
   --- Table 6-4 binds each algorithm family to its key object type.  Mode
@@ -594,6 +622,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                                    TEE-TYPE-RSA-PUBLIC-KEY) = true .
   eq algorithmObjectTypeCompatible(TEE-ALG-RSASSA-PKCS1-V1-5-SHA256,
                                    TEE-TYPE-RSA-KEYPAIR) = true .
+  ---@dmc owise enumerate(arg1, arg2)
   eq algorithmObjectTypeCompatible(ALGO , OBJTYPE) = false [owise] .
 
   --- GP 6.2.7 restricts two-key operations to AES-XTS and SM2-KEP.  Both
@@ -601,6 +630,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   op expectsTwoKeys : AlgorithmIdentifier -> Bool .
   eq expectsTwoKeys(TEE-ALG-AES-XTS) = true .
   eq expectsTwoKeys(TEE-ALG-SM2-KEP) = true .
+  ---@dmc owise enumerate(ALGO)
   eq expectsTwoKeys(ALGO) = false [owise] .
 
   op twoKeyCompatible : AlgorithmIdentifier OperationMode ObjectType Set{ObjectUsage}
@@ -614,6 +644,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       TEE-TYPE-SM2-KEP-KEYPAIR , OBJUSAGES,
                       TEE-TYPE-SM2-KEP-KEYPAIR , OBJUSAGES2) =
     TEE-USAGE-DERIVE in OBJUSAGES and TEE-USAGE-DERIVE in OBJUSAGES2 .
+  ---@dmc owise enumerate(arg1, arg2, arg3, arg5)
   eq twoKeyCompatible(ALGO , MODE, OBJTYPE , OBJUSAGES,
                       OBJTYPE2 , OBJUSAGES2) = false [owise] .
 
@@ -625,6 +656,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     validKeySize(TEE-ALG-AES-XTS , keySize(ATTRS)) and
     keySize(ATTRS) == keySize(ATTRS2) and ATTRS =/= ATTRS2 .
   eq twoKeyMaterialCompatible(TEE-ALG-SM2-KEP , ATTRS , ATTRS2) = true .
+  ---@dmc owise enumerate(arg1)
   eq twoKeyMaterialCompatible(ALGO , ATTRS , ATTRS2) = false [owise] .
 
   --- For multiple-key algorithms maxKeySize is the largest individual key,
@@ -634,6 +666,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   eq twoKeyOperationSizeCompatible(TEE-ALG-AES-XTS , KEYSIZE , ATTRS , ATTRS2) =
     keySize(ATTRS) <= KEYSIZE and keySize(ATTRS2) <= KEYSIZE .
   eq twoKeyOperationSizeCompatible(TEE-ALG-SM2-KEP , 256 Bits , ATTRS , ATTRS2) = true .
+  ---@dmc owise enumerate(arg1, arg2)
   eq twoKeyOperationSizeCompatible(ALGO , KEYSIZE , ATTRS , ATTRS2) = false [owise] .
 
   --- Explicitly sized secret material must be valid for and fit within its
@@ -644,12 +677,14 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   eq singleKeyMaterialCompatible(ALGO , KEYSIZE,
       (teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(N, M)), ATTRS)) =
     validKeySize(ALGO , N Bits) and N Bits <= KEYSIZE .
+  ---@dmc owise recurse(sep=_,_, empty=empty)
   eq singleKeyMaterialCompatible(ALGO , KEYSIZE , ATTRS) = true [owise] .
 
 --- For TEE_DigestUpdate
 
   op extractingState : OperationState -> Bool .
   eq extractingState(TEE-OPERATION-STATE-EXTRACTING) = true .
+  ---@dmc owise enumerate(OS)
   eq extractingState(OS) = false [owise] .
 
 --- For TEE_CipherInit
@@ -661,6 +696,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   eq ivRequired(TEE-ALG-AES-CTS) = true .
   eq ivRequired(TEE-ALG-AES-GCM) = true .
   eq ivRequired(TEE-ALG-AES-XTS) = true .
+  ---@dmc owise enumerate(ALGO)
   eq ivRequired(ALGO) = false [owise] .
 
   op ivLengthValid : AlgorithmIdentifier List{Data} -> Bool .
@@ -672,6 +708,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   ceq ivLengthValid(TEE-ALG-AES-CCM , IV) = true if 7 <= size(IV) and size(IV) <= 13 .
   ceq ivLengthValid(TEE-ALG-AES-GCM , IV) = true if size(IV) > 0 .
   ceq ivLengthValid(ALGO , nil) = true if not ivRequired(ALGO) .
+  ---@dmc owise enumerate(arg1, arg2)
   eq ivLengthValid(ALGO , IV) = false [owise] .
 
 --- If the operation is in active state, it is reset and then initialized.
@@ -688,12 +725,14 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   op getReturnCode : List{Data} List{Data} -> ReturnCode .
   eq getReturnCode(MAC , MAC) = TEE-SUCCESS .
+  ---@dmc owise enumerate(arg1, arg2)
   eq getReturnCode(DATA , MAC) = TEE-ERROR-MAC-INVALID [owise] .
 
 --- For TEE_AsymmetricVerifyDigest
 
   op getReturnCodeOfDigest : List{Data} List{Data} -> ReturnCode .
   eq getReturnCodeOfDigest(MAC , MAC) = TEE-SUCCESS .
+  ---@dmc owise enumerate(arg1, arg2)
   eq getReturnCodeOfDigest(DATA , MAC) = TEE-ERROR-SIGNATURE-INVALID [owise] .
 
 
@@ -1487,6 +1526,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   op supportsElement : AlgorithmIdentifier CryptoElement -> Bool .
   eq supportsElement(ALGO , TEE-CRYPTO-ELEMENT-NONE) = true .
+  ---@dmc owise enumerate(arg2)
   eq supportsElement(ALGO , ELEM) = false [owise] .
 
   crl [is-algorithm-supported-success] :
@@ -1811,6 +1851,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- only nil is provably insufficient at this abstraction level.
   op sufficientCipherUpdateInput : List{Data} -> Bool .
   eq sufficientCipherUpdateInput(nil) = false .
+  ---@dmc owise enumerate(DATA)
   eq sufficientCipherUpdateInput(DATA) = true [owise] .
 
   crl [cipher-update-subroutine] :

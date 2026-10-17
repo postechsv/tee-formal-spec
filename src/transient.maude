@@ -77,12 +77,14 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
   eq mandatory(TEE-TYPE-SM2-KEP-KEYPAIR) = (TEE-ATTR-ECC-PRIVATE-VALUE , TEE-ATTR-ECC-PUBLIC-VALUE-X , TEE-ATTR-ECC-PUBLIC-VALUE-Y) .
   eq mandatory(TEE-TYPE-SM2-PKE-PUBLIC-KEY) = (TEE-ATTR-ECC-PUBLIC-VALUE-X , TEE-ATTR-ECC-PUBLIC-VALUE-Y) .
   eq mandatory(TEE-TYPE-SM2-PKE-KEYPAIR) = (TEE-ATTR-ECC-PRIVATE-VALUE , TEE-ATTR-ECC-PUBLIC-VALUE-X , TEE-ATTR-ECC-PUBLIC-VALUE-Y) .
+  ---@dmc owise enumerate(OBJTYPE)
   eq mandatory(OBJTYPE) = empty [owise] .
 
 --- For TEE_PopulateTransientObject
 --- Only the attributes specified in Table 5-10 associated with the object's type are valid.
 --- The presence of any other attribute in the attribute list is an error and will cause the routine to panic.
   op allowed : ObjectType -> Set{AttrId} .
+  ---@dmc owise enumerate(OBJTYPE)
   eq allowed(OBJTYPE) = mandatory(OBJTYPE) [owise] .
   eq allowed(TEE-TYPE-RSA-KEYPAIR) = (TEE-ATTR-RSA-MODULUS , TEE-ATTR-RSA-PUBLIC-EXPONENT ,
                                       TEE-ATTR-RSA-PRIVATE-EXPONENT , TEE-ATTR-RSA-PRIME1 ,
@@ -102,6 +104,7 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
   op validOptionalAttributeGroups : ObjectType Set{AttrId} -> Bool .
   eq validOptionalAttributeGroups(TEE-TYPE-RSA-KEYPAIR, IDS) =
     intersection(IDS, rsaCrtAttributes) == empty or rsaCrtAttributes subset IDS .
+  ---@dmc owise enumerate(OBJTYPE)
   eq validOptionalAttributeGroups(OBJTYPE, IDS) = true [owise] .
 
 --- TODO: NEED TO UPDATE
@@ -144,6 +147,7 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
   eq noKeyGenParams(TEE-TYPE-SM2-DSA-KEYPAIR) = true .
   eq noKeyGenParams(TEE-TYPE-SM2-KEP-KEYPAIR) = true .
   eq noKeyGenParams(TEE-TYPE-SM2-PKE-KEYPAIR) = true .
+  ---@dmc owise enumerate(OBJTYPE)
   eq noKeyGenParams(OBJTYPE) = false [owise] .
 
   op mandatoryParamsForKeyGen : ObjectType Set{TeeAttribute} -> Bool .
@@ -174,6 +178,8 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
   eq validKeySizeForGeneration(TEE-TYPE-DH-KEYPAIR , N Bits) = (N == 0) .
   eq validKeySizeForGeneration(TEE-TYPE-ECDSA-KEYPAIR , N Bits) = (N == 0) .
   eq validKeySizeForGeneration(TEE-TYPE-ECDH-KEYPAIR , N Bits) = (N == 0) .
+  ---@dmc owise enumerate(OBJTYPE)
+  ---@dmc exclude-ctors(TEE-TYPE-DSA-KEYPAIR,TEE-TYPE-DH-KEYPAIR,TEE-TYPE-ECDSA-KEYPAIR,TEE-TYPE-ECDH-KEYPAIR)
   eq validKeySizeForGeneration(OBJTYPE , KEYSIZE) = supported(OBJTYPE , KEYSIZE) [owise] .
 
 ------------------------------------------------------------

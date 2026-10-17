@@ -49,6 +49,7 @@ endfm
 --- This module defines label for goto statement.
 
 fmod IMP-LABEL is
+  ---@dmc close-sort(Label=mkLabel)
   sorts Label .
 endfm
 
@@ -75,6 +76,7 @@ endv
 --- Variable identifiers in IMP.
 
 fmod IMP-VAR is
+  ---@dmc close-sort(Var=mkVar)
   sort Var .
 endfm
 
@@ -130,6 +132,7 @@ fmod IMP-FUNC-SIG is
   pr IMP-VAR .
   pr IMP-EXP-LIST .
 
+  ---@dmc close-sort(FuncId=mkFuncId)
   sorts FuncSig FuncId APIFuncId .
   --- The paper uses APIFuncId for both TEE API functions and TA service
   --- entry points.  Executable program function identifiers refine it.
@@ -150,6 +153,7 @@ fmod IMP-FUNC-SIG is
 --- For later assertion, not necessary
   op  checkPExp : ExpList -> Bool .
   ceq checkPExp((E, EL)) = checkPExp(EL) if E :: PExp .
+---@dmc owise shapes(sep=_,_, empty=nil, elem=Exp)
    eq checkPExp(EL) = false [owise] .
 endfm
 
@@ -299,6 +303,7 @@ fmod IMP-STMT is
   
   op getSList : Stmt -> SList .
   eq getSList(S S') = < S > getSList(S') .
+  ---@dmc owise drop
   eq getSList(S) = < S > [owise] .
 endfm
 
@@ -413,10 +418,14 @@ fmod IMP-STRICTNESS is
   ceq k({ V1 <= E2 } ~> K)            = k({ E2 } ~> { V1 <= [] } ~> K) if not E2 :: Value .
    eq k({ V2 } ~> { V1 <= [] } ~> K)  = k({ V1 <= V2 } ~> K) .
 
+  ---@dmc keep-builtin
   ceq k({ E1 == E2 } ~> K)            = k({ E1 } ~> { [] == E2 } ~> K) if not E1 :: Value .
+   ---@dmc keep-builtin
    eq k({ V1 } ~> { [] == E2 } ~> K)  = k({ V1 == E2 } ~> K) .
 
+  ---@dmc keep-builtin
   ceq k({ V1 == E2 } ~> K)            = k({ E2 } ~> { V1 == [] } ~> K) if not E2 :: Value .
+   ---@dmc keep-builtin
    eq k({ V2 } ~> { V1 == [] } ~> K)  = k({ V1 == V2 } ~> K) .
 
   ceq k({ E1 && E2 } ~> K)            = k({ E1 } ~> { [] && E2 } ~> K) if not E1 :: Value .
@@ -532,6 +541,7 @@ fmod IMP-AUX is
 
   eq getLabels(LB : S , LM) = insert(LB , S , getLabels(S , LM)) .
   eq getLabels(S S' , LM) = getLabels(S , LM) , getLabels(S', LM) .
+  ---@dmc owise enumerate(S)
   eq getLabels(S , LM) = empty [owise] .
 
   op getOffSet : Stmt Var -> Nat .
@@ -540,6 +550,7 @@ fmod IMP-AUX is
   op getOffSet : Stmt Var Nat -> Nat .
   eq getOffSet(T X ; S, X, N) = N .
   eq getOffSet(T X ;, X, N) = N .
+  ---@dmc owise cond(Y =/= X)
   eq getOffSet(T Y ; S, X, N) = getOffSet(S, X, N + 1) [owise] .
 
   op isBaseType : Type -> Bool .
@@ -608,6 +619,7 @@ mod IMP-SEMANTICS is
   rl  k({ # I * # I'    } ~> K) => k({ # (I * I')   } ~> K) .
   crl k({ # I / # I'    } ~> K) => k({ # (I quo I') } ~> K) if I' =/= 0 .
   rl  k({ # I <= # I'   } ~> K) => k({ # (I <= I')  } ~> K) .
+  ---@dmc restrict(V=Value,V'=Value)
   rl  k({ V == V'       } ~> K) => k({ # (V == V')  } ~> K) .
   rl  k({ # true  && E  } ~> K) => k({ E            } ~> K) .
   rl  k({ # false && E  } ~> K) => k({ # false      } ~> K) .
@@ -621,6 +633,7 @@ mod IMP-SEMANTICS is
   rl k(K ~> S S' ~> K') => k(K ~> S ~> S' ~> K') .
 
   eq k(goto LB ; ~> K) labels(((LB |-> S) , LM)) = k(S) labels(((LB |-> S) , LM)) .
+---@dmc owise cond(not $hasMapping(LM, LB))
   eq k(goto LB ; ~> K) labels(LM) = k(K) labels(LM) [owise] .
   eq k(LB : S) = k(S) .
 
@@ -753,6 +766,7 @@ mod IMP-SEMANTICS-INVISIBLE is
   eq  k({ # I * # I'    } ~> K) = k({ # (I * I')   } ~> K) .
   ceq k({ # I / # I'    } ~> K) = k({ # (I quo I') } ~> K) if I' =/= 0 .
   eq  k({ # I <= # I'   } ~> K) = k({ # (I <= I')  } ~> K) .
+  ---@dmc restrict(V=Value,V'=Value)
   eq  k({ V == V'       } ~> K) = k({ # (V == V')  } ~> K) .
   eq  k({ # true  && E  } ~> K) = k({ E            } ~> K) .
   eq  k({ # false && E  } ~> K) = k({ # false      } ~> K) .
@@ -766,6 +780,7 @@ mod IMP-SEMANTICS-INVISIBLE is
   eq k(K ~> S S' ~> K') = k(K ~> S ~> S' ~> K') .
 
   eq k(goto LB ; ~> K) labels(((LB |-> S) , LM)) = k(S) labels(((LB |-> S) , LM)) .
+---@dmc owise cond(not $hasMapping(LM, LB))
   eq k(goto LB ; ~> K) labels(LM) = k(K) labels(LM) [owise] .
   eq k(LB : S) = k(S) .
 

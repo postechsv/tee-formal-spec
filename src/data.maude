@@ -88,10 +88,12 @@ fmod DATA-STREAM-OPERATOR is
 --- This operator tries to read input size amount of data from the data stream starting from the current data position.
   op readAt : DataPosition Map{DataPosition,Data} -> List{Data} .
   eq readAt(DATAPOS , (DATAPOS |-> DATA , DM)) = DATA .
+  ---@dmc owise recurse(sep=_,_, empty=empty)
   eq readAt(DATAPOS , DM) = nil [owise] .
 
   op readAux : Nat Nat Map{DataPosition,Data} -> List{Data} .
   eq readAux(N , 0 , DM) = nil .
+  ---@dmc owise drop
   eq readAux(N , s(M) , DM) = readAt(pos(N) , DM) readAux(N + 1 , M , DM) [owise] .
   
   op read : DataPosition DataSize Map{DataPosition,Data} -> List{Data} .
@@ -100,10 +102,12 @@ fmod DATA-STREAM-OPERATOR is
 --- This operator writes input data to data stream starting from the current data position.
   op writeAt : Data DataPosition Map{DataPosition,Data} -> Map{DataPosition,Data} .
   eq writeAt(D , DATAPOS , (DATAPOS |-> DATA , DM)) = (DATAPOS |-> D , DM) .
+  ---@dmc owise recurse(sep=_,_, empty=empty)
   eq writeAt(D , DATAPOS , DM) = (DATAPOS |-> D , DM) [owise] .
 
   op writeAux : List{Data} Nat Map{DataPosition,Data} -> Map{DataPosition,Data} .
   eq writeAux(nil , N , DM) = DM .
+  ---@dmc owise drop
   eq writeAux(D DL , N , DM) = writeAux(DL , N + 1 , writeAt(D , pos(N) , DM)) [owise] .
 
   op write : List{Data} DataPosition Map{DataPosition,Data} -> Map{DataPosition,Data} .

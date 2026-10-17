@@ -20,7 +20,7 @@ omod PROGRAM-APP-AUX is
   pr IMP-SEMANTICS .
 
   var X : Var .
-  var T : Type .
+  var T U : Type .
   var XL : VarList .
   var V : Value .
   var L : Nat .
@@ -34,7 +34,8 @@ omod PROGRAM-APP-AUX is
   vars S S' : Stmt .
   var SL : SList .
   var SE : SElem .
-  var FMAP : Map{FuncSig,Stmt} .
+  var FMAP : Map{FuncSig,K} .
+  var BODY : K .
   var PARAMS : ExpList .
   var CS : Stmt .
 
@@ -44,34 +45,47 @@ omod PROGRAM-APP-AUX is
   op mRet : -> Var [ctor] .
 
   op mkPreStmt : ExpList ValueList -> Stmt .
-  eq mkPreStmt((T X, PARAMS), (V,VL)) = T X ; X := V ; mkPreStmt(PARAMS, VL) .
+  op mkDecl : Type Var -> Stmt .
+  --- A by-reference entry parameter is declared with its pointee type.
+  eq mkDecl(U *, X) = U X ; .
+  eq mkDecl(U &, X) = U X ; .
+  ceq mkDecl(T, X) = T X ; if not T :: RType .
+  eq mkPreStmt((T X, PARAMS), (V,VL)) = mkDecl(T, X) X := V ; mkPreStmt(PARAMS, VL) .
   eq mkPreStmt(nil, nil) = skip .
 
   op getVars : ExpList -> VarList .
   eq getVars((T X, PARAMS)) = X , getVars(PARAMS) .
   eq getVars(nil) = nil .
 
-  op mkFunMap : Program -> Map{FuncSig,Stmt} .
+  --- The function map holds user functions (their body is a Stmt) and trusted library
+  --- functions ($libFun, their body is internal K).
+  op mkFunMap : Program -> Map{FuncSig,K} .
   eq mkFunMap(P) = mkFunMap(getSList(P)) .
 
-  op mkFunMap : SList -> Map{FuncSig,Stmt} .
+  op mkFunMap : SList -> Map{FuncSig,K} .
   eq mkFunMap(< FSIG {S} > SL) = FSIG |-> S , mkFunMap(SL) .
+  eq mkFunMap(< $libFun(FSIG, BODY) > SL) = FSIG |-> BODY , mkFunMap(SL) .
   ---@dmc owise enumerate(S)
   eq mkFunMap(< S > SL) = mkFunMap(SL) [owise] .
   eq mkFunMap(nilElem) = empty . --- should be matched with the last statement
 
-  op getParams : FuncId Map{FuncSig,Stmt} -> ExpList .
+  op getParams : FuncId Map{FuncSig,K} -> ExpList .
   eq getParams(FUNC, (T FUNC(PARAMS) |-> S , FMAP)) = PARAMS .
 ---@dmc owise recurse(sep=_,_, empty=empty)
   eq getParams(FUNC, FMAP) = nil [owise] .
 
+  --- The return type of the entry function declares mRet.
+  op getRetType : FuncId Map{FuncSig,K} -> Type .
+  eq getRetType(FUNC, (T FUNC(PARAMS) |-> S , FMAP)) = T .
+
   ceq run(P , FUNC , VL) 
     = mkInitConf(
-        int mRet ; 
+        T mRet ; 
         P S 
         mRet := FUNC (XL) ;
       ) 
   if PARAMS := getParams(FUNC, mkFunMap(P)) 
+  /\ T := getRetType(FUNC, mkFunMap(P))
   /\ XL := getVars(PARAMS) /\ S := mkPreStmt(PARAMS, VL) .
   
   ceq readReturn(FUNC, KS env(ENV) store(MEM) fdecl(((T FUNC(PARAMS) |-> S) , FMAP))) 

@@ -62,8 +62,19 @@ tee-formal-spec/
 | File | Purpose |
 | --- | --- |
 | `k-prelude.maude` | Foundations for the K-style execution semantics |
-| `imp.maude` | Syntax and semantics of model programs |
+| `imp.maude` | Syntax, static type system (`wellTyped`), and semantics of model programs |
 | `tee-imp.maude` | Translation of program calls into TEE API calls |
+
+The semantics of `imp.maude` is in the style of the C semantics of Ellison and Rosu (POPL 2012), with these choices:
+
+- **Typing.** `mkInitConf` runs a program only if `wellTyped` accepts it, so an ill-typed program has no initial configuration. Declarations are checked in sequence; a by-reference parameter takes an lvalue of its type; a struct is assigned only from a struct of the same type.
+- **Scoping.** A function body sees its parameters, its own locals and the globals declared before it. Each `if` and `while` body is a block: the environment is saved on entry (`$restoreEnv`) and restored on exit.
+- **Declarations are hoisted (C11 6.2.4p6).** On entry to a function body (after the parameters are bound), to an `if`/`while` body, and to the top level, every `T X ;` directly in that statement sequence (also after a label) is allocated and bound at once; a nested block hoists on its own entry. A declaration reached in the normal flow resets its object to undef and does not allocate again (`T X ::= E ;` is `T X ; X := E ;`). The top level is hoisted too, so a goto past a top-level declaration sees the object. Consequences: a use of a name before its declaration in the same block is rejected by the checker when that name is also a global or outer binding (it would name the outer one in C), because the hoisted local would capture it; a parameter is not a hoisted declaration, and a parameter may shadow a global. Reaching a declaration again (a backward goto) resets it to undef; in C a declaration without an initializer does not change the value, so this follows the chosen model rather than the standard's wording.
+- **Goto.** A label is a direct element of the top-level sequence or of a function body. It maps to the labelled statement followed by the rest of its sequence, so a goto continues with that rest, and a function's labels are its own. A goto may leave nested blocks (the environment of the outermost block left is restored), but it cannot enter a block: labels inside `if`/`while` bodies are rejected. A goto to an unknown label is rejected by the checker and is stuck at runtime.
+- **Internal items and the library trust boundary.** The computation items of the semantics (`$push`, `$args`, `$bind`, `$exec`, `$alloc`, `$reset`, `$waitSysCall`, `$in`, `$out`, ...) have their own sort `IStmt`, a subsort of `K` but not of `Stmt` or `Program`, so a user program cannot contain them (`IMP-INTERNAL` in `imp.maude`). A TEE API stub is a trusted library function `$libFun(FSIG, K)`, a `Stmt` whose body is internal K. The checker takes `$libFun` only for a TEE API name, and a user function cannot take such a name. Residual risk: a program that is not the syscall prefix can still write `$libFun` for a TEE API name, since the prefix and a program are both `Program`s; the sorts alone cannot tell them apart. The syscall prefix (`syscalls`, `tee-imp.maude`) is library code and a user program must not contain `$libFun`.
+- **Evaluation order.** Operands are evaluated left to right, and `&&`/`||` do not evaluate their right operand when the left one decides. A read of an uninitialized variable, division by zero and other undefined operations are stuck.
+- **Equations and rules.** Local, deterministic, terminating steps (expressions, assignment, declarations, blocks, sequencing, labels) are equations. Rules are kept for while unrolling (it can run forever), function call entry, argument binding and return (they change the frame stack), and every step that interacts with the TEE API (`tee-app.maude`, `tee-api-call.maude`, `$waitSysCall`, `$in`, `$out`).
+- **Configuration.** The configuration is a flat soup of cells; AC matching gives K-style cell locality.
 
 ## Core Modeling Principles
 

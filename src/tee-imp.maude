@@ -1,4 +1,20 @@
 ------------------------------------------------------------
+--- IMP types of the TEE API values
+------------------------------------------------------------
+
+--- Each TEE value sort has one IMP base type (see TEE-IMP-VALUE-TYPE).  A TEE handle
+--- of any kind (session, object, enumerator) is a TEE-Handle: the handle kinds are not
+--- distinguishable from the Oid value.  TEE-Params types an opaque cross-TA parameter
+--- block (TeeInvokeTACommand).
+fmod TEE-IMP-TYPE is
+  pr IMP-BTYPE .
+  ops TEE-Result TEE-Handle TEE-ObjectType TEE-KeySize TEE-Attributes TEE-AttributeIds
+      TEE-AttrContent TEE-Usages TEE-StorageId TEE-DataFlags TEE-Buffer TEE-Size
+      TEE-ObjectId TEE-DataPosition TEE-Whence TEE-ParamTypes TEE-AppId TEE-ReturnOrigin
+      TEE-Timeout TEE-SessionId TEE-CommandId TEE-Params : -> ConcBType [ctor] .
+endfm
+
+------------------------------------------------------------
 --- Client API IMP Value
 ------------------------------------------------------------
 
@@ -9,7 +25,7 @@ fmod TEE-IMP-API is
 
   ---@dmc qid-subsort
   subsort Qid < Var .
-  subsort TeeApi < FuncId .
+  --- (subsort TeeApi < FuncId is declared in IMP-INTERNAL, so the type checker can test it.)
 endfm
 
 --- This module provides a set of aux functions to implement TEE syscall.
@@ -17,6 +33,7 @@ endfm
 fmod TEE-API-IMP-PROG-AUX is
   pr IMP-PROGRAM .
   pr TEE-IMP-API .
+  pr TEE-IMP-TYPE .
   
 ------------------------------------------------------------
 --- Auxiliary functions to make Syscalls
@@ -35,25 +52,26 @@ fmod TEE-API-IMP-PROG-AUX is
   var S : Stmt .
 
   op defineSysCall : FuncSig SysAnnot SysAnnot SysAnnot SysAnnot -> Program .
+  --- A TEE API stub is a trusted library function: its body is internal K (see
+  --- $libFun in IMP-INTERNAL).
   eq defineSysCall(T F(XL), @inArgs(IN), @outArgs(OUT), @body(S), @return(E))
-   = T F(XL) {
-        $prep(mkEval(IN))
-        $in(nil)
-        $waitSysCall(F)
-        $out(OUT) 
-        S
+   = $libFun(T F(XL),
+        $prep(mkEval(IN)) ~>
+        $in(nil) ~>
+        $waitSysCall(F) ~>
+        $out(OUT) ~>
+        S ~>
         return E ;
-      } . 
+      ) .
  
   eq defineSysCall(void F(XL), @inArgs(IN), @outArgs(OUT), @body(S), @noReturn)
-   = void F(XL) {
-        $prep(mkEval(IN))
-        $in(nil)
-        $waitSysCall(F)
-        S
-        $out(OUT) 
-      } 
-  . 
+   = $libFun(void F(XL),
+        $prep(mkEval(IN)) ~>
+        $in(nil) ~>
+        $waitSysCall(F) ~>
+        S ~>
+        $out(OUT)
+      ) .
 
   op mkEval : ExpList -> ExpList .
   eq mkEval(E, EL) = E, mkEval(EL) .
@@ -189,9 +207,10 @@ mod TEE-API-IMP-CALL is
   pr TEE-API-RETURN .
   pr SET{TeeApiParam} .
   pr IMP-STMT .
+  pr IMP-INTERNAL .
 
   op makeCall : TeeApi ValueList -> TeeApiCall .
-  op makeReturnStmt : TeeApi ReturnCode? Set{TeeApiParam} ExpList -> Stmt .
+  op makeReturnStmt : TeeApi ReturnCode? Set{TeeApiParam} ExpList -> K .
 endm
 
 fmod TEE-IMP-STRUCT-DECL is
@@ -254,7 +273,7 @@ mod TRANSIENT-OBJECT-TEE-CALL is
   op AllocateTransientObjectLib : -> Program .
   eq AllocateTransientObjectLib 
   = defineSysCall(
-      int AllocateTransientObject(auto 'objType, auto 'size, auto * 'handle),
+      TEE-Result AllocateTransientObject(TEE-ObjectType 'objType, TEE-KeySize 'size, TEE-Handle * 'handle),
       @inArgs('objType, 'size),                 --- should match with the makeCall              
       @outArgs('handle),                        --- should match with the makeReturnStmt
       @body(skip),
@@ -273,7 +292,7 @@ mod TRANSIENT-OBJECT-TEE-CALL is
   op FreeTransientObjectLib : -> Program .
   eq FreeTransientObjectLib 
   = defineSysCall(
-      int FreeTransientObject(auto * 'handle),
+      int FreeTransientObject(TEE-Handle * 'handle),
       @inArgs('handle),                     --- should match with the makeCall              
       @outArgs(nil),                        --- should match with the makeReturnStmt
       @body(skip),
@@ -347,7 +366,7 @@ mod PERSISTENT-OBJECT-TEE-CALL is
   op OpenPersistentObjectLib : -> Program .
   eq OpenPersistentObjectLib 
   = defineSysCall(
-      int OpenPersistentObject(auto 'storageId, auto 'fileId, auto 'dataFlags, auto * 'handle),
+      TEE-Result OpenPersistentObject(TEE-StorageId 'storageId, TEE-ObjectId 'fileId, TEE-DataFlags 'dataFlags, TEE-Handle * 'handle),
       @inArgs('storageId, 'fileId, 'dataFlags), --- should match with the makeCall              
       @outArgs('handle),                        --- should match with the makeReturnStmt
       @body(skip),
@@ -367,9 +386,9 @@ mod PERSISTENT-OBJECT-TEE-CALL is
   op CreatePersistentObjectLib : -> Program .
   eq CreatePersistentObjectLib 
   = defineSysCall(
-      int CreatePersistentObject(auto 'storageId, auto 'fileId, 
-                                 auto 'dataFlags, auto 'handle, auto 'data, auto 'size, 
-                                 auto * 'optHandle),                         --- signature 
+      TEE-Result CreatePersistentObject(TEE-StorageId 'storageId, TEE-ObjectId 'fileId, 
+                                 TEE-DataFlags 'dataFlags, TEE-Handle 'handle, TEE-Buffer 'data, TEE-Size 'size, 
+                                 TEE-Handle * 'optHandle),                   --- signature 
       @inArgs('storageId, 'fileId, 'dataFlags, 'handle, 'data, 'size, 'optHandle),                   
       @outArgs('optHandle),                  
       @body(skip),
@@ -391,7 +410,7 @@ mod PERSISTENT-OBJECT-TEE-CALL is
   op CloseAndDeletePersistentObjectLib : -> Program .
   eq CloseAndDeletePersistentObjectLib 
   = defineSysCall(
-      int CloseAndDeletePersistentObject1(auto * 'handle),
+      TEE-Result CloseAndDeletePersistentObject1(TEE-Handle * 'handle),
       @inArgs('handle),                         --- should match with the makeCall              
       @outArgs('handle),                        --- should match with the makeReturnStmt
       @body(skip),
@@ -447,7 +466,7 @@ mod GENERIC-OBJECT-TEE-CALL is
 
   eq makeCall(GetObjectInfo1 , (# HANDLE)) = apiCall(GetObjectInfo1 , handle(HANDLE)) .
   eq makeReturnStmt(GetObjectInfo1 , TEE-SUCCESS , info(teeObjectInfo(OBJTYPE , OBJSIZE , MAXOBJSIZE , OBJUSAGES , DATASIZE , DATAPOS , DATAFLAGS)) , (E , E')) 
-  = $assign(# TEE-SUCCESS , E) 
+  = $assign(# TEE-SUCCESS , E) ~>
     E' . objectType := # OBJTYPE ; E' . objectSize := # OBJSIZE ; E' . maxObjectSize := # MAXOBJSIZE ;
     E' . objectUsage := # OBJUSAGES ; E' . dataSize := # DATASIZE ; E' . dataPosition := # DATAPOS ; E' . handleFlags := # DATAFLAGS ; .  
   eq makeReturnStmt(GetObjectInfo1 , RET , empty , (E , E')) = $assign(# RET , E) .
@@ -635,7 +654,7 @@ mod TEE-INTERNAL-CLIENT-CALL is
   op TeeOpenTASessionLib : -> Program .
   eq TeeOpenTASessionLib 
   = defineSysCall(
-      int TeeOpenTASession(auto 'dest, auto 'TO, auto * 'code, auto * 'handle, auto * 'orig),
+      int TeeOpenTASession(TEE-AppId 'dest, TEE-Timeout 'TO, TEE-Result * 'code, TEE-Handle * 'handle, TEE-ReturnOrigin * 'orig),
       @inArgs('dest, 'TO),                   
       @outArgs('code, 'handle, 'orig),       
       @body(skip),            
@@ -655,7 +674,7 @@ mod TEE-INTERNAL-CLIENT-CALL is
   op TeeInvokeTACommandLib : -> Program .
   eq TeeInvokeTACommandLib 
   = defineSysCall(
-      int TeeInvokeTACommand(auto * 'sess, auto 'cmd, auto * 'params, auto * 'orig),
+      TEE-Result TeeInvokeTACommand(TEE-Handle * 'sess, TEE-CommandId 'cmd, TEE-Params * 'params, TEE-ReturnOrigin * 'orig),
       @inArgs('sess, 'cmd, 'params),                  
       @outArgs('params, 'orig),                
       @body(skip),    
@@ -669,9 +688,72 @@ mod TEE-INTERNAL-CLIENT-CALL is
   .
 endm
 
+--- The IMP type of each TEE value.  Imported by TEE-API-IMP-PROGRAM, so every
+--- module that runs programs with the syscalls can type check them.
+
+mod TEE-IMP-VALUE-TYPE is
+  pr IMP-TYPING .
+  pr TEE-IMP-TYPE .
+  pr TEE-CLIENT-IMP-VALUE .
+  pr ID-IMP-VALUE .
+  pr RETURN-IMP-VALUE .
+  pr GENERIC-OBJECT-IMP-VALUE .
+  pr PERSISTENT-OBJECT-IMP-VALUE .
+  pr DATA-STREAM-OBJECT-IMP-VALUE .
+  pr TEE-INTERNAL-CLIENT-IMP-VALUE .
+
+  var SC : Scope .
+  var I : Int .
+  var B : Bool .
+  var X : SessionId .
+  var H : Oid .
+  var F : FuncId .
+  var R : ReturnCode .
+  var OT : ObjectType .
+  var AT : Set{TeeAttribute} .
+  var AI : Set{AttrId} .
+  var AC : AttrContent .
+  var OU : Set{ObjectUsage} .
+  var KS : CryptoKeySize .
+  var SI : StorageIdentifier .
+  var DF : Set{DataFlag} .
+  var DL : List{Data} .
+  var DS : DataSize .
+  var FI : FileId .
+  var DP : DataPosition .
+  var SK : SeekType .
+  var PT : TeeParamType .
+  var APP : AppId .
+  var RO : ReturnOrigin .
+  var TO : TaCancelTimeOut .
+
+  eq typeOfExp(SC, # X) = ty(TEE-SessionId) .
+  eq typeOfExp(SC, # H) = ty(TEE-Handle) .
+  eq typeOfExp(SC, # F) = ty(TEE-CommandId) .
+  eq typeOfExp(SC, # R) = ty(TEE-Result) .
+  eq typeOfExp(SC, # OT) = ty(TEE-ObjectType) .
+  eq typeOfExp(SC, # AT) = ty(TEE-Attributes) .
+  eq typeOfExp(SC, # AI) = ty(TEE-AttributeIds) .
+  eq typeOfExp(SC, # AC) = ty(TEE-AttrContent) .
+  eq typeOfExp(SC, # OU) = ty(TEE-Usages) .
+  eq typeOfExp(SC, # KS) = ty(TEE-KeySize) .
+  eq typeOfExp(SC, # SI) = ty(TEE-StorageId) .
+  eq typeOfExp(SC, # DF) = ty(TEE-DataFlags) .
+  eq typeOfExp(SC, # DL) = ty(TEE-Buffer) .
+  eq typeOfExp(SC, # DS) = ty(TEE-Size) .
+  eq typeOfExp(SC, # FI) = ty(TEE-ObjectId) .
+  eq typeOfExp(SC, # DP) = ty(TEE-DataPosition) .
+  eq typeOfExp(SC, # SK) = ty(TEE-Whence) .
+  eq typeOfExp(SC, # PT) = ty(TEE-ParamTypes) .
+  eq typeOfExp(SC, # APP) = ty(TEE-AppId) .
+  eq typeOfExp(SC, # RO) = ty(TEE-ReturnOrigin) .
+  eq typeOfExp(SC, # TO) = ty(TEE-Timeout) .
+endm
+
 mod TEE-API-IMP-PROGRAM is
   pr TEE-API-IMP-PROG-AUX .
   pr TEE-INTERNAL-CLIENT-CALL .
+  pr TEE-IMP-VALUE-TYPE .
 
   op Params : -> Type [ctor] .
 

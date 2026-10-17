@@ -12,12 +12,6 @@ mod COMPLETION-TEST is
   var P : Program .
 endm
 
-mod COMPLETION-INVISIBLE-TEST is
-  pr INVISIBLE-REDUCTION .
-  pr TEST-AUX .
-  var C : Configuration .
-endm
-
 --- ReadObjectData resolves and advances a top-level persistent handle.
 search [1] in COMPLETION-TEST :
   readObjectData(oid(101, testTa), dataSize(1), testTa, oid(0, testTa))
@@ -52,43 +46,8 @@ search [1] in COMPLETION-TEST :
   < oid(2, oid(0, testTa)) : DataStreamObject | data-size : dataSize(1),
       content : (pos(0) |-> randomData) > .
 
-search [1] in COMPLETION-INVISIBLE-TEST :
-  writeObjectData(oid(101, testTa), randomData, testTa, oid(0, testTa))
-  < oid(1, oid(0, testTa)) : PersistentObject |
-      data-stream : nil, data-stream-id : oid(2, oid(0, testTa)) >
-  < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
-      flags : TEE-DATA-FLAG-ACCESS-WRITE, pos : pos(0) >
-  < oid(2, oid(0, testTa)) : DataStreamObject | data-size : dataSize(0), content : empty >
-=>*
-  finishWriteData(testTa)
-  < oid(1, oid(0, testTa)) : PersistentObject |
-      data-stream : randomData, data-stream-id : oid(2, oid(0, testTa)) >
-  < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
-      flags : TEE-DATA-FLAG-ACCESS-WRITE, pos : pos(1) >
-  < oid(2, oid(0, testTa)) : DataStreamObject | data-size : dataSize(1),
-      content : (pos(0) |-> randomData) > .
-
 --- TruncateObjectData updates a persistent stream through a top-level handle.
 search [1] in COMPLETION-TEST :
-  truncateObjectData(oid(101, testTa), dataSize(3), testTa, oid(0, testTa))
-  < oid(1, oid(0, testTa)) : PersistentObject |
-      data-stream : randomData, data-stream-id : oid(2, oid(0, testTa)) >
-  < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
-      flags : TEE-DATA-FLAG-ACCESS-WRITE >
-  < oid(2, oid(0, testTa)) : DataStreamObject | data-size : dataSize(1),
-      content : newContent(randomData) >
-=>*
-  finishTruncateData(testTa)
-  < oid(1, oid(0, testTa)) : PersistentObject |
-      data-stream : (randomData zeroData zeroData),
-      data-stream-id : oid(2, oid(0, testTa)) >
-  < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
-      flags : TEE-DATA-FLAG-ACCESS-WRITE >
-  < oid(2, oid(0, testTa)) : DataStreamObject | data-size : dataSize(3),
-      content : (pos(0) |-> randomData, pos(1) |-> zeroData,
-                 pos(2) |-> zeroData) > .
-
-search [1] in COMPLETION-INVISIBLE-TEST :
   truncateObjectData(oid(101, testTa), dataSize(3), testTa, oid(0, testTa))
   < oid(1, oid(0, testTa)) : PersistentObject |
       data-stream : randomData, data-stream-id : oid(2, oid(0, testTa)) >

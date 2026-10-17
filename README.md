@@ -20,7 +20,7 @@ tee-formal-spec/
 ├── tests/
 │   ├── api/              # API-level black-box regression searches
 │   ├── cases/            # Existing test cases grouped by API area
-│   ├── completion/       # Visible/invisible completion regressions, one file per API group
+│   ├── completion/       # Completion regressions, one file per API group
 │   ├── gp-conformance/   # GlobalPlatform conformance reductions, one file per module group
 │   ├── run-api-suite.py  # Runner for tests/api
 │   └── run-checks.py     # Runner for completion/ and gp-conformance/
@@ -77,12 +77,6 @@ Handles are represented as independent top-level objects in a configuration rath
 - A persistent object may own multiple handles.
 - A normal close removes only the specified handle.
 - Close-and-delete removes all handles and the stream before deleting the owning object.
-
-### Visible and Invisible Reduction
-
-- Regular behavior modules expose API execution through messages and rewrite rules.
-- `*-INVISIBLE` modules provide equation-based reductions with the same observable results.
-- Both paths must agree on successful returns, error codes, panics, and state transitions.
 
 ### Panic Semantics
 

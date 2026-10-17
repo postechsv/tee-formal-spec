@@ -24,7 +24,7 @@ FEATURES := CRYPTO TRANSIENT PERSISTENT GENERIC DATA_STREAM ENUMERATOR
 # Cryptographic operations. The file is dropped with its panic module.
 CRYPTO ?= 1
 CRYPTO_LOADS := cryptographic crypto-panic
-CRYPTO_MODULES := CRYPTO-OPERATION-BEHAVIOR CRYPTO-OPERATION-TEE-CALL CRYPTO-OPERATION-BEHAVIOR-INVISIBLE CRYPTO-PANIC
+CRYPTO_MODULES := CRYPTO-OPERATION-BEHAVIOR CRYPTO-OPERATION-TEE-CALL CRYPTO-PANIC
 CRYPTO_REQUIRES := TRANSIENT
 CRYPTO_TESTS := api/test-cryptographic.maude completion/crypto.maude gp-conformance/crypto.maude
 
@@ -32,7 +32,7 @@ CRYPTO_TESTS := api/test-cryptographic.maude completion/crypto.maude gp-conforma
 # modules (TRANSIENT-OBJECT, PERSISTENT-OBJECT) that the generic, persistent, cryptographic,
 # data-stream and enumerator files import. They are not in any _LOADS, so they stay loaded.
 # A group's behavior file (transient.maude, persistent.maude, ...) and its panic file are in
-# the group's _LOADS. Its behavior, invisible-reduction and TEE-CALL modules are removed from
+# the group's _LOADS. Its behavior and TEE-CALL modules are removed from
 # main.maude when the group is off. A group's TEE-CALL library constant (TransientLibs,
 # PersistLibs) is declared in TEE-API-IMP-PROG-AUX, so TEE-API-IMP-PROGRAM does not import
 # the group's TEE-CALL module and the group can be dropped.
@@ -44,29 +44,28 @@ CRYPTO_TESTS := api/test-cryptographic.maude completion/crypto.maude gp-conforma
 
 TRANSIENT ?= 1
 TRANSIENT_LOADS := transient
-TRANSIENT_MODULES := TRANSIENT-OBJECT-BEHAVIOR TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE TRANSIENT-OBJECT-TEE-CALL
+TRANSIENT_MODULES := TRANSIENT-OBJECT-BEHAVIOR TRANSIENT-OBJECT-TEE-CALL
 TRANSIENT_REQUIRES :=
 TRANSIENT_TESTS := api/test-transient.maude completion/transient.maude gp-conformance/transient.maude
 
 PERSISTENT ?= 1
 PERSISTENT_LOADS := persistent persistent-panic
-PERSISTENT_MODULES := PERSISTENT-OBJECT-BEHAVIOR PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE PERSISTENT-OBJECT-TEE-CALL PERSISTENT-PANIC
+PERSISTENT_MODULES := PERSISTENT-OBJECT-BEHAVIOR PERSISTENT-OBJECT-TEE-CALL PERSISTENT-PANIC
 PERSISTENT_REQUIRES :=
 PERSISTENT_TESTS := api/test-persistent.maude completion/persistent.maude gp-conformance/persistent.maude
 
 GENERIC ?= 1
 GENERIC_LOADS := generic
-GENERIC_MODULES := GENERIC-OBJECT-BEHAVIOR GENERIC-OBJECT-BEHAVIOR-INVISIBLE GENERIC-OBJECT-TEE-CALL
+GENERIC_MODULES := GENERIC-OBJECT-BEHAVIOR GENERIC-OBJECT-TEE-CALL
 GENERIC_REQUIRES :=
 GENERIC_TESTS := api/test-generic.maude completion/generic.maude
 
 DATA_STREAM ?= 1
 DATA_STREAM_LOADS := data-stream data-stream-panic
-DATA_STREAM_MODULES := DATA-STREAM-OBJECT-BEHAVIOR DATA-STREAM-OBJECT-BEHAVIOR-INVISIBLE DATA-STREAM-OBJECT-TEE-CALL DATA-STREAM-PANIC
+DATA_STREAM_MODULES := DATA-STREAM-OBJECT-BEHAVIOR DATA-STREAM-OBJECT-TEE-CALL DATA-STREAM-PANIC
 DATA_STREAM_REQUIRES := PERSISTENT
 DATA_STREAM_TESTS := api/test-data-stream.maude completion/data-stream.maude gp-conformance/data-stream.maude
 
-# No INVISIBLE module exists for the enumerator group.
 ENUMERATOR ?= 1
 ENUMERATOR_LOADS := enumerator
 ENUMERATOR_MODULES := ENUMERATOR-OBJECT-BEHAVIOR ENUMERATOR-OBJECT-TEE-CALL

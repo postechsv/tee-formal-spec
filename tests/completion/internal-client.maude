@@ -1,0 +1,69 @@
+--- Regression checks for API paths completed from GlobalPlatform v1.3.1.
+load ../../src/main
+load ../cases/aux
+
+mod COMPLETION-TEST is
+  pr TEE-BEHAVIOR .
+  pr TEST-AUX .
+  var C : Configuration .
+  var TESTDIGEST : List{Data} .
+  var CIPHERRESULT : List{Data} .
+  var TESTMAC : List{Data} .
+  var P : Program .
+endm
+
+--- TeeOpenTASession creates a top-level session handle linked to its owner.
+search [1] in COMPLETION-TEST :
+  retTrustedOS(openSessionSuccess(testTa), testTa)
+  < testTa : TaKernel | status : normal, api-return : noReturn,
+                        api-state : TeeOpenTASession(uuid(TESTTA)) # 1,
+                        counter : 1 >
+=>1
+  < taOid(1, testTa) : Session |
+      req : noReq, ret : noRet, ta-id : testTa >
+  C .
+
+--- The trusted OS records itself on each TA kernel that it creates.
+search [1] in COMPLETION-TEST :
+  < osId : TeeOSKernel |
+      service-in : openTASession(TESTTA) nil, service-out : nil,
+      ta-prog-map : TESTTA |-> [P],
+      sess : empty, session-counter : 0 >
+=>1
+  < trustAppId(0) : TrustApp |
+      trust-app-id : TESTTA, status : normal, os-kernel : osId,
+      storage : storageId(0), counter : 0,
+      api-call : noCall, api-return : noReturn,
+      current-api : noApi, api-state : noState, current-params : empty,
+      prog : P, proc : none, running : false,
+      client-service : noClientService, task : noTask, task-counter : 0 >
+  < storageId(0) : Storage |
+      status : storageNormal, files : empty, counter : 0 >
+  C .
+
+--- A received invocation records the paper-level client/service pair.
+search [1] in COMPLETION-TEST :
+  invokeTA(testTa, {sessionId(0), main, nil}, testRa)
+  < testTa : TrustApp |
+      client-service : noClientService, task : noTask, running : false >
+=>1
+  < testTa : TrustApp |
+      client-service : clientService(testRa, main),
+      task : task({sessionId(0), main, nil}, testRa), running : false >
+  C .
+
+--- TeeInvokeTACommand resolves a top-level session handle in both directions.
+search [1] in COMPLETION-TEST :
+  reqInvoke(handleId(1, testTa), main, nil, testTa)
+  < taOid(1, testTa) : Session | req : noReq >
+  < handleId(1, testTa) : TaSessionHandle | oid : taOid(1, testTa) >
+=>1
+  C .
+
+search [1] in COMPLETION-TEST :
+  < taOid(1, testTa) : Session |
+      ret : {handleId(1, testTa), main, testTa, nil} >
+  < handleId(1, testTa) : TaSessionHandle | oid : taOid(1, testTa) >
+=>1
+  finishReqInvoke(handleId(1, testTa), main, testTa, nil)
+  C .

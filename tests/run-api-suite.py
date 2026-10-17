@@ -134,16 +134,15 @@ def api_query(command: str, number: int) -> str:
     return source + marker + target
 
 
-def source_files(suite: str) -> list[Path]:
-    directory = SPEC / "tests" / suite
-    return sorted(directory.glob("test-*.maude"))
+def default_api_files() -> list[Path]:
+    return sorted((SPEC / "tests" / "api").glob("test-*.maude"))
 
 
-def run_api() -> int:
+def run_api(files: list[Path], check_count: bool) -> int:
     maude = find_maude()
     total = passed = 0
     failures: list[str] = []
-    for path in source_files("api"):
+    for path in files:
         header, tests = split_searches(path.read_text(encoding="utf-8"))
         header = header.replace("load ./src/main", "load src/main")
         header = header.replace("load ./tests/api/aux", "load tests/api/aux")
@@ -152,6 +151,8 @@ def run_api() -> int:
         program = header + "\n".join(commands)
         result = subprocess.run(
             [str(maude), "-no-banner", "-no-advise"], cwd=ROOT,
+            # Maude resolves relative loads through $PWD, which cwd= does not update.
+            env=dict(os.environ, PWD=str(ROOT)),
             input=program, text=True, encoding="utf-8",
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         )
@@ -167,7 +168,7 @@ def run_api() -> int:
                 passed += 1
             else:
                 failures.append(test_id)
-    if total != EXPECTED_API_TESTS:
+    if check_count and total != EXPECTED_API_TESTS:
         raise TestFailure(
             "API test count is {}, expected {}".format(total, EXPECTED_API_TESTS)
         )
@@ -178,11 +179,29 @@ def run_api() -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("suite", nargs="?", choices=("api",), default="api")
+    parser = argparse.ArgumentParser(
+        description="Run the API-level black-box tests (tests/api/test-*.maude).",
+        epilog=(
+            "FILE arguments: paths to test-*.maude files, relative to the current "
+            "directory or absolute. Each file must be a test file of this tree "
+            "(its header loads src/main from the tree root). With no FILE, all "
+            "of tests/api is run and the total is checked against 92. With FILE, "
+            "only the listed files run and the total check is skipped. "
+            "The runner uses MAUDE_BIN for the Maude binary."
+        ),
+    )
+    parser.add_argument("files", nargs="*", metavar="FILE",
+                        help="API test files to run (default: all of tests/api)")
     args = parser.parse_args()
     try:
-        run_api()
+        if args.files:
+            files = [Path(name).resolve() for name in args.files]
+            for path in files:
+                if not path.is_file():
+                    raise TestFailure("not a file: {}".format(path))
+            run_api(files, check_count=False)
+        else:
+            run_api(default_api_files(), check_count=True)
         return 0
     except TestFailure as error:
         print("test suite: fail ({})".format(error), file=sys.stderr)

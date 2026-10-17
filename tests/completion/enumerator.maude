@@ -1,0 +1,62 @@
+--- Regression checks for API paths completed from GlobalPlatform v1.3.1.
+load ../../src/main
+load ../cases/aux
+
+mod COMPLETION-TEST is
+  pr TEE-BEHAVIOR .
+  pr TEST-AUX .
+  var C : Configuration .
+  var TESTDIGEST : List{Data} .
+  var CIPHERRESULT : List{Data} .
+  var TESTMAC : List{Data} .
+  var P : Program .
+endm
+
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | api-call : noCall, api-return : noReturn,
+                        api-state : started, current-api : StartPersistentObjectEnumerator,
+                        current-params : storageId(TEE-STORAGE-ILLEGAL-VALUE) >
+=>*
+  < testTa : TaKernel | api-call : noCall,
+                        api-state : finished, current-api : StartPersistentObjectEnumerator,
+                        current-params : storageId(TEE-STORAGE-ILLEGAL-VALUE),
+                        api-return : apiReturn(StartPersistentObjectEnumerator,
+                                               TEE-ERROR-ITEM-NOT-FOUND, empty) > .
+
+--- Enumerator handles use the same top-level object representation.
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | api-call : noCall, api-return : noReturn,
+                        api-state : started,
+                        current-api : ResetPersistentObjectEnumerator,
+                        current-params : handle(handleId(1, testTa)) >
+  < taOid(1, testTa) : EnumeratorObject |
+      persistent-objects : testFileId, enumerating : true >
+  < handleId(1, testTa) : ObjectEnumHandle | oid : taOid(1, testTa) >
+=>*
+  < testTa : TaKernel | api-call : noCall, api-state : finished,
+                        current-api : ResetPersistentObjectEnumerator,
+                        current-params : handle(handleId(1, testTa)),
+                        api-return : apiReturn(ResetPersistentObjectEnumerator,
+                                               noReturnCode, empty) >
+  < taOid(1, testTa) : EnumeratorObject |
+      persistent-objects : empty, enumerating : false >
+  < handleId(1, testTa) : ObjectEnumHandle | oid : taOid(1, testTa) > .
+
+--- Enumeration resolves duplicate file identifiers in the TA's Storage only.
+search [1] in COMPLETION-TEST :
+  reqNextObject(storageId(1), testFileId, testTa, TESTTA)
+  < storageOid(0, storageId(0)) : PersistentObject |
+      type : TEE-TYPE-DES, max-size : 64 Bits, attributes : empty,
+      usages : empty, data-stream-id : taOid(1, testTa),
+      file-name : testFileId, trust-app-id : TESTTA >
+  < taOid(1, testTa) : DataStreamObject | data-size : dataSize(1) >
+  < storageOid(0, storageId(1)) : PersistentObject |
+      type : TEE-TYPE-AES, max-size : 128 Bits, attributes : empty,
+      usages : TEE-USAGE-ENCRYPT, data-stream-id : taOid(2, testTa),
+      file-name : testFileId, trust-app-id : TESTTA >
+  < taOid(2, testTa) : DataStreamObject | data-size : dataSize(2) >
+=>1
+  retNextObject(teeObjectInfo(TEE-TYPE-AES, keySize(empty), 128 Bits,
+                              TEE-USAGE-ENCRYPT, dataSize(2), pos(0), empty),
+                testTa)
+  C .

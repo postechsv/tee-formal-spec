@@ -1,0 +1,160 @@
+--- Regression checks for API paths completed from GlobalPlatform v1.3.1.
+load ../../src/main
+load ../cases/aux
+
+mod COMPLETION-TEST is
+  pr TEE-BEHAVIOR .
+  pr TEST-AUX .
+  var C : Configuration .
+  var TESTDIGEST : List{Data} .
+  var CIPHERRESULT : List{Data} .
+  var TESTMAC : List{Data} .
+  var P : Program .
+endm
+
+mod COMPLETION-INVISIBLE-TEST is
+  pr INVISIBLE-REDUCTION .
+  pr TEST-AUX .
+  var C : Configuration .
+endm
+
+--- ReadObjectData resolves and advances a top-level persistent handle.
+search [1] in COMPLETION-TEST :
+  readObjectData(handleId(1, testTa), dataSize(1), testTa, TESTTA)
+  < taOid(1, testTa) : PersistentObject |
+      data-stream-id : taOid(2, testTa), trust-app-id : TESTTA >
+  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa),
+      flags : TEE-DATA-FLAG-ACCESS-READ,
+      pos : pos(0) >
+  < taOid(2, testTa) : DataStreamObject | data-size : dataSize(1),
+      content : newContent(randomData) >
+=>*
+  finishReadData(randomData, testTa)
+  C .
+
+--- WriteObjectData updates the top-level handle position and stream contents.
+search [1] in COMPLETION-TEST :
+  writeObjectData(handleId(1, testTa), randomData, testTa, TESTTA)
+  < taOid(1, testTa) : PersistentObject |
+      data-stream : nil, data-stream-id : taOid(2, testTa), trust-app-id : TESTTA >
+  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa),
+      flags : TEE-DATA-FLAG-ACCESS-WRITE,
+      pos : pos(0) >
+  < taOid(2, testTa) : DataStreamObject | data-size : dataSize(0),
+      content : empty >
+=>*
+  finishWriteData(testTa)
+  < taOid(1, testTa) : PersistentObject |
+      data-stream : randomData, data-stream-id : taOid(2, testTa),
+      trust-app-id : TESTTA >
+  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa),
+      flags : TEE-DATA-FLAG-ACCESS-WRITE,
+      pos : pos(1) >
+  < taOid(2, testTa) : DataStreamObject | data-size : dataSize(1),
+      content : (pos(0) |-> randomData) > .
+
+search [1] in COMPLETION-INVISIBLE-TEST :
+  writeObjectData(handleId(1, testTa), randomData, testTa, TESTTA)
+  < taOid(1, testTa) : PersistentObject |
+      data-stream : nil, data-stream-id : taOid(2, testTa), trust-app-id : TESTTA >
+  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa),
+      flags : TEE-DATA-FLAG-ACCESS-WRITE, pos : pos(0) >
+  < taOid(2, testTa) : DataStreamObject | data-size : dataSize(0), content : empty >
+=>*
+  finishWriteData(testTa)
+  < taOid(1, testTa) : PersistentObject |
+      data-stream : randomData, data-stream-id : taOid(2, testTa),
+      trust-app-id : TESTTA >
+  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa),
+      flags : TEE-DATA-FLAG-ACCESS-WRITE, pos : pos(1) >
+  < taOid(2, testTa) : DataStreamObject | data-size : dataSize(1),
+      content : (pos(0) |-> randomData) > .
+
+--- TruncateObjectData updates a persistent stream through a top-level handle.
+search [1] in COMPLETION-TEST :
+  truncateObjectData(handleId(1, testTa), dataSize(3), testTa, TESTTA)
+  < taOid(1, testTa) : PersistentObject |
+      data-stream : randomData, data-stream-id : taOid(2, testTa),
+      trust-app-id : TESTTA >
+  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa),
+      flags : TEE-DATA-FLAG-ACCESS-WRITE >
+  < taOid(2, testTa) : DataStreamObject | data-size : dataSize(1),
+      content : newContent(randomData) >
+=>*
+  finishTruncateData(testTa)
+  < taOid(1, testTa) : PersistentObject |
+      data-stream : (randomData zeroData zeroData),
+      data-stream-id : taOid(2, testTa), trust-app-id : TESTTA >
+  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa),
+      flags : TEE-DATA-FLAG-ACCESS-WRITE >
+  < taOid(2, testTa) : DataStreamObject | data-size : dataSize(3),
+      content : (pos(0) |-> randomData, pos(1) |-> zeroData,
+                 pos(2) |-> zeroData) > .
+
+search [1] in COMPLETION-INVISIBLE-TEST :
+  truncateObjectData(handleId(1, testTa), dataSize(3), testTa, TESTTA)
+  < taOid(1, testTa) : PersistentObject |
+      data-stream : randomData, data-stream-id : taOid(2, testTa),
+      trust-app-id : TESTTA >
+  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa),
+      flags : TEE-DATA-FLAG-ACCESS-WRITE >
+  < taOid(2, testTa) : DataStreamObject | data-size : dataSize(1),
+      content : newContent(randomData) >
+=>*
+  finishTruncateData(testTa)
+  < taOid(1, testTa) : PersistentObject |
+      data-stream : (randomData zeroData zeroData),
+      data-stream-id : taOid(2, testTa), trust-app-id : TESTTA >
+  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa),
+      flags : TEE-DATA-FLAG-ACCESS-WRITE >
+  < taOid(2, testTa) : DataStreamObject | data-size : dataSize(3),
+      content : (pos(0) |-> randomData, pos(1) |-> zeroData,
+                 pos(2) |-> zeroData) > .
+
+--- SeekObjectData obtains the stream size and updates the top-level handle.
+search [1] in COMPLETION-TEST :
+  seekObjectData(handleId(1, testTa), 2, TEE-DATA-SEEK-END,
+                 testTa, TESTTA)
+  < taOid(1, testTa) : PersistentObject |
+      data-stream-id : taOid(2, testTa), trust-app-id : TESTTA >
+  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa),
+      pos : pos(0) >
+  < taOid(2, testTa) : DataStreamObject | data-size : dataSize(3) >
+=>*
+  finishSeekData(testTa)
+  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa),
+      pos : pos(5) >
+  C .
+
+--- The top-level seek path preserves the handle and reports position overflow.
+search [1] in COMPLETION-TEST :
+  seekObjectData(handleId(1, testTa), 1, TEE-DATA-SEEK-CUR,
+                 testTa, TESTTA)
+  < testTa : TaKernel | api-return : noReturn, api-state : waitSeekObjectData,
+                        current-api : SeekObjectData >
+  < taOid(1, testTa) : PersistentObject |
+      data-stream-id : taOid(2, testTa), trust-app-id : TESTTA >
+  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa),
+      pos : pos(4294967295) >
+  < taOid(2, testTa) : DataStreamObject | data-size : dataSize(1) >
+=>*
+  < testTa : TaKernel | api-state : finished,
+                        current-api : SeekObjectData,
+                        api-return : apiReturn(SeekObjectData,
+                          TEE-ERROR-OVERFLOW, empty) >
+  C .
+
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | status : normal, api-call : noCall,
+                        api-return : noReturn, api-state : started,
+                        current-api : ReadObjectData,
+                        current-params : (handle(handleId(1, testTa)), size(dataSize(1))) >
+  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa),
+      flags : TEE-DATA-FLAG-ACCESS-WRITE >
+=>1
+  < testTa : TaKernel | status : panic, api-call : noCall,
+                        api-return : noReturn, api-state : finished,
+                        current-api : ReadObjectData,
+                        current-params : (handle(handleId(1, testTa)), size(dataSize(1))) >
+  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa),
+      flags : TEE-DATA-FLAG-ACCESS-WRITE > .

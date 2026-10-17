@@ -1,0 +1,44 @@
+load ../../src/main
+
+--- Focused checks derived from GlobalPlatform TEE Internal Core API v1.3.1.
+
+--- GP 5.9: stream positions use the 0xFFFFFFFF maximum and whence-specific bases.
+red in DATA-STREAM-OBJECT-BEHAVIOR :
+  withinMaxPosition(pos(4294967295)) .
+
+red in DATA-STREAM-OBJECT-BEHAVIOR :
+  not withinMaxPosition(pos(4294967296)) .
+
+red in DATA-STREAM-OBJECT-BEHAVIOR :
+  advancePos(pos(8), dataSize(5)) == pos(13) .
+
+red in DATA-STREAM-OBJECT-BEHAVIOR :
+  seekPos(TEE-DATA-SEEK-SET, pos(8), 5, dataSize(20)) == pos(5) .
+
+red in DATA-STREAM-OBJECT-BEHAVIOR :
+  seekPos(TEE-DATA-SEEK-CUR, pos(8), 5, dataSize(20)) == pos(13) .
+
+red in DATA-STREAM-OBJECT-BEHAVIOR :
+  seekPos(TEE-DATA-SEEK-END, pos(8), 5, dataSize(20)) == pos(25) .
+
+red in DATA-STREAM-OBJECT-BEHAVIOR :
+  seekPos(TEE-DATA-SEEK-CUR, pos(8), -10, dataSize(20)) == pos(0) .
+
+red in DATA-STREAM-OBJECT-BEHAVIOR :
+  seekPos(TEE-DATA-SEEK-END, pos(8), -5, dataSize(20)) == pos(15) .
+
+red in DATA-STREAM-OBJECT-BEHAVIOR :
+  read(pos(0), dataSize(4),
+    writeStream(randomData, pos(3), dataSize(1), newContent(randomData))) ==
+      (randomData zeroData zeroData randomData) .
+
+red in DATA-STREAM-OBJECT-BEHAVIOR :
+  read(pos(0), dataSize(4),
+    resizeContent(dataSize(1), dataSize(4), newContent(randomData))) ==
+      (randomData zeroData zeroData zeroData) .
+
+red in DATA-STREAM-OBJECT-BEHAVIOR :
+  read(pos(0), dataSize(4),
+    resizeContent(dataSize(4), dataSize(2),
+      newContent(randomData zeroData zeroData randomData))) ==
+      (randomData zeroData) .

@@ -1,0 +1,96 @@
+--- Regression checks for API paths completed from GlobalPlatform v1.3.1.
+load ../../src/main
+load ../cases/aux
+
+mod COMPLETION-TEST is
+  pr TEE-BEHAVIOR .
+  pr TEST-AUX .
+  var C : Configuration .
+  var TESTDIGEST : List{Data} .
+  var CIPHERRESULT : List{Data} .
+  var TESTMAC : List{Data} .
+  var P : Program .
+endm
+
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | api-call : noCall, api-return : noReturn,
+                        api-state : waitGetBufferAttribute,
+                        current-api : GetObjectBufferAttribute,
+                        current-params : (constId(TEE-ATTR-RSA-MODULUS),
+                          attrs(teeAttribute(TEE-ATTR-RSA-MODULUS, randomAttrVal)),
+                          usages(TEE-USAGE-EXTRACTABLE), capacity(dataSize(0))) >
+=>*
+  < testTa : TaKernel | api-call : noCall, api-state : finished,
+                        current-api : GetObjectBufferAttribute,
+                        current-params : (constId(TEE-ATTR-RSA-MODULUS),
+                          attrs(teeAttribute(TEE-ATTR-RSA-MODULUS, randomAttrVal)),
+                          usages(TEE-USAGE-EXTRACTABLE), capacity(dataSize(0))),
+                        api-return : apiReturn(GetObjectBufferAttribute,
+                          TEE-ERROR-SHORT-BUFFER, size(dataSize(1))) > .
+
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | api-call : noCall, api-return : noReturn,
+                        api-state : waitGetBufferAttribute,
+                        current-api : GetObjectBufferAttribute,
+                        current-params : (constId(TEE-ATTR-RSA-MODULUS),
+                          attrs(teeAttribute(TEE-ATTR-RSA-MODULUS, randomAttrVal)),
+                          usages(TEE-USAGE-EXTRACTABLE), capacity(dataSize(1))) >
+=>*
+  < testTa : TaKernel | api-call : noCall, api-state : finished,
+                        current-api : GetObjectBufferAttribute,
+                        current-params : (constId(TEE-ATTR-RSA-MODULUS),
+                          attrs(teeAttribute(TEE-ATTR-RSA-MODULUS, randomAttrVal)),
+                          usages(TEE-USAGE-EXTRACTABLE), capacity(dataSize(1))),
+                        api-return : apiReturn(GetObjectBufferAttribute, TEE-SUCCESS,
+                          (constVal(randomAttrVal), size(dataSize(1)))) > .
+
+--- Closing one persistent handle removes only that ID and its top-level object.
+search [1] in COMPLETION-TEST :
+  closeObject(handleId(1, testTa), testTa)
+  < taOid(1, testTa) : PersistentObject | >
+  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa) >
+  < handleId(2, testTa) : ObjectHandle | oid : taOid(1, testTa) >
+=>1
+  finishCloseObject(testTa)
+  < taOid(1, testTa) : PersistentObject | >
+  < handleId(2, testTa) : ObjectHandle | oid : taOid(1, testTa) > .
+
+--- GetObjectInfo1 combines a persistent owner, top-level handle, and stream.
+search [1] in COMPLETION-TEST :
+  reqObjectInfo(handleId(1, testTa), testTa, TESTTA)
+  < taOid(1, testTa) : PersistentObject |
+      type : TEE-TYPE-AES, max-size : 256 Bits,
+      attributes : teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal),
+      usages : TEE-USAGE-EXTRACTABLE,
+      data-stream-id : taOid(2, testTa), trust-app-id : TESTTA >
+  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa),
+      flags : TEE-DATA-FLAG-ACCESS-READ,
+      pos : pos(2) >
+  < taOid(2, testTa) : DataStreamObject | data-size : dataSize(5) >
+=>1
+  retObjectInfoPr(TEE-TYPE-AES, keySize(
+      teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)), 256 Bits,
+      TEE-USAGE-EXTRACTABLE, dataSize(5), pos(2),
+      TEE-DATA-FLAG-ACCESS-READ, testTa)
+  C .
+
+--- RestrictObjectUsage1 updates a persistent owner through its top-level handle.
+search [1] in COMPLETION-TEST :
+  restrictUsage(handleId(1, testTa), TEE-USAGE-ENCRYPT, testTa)
+  < taOid(1, testTa) : PersistentObject |
+      usages : (TEE-USAGE-ENCRYPT, TEE-USAGE-DECRYPT) >
+  < handleId(1, testTa) : ObjectHandle | oid : taOid(1, testTa) >
+=>1
+  finishRestrictUsage(testTa)
+  C .
+
+search [1] in COMPLETION-TEST :
+  < testTa : TaKernel | status : normal, api-call : noCall,
+                        api-return : noReturn, api-state : started,
+                        current-api : GetObjectInfo1,
+                        current-params : handle(TEE-HANDLE-NULL) >
+=>1
+  < testTa : TaKernel | status : panic, api-call : noCall,
+                        api-return : noReturn, api-state : finished,
+                        current-api : GetObjectInfo1,
+                        current-params : handle(TEE-HANDLE-NULL) > .

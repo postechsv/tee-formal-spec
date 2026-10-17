@@ -1,0 +1,21 @@
+load ../../src/main
+
+--- Focused checks derived from GlobalPlatform TEE Internal Core API v1.3.1.
+
+--- An additional reader requires SHARE_READ on every handle.
+red in UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR :
+  accessRightCheckingAux(
+    (TEE-DATA-FLAG-ACCESS-READ, TEE-DATA-FLAG-SHARE-READ),
+    (TEE-DATA-FLAG-ACCESS-READ, TEE-DATA-FLAG-SHARE-READ)) .
+
+red in UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR :
+  not accessRightCheckingAux(
+    (TEE-DATA-FLAG-ACCESS-READ, TEE-DATA-FLAG-SHARE-READ),
+    TEE-DATA-FLAG-ACCESS-READ) .
+
+red in UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR :
+  not accessRightCheckingAux(TEE-DATA-FLAG-ACCESS-WRITE-META, empty) .
+
+--- The paper selects pure creation whenever the source handle is NULL.
+red in UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR :
+  determineCreation(TEE-HANDLE-NULL, TEE-HANDLE-NULL) == createPureData .

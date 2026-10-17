@@ -1,0 +1,79 @@
+load ../../src/main
+
+--- Focused checks derived from GlobalPlatform TEE Internal Core API v1.3.1.
+
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  mandatory(TEE-TYPE-DES) == TEE-ATTR-SECRET-VALUE .
+
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  mandatory(TEE-TYPE-ECDH-KEYPAIR) ==
+    (TEE-ATTR-ECC-PRIVATE-VALUE, TEE-ATTR-ECC-PUBLIC-VALUE-X,
+     TEE-ATTR-ECC-PUBLIC-VALUE-Y, TEE-ATTR-ECC-CURVE) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  checkCompatible(TEE-TYPE-DH-KEYPAIR,
+    (teeAttribute(TEE-ATTR-DH-PRIME, randomAttrVal),
+     teeAttribute(TEE-ATTR-DH-BASE, randomAttrVal),
+     teeAttribute(TEE-ATTR-DH-PUBLIC-VALUE, randomAttrVal),
+     teeAttribute(TEE-ATTR-DH-PRIVATE-VALUE, randomAttrVal),
+     teeAttribute(TEE-ATTR-DH-X-BITS, randomAttrVal))) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  not checkCompatible(TEE-TYPE-AES,
+    (teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal),
+     teeAttribute(TEE-ATTR-RSA-MODULUS, randomAttrVal))) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  mandatoryParamsForKeyGen(TEE-TYPE-AES, empty) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  mandatoryParamsForKeyGen(TEE-TYPE-RSA-KEYPAIR,
+    teeAttribute(TEE-ATTR-RSA-PUBLIC-EXPONENT, randomAttrVal)) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  mandatoryParamsForKeyGen(TEE-TYPE-DH-KEYPAIR,
+    (teeAttribute(TEE-ATTR-DH-PRIME, randomAttrVal),
+     teeAttribute(TEE-ATTR-DH-BASE, randomAttrVal),
+     teeAttribute(TEE-ATTR-DH-X-BITS, randomAttrVal))) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  not mandatoryParamsForKeyGen(TEE-TYPE-DH-KEYPAIR,
+    teeAttribute(TEE-ATTR-DH-BASE, randomAttrVal)) .
+
+--- GP 5.6.7 keySize semantics for generated keys.
+red in TRANSIENT-OBJECT-BEHAVIOR : validKeySizeForGeneration(TEE-TYPE-AES, 128 Bits) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR : not validKeySizeForGeneration(TEE-TYPE-AES, 64 Bits) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR : validKeySizeForGeneration(TEE-TYPE-RSA-KEYPAIR, 2048 Bits) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR : validKeySizeForGeneration(TEE-TYPE-DH-KEYPAIR, 0 Bits) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR : not validKeySizeForGeneration(TEE-TYPE-DH-KEYPAIR, 256 Bits) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR : validKeySizeForGeneration(TEE-TYPE-ECDSA-KEYPAIR, 0 Bits) .
+
+--- GP Table 5-10: RSA CRT attributes are absent or complete, never partial.
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  validOptionalAttributeGroups(TEE-TYPE-RSA-KEYPAIR, empty) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  validOptionalAttributeGroups(TEE-TYPE-RSA-KEYPAIR, rsaCrtAttributes) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  not validOptionalAttributeGroups(TEE-TYPE-RSA-KEYPAIR,
+    (TEE-ATTR-RSA-PRIME1, TEE-ATTR-RSA-PRIME2)) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  not checkCompatible(TEE-TYPE-RSA-KEYPAIR,
+    (teeAttribute(TEE-ATTR-RSA-MODULUS, randomAttrVal),
+     teeAttribute(TEE-ATTR-RSA-PUBLIC-EXPONENT, randomAttrVal),
+     teeAttribute(TEE-ATTR-RSA-PRIVATE-EXPONENT, randomAttrVal),
+     teeAttribute(TEE-ATTR-RSA-PRIME1, randomAttrVal))) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  mandatory(TEE-TYPE-ED448-KEYPAIR) ==
+    (TEE-ATTR-ED448-PUBLIC-VALUE, TEE-ATTR-ED448-PRIVATE-VALUE) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  mandatoryParamsForKeyGen(TEE-TYPE-X448-KEYPAIR, empty) .

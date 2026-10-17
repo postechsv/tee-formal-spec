@@ -20,8 +20,13 @@ tee-formal-spec/
 ├── tests/
 │   ├── api/              # API-level black-box regression searches
 │   ├── cases/            # Existing test cases grouped by API area
-│   ├── completion.maude  # Visible/invisible completion regressions
-│   └── gp-conformance.maude
+│   ├── completion/       # Visible/invisible completion regressions, one file per API group
+│   ├── gp-conformance/   # GlobalPlatform conformance reductions, one file per module group
+│   ├── run-api-suite.py  # Runner for tests/api
+│   └── run-checks.py     # Runner for completion/ and gp-conformance/
+├── mk/features.mk        # Build features (e.g. CRYPTO) toggled by make
+├── tools/                # main.maude filter and the DMC generator (gen-dmc.py)
+├── Makefile
 ├── LICENSE
 └── README.md
 ```
@@ -47,7 +52,8 @@ tee-formal-spec/
 | `tee-data-type.maude` | Models of GlobalPlatform API data structures |
 | `tee-api.maude`, `tee-api-call.maude` | API identifiers, call parameters, and return values |
 | `tee-kernel.maude` | TA kernel and API execution state |
-| `tee-panic.maude` | Programmer errors and invalid-handle panics |
+| `tee-panic.maude` | Programmer errors and invalid-handle panics (general rules; the persistent and data stream access rules are in `persistent-panic.maude` and `data-stream-panic.maude`) |
+| `transient-object.maude`, `persistent-object.maude` | Transient and persistent object classes, shared by the storage APIs |
 | `os.maude`, `os-service.maude` | Trusted OS and storage services |
 | `app.maude`, `ree-app.maude`, `tee-app.maude`, `tee-client.maude` | REE/TEE applications and client behavior |
 
@@ -96,29 +102,26 @@ The API runner locates Maude in the following order:
 
 ## Running the Tests
 
-Run the API regression suite from the repository root:
+Builds and tests are driven by `make` (GNU Make). Put the Maude path in a `config.mk` at the repository root (gitignored), for example `MAUDE := /path/to/maude`, or set `MAUDE_BIN`.
 
 ```bash
-python3 tests/run-api-suite.py
+make test                  # build build/default and run every test suite
+make NAME=nocrypto CRYPTO=0 test   # same, without the cryptographic operation APIs
+make WITHOUT="M1 M2"       # drop modules (pr lines) from main.maude
+make DMC=1 test           # DM-Check-compatible build (gen-dmc output), then the test suites
+make check-dmc             # regenerate the DMC build and run gen-dmc's ground checks
+make help                  # features, test selection, targets
 ```
 
-The current suite runs 92 API-level searches.
+Each build lives in `build/$(NAME)/` with `src/` and `tests/` holding the final tree (a copy of the selected sources, or the DM-Check output with `DMC=1`), and its settings are remembered in `build/$(NAME)/config.mk`. With `DMC=1` the generator's bookkeeping (reflection cache and `manifest.json`) is kept in `build/$(NAME)/.dmc-cache/`, outside `src/`, and survives rebuilds until `make clean`. Features and the tests that need them are declared in `mk/features.mk`; tests of disabled features are skipped.
 
-Run the completion and GlobalPlatform conformance checks from the `tests` directory. The following example uses the Linux binary supplied with the analysis artifact:
-
-```bash
-cd tests
-../../tee-formal-analysis/3rd_party/Linux64/maude.linux64 completion.maude
-../../tee-formal-analysis/3rd_party/Linux64/maude.linux64 gp-conformance.maude
-```
-
-On macOS, use `Darwin64/maude.darwin64`, or set `MAUDE_BIN` to the appropriate executable path.
+With crypto enabled the suites run 92 API-level searches, 108 completion searches, and 169 conformance reductions.
 
 The test groups serve the following purposes:
 
 - `tests/api`: black-box searches that verify external API calls and returns
-- `tests/completion.maude`: checks that completed paths converge to final success, error, or panic states
-- `tests/gp-conformance.maude`: focused reductions derived from GlobalPlatform tables and clauses
+- `tests/completion/`: checks that completed paths converge to final success, error, or panic states
+- `tests/gp-conformance/`: focused reductions derived from GlobalPlatform tables and clauses
 - `tests/cases`: API-specific test cases inherited from the original artifact
 
 ## License

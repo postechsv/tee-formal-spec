@@ -651,6 +651,9 @@ def parse_directive(d):
     m = re.match(r"^close-sort\((\w[\w\-']*)=(\w[\w\-']*)\)$", d)
     if m:
         return 'close', (m.group(1), m.group(2))
+    m = re.match(r"^qid-literals\((\w[\w\-']*)\)$", d)
+    if m:
+        return 'qid-literals', m.group(1)
     if d == 'owise drop':
         return 'owise', ('drop', None)
     m = re.match(r'^owise cond\((.*)\)$', d)
@@ -745,6 +748,14 @@ class Reflection(object):
                 res.add(c['rng'])
         return res
 
+    def drop_ops(self, names):
+        """Remove the operators named in names (the qid-literals operators, dropped from the DMC build)."""
+        for d in self.mods.values():
+            d['ctors'] = [c for c in d.get('ctors', []) if c['name'] not in names]
+            d['ops'] = [f for f in d.get('ops', []) if f['name'] not in names]
+            if 'own' in d:
+                d['own'] = dict((k, v) for k, v in d['own'].items() if k not in names)
+
     def owise_count(self, m):
         return self.mods.get(m, {}).get('owise', 0)
 
@@ -764,7 +775,9 @@ def unlimited_stack():
 
 def maude_run(maude, cwd, infile, timeout=3600):
     with open(infile) as fh:
+        # Maude resolves relative loads through $PWD, which cwd= does not change
         proc = subprocess.run([maude, '-no-banner', '-no-advise'], cwd=cwd, stdin=fh,
+                              env=dict(os.environ, PWD=cwd),
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True,
                               timeout=timeout, preexec_fn=unlimited_stack())
     return proc.stdout
@@ -883,6 +896,9 @@ class Gen(object):
         self.const_terms = {}   # constant name of a closed sort -> ctor term C(k)
         self.qid_terms = {}     # Qid literal name -> ctor term of qid_sort
         self.closed_items = {}  # closed sort -> [(kind, name)] in number order
+        self.qid_ops = {}       # operator name -> closed sort (qid-literals directive: op : Qid -> S)
+        self.qop_terms = {}     # (operator, Qid literal) -> ctor term of its closed sort
+        self.qop_items = {}     # closed sort -> [(operator, Qid literal)] in number order
         self.aux = set()        # auxiliary argument sorts needing DM-AUX-EQ (Map{Var,Nat}, List{X})
         self.aux_extra = []     # equality blocks of prelude sorts, placed in DM-AUX-EQ
         self.make_ctor = set()  # (constant, sort) of non-constructor constants made [ctor] in the DMC build
@@ -989,6 +1005,14 @@ def pass1(gen, fname, fi):
             if t.startswith('op ') or t.startswith('ops '):
                 for nm, doms, rng in parse_op_decl(t):
                     gen.mod_ops[cur_mod][nm] = doms
+                for d in u.dmc:
+                    key, val = parse_directive(d)
+                    if key == 'qid-literals':
+                        decl = parse_op_decl(t)
+                        if len(decl) != 1 or decl[0][1] != ['Qid'] or decl[0][2] != val:
+                            raise GenError('%s:%d: qid-literals(%s) needs one operator declared as Qid -> %s'
+                                           % (fname, u.line, val, val))
+                        gen.qid_ops[decl[0][0]] = val
             elif re.match(r'^vars?\s', t):
                 m = re.match(r'^vars?\s+(.*?)\s*:\s*(\S+)\s*\.$', t)
                 if m:
@@ -1049,10 +1073,30 @@ def const_decl_text(names, rng, attrs):
     return body + (' [%s] .' % ' '.join(keep) if keep else ' .')
 
 
+def qop_call_re(gen):
+    """op('lit) for the qid-literals operators: the operator name and the Qid literal."""
+    names = '|'.join(re.escape(o) for o in sorted(gen.qid_ops))
+    return re.compile(r"(?<![\w\-'$#%:])(" + names + r")\s*\(\s*'([A-Za-z][\w\-]*)\s*\)")
+
+
+def qop_bare_re(gen):
+    """An application of a qid-literals operator (any argument)."""
+    names = '|'.join(re.escape(o) for o in sorted(gen.qid_ops))
+    return re.compile(r"(?<![\w\-'$#%:])(" + names + r")\s*\(")
+
+
+def qop_rewrite(gen, code):
+    """op('lit) of the qid-literals operators replaced by the ctor term (the rest of code is kept)."""
+    if not gen.qop_terms:
+        return code
+    return qop_call_re(gen).sub(lambda m: gen.qop_terms[(m.group(1), m.group(2))], code)
+
+
 def closed_rewrite_code(gen, code):
     """Constants and Qid literals of closed sorts replaced by their constructor terms (code only)."""
-    if not gen.const_terms and not gen.qid_terms:
+    if not gen.const_terms and not gen.qid_terms and not gen.qop_terms:
         return code
+    code = qop_rewrite(gen, code)
 
     def sub(m):
         if m.group(1) is not None:
@@ -1090,10 +1134,21 @@ def closed_numbering(gen, test_texts):
                 d = const_decl(gen, u.text)
                 if d:
                     consts[d[1]].update(d[0])
-    qids = set()
+    qids, qop_lits = set(), set()
+    qop_re = None
+    if gen.qid_ops:
+        qop_re, bare_re = qop_call_re(gen), qop_bare_re(gen)
     for text in test_texts + gen.src_texts:
         for line in text.splitlines():
-            qids.update(QID_LIT_RE.findall(mask_strings(code_part(line))))
+            code = mask_strings(code_part(line))
+            if qop_re is not None:
+                qop_lits.update(qop_re.findall(code))
+                code = qop_re.sub(' ', code)
+                bad = bare_re.search(code)
+                if bad:
+                    raise GenError('%s applied to something other than a Qid literal in the DMC scope: %s'
+                                   % (bad.group(1), line.strip()))
+            qids.update(QID_LIT_RE.findall(code))
     if qids and gen.qid_sort is None:
         raise GenError('Qid literals but no qid-subsort directive: %s' % sorted(qids)[:5])
     refl_names = set()
@@ -1105,13 +1160,19 @@ def closed_numbering(gen, test_texts):
         if cn in refl_names:
             raise GenError('close-sort constructor %s already declared' % cn)
     gen.const_terms, gen.qid_terms, gen.closed_items = {}, {}, {}
+    gen.qop_terms, gen.qop_items = {}, {}
     for S in sorted(closed):
         items = [('c', n) for n in sorted(consts[S])]
         if S == gen.qid_sort:
             items += [('q', n) for n in sorted(qids)]
+        gen.qop_items[S] = sorted(x for x in qop_lits if gen.qid_ops[x[0]] == S)
+        items += [('l', x) for x in gen.qop_items[S]]
         gen.closed_items[S] = items
         for k, (kind, n) in enumerate(items):
             term = '%s(%d)' % (closed[S]['ctor'], k)
+            if kind == 'l':
+                gen.qop_terms[n] = term
+                continue
             table = gen.const_terms if kind == 'c' else gen.qid_terms
             if kind == 'c':
                 if n in gen.const_terms:
@@ -1224,8 +1285,6 @@ def arg_eq(gen, x, y, srt):
         return 'numEq(%s, %s)' % (x, y)
     if srt == 'Bool':
         return 'boolEq(%s, %s)' % (x, y)
-    if srt == QID_SORT:
-        return '(%s == %s)' % (x, y)       # built-in equality of Qid (a constructor argument such as fileName)
     if srt.startswith('Set{'):
         return '(%s subset %s and %s subset %s)' % (x, y, y, x)
     if srt == MAP_VN:
@@ -1241,7 +1300,6 @@ def arg_eq(gen, x, y, srt):
 
 
 MAP_VN = 'Map{Var,Nat}'
-QID_SORT = 'Qid'
 AUX_MAP = 'DM-AUX-EQ-MAP'
 AUX_EXP = 'DM-AUX-EQ-EXP'
 LIST_EXP = ('ExpList', 'ValueList', 'VarList')
@@ -1483,6 +1541,40 @@ def rewrite_text(ctx, text, where, keep=False):
             raise GenError('%s: cannot infer the sort of %s or %s for built-in equality'
                            % (where, a, b))
         new = eq_text(gen, ctx.mod, a, b, S, toks[i][2] == '=/=', False, where)
+        text = text[:toks[ll][0]] + new + text[toks[rh][1]:]
+
+
+def guard_conds(gen, mod, text, where):
+    """A sibling's equational conditions `t = u` (spaced, top level) as Bool text for a guard.
+    Each becomes the sort-aware equality of arg_eq; the sort comes from t or u."""
+    while True:
+        toks = tokenize(text)
+        idx = [i for i, t in enumerate(toks)
+               if t[2] == '=' and t[0] > 0 and text[t[0] - 1].isspace()
+               and t[1] < len(text) and text[t[1]].isspace()]
+        if not idx:
+            return text
+        i = idx[0]
+        ll, lh = left_bounds(toks, i)
+        rl, rh = right_bounds(toks, i)
+        a = text[toks[ll][0]:toks[lh][1]].strip()
+        b = text[toks[rl][0]:toks[rh][1]].strip()
+        S = infer_sort(gen, mod, a)
+        if S is None or S == NUMLIT:
+            S2 = infer_sort(gen, mod, b)
+            if S2 is not None and S2 != NUMLIT:
+                S = S2
+            elif S is None:
+                S = S2
+        if S is None:
+            raise GenError('%s: cannot infer the sort of %s or %s for the equational condition of an '
+                           'owise guard' % (where, a, b))
+        if S == NUMLIT:
+            S = 'Nat'                       # both sides numerals: numEq, as for any Nat
+        if S.startswith('List{'):
+            raise GenError('%s: equational condition on a list sort (%s) in an owise guard is not '
+                           'supported' % (where, S))
+        new = arg_eq(gen, a, b, S)
         text = text[:toks[ll][0]] + new + text[toks[rh][1]:]
 
 
@@ -1823,7 +1915,8 @@ def auto_owise(ctx, u, e, sibs):
     if same:
         if any(s['cond'] is None for s in same):
             raise GenError('%s: owise equation is unreachable (unconditional sibling with same LHS)' % where)
-        return 'cond', ' /\\ '.join(neg_text(rewrite_text(ctx, s['cond'], where)) for s in same)
+        return 'cond', ' /\\ '.join(neg_text(guard_conds(gen, mod, rewrite_text(ctx, s['cond'], where), where))
+                                   for s in same)
     doms = gen.mod_ops.get(mod, {}).get(e['fn'], [])
     guards = []
     args = e['args']
@@ -2381,7 +2474,7 @@ def cell_guards(gen, mod, cx, nodes, sts):
                 extra.append((N, render_node(first_bind[name]), node_sort(N)))
             else:
                 first_bind[name] = N
-        ctext = cond
+        ctext = guard_conds(gen, mod, cond, cx.where) if cond is not None else None
         if ctext is not None:
             for name, N in first_bind.items():
                 ctext = rename_var(ctext, name, render_node(N))
@@ -3045,8 +3138,7 @@ def build_plan(gen):
             ok = True
             for c in ctors:
                 for d in c['doms']:
-                    if d in NUM_SORTS or d == S or d == 'Bool' or d.startswith('Set{') or d == MAP_VN or d in LIST_EXP \
-                            or d == QID_SORT:
+                    if d in NUM_SORTS or d == S or d == 'Bool' or d.startswith('Set{') or d == MAP_VN or d in LIST_EXP:
                         continue
                     if skind(d, stack | {S}) == 'builtin':
                         ok = False
@@ -3368,7 +3460,7 @@ def transform_unit(ctx, u, raw):
         return None
     t = u.text
     kinds = [k for k, v in dirs]
-    if 'qid-subsort' in kinds:
+    if 'qid-subsort' in kinds or 'qid-literals' in kinds:
         return []
     if 'close' in kinds:
         sname, cname = [v for k, v in dirs if k == 'close'][0]
@@ -3669,6 +3761,7 @@ def ground_terms(gen, mod, sort, groups_by_sort, limit=6, depth=2):
     if depth < 0:
         return []
     terms = []
+    terms.extend("%s('%s)" % x for x in gen.qop_items.get(sort, []))
     if sort in groups_by_sort:
         g = groups_by_sort[sort]
         elems = []
@@ -3781,7 +3874,12 @@ def unclose_map(gen):
     for S, items in gen.closed_items.items():
         for k, (kind, n) in enumerate(items):
             term = '%s(%d)' % (gen.closed[S]['ctor'], k)
-            inv[term] = n if kind == 'c' else "'" + n
+            if kind == 'c':
+                inv[term] = n
+            elif kind == 'q':
+                inv[term] = "'" + n
+            else:
+                inv[term] = "%s('%s)" % n
     return inv
 
 
@@ -3799,6 +3897,47 @@ def unclose(gen, s, inv):
     names = sorted(set(gen.closed[S]['ctor'] for S in gen.closed), key=len, reverse=True)
     pat = re.compile(r'\b(?:%s)\(\d+\)' % '|'.join(re.escape(n) for n in names))
     return pat.sub(lambda m: inv.get(m.group(0), m.group(0)), s)
+
+
+# Entry files of the derived tests: the files that make test runs (api tests from the tree root, the
+# others from their own directory).  The fragments they load (cases/, api/aux.maude) are loaded by them.
+# tests/main.maude is not an entry: no runner loads it, and its case files already give parse warnings
+# in the plain build (tests/cases/test-*.maude: `;` in the terms), so it cannot be warning-free.
+TEST_ENTRY_RE = re.compile(r'^(api/test-[^/]*|completion/[^/]*|gp-conformance/[^/]*)\.maude$')
+
+
+def load_warnings(maude, cache, out_dir, tests_out):
+    """Maude 'Warning:' lines when the DMC build loads (out_dir/main.maude), and when each derived test entry
+    file loads on top of it.  Advisories are not warnings and are not reported.  Returns (file, line) pairs."""
+    tree = os.path.dirname(out_dir)            # the tree root: build/<NAME>, holding src/ and tests/
+    jobs = [(out_dir, os.path.join(out_dir, 'main.maude'), False)]
+    if tests_out:
+        for root, _, fns in os.walk(tests_out):
+            for fn in sorted(fns):
+                path = os.path.join(root, fn)
+                rel = os.path.relpath(path, tests_out).replace(os.sep, '/')
+                if TEST_ENTRY_RE.match(rel):
+                    # api tests load ./src/main and ./tests/api/aux from the tree root (run-api-suite.py
+                    # rewrites its header the same way); the other entries load ../src/main from their directory
+                    jobs.append((tree, path, True) if rel.startswith('api/') else (root, path, False))
+    found = []
+    os.makedirs(cache, exist_ok=True)
+    infile = os.path.join(cache, 'load-warnings.in')
+    for cwd, path, api in jobs:
+        load = path
+        if api:
+            text = open(path, encoding='utf-8').read()
+            text = text.replace('load ./src/main', 'load %s' % os.path.join(out_dir, 'main'))
+            text = text.replace('load ./tests/api/aux', 'load %s' % os.path.join(tree, 'tests', 'api', 'aux'))
+            load = os.path.join(cache, 'entry-' + os.path.basename(path))
+            with open(load, 'w', encoding='utf-8') as fh:
+                fh.write(text)
+        with open(infile, 'w') as fh:
+            fh.write('load %s\nquit\n' % load)
+        for line in maude_run(maude, cwd, infile).splitlines():
+            if line.startswith('Warning:'):
+                found.append((os.path.relpath(path, tree), line))
+    return found
 
 
 def ground_check(gen, orig_dir, out_dir, maude):
@@ -3834,8 +3973,9 @@ def ground_check(gen, orig_dir, out_dir, maude):
     inv = unclose_map(gen)
     wmods = list(dict.fromkeys(m for m, _ in uniq))
     wbund, wuse = bundle_groups(gen, wmods, '-GC')
+    dmc_cmds = [(m, qop_rewrite(gen, c)) for m, c in uniq]
     b = [None if x is None else unclose(gen, x, inv)
-         for x in run_build_tests(maude, out_dir, uniq, cache, late=wuse, bundles=wbund)]
+         for x in run_build_tests(maude, out_dir, dmc_cmds, cache, late=wuse, bundles=wbund)]
     mism = []
     unparsed = 0
     stuck = []
@@ -3995,6 +4135,7 @@ def main(argv=None):
         mods.update(m for m in mod_names_in(fis[f]) if m)
     mods = sorted(mods)
     refl, _ = run_reflection(src, cache_dir, mods, args.maude, args.fresh or args.check)
+    refl.drop_ops(set(gen.qid_ops))
     gen.refl = refl
     gen.main_order = mod_names_in(fis['main.maude']) if 'main.maude' in fis else []
     gen.main_mods = set(gen.main_order)
@@ -4120,7 +4261,7 @@ def main(argv=None):
                 'views_upgraded': sorted(gen.plan.upgrade), 'kinds': gen.plan.kinds,
                 'closed': dict((S, {'ctor': gen.closed[S]['ctor'], 'items': gen.closed_items[S]})
                                for S in sorted(gen.closed)),
-                'qid_sort': gen.qid_sort,
+                'qid_sort': gen.qid_sort, 'qid_ops': gen.qid_ops,
                 'const_terms': gen.const_terms, 'qid_terms': gen.qid_terms}
     with open(mpath, 'w') as fh:
         json.dump(manifest, fh, indent=1)
@@ -4155,6 +4296,12 @@ def main(argv=None):
               % (total, len(mism), skipped))
         for t, a, b in mism[:20]:
             print('    MISMATCH %s::%s\n      ORIG %s\n      DMC  %s' % (t[0], t[1], a, b))
+        warns = load_warnings(args.maude, cache_dir, out, tests_out if tests_src else None)
+        print('  load warnings: %d' % len(warns))
+        for f, w in warns:
+            print('    LOAD %s: %s' % (f, w))
+        if warns:
+            return 3
         return 0 if not mism else 2
     return 0
 

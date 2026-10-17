@@ -18,7 +18,7 @@ search [1] in COMPLETION-TEST :
   < oid(1, oid(0, testTa)) : PersistentObject |
       data-stream-id : oid(2, oid(0, testTa)) >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
-      flags : TEE-DATA-FLAG-ACCESS-READ,
+      flags : accessRead,
       pos : pos(0) >
   < oid(2, oid(0, testTa)) : DataStreamObject | data-size : dataSize(1),
       content : newContent(randomData) >
@@ -32,7 +32,7 @@ search [1] in COMPLETION-TEST :
   < oid(1, oid(0, testTa)) : PersistentObject |
       data-stream : nil, data-stream-id : oid(2, oid(0, testTa)) >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
-      flags : TEE-DATA-FLAG-ACCESS-WRITE,
+      flags : accessWrite,
       pos : pos(0) >
   < oid(2, oid(0, testTa)) : DataStreamObject | data-size : dataSize(0),
       content : empty >
@@ -41,7 +41,7 @@ search [1] in COMPLETION-TEST :
   < oid(1, oid(0, testTa)) : PersistentObject |
       data-stream : randomData, data-stream-id : oid(2, oid(0, testTa)) >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
-      flags : TEE-DATA-FLAG-ACCESS-WRITE,
+      flags : accessWrite,
       pos : pos(1) >
   < oid(2, oid(0, testTa)) : DataStreamObject | data-size : dataSize(1),
       content : (pos(0) |-> randomData) > .
@@ -52,7 +52,7 @@ search [1] in COMPLETION-TEST :
   < oid(1, oid(0, testTa)) : PersistentObject |
       data-stream : randomData, data-stream-id : oid(2, oid(0, testTa)) >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
-      flags : TEE-DATA-FLAG-ACCESS-WRITE >
+      flags : accessWrite >
   < oid(2, oid(0, testTa)) : DataStreamObject | data-size : dataSize(1),
       content : newContent(randomData) >
 =>*
@@ -61,14 +61,14 @@ search [1] in COMPLETION-TEST :
       data-stream : (randomData zeroData zeroData),
       data-stream-id : oid(2, oid(0, testTa)) >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
-      flags : TEE-DATA-FLAG-ACCESS-WRITE >
+      flags : accessWrite >
   < oid(2, oid(0, testTa)) : DataStreamObject | data-size : dataSize(3),
       content : (pos(0) |-> randomData, pos(1) |-> zeroData,
                  pos(2) |-> zeroData) > .
 
 --- SeekObjectData obtains the stream size and updates the top-level handle.
 search [1] in COMPLETION-TEST :
-  seekObjectData(oid(101, testTa), 2, TEE-DATA-SEEK-END,
+  seekObjectData(oid(101, testTa), 2, seekEnd,
                  testTa, oid(0, testTa))
   < oid(1, oid(0, testTa)) : PersistentObject |
       data-stream-id : oid(2, oid(0, testTa)) >
@@ -83,9 +83,9 @@ search [1] in COMPLETION-TEST :
 
 --- The top-level seek path preserves the handle and reports position overflow.
 search [1] in COMPLETION-TEST :
-  seekObjectData(oid(101, testTa), 1, TEE-DATA-SEEK-CUR,
+  seekObjectData(oid(101, testTa), 1, seekCur,
                  testTa, oid(0, testTa))
-  < testTa : TaKernel | api-return : noReturn, api-state : waitSeekObjectData,
+  < testTa : TAKernel | api-return : noReturn, api-state : waitSeekObjectData,
                         current-api : SeekObjectData >
   < oid(1, oid(0, testTa)) : PersistentObject |
       data-stream-id : oid(2, oid(0, testTa)) >
@@ -93,23 +93,23 @@ search [1] in COMPLETION-TEST :
       pos : pos(4294967295) >
   < oid(2, oid(0, testTa)) : DataStreamObject | data-size : dataSize(1) >
 =>*
-  < testTa : TaKernel | api-state : finished,
+  < testTa : TAKernel | api-state : finished,
                         current-api : SeekObjectData,
                         api-return : apiReturn(SeekObjectData,
-                          TEE-ERROR-OVERFLOW, empty) >
+                          errorOverflow, empty) >
   C .
 
 search [1] in COMPLETION-TEST :
-  < testTa : TaKernel | status : normal, api-call : noCall,
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : noCall,
                         api-return : noReturn, api-state : started,
                         current-api : ReadObjectData,
                         current-params : (handle(oid(101, testTa)), size(dataSize(1))) >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
-      flags : TEE-DATA-FLAG-ACCESS-WRITE >
+      flags : accessWrite >
 =>1
-  < testTa : TaKernel | status : panic, api-call : noCall,
+  < testTa : TAKernel | status : panic, api-call : noCall,
                         api-return : noReturn, api-state : finished,
                         current-api : ReadObjectData,
                         current-params : (handle(oid(101, testTa)), size(dataSize(1))) >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
-      flags : TEE-DATA-FLAG-ACCESS-WRITE > .
+      flags : accessWrite > .

@@ -1224,6 +1224,8 @@ def arg_eq(gen, x, y, srt):
         return 'numEq(%s, %s)' % (x, y)
     if srt == 'Bool':
         return 'boolEq(%s, %s)' % (x, y)
+    if srt == QID_SORT:
+        return '(%s == %s)' % (x, y)       # built-in equality of Qid (a constructor argument such as fileName)
     if srt.startswith('Set{'):
         return '(%s subset %s and %s subset %s)' % (x, y, y, x)
     if srt == MAP_VN:
@@ -1239,6 +1241,7 @@ def arg_eq(gen, x, y, srt):
 
 
 MAP_VN = 'Map{Var,Nat}'
+QID_SORT = 'Qid'
 AUX_MAP = 'DM-AUX-EQ-MAP'
 AUX_EXP = 'DM-AUX-EQ-EXP'
 LIST_EXP = ('ExpList', 'ValueList', 'VarList')
@@ -2502,7 +2505,7 @@ def cell_owise(ctx, u, e, sibs, action, excl, keep):
             elem = ('c', c['name'], kids, c['rng'])
             options.append(('cons', elem, ('v', restvar, collsort, False), sep, collsort))
         if not cands:
-            # element sort without constructors (FileId in Set{FileId}): one variable element
+            # element sort without constructors (FileName in Set{FileName}): one variable element
             inner = elemsort
             em = None if juxt else re.match(r'^(Set|NeSet|List|NeList)\{(.*)\}$', collsort)
             if em:
@@ -2632,7 +2635,7 @@ def wrapper_lines(S, kind):
 
 def ctor_doms(gen, X):
     """Argument sorts of the constructors (not AC) that can build a term of sort X, over all modules
-    (a constructor of a subsort of X builds an X term, e.g. struct_ : Type -> SType builds a Type)."""
+    (a constructor of a subsort of X builds an X term, e.g. struct_ : ImpType -> SType builds an ImpType)."""
     edges = getattr(gen, 'dep_edges', None)
     if edges is None:
         edges = {}
@@ -2661,7 +2664,7 @@ def reach_sorts(gen, X):
 
 def eq_rep(gen, S, cyc):
     """Sort whose `.=.` serves S: the top sort of the constructor cycle through S, or the cycle sort
-    above S (a subsort of a cyclic sort such as SType < Type), or S itself."""
+    above S (a subsort of a cyclic sort such as SType < ImpType), or S itself."""
     if S in cyc:
         rs = reach_sorts(gen, S)
         members = [X for X in cyc if X == S or (X in rs and S in reach_sorts(gen, X))]
@@ -3042,7 +3045,8 @@ def build_plan(gen):
             ok = True
             for c in ctors:
                 for d in c['doms']:
-                    if d in NUM_SORTS or d == S or d == 'Bool' or d.startswith('Set{') or d == MAP_VN or d in LIST_EXP:
+                    if d in NUM_SORTS or d == S or d == 'Bool' or d.startswith('Set{') or d == MAP_VN or d in LIST_EXP \
+                            or d == QID_SORT:
                         continue
                     if skind(d, stack | {S}) == 'builtin':
                         ok = False

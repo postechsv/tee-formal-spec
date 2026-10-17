@@ -18,8 +18,8 @@ omod INVOKE-TA-CALL is
   pr OBJECT-ID .
   pr INVOKE-MESSAGE .
 
-  msg invokeTA : Oid InvokeMessage Oid -> Msg .
-  msg invokeTAReturn : InvokeMessage Oid -> Msg .
+  msg invkTa : Oid InvokeMessage Oid -> Msg .
+  msg invkTaRet : InvokeMessage Oid -> Msg .
 endom
 
 --- This module defines SMC arguments.
@@ -44,8 +44,8 @@ endv
 omod SECURE-MONITOR-CALL is
   pr LIST{SmcArgument} .
 
-  msg smcRequest : List{SmcArgument} -> Msg .
-  msg smcReturn  : List{SmcArgument} -> Msg .
+  msg smcReq : List{SmcArgument} -> Msg .
+  msg smcRet : List{SmcArgument} -> Msg .
 endom
 
 --- This module defines execution environments for REE and TEE.
@@ -78,16 +78,16 @@ mod EXECUTION-ENV is
 --- Model/Implementation Specific Version (In Order)
   ---@dmc keep-builtin
   crl [accept-smc-request] :
-    { REE smcRequest(ARGS) } | { TEE }
+    { REE smcReq(ARGS) } | { TEE }
     =>
-    { REE } | { TEE smcRequest(ARGS) }
+    { REE } | { TEE smcReq(ARGS) }
   if TEE =/= none
   .
 
   rl [return-smc-request] :
-    { REE } | { TEE smcReturn(ARGS) }
+    { REE } | { TEE smcRet(ARGS) }
     =>
-    { REE smcReturn(ARGS) } | { TEE }
+    { REE smcRet(ARGS) } | { TEE }
   .
 
 endm
@@ -97,10 +97,10 @@ endm
 fmod STORAGE-STATUS is
   sort StorageStatus .
 
-  op storageNormal : -> StorageStatus [ctor] .
+  op normal : -> StorageStatus [ctor] .
   op outOfSpace : -> StorageStatus [ctor] .
-  op storageCorrupt : -> StorageStatus [ctor] .
-  op storageInAccessible : -> StorageStatus [ctor] .
+  op corrupted : -> StorageStatus [ctor] .
+  op notAvailable : -> StorageStatus [ctor] .
 endfm
 
 view StorageStatus from TRIV to STORAGE-STATUS is
@@ -142,7 +142,7 @@ omod TEE-OS is
   pr NAT .
   pr OBJECT-ID .
   pr STORAGE-STATUS .
-  pr SET{FileId} .
+  pr SET{FileName} .
   pr MAP{AppId,ProgramCell} .
   pr MAP{SessionId,Oid} .
   pr MAP{SessionId,List{SmcArgument}} .
@@ -151,42 +151,42 @@ omod TEE-OS is
   pr LIST{ServiceReturn} .
 
   
---- Paper-level classes. TeeOSKernel refines TrustedOS with executable service
---- queues; TA storage state is held by separate Storage objects.
-  class Storage | status : StorageStatus, files : Set{FileId}, counter : Nat .
-  class TrustedOS | sess : Map{SessionId,Oid} .
+--- TA storage state is held by separate Storage objects.
+  class Storage | status : StorageStatus, files : Set{FileName}, counter : Nat .
 
---- Actual Implemenation
-  class TeeOSKernel | session-counter : Nat,
-                      service-request-ta-inst : Oid?,
-                      service-in : List{Service}, service-out : List{ServiceReturn},
-                      temporary-objects : Map{Oid,Set{Oid}},
-                      ta-prog-map : Map{AppId,ProgramCell} .
-  subclass TeeOSKernel < TrustedOS .
+--- Implementation additions (not in the paper): session-counter,
+--- service-request-ta-inst, service-in, service-out, temporary-objects,
+--- ta-prog-map (executable service queues).
+  class TrustedOS | sess : Map{SessionId,Oid},
+                    session-counter : Nat,
+                    service-request-ta-inst : Oid?,
+                    service-in : List{Service}, service-out : List{ServiceReturn},
+                    temporary-objects : Map{Oid,Set{Oid}},
+                    ta-prog-map : Map{AppId,ProgramCell} .
 endom
 
 mod TEE-OS-SERVICE is
   pr SERVICE .
   pr STORAGE-STATUS .
-  pr SET{FileId} .
+  pr SET{FileName} .
   pr APP-ID .
   pr OBJECT-ID .
 
   op getStorageStatus : -> Service [ctor] .
   op storageStatus : StorageStatus -> ServiceReturn [ctor] .
 
-  op checkFileExist : FileId -> Service [ctor] .
+  op checkFileExist : FileName -> Service [ctor] .
   op fileExist : -> ServiceReturn [ctor] .
   op noFileExist : -> ServiceReturn [ctor] .
 
-  op notifyFileCreation : FileId -> Service [ctor] .
-  op notifyFileDeletion : FileId -> Service [ctor] .
-  op notifyFileRename : FileId FileId -> Service [ctor] .
+  op notifyFileCreation : FileName -> Service [ctor] .
+  op notifyFileDeletion : FileName -> Service [ctor] .
+  op notifyFileRename : FileName FileName -> Service [ctor] .
   op acceptNotification : -> ServiceReturn [ctor] .
 
 --- TODO: NEED TO UPDATE OP NAME
   op getPersistentList : -> Service [ctor] .
-  op filesInStorage : Set{FileId} -> ServiceReturn [ctor] .
+  op filesInStorage : Set{FileName} -> ServiceReturn [ctor] .
   op storageEmpty : -> ServiceReturn [ctor] .
 
 --- Session

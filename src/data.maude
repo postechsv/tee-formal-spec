@@ -19,10 +19,10 @@ fmod DATA-POSITION is
   var P : Nat .
 
   op pos : Nat -> DataPosition [ctor] .
-  op TEE-DATA-MAX-POSITION : -> DataPosition [ctor] .
+  op dataMaxPosition : -> DataPosition [ctor] .
 
   op _<=_ : DataPosition DataPosition -> Bool .
-  eq POS <= TEE-DATA-MAX-POSITION = true .
+  eq POS <= dataMaxPosition = true .
 
   --- GP v1.3.1, Table 5-2: TEE_DATA_MAX_POSITION is 0xFFFFFFFF.
   op withinMaxPosition : DataPosition -> Bool .
@@ -51,9 +51,10 @@ fmod BASIC-DATA is
   pr DATA .
   pr TEE-ATTRIBUTE .
 
+  op data : Nat -> Data [ctor] .
   op randomData : -> Data [ctor] .
   op zeroData : -> Data [ctor] .
-  op attrContentData : AttrContent -> Data [ctor] .
+  op attrContentData : AttrValue -> Data [ctor] .
 endfm
 
 --- This module defines auxiliary operators for data stream.
@@ -158,11 +159,11 @@ fmod DATA-STREAM-OPERATOR is
 
 --- This operator seeks data position indicator.
   op seekPos : SeekType DataPosition Int DataSize -> DataPosition .
-  ceq seekPos(TEE-DATA-SEEK-SET , pos(P) , I , dataSize(M)) = pos(0) if I < 0 .
-  ceq seekPos(TEE-DATA-SEEK-CUR , pos(P) , I , dataSize(M)) = pos(0) if P + I < 0 .
-  ceq seekPos(TEE-DATA-SEEK-END , pos(P) , I , dataSize(M)) = pos(0) if M + I < 0 .
-  eq seekPos(TEE-DATA-SEEK-SET , pos(P) , I , dataSize(M)) = pos(abs(I)) [owise] .
-  eq seekPos(TEE-DATA-SEEK-CUR , pos(P) , I , dataSize(M)) = pos(abs(P + I)) [owise] .
-  eq seekPos(TEE-DATA-SEEK-END , pos(P) , I , dataSize(M)) = pos(abs(M + I)) [owise] .
+  ceq seekPos(seekSet , pos(P) , I , dataSize(M)) = pos(0) if I < 0 .
+  ceq seekPos(seekCur , pos(P) , I , dataSize(M)) = pos(0) if P + I < 0 .
+  ceq seekPos(seekEnd , pos(P) , I , dataSize(M)) = pos(0) if M + I < 0 .
+  eq seekPos(seekSet , pos(P) , I , dataSize(M)) = pos(abs(I)) [owise] .
+  eq seekPos(seekCur , pos(P) , I , dataSize(M)) = pos(abs(P + I)) [owise] .
+  eq seekPos(seekEnd , pos(P) , I , dataSize(M)) = pos(abs(M + I)) [owise] .
 
 endfm

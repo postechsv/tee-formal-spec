@@ -14,125 +14,125 @@ endm
 
 --- Paper-level handles are top-level objects referenced by the reverse ID index.
 search [1] in COMPLETION-TEST :
-  < testTa : TaKernel | api-call : noCall, api-return : noReturn,
+  < testTa : TAKernel | api-call : noCall, api-return : noReturn,
                         api-state : started, current-api : ResetTransientObject,
                         current-params : handle(oid(101, testTa)) >
   < oid(1, testTa) : TransientObject | initialized : true,
-      attributes : teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal),
-      usages : TEE-USAGE-ENCRYPT >
+      attributes : attr(secretValue, randomAttrVal),
+      usages : usageEncrypt >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa) >
 =>*
-  < testTa : TaKernel | api-call : noCall, api-state : finished,
+  < testTa : TAKernel | api-call : noCall, api-state : finished,
                         current-api : ResetTransientObject,
                         current-params : handle(oid(101, testTa)),
                         api-return : apiReturn(ResetTransientObject, noReturnCode, empty) >
   < oid(1, testTa) : TransientObject | initialized : false,
       attributes : empty,
-      usages : (TEE-USAGE-EXTRACTABLE, TEE-USAGE-ENCRYPT,
-                          TEE-USAGE-DECRYPT, TEE-USAGE-MAC,
-                          TEE-USAGE-SIGN, TEE-USAGE-VERIFY, TEE-USAGE-DERIVE) >
+      usages : (usageExtractable, usageEncrypt,
+                          usageDecrypt, usageMac,
+                          usageSign, usageVerify, usageDerive) >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa) > .
 
 --- CopyObjectAttributes1 programmer errors from the paper must panic instead
 --- of leaving an unmatched intermediate request.
 search [1] in COMPLETION-TEST :
   reqAttribute(oid(101, testTa), testTa)
-  < testTa : TaKernel | status : normal, api-state : waitReqAttribute,
+  < testTa : TAKernel | status : (normal).AppStatus, api-state : waitReqAttribute,
                         current-api : CopyObjectAttributes1 >
   < oid(1, testTa) : TransientObject | initialized : false >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa) >
 =>1
-  < testTa : TaKernel | status : panic, api-state : finished,
+  < testTa : TAKernel | status : panic, api-state : finished,
                         current-api : CopyObjectAttributes1 > C .
 
 search [1] in COMPLETION-TEST :
-  reqCopyAttribute(oid(101, testTa), empty, TEE-TYPE-AES, empty, testTa)
-  < testTa : TaKernel | status : normal, api-state : waitCopyAttribute,
+  reqCopyAttribute(oid(101, testTa), empty, typeAes, empty, testTa)
+  < testTa : TAKernel | status : (normal).AppStatus, api-state : waitCopyAttribute,
                         current-api : CopyObjectAttributes1 >
   < oid(1, testTa) : TransientObject | initialized : true >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa) >
 =>1
-  < testTa : TaKernel | status : panic, api-state : finished,
+  < testTa : TAKernel | status : panic, api-state : finished,
                         current-api : CopyObjectAttributes1 > C .
 
 search [1] in COMPLETION-TEST :
-  reqCopyAttribute(oid(101, testTa), empty, TEE-TYPE-RSA-PUBLIC-KEY,
+  reqCopyAttribute(oid(101, testTa), empty, typeRsaPublicKey,
                    empty, testTa)
-  < testTa : TaKernel | status : normal, api-state : waitCopyAttribute,
+  < testTa : TAKernel | status : (normal).AppStatus, api-state : waitCopyAttribute,
                         current-api : CopyObjectAttributes1 >
   < oid(1, testTa) : TransientObject | initialized : false,
-      type : TEE-TYPE-AES >
+      type : typeAes >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa) >
 =>1
-  < testTa : TaKernel | status : panic, api-state : finished,
+  < testTa : TAKernel | status : panic, api-state : finished,
                         current-api : CopyObjectAttributes1 > C .
 
 --- GP 5.6.4: missing or unsupported attributes are programmer errors.
 search [1] in COMPLETION-TEST :
   reqPopulateTransient(oid(101, testTa), empty, testTa)
-  < testTa : TaKernel | status : normal, api-state : waitPopulateTransient,
+  < testTa : TAKernel | status : (normal).AppStatus, api-state : waitPopulateTransient,
                         current-api : PopulateTransientObject >
-  < oid(1, testTa) : TransientObject | type : TEE-TYPE-AES >
+  < oid(1, testTa) : TransientObject | type : typeAes >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa) >
 =>1
-  < testTa : TaKernel | status : panic, api-state : finished,
+  < testTa : TAKernel | status : panic, api-state : finished,
                         current-api : PopulateTransientObject > C .
 
 --- GP 5.6.4: the destination object must be uninitialized.
 search [1] in COMPLETION-TEST :
   reqPopulateTransient(oid(101, testTa),
-    teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal), testTa)
-  < testTa : TaKernel | status : normal, api-state : waitPopulateTransient,
+    attr(secretValue, randomAttrVal), testTa)
+  < testTa : TAKernel | status : (normal).AppStatus, api-state : waitPopulateTransient,
                         current-api : PopulateTransientObject >
-  < oid(1, testTa) : TransientObject | type : TEE-TYPE-AES >
+  < oid(1, testTa) : TransientObject | type : typeAes >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa) >
 =>1
-  < testTa : TaKernel | status : panic, api-state : finished,
+  < testTa : TAKernel | status : panic, api-state : finished,
                         current-api : PopulateTransientObject > C .
 
 --- GP 5.6.7: an oversized key or missing mandatory generation parameters panic.
 search [1] in COMPLETION-TEST :
-  reqGenerateKey(oid(101, testTa), 256 Bits, empty, testTa)
-  < testTa : TaKernel | status : normal, api-state : waitReqGenerateKey,
+  reqGenerateKey(oid(101, testTa), 256, empty, testTa)
+  < testTa : TAKernel | status : (normal).AppStatus, api-state : waitReqGenerateKey,
                         current-api : GenerateKey >
-  < oid(1, testTa) : TransientObject | type : TEE-TYPE-AES,
-      max-size : 128 Bits >
+  < oid(1, testTa) : TransientObject | type : typeAes,
+      max-size : 128 >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa) >
 =>1
-  < testTa : TaKernel | status : panic, api-state : finished,
+  < testTa : TAKernel | status : panic, api-state : finished,
                         current-api : GenerateKey > C .
 
 search [1] in COMPLETION-TEST :
-  reqGenerateKey(oid(101, testTa), 0 Bits, empty, testTa)
-  < testTa : TaKernel | status : normal, api-state : waitReqGenerateKey,
+  reqGenerateKey(oid(101, testTa), 0, empty, testTa)
+  < testTa : TAKernel | status : (normal).AppStatus, api-state : waitReqGenerateKey,
                         current-api : GenerateKey >
-  < oid(1, testTa) : TransientObject | type : TEE-TYPE-DH-KEYPAIR,
-      max-size : 256 Bits >
+  < oid(1, testTa) : TransientObject | type : typeDhKeypair,
+      max-size : 256 >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa) >
 =>1
-  < testTa : TaKernel | status : panic, api-state : finished,
+  < testTa : TAKernel | status : panic, api-state : finished,
                         current-api : GenerateKey > C .
 
 --- GP 5.6.7: a Table 5-9-unsupported key size is a programmer error.
 search [1] in COMPLETION-TEST :
-  reqGenerateKey(oid(101, testTa), 64 Bits, empty, testTa)
-  < testTa : TaKernel | status : normal, api-state : waitReqGenerateKey,
+  reqGenerateKey(oid(101, testTa), 64, empty, testTa)
+  < testTa : TAKernel | status : (normal).AppStatus, api-state : waitReqGenerateKey,
                         current-api : GenerateKey >
-  < oid(1, testTa) : TransientObject | type : TEE-TYPE-AES,
-      max-size : 128 Bits >
+  < oid(1, testTa) : TransientObject | type : typeAes,
+      max-size : 128 >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa) >
 =>1
-  < testTa : TaKernel | status : panic, api-state : finished,
+  < testTa : TAKernel | status : panic, api-state : finished,
                         current-api : GenerateKey > C .
 
 --- GP 5.6.7: key generation requires an uninitialized transient object.
 search [1] in COMPLETION-TEST :
-  reqGenerateKey(oid(101, testTa), 128 Bits, empty, testTa)
-  < testTa : TaKernel | status : normal, api-state : waitReqGenerateKey,
+  reqGenerateKey(oid(101, testTa), 128, empty, testTa)
+  < testTa : TAKernel | status : (normal).AppStatus, api-state : waitReqGenerateKey,
                         current-api : GenerateKey >
-  < oid(1, testTa) : TransientObject | type : TEE-TYPE-AES,
-      max-size : 128 Bits >
+  < oid(1, testTa) : TransientObject | type : typeAes,
+      max-size : 128 >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa) >
 =>1
-  < testTa : TaKernel | status : panic, api-state : finished,
+  < testTa : TAKernel | status : panic, api-state : finished,
                         current-api : GenerateKey > C .

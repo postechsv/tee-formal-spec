@@ -4,45 +4,45 @@ load ../../src/main
 
 --- GP 6.2.6 requires key usage to agree with the operation mode.
 red in CRYPTO-OPERATION-BEHAVIOR :
-  modeUsageCompatible((TEE-USAGE-ENCRYPT, TEE-USAGE-DECRYPT), TEE-MODE-ENCRYPT) .
+  modeUsageCompatible((usageEncrypt, usageDecrypt), modeEncrypt) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  not modeUsageCompatible(TEE-USAGE-VERIFY, TEE-MODE-SIGN) .
+  not modeUsageCompatible(usageVerify, modeSign) .
 
 --- GP Table 6-6b IV requirements and AE initialization state.
 red in CRYPTO-OPERATION-BEHAVIOR :
-  ivLengthValid(TEE-ALG-AES-CBC-NOPAD,
+  ivLengthValid(algAesCbcNopad,
     randomData randomData randomData randomData randomData randomData randomData randomData
     randomData randomData randomData randomData randomData randomData randomData randomData) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  not ivLengthValid(TEE-ALG-AES-CBC-NOPAD, nil) .
+  not ivLengthValid(algAesCbcNopad, nil) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  ivLengthValid(TEE-ALG-AES-GCM, randomData) .
+  ivLengthValid(algAesGcm, randomData) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  updateOpState(TEE-OPERATION-STATE-ACTIVE, TEE-OPERATION-AE)
-    == TEE-OPERATION-STATE-INITIAL .
+  updateOpState(active, clsAE)
+    == initial .
 
 --- GP SHA-256 and RSA/SHA-256 operation metadata and output sizes.
 red in CRYPTO-OPERATION-BEHAVIOR :
-  determineOpClass(TEE-ALG-SHA256) == TEE-OPERATION-DIGEST .
+  determineOpClass(algSha256) == clsDigest .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  compatibleMode(TEE-ALG-SHA256, TEE-MODE-DIGEST) .
+  compatibleMode(algSha256, modeDigest) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  outputSize(digestResult(TEE-ALG-SHA256, randomData)) == dataSize(32) .
+  outputSize(digestResult(algSha256, randomData)) == dataSize(32) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  signatureSize(2048 Bits) == dataSize(256) .
+  signatureSize(2048) == dataSize(256) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  validParams(TEE-ALG-RSASSA-PKCS1-V1-5-SHA256, TEE-MODE-SIGN, 2048 Bits) .
+  validParams(algRsassaPkcs1V15Sha256, modeSign, 2048) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  outputSize(computeMAC(TEE-ALG-HMAC-SHA256, nil, randomData)) == dataSize(32) .
+  outputSize(computeMAC(algHmacSha256, nil, randomData)) == dataSize(32) .
 
 --- GP permits exact in-place buffers, but rejects partial overlap.
 red in CRYPTO-OPERATION-BEHAVIOR :
@@ -58,248 +58,248 @@ red in CRYPTO-OPERATION-BEHAVIOR :
                         destRegion(bufferRegion(108, 16)))) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  validSignatureDigestLength(TEE-ALG-RSASSA-PKCS1-V1-5-SHA256,
+  validSignatureDigestLength(algRsassaPkcs1V15Sha256,
                              repeatDigestByte(randomData, 32)) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  not validSignatureDigestLength(TEE-ALG-RSASSA-PKCS1-V1-5-SHA256, randomData) .
+  not validSignatureDigestLength(algRsassaPkcs1V15Sha256, randomData) .
 
 --- RSA-OAEP input bounds: k - 2*hLen - 2, with k in bytes.
 red in CRYPTO-OPERATION-BEHAVIOR :
-  validRsaEncryptInput(TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA1, 2048 Bits,
+  validRsaEncryptInput(algRsaesPkcs1OaepMgf1Sha1, 2048,
                        repeatDigestByte(randomData, 214)) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  not validRsaEncryptInput(TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA1, 2048 Bits,
+  not validRsaEncryptInput(algRsaesPkcs1OaepMgf1Sha1, 2048,
                            repeatDigestByte(randomData, 215)) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  validRsaCiphertextSize(2048 Bits, repeatDigestByte(randomData, 256)) .
+  validRsaCiphertextSize(2048, repeatDigestByte(randomData, 256)) .
 
 --- GP Tables 6-5/6-6 key type and operation mode compatibility.
-red in CRYPTO-OPERATION-BEHAVIOR : typeModeCompatible(TEE-TYPE-DES3, TEE-MODE-ENCRYPT) .
+red in CRYPTO-OPERATION-BEHAVIOR : typeModeCompatible(typeDes3, modeEncrypt) .
 
-red in CRYPTO-OPERATION-BEHAVIOR : typeModeCompatible(TEE-TYPE-HMAC-SHA3-512, TEE-MODE-MAC) .
+red in CRYPTO-OPERATION-BEHAVIOR : typeModeCompatible(typeHmacSha3512, modeMac) .
 
-red in CRYPTO-OPERATION-BEHAVIOR : typeModeCompatible(TEE-TYPE-RSA-KEYPAIR, TEE-MODE-ENCRYPT) .
+red in CRYPTO-OPERATION-BEHAVIOR : typeModeCompatible(typeRsaKeypair, modeEncrypt) .
 
-red in CRYPTO-OPERATION-BEHAVIOR : typeModeCompatible(TEE-TYPE-ECDH-PUBLIC-KEY, TEE-MODE-DERIVE) .
+red in CRYPTO-OPERATION-BEHAVIOR : typeModeCompatible(typeEcdhPublicKey, modeDerive) .
 
-red in CRYPTO-OPERATION-BEHAVIOR : typeModeCompatible(TEE-TYPE-ED448-PUBLIC-KEY, TEE-MODE-VERIFY) .
+red in CRYPTO-OPERATION-BEHAVIOR : typeModeCompatible(typeEd448PublicKey, modeVerify) .
 
-red in CRYPTO-OPERATION-BEHAVIOR : typeModeCompatible(TEE-TYPE-ED448-KEYPAIR, TEE-MODE-SIGN) .
+red in CRYPTO-OPERATION-BEHAVIOR : typeModeCompatible(typeEd448Keypair, modeSign) .
 
-red in CRYPTO-OPERATION-BEHAVIOR : typeModeCompatible(TEE-TYPE-X448-KEYPAIR, TEE-MODE-DERIVE) .
+red in CRYPTO-OPERATION-BEHAVIOR : typeModeCompatible(typeX448Keypair, modeDerive) .
 
-red in CRYPTO-OPERATION-BEHAVIOR : typeModeCompatible(TEE-TYPE-SM2-DSA-KEYPAIR, TEE-MODE-SIGN) .
+red in CRYPTO-OPERATION-BEHAVIOR : typeModeCompatible(typeSm2DsaKeypair, modeSign) .
 
-red in CRYPTO-OPERATION-BEHAVIOR : typeModeCompatible(TEE-TYPE-SM2-KEP-PUBLIC-KEY, TEE-MODE-DERIVE) .
+red in CRYPTO-OPERATION-BEHAVIOR : typeModeCompatible(typeSm2KepPublicKey, modeDerive) .
 
-red in CRYPTO-OPERATION-BEHAVIOR : typeModeCompatible(TEE-TYPE-SM2-PKE-PUBLIC-KEY, TEE-MODE-DECRYPT) .
+red in CRYPTO-OPERATION-BEHAVIOR : typeModeCompatible(typeSm2PkePublicKey, modeDecrypt) .
 
-red in CRYPTO-OPERATION-BEHAVIOR : not typeModeCompatible(TEE-TYPE-ED448-PUBLIC-KEY, TEE-MODE-SIGN) .
+red in CRYPTO-OPERATION-BEHAVIOR : not typeModeCompatible(typeEd448PublicKey, modeSign) .
 
-red in CRYPTO-OPERATION-BEHAVIOR : not typeModeCompatible(TEE-TYPE-X448-PUBLIC-KEY, TEE-MODE-ENCRYPT) .
+red in CRYPTO-OPERATION-BEHAVIOR : not typeModeCompatible(typeX448PublicKey, modeEncrypt) .
 
 --- GP 6.2.6 and Table 6-11: raw RSA modes and compound usage requirements.
 red in CRYPTO-OPERATION-BEHAVIOR :
-  determineOpClass(TEE-ALG-RSA-NOPAD) == TEE-OPERATION-ASYMMETRIC-CIPHER .
+  determineOpClass(algRsaNopad) == clsAsymmetricCipher .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  validParams(TEE-ALG-RSA-NOPAD, TEE-MODE-ENCRYPT, 2048 Bits) .
+  validParams(algRsaNopad, modeEncrypt, 2048) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  not validParams(TEE-ALG-RSA-NOPAD, TEE-MODE-SIGN, 2048 Bits) .
+  not validParams(algRsaNopad, modeSign, 2048) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  operationUsageCompatible(TEE-ALG-RSA-NOPAD,
-    (TEE-USAGE-ENCRYPT, TEE-USAGE-VERIFY), TEE-MODE-ENCRYPT) .
+  operationUsageCompatible(algRsaNopad,
+    (usageEncrypt, usageVerify), modeEncrypt) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  not operationUsageCompatible(TEE-ALG-RSA-NOPAD,
-    TEE-USAGE-ENCRYPT, TEE-MODE-ENCRYPT) .
+  not operationUsageCompatible(algRsaNopad,
+    usageEncrypt, modeEncrypt) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  operationUsageCompatible(TEE-ALG-RSA-NOPAD,
-    (TEE-USAGE-DECRYPT, TEE-USAGE-SIGN), TEE-MODE-DECRYPT) .
+  operationUsageCompatible(algRsaNopad,
+    (usageDecrypt, usageSign), modeDecrypt) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  validRsaEncryptInput(TEE-ALG-RSA-NOPAD, 2048 Bits,
+  validRsaEncryptInput(algRsaNopad, 2048,
                        repeatDigestByte(randomData, 256)) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  not validRsaEncryptInput(TEE-ALG-RSA-NOPAD, 2048 Bits,
+  not validRsaEncryptInput(algRsaNopad, 2048,
                            repeatDigestByte(randomData, 257)) .
 
 --- GP 6.2.7 two-key algorithm/type/usage boundary.
 red in CRYPTO-OPERATION-BEHAVIOR :
-  twoKeyCompatible(TEE-ALG-AES-XTS, TEE-MODE-ENCRYPT,
-    TEE-TYPE-AES, TEE-USAGE-ENCRYPT,
-    TEE-TYPE-AES, TEE-USAGE-ENCRYPT) .
+  twoKeyCompatible(algAesXts, modeEncrypt,
+    typeAes, usageEncrypt,
+    typeAes, usageEncrypt) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  twoKeyCompatible(TEE-ALG-SM2-KEP, TEE-MODE-DERIVE,
-    TEE-TYPE-SM2-KEP-KEYPAIR, TEE-USAGE-DERIVE,
-    TEE-TYPE-SM2-KEP-KEYPAIR, TEE-USAGE-DERIVE) .
+  twoKeyCompatible(algSm2Kep, modeDerive,
+    typeSm2KepKeypair, usageDerive,
+    typeSm2KepKeypair, usageDerive) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  not twoKeyCompatible(TEE-ALG-AES-CTR, TEE-MODE-ENCRYPT,
-    TEE-TYPE-AES, TEE-USAGE-ENCRYPT,
-    TEE-TYPE-AES, TEE-USAGE-ENCRYPT) .
+  not twoKeyCompatible(algAesCtr, modeEncrypt,
+    typeAes, usageEncrypt,
+    typeAes, usageEncrypt) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  twoKeyMaterialCompatible(TEE-ALG-AES-XTS,
-    teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1)),
-    teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 2))) .
+  twoKeyMaterialCompatible(algAesXts,
+    attr(secretValue, sizedAttrVal(128, 1)),
+    attr(secretValue, sizedAttrVal(128, 2))) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  not twoKeyMaterialCompatible(TEE-ALG-AES-XTS,
-    teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1)),
-    teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(256, 2))) .
+  not twoKeyMaterialCompatible(algAesXts,
+    attr(secretValue, sizedAttrVal(128, 1)),
+    attr(secretValue, sizedAttrVal(256, 2))) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  not twoKeyMaterialCompatible(TEE-ALG-AES-XTS,
-    teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1)),
-    teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1))) .
+  not twoKeyMaterialCompatible(algAesXts,
+    attr(secretValue, sizedAttrVal(128, 1)),
+    attr(secretValue, sizedAttrVal(128, 1))) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  not twoKeyMaterialCompatible(TEE-ALG-AES-XTS,
-    teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(192, 1)),
-    teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(192, 2))) .
+  not twoKeyMaterialCompatible(algAesXts,
+    attr(secretValue, sizedAttrVal(192, 1)),
+    attr(secretValue, sizedAttrVal(192, 2))) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  twoKeyOperationSizeCompatible(TEE-ALG-AES-XTS, 256 Bits,
-    teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1)),
-    teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 2))) .
+  twoKeyOperationSizeCompatible(algAesXts, 256,
+    attr(secretValue, sizedAttrVal(128, 1)),
+    attr(secretValue, sizedAttrVal(128, 2))) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  not twoKeyOperationSizeCompatible(TEE-ALG-AES-XTS, 128 Bits,
-    teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(256, 1)),
-    teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(256, 2))) .
+  not twoKeyOperationSizeCompatible(algAesXts, 128,
+    attr(secretValue, sizedAttrVal(256, 1)),
+    attr(secretValue, sizedAttrVal(256, 2))) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  validKeySize(TEE-ALG-SM2-KEP, 256 Bits) .
+  validKeySize(algSm2Kep, 256) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  not validKeySize(TEE-ALG-SM2-KEP, 128 Bits) .
+  not validKeySize(algSm2Kep, 128) .
 
 --- GP 6.2.7 uses distinct return codes for failures of the second key.
 red in CRYPTO-OPERATION-BEHAVIOR :
-  storageErrCode2(storageCorrupt) == TEE-ERROR-CORRUPT-OBJECT-2 .
+  storageErrCode2(corrupted) == errorCorruptObject2 .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  storageErrCode2(storageInAccessible) == TEE-ERROR-STORAGE-NOT-AVAILABLE-2 .
+  storageErrCode2(notAvailable) == errorStorageNotAvailable2 .
 
-red in CRYPTO-OPERATION-BEHAVIOR : expectsTwoKeys(TEE-ALG-AES-XTS) .
+red in CRYPTO-OPERATION-BEHAVIOR : expectsTwoKeys(algAesXts) .
 
-red in CRYPTO-OPERATION-BEHAVIOR : expectsTwoKeys(TEE-ALG-SM2-KEP) .
+red in CRYPTO-OPERATION-BEHAVIOR : expectsTwoKeys(algSm2Kep) .
 
-red in CRYPTO-OPERATION-BEHAVIOR : not expectsTwoKeys(TEE-ALG-AES-CTR) .
+red in CRYPTO-OPERATION-BEHAVIOR : not expectsTwoKeys(algAesCtr) .
 
 --- GP 6.2.5 operation information exposes expected key slots and usages.
 red in CRYPTO-OPERATION-BEHAVIOR :
-  operationKeyCount(TEE-ALG-SHA256, TEE-OPERATION-DIGEST) == 0 .
+  operationKeyCount(algSha256, clsDigest) == 0 .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  operationKeyCount(TEE-ALG-AES-XTS, TEE-OPERATION-CIPHER) == 2 .
+  operationKeyCount(algAesXts, clsCipher) == 2 .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  operationKeyCount(TEE-ALG-AES-CTR, TEE-OPERATION-CIPHER) == 1 .
+  operationKeyCount(algAesCtr, clsCipher) == 1 .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  requiredOperationUsage(TEE-ALG-RSA-NOPAD, TEE-MODE-ENCRYPT) ==
-    (TEE-USAGE-ENCRYPT, TEE-USAGE-VERIFY) .
+  requiredOperationUsage(algRsaNopad, modeEncrypt) ==
+    (usageEncrypt, usageVerify) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  operationDigestLength(TEE-ALG-HMAC-SHA256) == dataSize(32) .
+  operationDigestLength(algHmacSha256) == dataSize(32) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  operationDigestLength(TEE-ALG-RSASSA-PKCS1-V1-5-SHA256) == dataSize(0) .
+  operationDigestLength(algRsassaPkcs1V15Sha256) == dataSize(0) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  operationKeyInformation(nil, TEE-USAGE-ENCRYPT, 2) ==
-    (teeOperationInfoKey(0 Bits, TEE-USAGE-ENCRYPT) ;
-     teeOperationInfoKey(0 Bits, TEE-USAGE-ENCRYPT) ; noKeyInformation) .
+  operationKeyInformation(nil, usageEncrypt, 2) ==
+    (teeOperationInfoKey(0, usageEncrypt) ;
+     teeOperationInfoKey(0, usageEncrypt) ; noKeyInformation) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  operationInfoKeySet(TEE-OPERATION-DIGEST, false) .
+  operationInfoKeySet(clsDigest, false) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  operationInfoInitialized(TEE-OPERATION-DIGEST, false) .
+  operationInfoInitialized(clsDigest, false) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  operationInfoRequiredSize(teeOperationInfoMultiple(TEE-ALG-AES-XTS,
-    TEE-OPERATION-CIPHER, TEE-MODE-ENCRYPT, dataSize(0), 256 Bits,
-    true, false, false, false, TEE-OPERATION-STATE-INITIAL, 2,
-    teeOperationInfoKey(0 Bits, TEE-USAGE-ENCRYPT) ;
-    teeOperationInfoKey(0 Bits, TEE-USAGE-ENCRYPT) ; noKeyInformation)) == dataSize(2) .
+  operationInfoRequiredSize(teeOperationInfoMultiple(algAesXts,
+    clsCipher, modeEncrypt, dataSize(0), 256,
+    true, false, false, false, initial, 2,
+    teeOperationInfoKey(0, usageEncrypt) ;
+    teeOperationInfoKey(0, usageEncrypt) ; noKeyInformation)) == dataSize(2) .
 
 --- GP 6.2.8 requires every copied source key to fit the destination maximum.
 red in CRYPTO-OPERATION-BEHAVIOR :
-  operationKeysFit(key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1))),
-                   256 Bits) .
+  operationKeysFit(key(attr(secretValue, sizedAttrVal(128, 1))),
+                   256) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
   not operationKeysFit(
-    key(teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(256, 1))), 128 Bits) .
+    key(attr(secretValue, sizedAttrVal(256, 1))), 128) .
 
 --- GP 6.2.6 single-key material must fit the allocated operation.
 red in CRYPTO-OPERATION-BEHAVIOR :
-  singleKeyMaterialCompatible(TEE-ALG-AES-CTR, 256 Bits,
-    teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(128, 1))) .
+  singleKeyMaterialCompatible(algAesCtr, 256,
+    attr(secretValue, sizedAttrVal(128, 1))) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  not singleKeyMaterialCompatible(TEE-ALG-AES-CTR, 128 Bits,
-    teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(256, 1))) .
+  not singleKeyMaterialCompatible(algAesCtr, 128,
+    attr(secretValue, sizedAttrVal(256, 1))) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  not singleKeyMaterialCompatible(TEE-ALG-AES-CTR, 256 Bits,
-    teeAttribute(TEE-ATTR-SECRET-VALUE, sizedAttrVal(64, 1))) .
+  not singleKeyMaterialCompatible(algAesCtr, 256,
+    attr(secretValue, sizedAttrVal(64, 1))) .
 
 --- Table 6-4 algorithm/type bindings.
 red in CRYPTO-OPERATION-BEHAVIOR :
-  algorithmObjectTypeCompatible(TEE-ALG-AES-CTR, TEE-TYPE-AES) .
+  algorithmObjectTypeCompatible(algAesCtr, typeAes) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  not algorithmObjectTypeCompatible(TEE-ALG-RSA-NOPAD, TEE-TYPE-AES) .
+  not algorithmObjectTypeCompatible(algRsaNopad, typeAes) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  algorithmObjectTypeCompatible(TEE-ALG-RSA-NOPAD, TEE-TYPE-RSA-PUBLIC-KEY) .
+  algorithmObjectTypeCompatible(algRsaNopad, typeRsaPublicKey) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  algorithmObjectTypeCompatible(TEE-ALG-RSASSA-PKCS1-V1-5-SHA256,
-                                TEE-TYPE-RSA-KEYPAIR) .
+  algorithmObjectTypeCompatible(algRsassaPkcs1V15Sha256,
+                                typeRsaKeypair) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  not algorithmObjectTypeCompatible(TEE-ALG-SHA256, TEE-TYPE-AES) .
+  not algorithmObjectTypeCompatible(algSha256, typeAes) .
 
 --- Every declared allocation algorithm has its Table 6-4 mode and 5-9 size.
 red in CRYPTO-OPERATION-BEHAVIOR :
-  determineOpClass(TEE-ALG-AES-CTS) == TEE-OPERATION-CIPHER .
+  determineOpClass(algAesCts) == clsCipher .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  validParams(TEE-ALG-AES-CTS, TEE-MODE-ENCRYPT, 192 Bits) .
+  validParams(algAesCts, modeEncrypt, 192) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  validParams(TEE-ALG-AES-CBC-NOPAD, TEE-MODE-DECRYPT, 192 Bits) .
+  validParams(algAesCbcNopad, modeDecrypt, 192) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  validParams(TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA1,
-              TEE-MODE-ENCRYPT, 2048 Bits) .
+  validParams(algRsaesPkcs1OaepMgf1Sha1,
+              modeEncrypt, 2048) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  validParams(TEE-ALG-RSAES-PKCS1-OAEP-MGF1-SHA224,
-              TEE-MODE-DECRYPT, 2048 Bits) .
+  validParams(algRsaesPkcs1OaepMgf1Sha224,
+              modeDecrypt, 2048) .
 
 --- Operation sizes use the same Table 5-9 support set as key objects.
 red in CRYPTO-OPERATION-BEHAVIOR :
-  not validKeySize(TEE-ALG-RSA-NOPAD, 264 Bits) .
+  not validKeySize(algRsaNopad, 264) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  validKeySize(TEE-ALG-DH-DERIVE-SHARED-SECRET, 2048 Bits) .
+  validKeySize(algDhDeriveSharedSecret, 2048) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  not validKeySize(TEE-ALG-DH-DERIVE-SHARED-SECRET, 2056 Bits) .
+  not validKeySize(algDhDeriveSharedSecret, 2056) .
 
 red in CRYPTO-OPERATION-BEHAVIOR :
-  not validKeySize(TEE-ALG-HMAC-SHA256, 193 Bits) .
+  not validKeySize(algHmacSha256, 193) .

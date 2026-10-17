@@ -26,7 +26,7 @@ CRYPTO ?= 1
 CRYPTO_LOADS := cryptographic crypto-panic
 CRYPTO_MODULES := CRYPTO-OPERATION-BEHAVIOR CRYPTO-OPERATION-TEE-CALL CRYPTO-PANIC
 CRYPTO_REQUIRES := TRANSIENT
-CRYPTO_TESTS := api/test-cryptographic.maude completion/crypto.maude gp-conformance/crypto.maude
+CRYPTO_TESTS := api/test-cryptographic.maude completion/crypto.maude gp-conformance/crypto.maude completion/paper-fig8.maude
 
 # Storage API groups. transient-object.maude and persistent-object.maude are shared data
 # modules (TRANSIENT-OBJECT, PERSISTENT-OBJECT) that the generic, persistent, cryptographic,

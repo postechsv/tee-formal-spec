@@ -13,35 +13,35 @@ mod COMPLETION-TEST is
 endm
 
 search [1] in COMPLETION-TEST :
-  < testTa : TaKernel | api-call : noCall, api-return : noReturn,
+  < testTa : TAKernel | api-call : noCall, api-return : noReturn,
                         api-state : waitGetBufferAttribute,
                         current-api : GetObjectBufferAttribute,
-                        current-params : (constId(TEE-ATTR-RSA-MODULUS),
-                          attrs(teeAttribute(TEE-ATTR-RSA-MODULUS, randomAttrVal)),
-                          usages(TEE-USAGE-EXTRACTABLE), capacity(dataSize(0))) >
+                        current-params : (constId(rsaModulus),
+                          attrs(attr(rsaModulus, randomAttrVal)),
+                          usages(usageExtractable), capacity(dataSize(0))) >
 =>*
-  < testTa : TaKernel | api-call : noCall, api-state : finished,
+  < testTa : TAKernel | api-call : noCall, api-state : finished,
                         current-api : GetObjectBufferAttribute,
-                        current-params : (constId(TEE-ATTR-RSA-MODULUS),
-                          attrs(teeAttribute(TEE-ATTR-RSA-MODULUS, randomAttrVal)),
-                          usages(TEE-USAGE-EXTRACTABLE), capacity(dataSize(0))),
+                        current-params : (constId(rsaModulus),
+                          attrs(attr(rsaModulus, randomAttrVal)),
+                          usages(usageExtractable), capacity(dataSize(0))),
                         api-return : apiReturn(GetObjectBufferAttribute,
-                          TEE-ERROR-SHORT-BUFFER, size(dataSize(1))) > .
+                          errorShortBuffer, size(dataSize(1))) > .
 
 search [1] in COMPLETION-TEST :
-  < testTa : TaKernel | api-call : noCall, api-return : noReturn,
+  < testTa : TAKernel | api-call : noCall, api-return : noReturn,
                         api-state : waitGetBufferAttribute,
                         current-api : GetObjectBufferAttribute,
-                        current-params : (constId(TEE-ATTR-RSA-MODULUS),
-                          attrs(teeAttribute(TEE-ATTR-RSA-MODULUS, randomAttrVal)),
-                          usages(TEE-USAGE-EXTRACTABLE), capacity(dataSize(1))) >
+                        current-params : (constId(rsaModulus),
+                          attrs(attr(rsaModulus, randomAttrVal)),
+                          usages(usageExtractable), capacity(dataSize(1))) >
 =>*
-  < testTa : TaKernel | api-call : noCall, api-state : finished,
+  < testTa : TAKernel | api-call : noCall, api-state : finished,
                         current-api : GetObjectBufferAttribute,
-                        current-params : (constId(TEE-ATTR-RSA-MODULUS),
-                          attrs(teeAttribute(TEE-ATTR-RSA-MODULUS, randomAttrVal)),
-                          usages(TEE-USAGE-EXTRACTABLE), capacity(dataSize(1))),
-                        api-return : apiReturn(GetObjectBufferAttribute, TEE-SUCCESS,
+                        current-params : (constId(rsaModulus),
+                          attrs(attr(rsaModulus, randomAttrVal)),
+                          usages(usageExtractable), capacity(dataSize(1))),
+                        api-return : apiReturn(GetObjectBufferAttribute, success,
                           (constVal(randomAttrVal), size(dataSize(1)))) > .
 
 --- Closing one persistent handle removes only that ID and its top-level object.
@@ -59,38 +59,38 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   reqObjectInfo(oid(101, testTa), testTa, oid(0, testTa))
   < oid(1, oid(0, testTa)) : PersistentObject |
-      type : TEE-TYPE-AES, max-size : 256 Bits,
-      attributes : teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal),
-      usages : TEE-USAGE-EXTRACTABLE,
+      type : typeAes, max-size : 256,
+      attributes : attr(secretValue, randomAttrVal),
+      usages : usageExtractable,
       data-stream-id : oid(2, oid(0, testTa)) >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
-      flags : TEE-DATA-FLAG-ACCESS-READ,
+      flags : accessRead,
       pos : pos(2) >
   < oid(2, oid(0, testTa)) : DataStreamObject | data-size : dataSize(5) >
 =>1
-  retObjectInfoPr(TEE-TYPE-AES, keySize(
-      teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)), 256 Bits,
-      TEE-USAGE-EXTRACTABLE, dataSize(5), pos(2),
-      TEE-DATA-FLAG-ACCESS-READ, testTa)
+  retObjectInfoPr(typeAes, keySize(
+      attr(secretValue, randomAttrVal)), 256,
+      usageExtractable, dataSize(5), pos(2),
+      accessRead, testTa)
   C .
 
 --- RestrictObjectUsage1 updates a persistent owner through its top-level handle.
 search [1] in COMPLETION-TEST :
-  restrictUsage(oid(101, testTa), TEE-USAGE-ENCRYPT, testTa)
+  restrictUsage(oid(101, testTa), usageEncrypt, testTa)
   < oid(1, testTa) : PersistentObject |
-      usages : (TEE-USAGE-ENCRYPT, TEE-USAGE-DECRYPT) >
+      usages : (usageEncrypt, usageDecrypt) >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa) >
 =>1
   finishRestrictUsage(testTa)
   C .
 
 search [1] in COMPLETION-TEST :
-  < testTa : TaKernel | status : normal, api-call : noCall,
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : noCall,
                         api-return : noReturn, api-state : started,
                         current-api : GetObjectInfo1,
                         current-params : handle(null) >
 =>1
-  < testTa : TaKernel | status : panic, api-call : noCall,
+  < testTa : TAKernel | status : panic, api-call : noCall,
                         api-return : noReturn, api-state : finished,
                         current-api : GetObjectInfo1,
                         current-params : handle(null) > .

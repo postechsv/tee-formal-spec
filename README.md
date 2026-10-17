@@ -91,7 +91,7 @@ Handles are represented as independent top-level objects in a configuration rath
 
 ### Panic Semantics
 
-`tee-panic.maude` evaluates invalid handles and other GlobalPlatform programmer errors against the active `TaKernel` call state and top-level handle objects. A panic path must converge to `app-status: panic` with the API in a finished state.
+`tee-panic.maude` evaluates invalid handles and other GlobalPlatform programmer errors against the active `TAKernel` call state and top-level handle objects. A panic path must converge to `app-status: panic` with the API in a finished state.
 
 ## Requirements
 

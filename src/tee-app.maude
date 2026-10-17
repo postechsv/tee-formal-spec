@@ -30,12 +30,10 @@ omod TRUST-APP is
   pr TASK .
   pr CLIENT-SERVICE .
 
-  class TrustedApp | client-service : ClientService? .
-  subclass TrustedApp < App TAKernel .
-
---- Model/Implementation Specific Version
-  class TrustApp | task : Task?, task-counter : Nat, state-changed : Bool .
-  subclass TrustApp < TrustedApp TaKernel ProgramApp .
+--- Implementation additions (not in the paper): task, task-counter, state-changed.
+  class TrustedApp | client-service : ClientService? ,
+                     task : Task?, task-counter : Nat, state-changed : Bool .
+  subclass TrustedApp < App TAKernel ProgramApp .
 endom
 
 --- This module defines messages for TAs.
@@ -85,20 +83,20 @@ omod TRUST-APP-BEHAVIOR is
 --- Receive parameters from RA.
 
   rl [accept-invoke-ta] :
-    invokeTA(TI , {SID , FUNC , VL} , RI)
-    < TI : TrustApp | task : noTask , running : false >
+    invkTa(TI , {SID , FUNC , VL} , RI)
+    < TI : TrustedApp | task : noTask , running : false >
     =>
-    < TI : TrustApp | client-service : clientService(RI , FUNC) ,
+    < TI : TrustedApp | client-service : clientService(RI , FUNC) ,
                       task : task({SID , FUNC , VL} , RI) >
   .
 
 --- Handle REE request by running TA program.
 
   rl [handle-invoke-ta] :
-    < TI : TrustApp | task : task({SID , FUNC , VL} , RI) , task-counter : N ,
+    < TI : TrustedApp | task : task({SID , FUNC , VL} , RI) , task-counter : N ,
                       proc : none , prog : P , running : false >
     => 
-    < TI : TrustApp | task-counter : N + 1 ,
+    < TI : TrustedApp | task-counter : N + 1 ,
                       proc : run(syscalls P , FUNC , VL) , running : true > 
   .
 
@@ -116,11 +114,11 @@ omod TRUST-APP-BEHAVIOR is
 --- Return REE request results.
 
   rl [handle-invoke-ta-finish] :
-    < TI : TrustApp | proc : (k(.K) KS) , task : task({SID , FUNC , VL} , RI) , running : true >
+    < TI : TrustedApp | proc : (k(.K) KS) , task : task({SID , FUNC , VL} , RI) , running : true >
     => 
-    < TI : TrustApp | proc : none , client-service : noClientService ,
+    < TI : TrustedApp | proc : none , client-service : noClientService ,
                       task : noTask , running : false >
-    invokeTAReturn({SID , FUNC , readReturn(FUNC, KS)} , RI) 
+    invkTaRet({SID , FUNC , readReturn(FUNC, KS)} , RI) 
   .
 
 endom
@@ -157,19 +155,19 @@ omod TRUST-APP-IMP-BEHAVIOR is
 
 --- Model/Implementation Specific Version (2 rules)
   rl [tee-api-call] :
-    < TI : TrustApp | proc : (k($in(VL) ~> $waitSysCall(TEEAPI) ~> K) KS) ,
+    < TI : TrustedApp | proc : (k($in(VL) ~> $waitSysCall(TEEAPI) ~> K) KS) ,
                       api-state : noState , api-call : noCall , api-return : noReturn ,
                       current-api : noApi , current-params : empty >
     => 
-    < TI : TrustApp | proc : (k($waitSysCall(TEEAPI) ~> K) KS) ,
+    < TI : TrustedApp | proc : (k($waitSysCall(TEEAPI) ~> K) KS) ,
                       api-call : makeCall(TEEAPI , VL), state-changed : false > 
   .
 
   rl [tee-api-call-accept] :
-    < TI : TrustApp | api-call : apiCall(TEEAPI , PARAMS) , api-state : noState , 
+    < TI : TrustedApp | api-call : apiCall(TEEAPI , PARAMS) , api-state : noState , 
                       current-api : noApi , current-params : empty >
     => 
-    < TI : TrustApp | api-call : noCall , api-state : started ,
+    < TI : TrustedApp | api-call : noCall , api-state : started ,
                       current-api : TEEAPI , current-params : PARAMS, state-changed : false >
   .
 
@@ -184,10 +182,10 @@ omod TRUST-APP-IMP-BEHAVIOR is
 
 --- Actual Implemenation
   rl [tee-api-call-return] :
-    < TI : TrustApp | proc : (k($waitSysCall(TEEAPI) ~> $out(EL) ~> K) KS) , api-state : finished ,
+    < TI : TrustedApp | proc : (k($waitSysCall(TEEAPI) ~> $out(EL) ~> K) KS) , api-state : finished ,
                       api-return : apiReturn(TEEAPI , RET , PARAMS) , current-api : TEEAPI >
     => 
-    < TI : TrustApp | proc : (k(makeReturnStmt(TEEAPI , RET , PARAMS , EL) ~> K) KS) ,
+    < TI : TrustedApp | proc : (k(makeReturnStmt(TEEAPI , RET , PARAMS , EL) ~> K) KS) ,
                       api-state : noState , api-return : noReturn , 
                       current-api : noApi , current-params : empty, state-changed : false > 
   .

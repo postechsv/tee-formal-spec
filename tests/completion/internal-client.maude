@@ -15,7 +15,7 @@ endm
 --- TeeOpenTASession creates a top-level session handle linked to its owner.
 search [1] in COMPLETION-TEST :
   retTrustedOS(openSessionSuccess(testTa), testTa)
-  < testTa : TaKernel | status : normal, api-return : noReturn,
+  < testTa : TAKernel | status : (normal).AppStatus, api-return : noReturn,
                         api-state : TeeOpenTASession(uuid(TESTTA)) # 1,
                         counter : 1 >
 =>1
@@ -26,29 +26,29 @@ search [1] in COMPLETION-TEST :
 --- The trusted OS records itself on each TA kernel that it creates.
 --- The TA instance is oid(N, osId) and its Storage is oid(0, TA instance).
 search [1] in COMPLETION-TEST :
-  < osId : TeeOSKernel |
+  < osId : TrustedOS |
       service-in : openTASession(TESTTA) nil, service-out : nil,
       ta-prog-map : TESTTA |-> [P],
       sess : empty, session-counter : 0 >
 =>1
-  < oid(0, osId) : TrustApp |
-      status : normal, os-kernel : osId,
+  < oid(0, osId) : TrustedApp |
+      status : (normal).AppStatus, os-kernel : osId,
       storage : oid(0, oid(0, osId)), counter : 1,
       api-call : noCall, api-return : noReturn,
       current-api : noApi, api-state : noState, current-params : empty,
       prog : P, proc : none, running : false,
       client-service : noClientService, task : noTask, task-counter : 0 >
   < oid(0, oid(0, osId)) : Storage |
-      status : storageNormal, files : empty, counter : 0 >
+      status : (normal).StorageStatus, files : empty, counter : 0 >
   C .
 
 --- A received invocation records the paper-level client/service pair.
 search [1] in COMPLETION-TEST :
-  invokeTA(testTa, {sessionId(0), main, nil}, testRa)
-  < testTa : TrustApp |
+  invkTa(testTa, {sessionId(0), main, nil}, testRa)
+  < testTa : TrustedApp |
       client-service : noClientService, task : noTask, running : false >
 =>1
-  < testTa : TrustApp |
+  < testTa : TrustedApp |
       client-service : clientService(testRa, main),
       task : task({sessionId(0), main, nil}, testRa), running : false >
   C .

@@ -2,18 +2,18 @@
 --- This file defines the syntax of imperative language and its semantics.
 
 fmod IMP-TYPE is
-  sort Type .
+  sort ImpType .
 endfm
 
-view Type from TRIV to IMP-TYPE is
-  sort Elt to Type .
+view ImpType from TRIV to IMP-TYPE is
+  sort Elt to ImpType .
 endv
 
 fmod IMP-BTYPE is
   pr IMP-TYPE .
 
   sort BType .
-  subsort BType < Type .
+  subsort BType < ImpType .
   --- Concrete base types: every base type except void and auto.
   sort ConcBType .
   subsort ConcBType < BType .
@@ -29,9 +29,9 @@ fmod IMP-STYPE is
   pr IMP-TYPE .
 
   sort SType .
-  subsort SType < Type .
+  subsort SType < ImpType .
 
-  op struct_ : Type -> SType [ctor] .
+  op struct_ : ImpType -> SType [ctor] .
 endfm
 
 view SType from TRIV to IMP-STYPE is
@@ -42,11 +42,11 @@ fmod IMP-REF-TYPE is
   pr IMP-TYPE .
 
   sort RType .
-  subsort RType < Type .
+  subsort RType < ImpType .
 --- T is a type => T* is a type.
 --- T is a type => T& is a type.
-  op _* : Type -> RType [ctor] .
-  op _& : Type -> RType [ctor] .
+  op _* : ImpType -> RType [ctor] .
+  op _& : ImpType -> RType [ctor] .
 endfm
 
 --- This module defines label for goto statement.
@@ -141,15 +141,15 @@ fmod IMP-FUNC-SIG is
   --- entry points.  Executable program function identifiers refine it.
   subsort FuncId < APIFuncId .
 
-  var T : Type .
+  var T : ImpType .
   var F : FuncId .
   var E : Exp .
   var EL : ExpList .
 
 --- FuncSig
 
-  op __(_) : Type FuncId ExpList -> FuncSig [ctor] .
-  op __() : Type FuncId -> FuncSig [ctor] .
+  op __(_) : ImpType FuncId ExpList -> FuncSig [ctor] .
+  op __() : ImpType FuncId -> FuncSig [ctor] .
 
   eq T F() = T F(nil) .
 
@@ -200,7 +200,7 @@ fmod IMP-EXP is
   op _||_ : Exp Exp -> Exp [ctor gather(E e) prec 55] .
   op !_ : Exp -> Exp [ctor prec 53] .
   op _._ : LExp Var -> LExp [ctor gather(E e) prec 30] .
-  op __ : Type Var -> PExp [ctor prec 30] .
+  op __ : ImpType Var -> PExp [ctor prec 30] .
 
   op _(_) : FuncId ExpList -> FExp [ctor prec 30] .
   op _() : FuncId -> FExp [ctor prec 30] .
@@ -224,7 +224,7 @@ fmod IMP-STMT is
   sort Stmt .
 
   var F : FuncId .
-  var T : Type .
+  var T : ImpType .
   var X : Var .
   var S S' : Stmt .
   var E : Exp .
@@ -314,7 +314,7 @@ fmod IMP-INTERNAL is
   op $in(_) : ValueList -> IStmt [ctor] .
   op $out(_) : ExpList -> IStmt [ctor] .
   op $out(_|_) : ExpList ExpList -> IStmt [ctor] .
-  op $alloc : Type -> IStmt [ctor] .
+  op $alloc : ImpType -> IStmt [ctor] .
   op $setLoc : Var -> IStmt [ctor] .
   op $updateLoc : Var Value -> IStmt [ctor] .
   op $member : Var -> IStmt [ctor] .
@@ -366,7 +366,7 @@ endv
 
 fmod IMP-TYPING is
   pr IMP-PROGRAM .
-  pr MAP{Var,Type} * (op _,_ to _;_) .
+  pr MAP{Var,ImpType} * (op _,_ to _;_) .
   pr MAP{Var,Bool} * (op _,_ to _;_) .
 
   --- Facts: signatures, defined functions, struct definitions and labels.
@@ -376,7 +376,7 @@ fmod IMP-TYPING is
   op _%_ : Facts Facts -> Facts [ctor assoc comm id: nofact] .
   op fsig : FuncSig -> Fact [ctor] .
   op fdef : FuncSig -> Fact [ctor] .
-  op sdef : SType Map{Var,Type} -> Fact [ctor] .
+  op sdef : SType Map{Var,ImpType} -> Fact [ctor] .
   op tlab : Label -> Fact [ctor] .
   op lab : Label -> Fact [ctor] .
   --- Pending names of the enclosing blocks (see pendOf).  Every scope has exactly one.
@@ -384,22 +384,22 @@ fmod IMP-TYPING is
 
   --- Scopes: top-level locals + facts, or body locals + globals + facts.
   sort Scope .
-  op top : Map{Var,Type} Facts -> Scope [ctor] .
-  op body : Map{Var,Type} Map{Var,Type} Facts -> Scope [ctor] .
+  op top : Map{Var,ImpType} Facts -> Scope [ctor] .
+  op body : Map{Var,ImpType} Map{Var,ImpType} Facts -> Scope [ctor] .
 
   --- Results.
   sort TypeR MemberR .
-  op ty : Type -> TypeR [ctor] .
-  op mm : Map{Var,Type} -> MemberR [ctor] .
+  op ty : ImpType -> TypeR [ctor] .
+  op mm : Map{Var,ImpType} -> MemberR [ctor] .
 
-  op noRet : -> Type [ctor] .
+  op noRet : -> ImpType [ctor] .
 
   op typeOfExp : Scope Exp -> TypeR .
-  op stmtT : Type Scope Program -> Scope .
+  op stmtT : ImpType Scope Program -> Scope .
   op collectF : Program -> Facts .
   op wellTyped : Program -> Bool .
 
-  vars T U : Type .
+  vars T U : ImpType .
   var I : Int .
   var B : Bool .
   var X : Var .
@@ -410,13 +410,13 @@ fmod IMP-TYPING is
   var S S' : Stmt .
   var P : Program .
   var LB : Label .
-  var L G M NL M1 M2 : Map{Var,Type} .
+  var L G M NL M1 M2 : Map{Var,ImpType} .
   var F F' : Facts .
   var SC : Scope .
   var ST : SType .
-  var R : Type .
+  var R : ImpType .
   var SL : SList .
-  var L2 G2 : Map{Var,Type} .
+  var L2 G2 : Map{Var,ImpType} .
   var F2 : Facts .
   var PM PM' : Map{Var,Bool} .
   var K : K .
@@ -424,10 +424,10 @@ fmod IMP-TYPING is
   --- Maps and facts.
   --- Types a variable may have once declared (everything but auto).
   sort NonAuto .
-  subsort NonAuto < Type .
+  subsort NonAuto < ImpType .
   subsort ConcBType SType RType < NonAuto .
 
-  op lookupT : Var Map{Var,Type} -> TypeR .
+  op lookupT : Var Map{Var,ImpType} -> TypeR .
   eq lookupT(X, (X |-> T) ; L) = ty(T) .
 
   op facts : Scope -> Facts .
@@ -488,7 +488,7 @@ fmod IMP-TYPING is
 
   --- Arguments: a by-value parameter takes a value of its type (no struct);
   --- a by-reference parameter U * or U & takes an lvalue of type U.
-  op argOk : Scope Exp Type -> Bool .
+  op argOk : Scope Exp ImpType -> Bool .
   ceq argOk(SC, E, T) = true if not T :: RType /\ not T :: SType /\ typeOfExp(SC, E) = ty(T) .
   ceq argOk(SC, E, U *) = true if E :: LExp /\ typeOfExp(SC, E) = ty(U) .
   ceq argOk(SC, E, U &) = true if E :: LExp /\ typeOfExp(SC, E) = ty(U) .
@@ -517,18 +517,18 @@ fmod IMP-TYPING is
     if T FID(PARAMS) := sigOfDecl(FID, F) /\ argsOk(body(L, G, F), EL, PARAMS) = true .
 
   --- Parameters: a by-reference parameter names the pointee inside the callee.
-  op bindParams : ExpList -> Map{Var,Type} .
+  op bindParams : ExpList -> Map{Var,ImpType} .
   eq bindParams(nil) = empty .
   ceq bindParams((T X, PARAMS)) = insert(X, T, bindParams(PARAMS)) if not T :: RType .
   eq bindParams((U * X, PARAMS)) = insert(X, U, bindParams(PARAMS)) .
   eq bindParams((U & X, PARAMS)) = insert(X, U, bindParams(PARAMS)) .
 
-  op noAuto : Map{Var,Type} -> Bool .
+  op noAuto : Map{Var,ImpType} -> Bool .
   eq noAuto(empty) = true .
   ceq noAuto((X |-> T) ; L) = true if T :: NonAuto /\ noAuto(L) = true .
 
   --- Declarations.
-  op okDecl : Type Facts -> Bool .
+  op okDecl : ImpType Facts -> Bool .
   ceq okDecl(T, F) = true if T :: ConcBType .
   ceq okDecl(struct T, F) = true if sdef(struct T, M) % F' := F .
 
@@ -604,7 +604,7 @@ fmod IMP-TYPING is
   ceq stmtT(noRet, top(L, F), $libFun(T FID(PARAMS), K)) = top(L, fdef(T FID(PARAMS)) % F)
     if FID :: TeeApi .
 
-  op checkBody : FuncSig Stmt Map{Var,Type} Facts -> Bool .
+  op checkBody : FuncSig Stmt Map{Var,ImpType} Facts -> Bool .
   --- The body scope takes the globals of F (its top-level pend fact is dropped) and
   --- the pending names of its own declarations.
   op dropPend : Facts -> Facts .
@@ -703,7 +703,7 @@ fmod IMP-STRICTNESS is
 
   op {_} : Exp -> KLabel [ctor] .
 
-  var T : Type .
+  var T : ImpType .
   vars E E1 E2 : Exp .
   vars V V1 V2 : Value .
   vars S S1 S2 : Stmt .
@@ -840,7 +840,7 @@ fmod IMP-CONFIG is
   op store : Map{Nat,Value?} -> KConfigItem [ctor] .
   op sdecl : Map{SType,Stmt} -> KConfigItem [ctor] .
   op fdecl : Map{FuncSig,K} -> KConfigItem [ctor] .
-  op fstack : CallStack -> KConfigItem [ctor] .
+  op stack : CallStack -> KConfigItem [ctor] .
   op nextLoc : Nat -> KConfigItem [ctor] .
   op labels : Map{Label,Stmt} -> KConfigItem [ctor] .
 
@@ -857,7 +857,7 @@ fmod IMP-AUX is
   var P : Program .
   var N : Nat .
   vars X Y : Var .
-  var T : Type .
+  var T : ImpType .
   var ENV E : Map{Var,Nat} .
   vars SO SO1 SO2 : Map{Var,Nat} .
   var N1 : Nat .
@@ -894,7 +894,7 @@ fmod IMP-AUX is
   --- The top level is hoisted like a block: its declarations are allocated before the
   --- first statement (so a goto past one sees the object).  Struct registrations are
   --- hoisted in sequence order (see hoistS).
-  ceq mkInitConf(P) = k(hoistK(getSList(P)) ~> P) env(empty) store(empty) fdecl(empty) sdecl(empty) fstack(nilStack) nextLoc(0) labels(labelsOf(getSList(P)))
+  ceq mkInitConf(P) = k(hoistK(getSList(P)) ~> P) env(empty) store(empty) fdecl(empty) sdecl(empty) stack(nilStack) nextLoc(0) labels(labelsOf(getSList(P)))
     if wellTyped(P) = true .
 
   eq hoistK(nilElem) = .K .
@@ -968,7 +968,7 @@ fmod IMP-AUX is
   eq copyMembers((X |-> N1) ; SO1, SO2, MEM)
    = copyMembers(SO1, SO2, insert(N1, memVal(memLoc(X, SO2), MEM), MEM)) .
 
-  op isBaseType : Type -> Bool .
+  op isBaseType : ImpType -> Bool .
   eq isBaseType(struct T) = false .
   eq isBaseType(T) = true .
 endfm
@@ -979,7 +979,7 @@ mod IMP-SEMANTICS is
   pr IMP-AUX .
 
   var N : Nat .
-  vars T T' : Type .
+  vars T T' : ImpType .
   var ST : SType .
   vars X X' Y : Var .
   var XL : ExpList .
@@ -1119,8 +1119,8 @@ mod IMP-SEMANTICS is
   => k($push ~> $args(EL | PARAMS | nil) ~> $exec(BODY) ~> K) fdecl(((T F(PARAMS) |-> BODY) , FDCL)) .
 
   --- The callee has its own label table; the caller's is saved in the stack item.
-  rl k($push ~> $args(EL | PARAMS | nil) ~> $exec(BODY) ~> K) env(ENV) fstack(STACK) nextLoc(L) labels(LM)
-  => k($args(EL | PARAMS | nil) ~> $exec(BODY)) env(ENV) fstack(item(ENV,LM,K,L) |> STACK) nextLoc(L) labels(bodyLabels(BODY)) .
+  rl k($push ~> $args(EL | PARAMS | nil) ~> $exec(BODY) ~> K) env(ENV) stack(STACK) nextLoc(L) labels(LM)
+  => k($args(EL | PARAMS | nil) ~> $exec(BODY)) env(ENV) stack(item(ENV,LM,K,L) |> STACK) nextLoc(L) labels(bodyLabels(BODY)) .
 
 --- Lexical scope of a callee: the global env (the env of the bottom stack item,
 --- or the current env when no call is active) plus its parameters.
@@ -1128,8 +1128,8 @@ mod IMP-SEMANTICS is
   eq bottomEnv(nilStack, ENV) = ENV .
   eq bottomEnv(item(ENV', LM, K, L) |> STACK, ENV) = bottomEnv(STACK, ENV') .
 
-  rl [enter]: k($args(nil | XL | VL) ~> K) env(ENV) fstack(STACK)
-  => k($bind(nil | XL | VL) ~> K) env(bottomEnv(STACK, ENV)) fstack(STACK) .
+  rl [enter]: k($args(nil | XL | VL) ~> K) env(ENV) stack(STACK)
+  => k($bind(nil | XL | VL) ~> K) env(bottomEnv(STACK, ENV)) stack(STACK) .
 
 --- call by reference & call by value
 
@@ -1147,11 +1147,11 @@ mod IMP-SEMANTICS is
 
 --- Return statement (rules: they pop frames).
 
-  rl k(return V ; ~> K) env(ENV) fstack(item(ENV',LM',K',L') |> STACK) nextLoc(L) labels(LM)
-  => k({ V } ~> K') env(ENV') fstack(STACK) nextLoc(L') labels(LM') .
+  rl k(return V ; ~> K) env(ENV) stack(item(ENV',LM',K',L') |> STACK) nextLoc(L) labels(LM)
+  => k({ V } ~> K') env(ENV') stack(STACK) nextLoc(L') labels(LM') .
 
-  rl k(.K) env(ENV) fstack(item(ENV',LM',K',L') |> STACK) nextLoc(L) labels(LM)
-  => k(K') env(ENV') fstack(STACK) nextLoc(L') labels(LM') . --- for void return
+  rl k(.K) env(ENV) stack(item(ENV',LM',K',L') |> STACK) nextLoc(L) labels(LM)
+  => k(K') env(ENV') stack(STACK) nextLoc(L') labels(LM') . --- for void return
 
 --- End of the argument preparation of a syscall.
   eq k($prep(nil) ~> K) = k(K) .

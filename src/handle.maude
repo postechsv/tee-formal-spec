@@ -49,11 +49,11 @@ endom
 
 omod OBJECT-HANDLE is
   pr HANDLE .
-  pr SET{DataFlag} .
+  pr SET{DataAccessFlag} .
   pr DATA-POSITION .
 
   --- DataPosition is the executable model's bounded Nat representation.
-  class ObjHandle | flags : Set{DataFlag}, pos : DataPosition .
+  class ObjHandle | flags : Set{DataAccessFlag}, pos : DataPosition .
   subclass ObjHandle < Handle .
 
 --- Model/Implementation Specific Version
@@ -72,36 +72,40 @@ endom
 
 --- This module defines operation handle, a subclass of handle.
 
+--- This module defines the handle flags of an operation handle (paper, App. A).
+
+fmod HANDLE-FLAG is
+  sort HandleFlag .
+  ops init keySet extract : -> HandleFlag [ctor] .
+endfm
+
+view HandleFlag from TRIV to HANDLE-FLAG is
+  sort Elt to HandleFlag .
+endv
+
 fmod HANDLE-STATE is
-  sorts HandleStateFlag HandleState .
-  subsort HandleStateFlag < HandleState .
-  var HS : HandleState .
+  sort HandleState .
+  pr HANDLE-FLAG .
+  pr SET{HandleFlag} .
+  var S : Set{HandleFlag} .
 
-  ops init keySet extract : -> HandleStateFlag [ctor] .
-  op noHandleState : -> HandleState [ctor] .
-  op __ : HandleState HandleState -> HandleState
-    [ctor assoc comm id: noHandleState idem] .
+  op handleState : Set{HandleFlag} -> HandleState [ctor] .
 
-  op handleState : Bool Bool Bool -> HandleState .
+  --- The set of handle flags for a triple of (init, keySet, extract) booleans.
+  op handleFlags : Bool Bool Bool -> Set{HandleFlag} .
+  eq handleFlags(false, false, false) = empty .
+  eq handleFlags(true,  false, false) = init .
+  eq handleFlags(false, true,  false) = keySet .
+  eq handleFlags(true,  true,  false) = (init, keySet) .
+  eq handleFlags(false, false, true)  = extract .
+  eq handleFlags(true,  false, true)  = (init, extract) .
+  eq handleFlags(false, true,  true)  = (keySet, extract) .
+  eq handleFlags(true,  true,  true)  = (init, keySet, extract) .
+
   ops hasInit hasKeySet hasExtract : HandleState -> Bool .
-  eq handleState(false, false, false) = noHandleState .
-  eq handleState(true,  false, false) = init .
-  eq handleState(false, true,  false) = keySet .
-  eq handleState(true,  true,  false) = init keySet .
-  eq handleState(false, false, true)  = extract .
-  eq handleState(true,  false, true)  = init extract .
-  eq handleState(false, true,  true)  = keySet extract .
-  eq handleState(true,  true,  true)  = init keySet extract .
-
-  eq hasInit(init HS) = true .
-  ---@dmc owise recurse(sep=__, empty=noHandleState)
-  eq hasInit(HS) = false [owise] .
-  eq hasKeySet(keySet HS) = true .
-  ---@dmc owise recurse(sep=__, empty=noHandleState)
-  eq hasKeySet(HS) = false [owise] .
-  eq hasExtract(extract HS) = true .
-  ---@dmc owise recurse(sep=__, empty=noHandleState)
-  eq hasExtract(HS) = false [owise] .
+  eq hasInit(handleState(S)) = init in S .
+  eq hasKeySet(handleState(S)) = keySet in S .
+  eq hasExtract(handleState(S)) = extract in S .
 endfm
 
 omod OPERATION-HANDLE is
@@ -111,7 +115,7 @@ omod OPERATION-HANDLE is
 
   class OpHandle | state : HandleState,
                    key-material-set : Bool,
-                   opclass : OperationClass .
+                   opclass : OpClass .
   subclass OpHandle < Handle .
 
 --- Model/Implementation Specific Version
@@ -145,15 +149,15 @@ omod HANDLE-AUX is
 
   var N : Nat .
   var TK : Oid .
-  var DATAFLAGS : Set{DataFlag} .
+  var DATAFLAGS : Set{DataAccessFlag} .
   var HANDLE : Oid .
   var OI : Oid .
-  var OC : OperationClass .
+  var OC : OpClass .
 
   op freshTransientHandle : Nat Oid Oid -> Configuration .
-  op freshPersistentHandle : Nat Oid Set{DataFlag} Oid -> Configuration .
+  op freshPersistentHandle : Nat Oid Set{DataAccessFlag} Oid -> Configuration .
   op freshEnumeratorHandle : Nat Oid Oid -> Configuration .
-  op freshOperationHandle : Nat Oid Oid OperationClass -> Configuration .
+  op freshOperationHandle : Nat Oid Oid OpClass -> Configuration .
   op freshSessionHandle : Nat Oid -> Configuration . 
   op freshSessionHandle : Nat Oid Oid -> Configuration .
   
@@ -176,7 +180,7 @@ omod HANDLE-AUX is
    = < oid(N , TK) : ObjectEnumHandle | oid : OI, is-initialized : false > .
 
   eq freshOperationHandle(N , TK , OI, OC)
-   = < oid(N , TK) : OperationHandle | oid : OI, state : noHandleState,
+   = < oid(N , TK) : OperationHandle | oid : OI, state : handleState(empty),
                                             key-material-set : false,
                                             opclass : OC > .
 

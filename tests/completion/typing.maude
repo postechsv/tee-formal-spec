@@ -14,7 +14,7 @@ mod TYPING-TEST is
   op hId : -> FuncId [ctor] .
   op setx : -> FuncId [ctor] .
   op lbl : -> Label [ctor] .
-  op Pt : -> Type [ctor] .
+  op Pt : -> ImpType [ctor] .
   var ENV : Map{Var,Nat} .
   var MEM : Map{Nat,Value?} .
   var L : Nat .
@@ -28,7 +28,7 @@ red wellTyped(int fId(int p) { return p + # 1 ; } int x ; x := fId(# 2) ;) .
 red wellTyped(struct Pt { int a ; } ; struct Pt s ; int x ; s . a := # 3 ; x := s . a ;) .
 red wellTyped(auto x ; x := # 1 ; int y ; y := x ;) .
 red wellTyped(int setx(int * p) { p := # 1 ; return # 1 ; } int x ; x := setx(x) ;) .
-red wellTyped(syscalls TEE-Handle h ; TEE-Result r ; r := AllocateTransientObject(# TEE-TYPE-AES, # 256 Bits, h) ;) .
+red wellTyped(syscalls TEE-Handle h ; TEE-Result r ; r := AllocateTransientObject(# typeAes, # 256, h) ;) .
 
 --- Negative: each program is ill-typed, so it is not run.
 --- Assignment and expression types.
@@ -52,7 +52,7 @@ red (wellTyped(struct Pt { int a ; } ; struct Pt s ; int x ; x := s . b ;) == tr
 --- Labels: goto needs a top-level label of the program.
 red (wellTyped(goto lbl ;) == true) == false .
 --- TEE types: a TEE-Result is not a handle.
-red (wellTyped(syscalls TEE-Result r ; r := AllocateTransientObject(# TEE-TYPE-AES, # 256 Bits, r) ;) == true) == false .
+red (wellTyped(syscalls TEE-Result r ; r := AllocateTransientObject(# typeAes, # 256, r) ;) == true) == false .
 
 --- Lexical scope: a callee sees the globals declared before it and its own
 --- parameters, never the locals of a caller.  h reads x, which is only a local of g.

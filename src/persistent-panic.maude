@@ -7,27 +7,27 @@ omod PERSISTENT-PANIC is
   var TK : Oid .
   var HANDLE : Oid .
   var PARAMS : Set{TeeApiParam} .
-  var DATAFLAGS : Set{DataFlag} .
+  var DATAFLAGS : Set{DataAccessFlag} .
 
   --- Persistent object access rights are preconditions.  Violating them
   --- panics before the normal storage request can be issued.
   crl [delete-access-panic] :
-    < TK : TaKernel | status : normal, api-state : started,
+    < TK : TAKernel | status : (normal).AppStatus, api-state : started,
                       current-api : CloseAndDeletePersistentObject1,
                       current-params : handle(HANDLE), PARAMS >
     < HANDLE : ObjectHandle | flags : DATAFLAGS >
     =>
-    < TK : TaKernel | status : panic, api-state : finished >
+    < TK : TAKernel | status : panic, api-state : finished >
     < HANDLE : ObjectHandle | >
-  if not (TEE-DATA-FLAG-ACCESS-WRITE-META in DATAFLAGS) .
+  if not (accessWriteMeta in DATAFLAGS) .
 
   crl [rename-access-panic] :
-    < TK : TaKernel | status : normal, api-state : started,
+    < TK : TAKernel | status : (normal).AppStatus, api-state : started,
                       current-api : RenamePersistentObject,
                       current-params : handle(HANDLE), PARAMS >
     < HANDLE : ObjectHandle | flags : DATAFLAGS >
     =>
-    < TK : TaKernel | status : panic, api-state : finished >
+    < TK : TAKernel | status : panic, api-state : finished >
     < HANDLE : ObjectHandle | >
-  if not (TEE-DATA-FLAG-ACCESS-WRITE-META in DATAFLAGS) .
+  if not (accessWriteMeta in DATAFLAGS) .
 endom

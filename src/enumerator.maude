@@ -4,9 +4,9 @@
 
 omod ENUMERATOR-OBJECT is
   pr OBJECT-ID .
-  pr SET{FileId} .
+  pr SET{FileName} .
 
-  class EnumeratorObject | persistent-objects : Set{FileId},
+  class EnumeratorObject | persistent-objects : Set{FileName},
                            enumerating : Bool .
 endom
 
@@ -30,13 +30,13 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
   var TK : Oid .
   vars OI EI DI : Oid .
   var SI : Oid .
-  var FILE : FileId .
-  var FILES : Set{FileId} .
+  var FILE : FileName .
+  var FILES : Set{FileName} .
   var STATUS : StorageStatus .
-  var OBJTYPE : ObjectType .
-  var MAXOBJSIZE : CryptoKeySize .
-  var ATTRS : Set{TeeAttribute} .
-  var OBJUSAGES : Set{ObjectUsage} .
+  var OBJTYPE : Type .
+  var MAXOBJSIZE : Nat .
+  var ATTRS : Set{CryptoAttribute} .
+  var OBJUSAGES : Set{Usage} .
   var DATASIZE : DataSize .
   var INFO : TeeObjectInfo .
   var EXISTENCE : ServiceReturn .
@@ -53,12 +53,12 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
 --- This rule creates an enumerator object.
 
   rl [alloc-enumerator-success] :
-    < TK : TaKernel | status : normal , api-call : noCall , api-return : noReturn ,
+    < TK : TAKernel | status : (normal).AppStatus , api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : AllocatePersistentObjectEnumerator ,
                       counter : N  >
     =>
-    < TK : TaKernel | api-state : finished , counter : N + 2 ,
-                      api-return : apiReturn(AllocatePersistentObjectEnumerator , TEE-SUCCESS, handle(oid(N + 1 , TK))) >
+    < TK : TAKernel | api-state : finished , counter : N + 2 ,
+                      api-return : apiReturn(AllocatePersistentObjectEnumerator , success, handle(oid(N + 1 , TK))) >
     < oid(N , TK) : EnumeratorObject |
                                          persistent-objects : empty , enumerating : false >
     freshEnumeratorHandle(N + 1 , TK , oid(N , TK))
@@ -67,10 +67,10 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
 --- This rule returns TEE_ERROR_OUT_OF_MEMORY if there is not enough memory to allocate the enumerator.
 
   rl [alloc-enumerator-memory-err] :
-    < TK : TaKernel | status : outOfMemory , api-call : noCall , api-return : noReturn ,
+    < TK : TAKernel | status : outOfMemory , api-call : noCall , api-return : noReturn ,
                       current-api : AllocatePersistentObjectEnumerator >
     =>
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(AllocatePersistentObjectEnumerator , TEE-ERROR-OUT-OF-MEMORY , handle(null)) >
+    < TK : TAKernel | api-state : finished , api-return : apiReturn(AllocatePersistentObjectEnumerator , errorOutOfMemory , handle(null)) >
   .
 
 ------------------------------------------------------------
@@ -86,11 +86,11 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
   msg finishDeleteEnumerator : Oid -> Msg .
 
   crl [free-enumerator-not-null-subroutine] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+    < TK : TAKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : FreePersistentObjectEnumerator ,
                       current-params : handle(HANDLE) >
     =>
-    < TK : TaKernel | api-state : waitDeleteEnumerator >
+    < TK : TAKernel | api-state : waitDeleteEnumerator >
     deleteEnumerator(HANDLE , TK)
   if not nullHandle(HANDLE)
   .
@@ -106,20 +106,20 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
 
   rl [free-enumerator-not-null-success] :
     finishDeleteEnumerator(TK)
-    < TK : TaKernel | api-state : waitDeleteEnumerator ,
+    < TK : TAKernel | api-state : waitDeleteEnumerator ,
                       current-api : FreePersistentObjectEnumerator >
     =>
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(FreePersistentObjectEnumerator) >
+    < TK : TAKernel | api-state : finished , api-return : apiReturn(FreePersistentObjectEnumerator) >
   .
 
 --- This rule does nothing when the input handle is null (TEE_HANDLE_NULL).
 
   crl [free-enumerator-null-success] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+    < TK : TAKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : FreePersistentObjectEnumerator ,
                       current-params : handle(HANDLE) >
     =>
-    < TK : TaKernel | api-state : finished ,
+    < TK : TAKernel | api-state : finished ,
                       api-return : apiReturn(FreePersistentObjectEnumerator , handle(null)) >
   if nullHandle(HANDLE)
   .
@@ -137,11 +137,11 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
   msg retResetEnumerator : Oid -> Msg .
 
   crl [reset-enumerator-not-null-subroutine] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+    < TK : TAKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : ResetPersistentObjectEnumerator ,
                       current-params : handle(HANDLE) >
     =>
-    < TK : TaKernel | api-state : waitResetEnumerator >
+    < TK : TAKernel | api-state : waitResetEnumerator >
     reqResetEnumerator(HANDLE , TK)
   if not nullHandle(HANDLE)
   .
@@ -159,20 +159,20 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
 
   rl [reset-enumerator-not-null-success] :
     retResetEnumerator(TK)
-    < TK : TaKernel | api-state : waitResetEnumerator ,
+    < TK : TAKernel | api-state : waitResetEnumerator ,
                       current-api : ResetPersistentObjectEnumerator >
     =>
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(ResetPersistentObjectEnumerator) >
+    < TK : TAKernel | api-state : finished , api-return : apiReturn(ResetPersistentObjectEnumerator) >
   .
 
 --- This rule does nothing when the input handle is null (TEE_HANDLE_NULL).
 
   crl [reset-enumerator-null-success] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+    < TK : TAKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : ResetPersistentObjectEnumerator ,
                       current-params : handle(HANDLE) >
     =>
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(ResetPersistentObjectEnumerator) >
+    < TK : TAKernel | api-state : finished , api-return : apiReturn(ResetPersistentObjectEnumerator) >
   if nullHandle(HANDLE)
   .
 
@@ -185,43 +185,43 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
 
 --- The following four rules start the enumeration.
 
-  msg startEnumerator : Oid Set{FileId} Oid -> Msg .
+  msg startEnumerator : Oid Set{FileName} Oid -> Msg .
   msg finishStartEnumerator : Oid -> Msg .
 
   rl [start-enumerator-default-private-storage] :
-    < TK : TaKernel | api-state : started , current-api : StartPersistentObjectEnumerator ,
+    < TK : TAKernel | api-state : started , current-api : StartPersistentObjectEnumerator ,
                       current-params : handle(HANDLE) >
     =>
-    < TK : TaKernel | current-params : (storageId(TEE-STORAGE-PRIVATE) , handle(HANDLE)) >
+    < TK : TAKernel | current-params : (storageId(storagePrivate) , handle(HANDLE)) >
   .
 
   crl [start-enumerator-subroutine] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+    < TK : TAKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : StartPersistentObjectEnumerator ,
                       current-params : (storageId(STORID) , PARAMS) >
     =>
-    < TK : TaKernel | api-state : waitStorageCheck >
+    < TK : TAKernel | api-state : waitStorageCheck >
     reqTrustedOS(getStorageStatus getPersistentList , TK)
   if supportedStorage(STORID)
   .
 
   crl [start-enumerator-storage-id-not-found] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+    < TK : TAKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : StartPersistentObjectEnumerator ,
                       current-params : (storageId(STORID) , PARAMS) >
     =>
-    < TK : TaKernel | api-state : finished ,
-                      api-return : apiReturn(StartPersistentObjectEnumerator , TEE-ERROR-ITEM-NOT-FOUND) >
+    < TK : TAKernel | api-state : finished ,
+                      api-return : apiReturn(StartPersistentObjectEnumerator , errorItemNotFound) >
   if not supportedStorage(STORID)
   .
 
   rl [start-enumerator-subroutine] :
-    retTrustedOS(storageStatus(storageNormal) filesInStorage(FILES) , TK)
-    < TK : TaKernel | api-state : waitStorageCheck ,
+    retTrustedOS(storageStatus(normal) filesInStorage(FILES) , TK)
+    < TK : TAKernel | api-state : waitStorageCheck ,
                       current-api : StartPersistentObjectEnumerator ,
                       current-params : storageId(STORID) , handle(HANDLE) >
     =>
-    < TK : TaKernel | api-state : waitStartEnumerator >
+    < TK : TAKernel | api-state : waitStartEnumerator >
     startEnumerator(HANDLE , FILES , TK)
   .
 
@@ -238,21 +238,21 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
 
   rl [start-enumerator-success] :
     finishStartEnumerator(TK)
-    < TK : TaKernel | api-state : waitStartEnumerator ,
+    < TK : TAKernel | api-state : waitStartEnumerator ,
                       current-api : StartPersistentObjectEnumerator >
     =>
-    < TK : TaKernel | api-state : finished ,
-                      api-return : apiReturn(StartPersistentObjectEnumerator , TEE-SUCCESS) >
+    < TK : TAKernel | api-state : finished ,
+                      api-return : apiReturn(StartPersistentObjectEnumerator , success) >
   .
 
 --- This rule returns TEE_ERROR_ITEM_NOT_FOUND if there is no object in the specified storage.
 
   rl [start-enumerator-item-not-found] :
-    retTrustedOS(storageStatus(storageNormal) storageEmpty , TK)
-    < TK : TaKernel | api-state : waitStorageCheck ,
+    retTrustedOS(storageStatus(normal) storageEmpty , TK)
+    < TK : TAKernel | api-state : waitStorageCheck ,
                       current-api : StartPersistentObjectEnumerator >
     =>
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(StartPersistentObjectEnumerator , TEE-ERROR-ITEM-NOT-FOUND) >
+    < TK : TAKernel | api-state : finished , api-return : apiReturn(StartPersistentObjectEnumerator , errorItemNotFound) >
   .
 
 --- This rule returns TEE_ERROR_CORRUPT_OBJECT if the storage is corrupt.
@@ -260,10 +260,10 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
 
   crl [start-enumerator-storage-err] :
     retTrustedOS(storageStatus(STATUS) EXISTENCE , TK)
-    < TK : TaKernel | api-state : waitStorageCheck ,
+    < TK : TAKernel | api-state : waitStorageCheck ,
                       current-api : StartPersistentObjectEnumerator >
     =>
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(StartPersistentObjectEnumerator , storageErrCode(STATUS)) >
+    < TK : TAKernel | api-state : finished , api-return : apiReturn(StartPersistentObjectEnumerator , storageErrCode(STATUS)) >
   if abnormalStorage(STATUS)
   .
 
@@ -277,25 +277,25 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
 --- The following six rules acquire the next object and its data in an enumeration.
 
   rl [get-next-persistent-subroutine] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+    < TK : TAKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : GetNextPersistentObject >
     =>
-    < TK : TaKernel | api-state : waitStorageCheck >
+    < TK : TAKernel | api-state : waitStorageCheck >
     reqTrustedOS(getStorageStatus , TK)
   .
 
   rl [get-next-persistent-subroutine] :
-    retTrustedOS(storageStatus(storageNormal) , TK)
-    < TK : TaKernel | api-state : waitStorageCheck ,
+    retTrustedOS(storageStatus(normal) , TK)
+    < TK : TAKernel | api-state : waitStorageCheck ,
                       current-api : GetNextPersistentObject ,
                       current-params : handle(HANDLE) >
     =>
-    < TK : TaKernel | api-state : waitGetNextObjectId >
+    < TK : TAKernel | api-state : waitGetNextObjectId >
     reqNextObjectId(HANDLE , TK)
   .
 
   msg reqNextObjectId : Oid Oid -> Msg .
-  msg retNextObjectId : FileId Oid -> Msg .
+  msg retNextObjectId : FileName Oid -> Msg .
 
 
   rl [get-next-persistent-top-level-handle] :
@@ -309,17 +309,17 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
     retNextObjectId(FILE , TK)
   .
 
-  msg reqNextObject : Oid FileId Oid -> Msg .
+  msg reqNextObject : Oid FileName Oid -> Msg .
   msg retNextObject : TeeObjectInfo Oid -> Msg .
 
   rl [get-next-persistent-subroutine] :
     retNextObjectId(FILE , TK)
-    < TK : TaKernel | api-state : waitGetNextObjectId ,
+    < TK : TAKernel | api-state : waitGetNextObjectId ,
                       current-api : GetNextPersistentObject ,
                       current-params : PARAMS ,
                       storage : SI >
     =>
-    < TK : TaKernel | api-state : waitGetNextObject ,
+    < TK : TAKernel | api-state : waitGetNextObject ,
                       current-params : PARAMS , fileId(FILE) >
     reqNextObject(SI , FILE , TK)
   .
@@ -339,11 +339,11 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
 
   rl [get-next-persistent-success] :
     retNextObject(INFO , TK)
-    < TK : TaKernel | api-state : waitGetNextObject ,
+    < TK : TAKernel | api-state : waitGetNextObject ,
                       current-api : GetNextPersistentObject ,
                       current-params : fileId(FILE) , PARAMS >
     =>
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(GetNextPersistentObject , TEE-SUCCESS , (info(INFO) , fileId(FILE))) >
+    < TK : TAKernel | api-state : finished , api-return : apiReturn(GetNextPersistentObject , success , (info(INFO) , fileId(FILE))) >
   .
 
 --- This rule returns TEE_ERROR_CORRUPT_OBJECT if the storage is corrupt.
@@ -351,10 +351,10 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
 
   crl [get-next-persistent-storage-err] :
     retTrustedOS(storageStatus(STATUS) , TK)
-    < TK : TaKernel | api-state : waitStorageCheck ,
+    < TK : TAKernel | api-state : waitStorageCheck ,
                       current-api : GetNextPersistentObject >
     =>
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(GetNextPersistentObject , storageErrCode(STATUS)) >
+    < TK : TAKernel | api-state : finished , api-return : apiReturn(GetNextPersistentObject , storageErrCode(STATUS)) >
   if abnormalStorage(STATUS)
   .
 

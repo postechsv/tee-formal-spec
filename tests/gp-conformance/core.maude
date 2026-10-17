@@ -18,27 +18,27 @@ red in HANDLE :
 red in HANDLE : newOid(2, oid(0, null)) == oid(2, oid(0, null)) .
 
 red in TRUSTED-STORAGE-OBJECT-AUX :
-  typeCompatible(TEE-TYPE-ECDSA-KEYPAIR, TEE-TYPE-ECDSA-PUBLIC-KEY) .
+  typeCompatible(typeEcdsaKeypair, typeEcdsaPublicKey) .
 
 red in TRUSTED-STORAGE-OBJECT-AUX :
-  not typeCompatible(TEE-TYPE-ECDSA-PUBLIC-KEY, TEE-TYPE-ECDSA-KEYPAIR) .
+  not typeCompatible(typeEcdsaPublicKey, typeEcdsaKeypair) .
 
 --- GP Table 5-2: PRIVATE is implemented; optional and illegal storage IDs are unavailable.
-red in STORAGE-IDENTIFER : supportedStorage(TEE-STORAGE-PRIVATE) .
+red in STORAGE-IDENTIFER : supportedStorage(storagePrivate) .
 
-red in STORAGE-IDENTIFER : not supportedStorage(TEE-STORAGE-PERSO) .
+red in STORAGE-IDENTIFER : not supportedStorage(storagePerso) .
 
-red in STORAGE-IDENTIFER : not supportedStorage(TEE-STORAGE-PROTECTED) .
+red in STORAGE-IDENTIFER : not supportedStorage(storageProtected) .
 
-red in STORAGE-IDENTIFER : not supportedStorage(TEE-STORAGE-ILLEGAL-VALUE) .
+red in STORAGE-IDENTIFER : not supportedStorage(storageIllegalValue) .
 
 --- Paper-level operation handle state membership is independent of the
 --- compatibility Boolean fields retained by OperationHandle.
-red in HANDLE-STATE : hasInit(init keySet) .
+red in HANDLE-STATE : hasInit(handleState((init, keySet))) .
 
-red in HANDLE-STATE : hasKeySet(init keySet) .
+red in HANDLE-STATE : hasKeySet(handleState((init, keySet))) .
 
-red in HANDLE-STATE : not hasExtract(init keySet) .
+red in HANDLE-STATE : not hasExtract(handleState((init, keySet))) .
 
 --- GP 5.6.3: resetting TEE_HANDLE_NULL is a permitted no-op.
 red in GENERAL-PANIC : not nullHandlePanics(ResetTransientObject) .
@@ -47,79 +47,79 @@ red in GENERAL-PANIC : not nullHandlePanics(ResetTransientObject) .
 red in GENERAL-PANIC : not nullHandlePanics(CloseAndDeletePersistentObject1) .
 
 --- GP 5.6.1/5.6.3: allocated and reset containers allow every modeled usage.
-red in TRUSTED-STORAGE-OBJECT-AUX : TEE-USAGE-EXTRACTABLE in allObjectUsages .
+red in TRUSTED-STORAGE-OBJECT-AUX : usageExtractable in allObjectUsages .
 
-red in TRUSTED-STORAGE-OBJECT-AUX : TEE-USAGE-ENCRYPT in allObjectUsages .
+red in TRUSTED-STORAGE-OBJECT-AUX : usageEncrypt in allObjectUsages .
 
-red in TRUSTED-STORAGE-OBJECT-AUX : TEE-USAGE-DECRYPT in allObjectUsages .
+red in TRUSTED-STORAGE-OBJECT-AUX : usageDecrypt in allObjectUsages .
 
-red in TRUSTED-STORAGE-OBJECT-AUX : TEE-USAGE-MAC in allObjectUsages .
+red in TRUSTED-STORAGE-OBJECT-AUX : usageMac in allObjectUsages .
 
-red in TRUSTED-STORAGE-OBJECT-AUX : TEE-USAGE-SIGN in allObjectUsages .
+red in TRUSTED-STORAGE-OBJECT-AUX : usageSign in allObjectUsages .
 
-red in TRUSTED-STORAGE-OBJECT-AUX : TEE-USAGE-VERIFY in allObjectUsages .
+red in TRUSTED-STORAGE-OBJECT-AUX : usageVerify in allObjectUsages .
 
-red in TRUSTED-STORAGE-OBJECT-AUX : TEE-USAGE-DERIVE in allObjectUsages .
+red in TRUSTED-STORAGE-OBJECT-AUX : usageDerive in allObjectUsages .
 
 --- GP 5.4.3/5.6.6: usage restriction and copying can only remove rights.
 red in TRUSTED-STORAGE-OBJECT-AUX :
-  updateObjectUsage(allObjectUsages, TEE-USAGE-ENCRYPT) == TEE-USAGE-ENCRYPT .
+  updateObjectUsage(allObjectUsages, usageEncrypt) == usageEncrypt .
 
 red in TRUSTED-STORAGE-OBJECT-AUX :
-  updateObjectUsage(empty, TEE-USAGE-ENCRYPT) == empty .
+  updateObjectUsage(empty, usageEncrypt) == empty .
 
 red in TRUSTED-STORAGE-OBJECT-AUX :
-  updateObjectUsage((TEE-USAGE-ENCRYPT, TEE-USAGE-DECRYPT),
-                    (TEE-USAGE-DECRYPT, TEE-USAGE-SIGN)) == TEE-USAGE-DECRYPT .
+  updateObjectUsage((usageEncrypt, usageDecrypt),
+                    (usageDecrypt, usageSign)) == usageDecrypt .
 
 --- GP Table 5-9 mandatory transient object sizes and boundaries.
-red in POSSIBLE-CRYPTO-KEY-SIZE : supported(TEE-TYPE-DES3, 192 Bits) .
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeDes3, 192) .
 
-red in POSSIBLE-CRYPTO-KEY-SIZE : supported(TEE-TYPE-HMAC-SHA1, 80 Bits) .
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeHmacSha1, 80) .
 
-red in POSSIBLE-CRYPTO-KEY-SIZE : not supported(TEE-TYPE-HMAC-SHA1, 81 Bits) .
+red in POSSIBLE-CRYPTO-KEY-SIZE : not supported(typeHmacSha1, 81) .
 
-red in POSSIBLE-CRYPTO-KEY-SIZE : supported(TEE-TYPE-HMAC-SHA512, 1024 Bits) .
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeHmacSha512, 1024) .
 
-red in POSSIBLE-CRYPTO-KEY-SIZE : supported(TEE-TYPE-RSA-KEYPAIR, 4096 Bits) .
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeRsaKeypair, 4096) .
 
-red in POSSIBLE-CRYPTO-KEY-SIZE : not supported(TEE-TYPE-RSA-KEYPAIR, 255 Bits) .
+red in POSSIBLE-CRYPTO-KEY-SIZE : not supported(typeRsaKeypair, 255) .
 
-red in POSSIBLE-CRYPTO-KEY-SIZE : supported(TEE-TYPE-DSA-PUBLIC-KEY, 960 Bits) .
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeDsaPublicKey, 960) .
 
-red in POSSIBLE-CRYPTO-KEY-SIZE : supported(TEE-TYPE-DSA-KEYPAIR, 3072 Bits) .
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeDsaKeypair, 3072) .
 
-red in POSSIBLE-CRYPTO-KEY-SIZE : not supported(TEE-TYPE-DSA-KEYPAIR, 1088 Bits) .
+red in POSSIBLE-CRYPTO-KEY-SIZE : not supported(typeDsaKeypair, 1088) .
 
-red in POSSIBLE-CRYPTO-KEY-SIZE : supported(TEE-TYPE-DH-KEYPAIR, 2048 Bits) .
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeDhKeypair, 2048) .
 
-red in POSSIBLE-CRYPTO-KEY-SIZE : not supported(TEE-TYPE-DH-KEYPAIR, 2056 Bits) .
+red in POSSIBLE-CRYPTO-KEY-SIZE : not supported(typeDhKeypair, 2056) .
 
-red in POSSIBLE-CRYPTO-KEY-SIZE : supported(TEE-TYPE-ECDSA-KEYPAIR, 521 Bits) .
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeEcdsaKeypair, 521) .
 
-red in POSSIBLE-CRYPTO-KEY-SIZE : not supported(TEE-TYPE-ECDH-PUBLIC-KEY, 159 Bits) .
+red in POSSIBLE-CRYPTO-KEY-SIZE : not supported(typeEcdhPublicKey, 159) .
 
-red in POSSIBLE-CRYPTO-KEY-SIZE : supported(TEE-TYPE-ED25519-KEYPAIR, 256 Bits) .
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeEd25519Keypair, 256) .
 
-red in POSSIBLE-CRYPTO-KEY-SIZE : supported(TEE-TYPE-X25519-PUBLIC-KEY, 256 Bits) .
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeX25519PublicKey, 256) .
 
-red in POSSIBLE-CRYPTO-KEY-SIZE : supported(TEE-TYPE-SM2-PKE-KEYPAIR, 256 Bits) .
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeSm2PkeKeypair, 256) .
 
-red in POSSIBLE-CRYPTO-KEY-SIZE : supported(TEE-TYPE-SM4, 128 Bits) .
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeSm4, 128) .
 
-red in POSSIBLE-CRYPTO-KEY-SIZE : supported(TEE-TYPE-HMAC-SM3, 80 Bits) .
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeHmacSm3, 80) .
 
-red in POSSIBLE-CRYPTO-KEY-SIZE : not supported(TEE-TYPE-HMAC-SM3, 81 Bits) .
+red in POSSIBLE-CRYPTO-KEY-SIZE : not supported(typeHmacSm3, 81) .
 
-red in POSSIBLE-CRYPTO-KEY-SIZE : supported(TEE-TYPE-GENERIC-SECRET, 4096 Bits) .
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeGenericSecret, 4096) .
 
 --- GP Tables 5-9/5-10 v1.3.1 object types added for SHA-3 and Curve448.
-red in POSSIBLE-CRYPTO-KEY-SIZE : supported(TEE-TYPE-HMAC-SHA3-224, 192 Bits) .
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeHmacSha3224, 192) .
 
-red in POSSIBLE-CRYPTO-KEY-SIZE : not supported(TEE-TYPE-HMAC-SHA3-224, 184 Bits) .
+red in POSSIBLE-CRYPTO-KEY-SIZE : not supported(typeHmacSha3224, 184) .
 
-red in POSSIBLE-CRYPTO-KEY-SIZE : supported(TEE-TYPE-HMAC-SHA3-512, 1024 Bits) .
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeHmacSha3512, 1024) .
 
-red in POSSIBLE-CRYPTO-KEY-SIZE : supported(TEE-TYPE-ED448-KEYPAIR, 448 Bits) .
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeEd448Keypair, 448) .
 
-red in POSSIBLE-CRYPTO-KEY-SIZE : supported(TEE-TYPE-X448-PUBLIC-KEY, 448 Bits) .
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeX448PublicKey, 448) .

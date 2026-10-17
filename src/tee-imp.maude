@@ -8,7 +8,7 @@
 --- block (TeeInvokeTACommand).
 fmod TEE-IMP-TYPE is
   pr IMP-BTYPE .
-  ops TEE-Result TEE-Handle TEE-ObjectType TEE-KeySize TEE-Attributes TEE-AttributeIds
+  ops TEE-Result TEE-Handle TEE-ObjectType TEE-Attributes TEE-AttributeIds
       TEE-AttrContent TEE-Usages TEE-StorageId TEE-DataFlags TEE-Buffer TEE-Size
       TEE-ObjectId TEE-DataPosition TEE-Whence TEE-ParamTypes TEE-AppId TEE-ReturnOrigin
       TEE-Timeout TEE-SessionId TEE-CommandId TEE-Params : -> ConcBType [ctor] .
@@ -46,7 +46,7 @@ fmod TEE-API-IMP-PROG-AUX is
   op @noReturn : -> SysAnnot [ctor] .
 
   var F : FuncId .
-  var T : Type .
+  var T : ImpType .
   vars XL IN OUT EL : ExpList .
   var E : Exp .
   var S : Stmt .
@@ -129,18 +129,18 @@ endfm
 
 fmod GENERIC-OBJECT-IMP-VALUE is
   pr IMP-VALUE .
-  pr SET{ObjectUsage} .
-  pr SET{TeeAttribute} .
+  pr SET{Usage} .
+  pr SET{CryptoAttribute} .
   pr SET{AttrId} .
   pr OBJECT-TYPE .
   pr CRYPTO-KEY-SIZE .
 
-  op #_ : ObjectType -> Value [ctor] .
-  op #_ : Set{TeeAttribute} -> Value [ctor] .
+  op #_ : Type -> Value [ctor] .
+  op #_ : Set{CryptoAttribute} -> Value [ctor] .
   op #_ : Set{AttrId} -> Value [ctor] .
-  op #_ : AttrContent -> Value [ctor] .
-  op #_ : Set{ObjectUsage} -> Value [ctor] .
-  op #_ : CryptoKeySize -> Value [ctor] .
+  op #_ : AttrValue -> Value [ctor] .
+  op #_ : Set{Usage} -> Value [ctor] .
+  op #_ : Nat -> Value [ctor] .
 endfm
 
 ------------------------------------------------------------
@@ -153,15 +153,15 @@ fmod PERSISTENT-OBJECT-IMP-VALUE is
   pr IMP-VALUE .
   pr STORAGE-IDENTIFER .
   pr FILE-ID .
-  pr SET{DataFlag} .
+  pr SET{DataAccessFlag} .
   pr LIST{Data} .
   pr DATA-SIZE .
 
   op #_ : StorageIdentifier -> Value [ctor] .
-  op #_ : Set{DataFlag} -> Value [ctor] .
+  op #_ : Set{DataAccessFlag} -> Value [ctor] .
   op #_ : List{Data} -> Value [ctor] .
   op #_ : DataSize -> Value [ctor] .
-  op #_ : FileId -> Value [ctor] .
+  op #_ : FileName -> Value [ctor] .
 endfm
 
 ------------------------------------------------------------
@@ -247,13 +247,13 @@ mod TRANSIENT-OBJECT-TEE-CALL is
   pr BASIC-DATA .
   pr TEE-API-IMP-PROG-AUX .
 
-  var OBJTYPE : ObjectType .
-  var KEYSIZE : CryptoKeySize .
+  var OBJTYPE : Type .
+  var KEYSIZE : Nat .
   vars HANDLE HANDLE1 HANDLE2 : Oid .
   var REF : AttrRef .
   var VAL : AttrVal .
-  var V : AttrContent .
-  var ATTRS : Set{TeeAttribute} .
+  var V : AttrValue .
+  var ATTRS : Set{CryptoAttribute} .
   var RET : ReturnCode .
   vars E R H : Exp .
   var EL : ExpList .
@@ -263,17 +263,17 @@ mod TRANSIENT-OBJECT-TEE-CALL is
 ------------------------------------------------------------
 
   eq makeCall(AllocateTransientObject , (# OBJTYPE , # KEYSIZE)) = apiCall(AllocateTransientObject , (type(OBJTYPE) , size(KEYSIZE))) .
-  eq makeReturnStmt(AllocateTransientObject , TEE-SUCCESS , handle(HANDLE) , E) = 
-    auto 'ret := # TEE-SUCCESS ;
+  eq makeReturnStmt(AllocateTransientObject , success , handle(HANDLE) , E) = 
+    auto 'ret := # success ;
     E := # HANDLE ; .
 
-  eq makeReturnStmt(AllocateTransientObject , TEE-ERROR-OUT-OF-MEMORY , empty , (H)) = auto 'ret := # TEE-ERROR-OUT-OF-MEMORY ; .
-  eq makeReturnStmt(AllocateTransientObject , TEE-ERROR-NOT-SUPPORTED , empty , (H)) = auto 'ret := # TEE-ERROR-NOT-SUPPORTED ; .
+  eq makeReturnStmt(AllocateTransientObject , errorOutOfMemory , empty , (H)) = auto 'ret := # errorOutOfMemory ; .
+  eq makeReturnStmt(AllocateTransientObject , errorNotSupported , empty , (H)) = auto 'ret := # errorNotSupported ; .
 
   op AllocateTransientObjectLib : -> Program .
   eq AllocateTransientObjectLib 
   = defineSysCall(
-      TEE-Result AllocateTransientObject(TEE-ObjectType 'objType, TEE-KeySize 'size, TEE-Handle * 'handle),
+      TEE-Result AllocateTransientObject(TEE-ObjectType 'objType, int 'size, TEE-Handle * 'handle),
       @inArgs('objType, 'size),                 --- should match with the makeCall              
       @outArgs('handle),                        --- should match with the makeReturnStmt
       @body(skip),
@@ -343,8 +343,8 @@ mod PERSISTENT-OBJECT-TEE-CALL is
   pr TEE-API-IMP-PROG-AUX .
 
   var STORID : StorageIdentifier .
-  var FILE : FileId .
-  var DATAFLAGS : Set{DataFlag} .
+  var FILE : FileName .
+  var DATAFLAGS : Set{DataAccessFlag} .
   vars HANDLE OPTHANDLE : Oid .
   var DATA : List{Data} .
   var DATASIZE : DataSize .
@@ -449,14 +449,14 @@ mod GENERIC-OBJECT-TEE-CALL is
 
   var HANDLE : Oid .
   var RET : ReturnCode .
-  var OBJTYPE : ObjectType .
-  vars OBJSIZE MAXOBJSIZE : CryptoKeySize .
-  var OBJUSAGES : Set{ObjectUsage} .
+  var OBJTYPE : Type .
+  vars OBJSIZE MAXOBJSIZE : Nat .
+  var OBJUSAGES : Set{Usage} .
   var ID : AttrId .
-  var V : AttrContent .
+  var V : AttrValue .
   var DATASIZE : DataSize .
   var DATAPOS : DataPosition .
-  var DATAFLAGS : Set{DataFlag} .
+  var DATAFLAGS : Set{DataAccessFlag} .
   vars E E' : Exp .
   var EL : ExpList .
 
@@ -465,8 +465,8 @@ mod GENERIC-OBJECT-TEE-CALL is
 ------------------------------------------------------------
 
   eq makeCall(GetObjectInfo1 , (# HANDLE)) = apiCall(GetObjectInfo1 , handle(HANDLE)) .
-  eq makeReturnStmt(GetObjectInfo1 , TEE-SUCCESS , info(teeObjectInfo(OBJTYPE , OBJSIZE , MAXOBJSIZE , OBJUSAGES , DATASIZE , DATAPOS , DATAFLAGS)) , (E , E')) 
-  = $assign(# TEE-SUCCESS , E) ~>
+  eq makeReturnStmt(GetObjectInfo1 , success , info(teeObjectInfo(OBJTYPE , OBJSIZE , MAXOBJSIZE , OBJUSAGES , DATASIZE , DATAPOS , DATAFLAGS)) , (E , E')) 
+  = $assign(# success , E) ~>
     E' . objectType := # OBJTYPE ; E' . objectSize := # OBJSIZE ; E' . maxObjectSize := # MAXOBJSIZE ;
     E' . objectUsage := # OBJUSAGES ; E' . dataSize := # DATASIZE ; E' . dataPosition := # DATAPOS ; E' . handleFlags := # DATAFLAGS ; .  
   eq makeReturnStmt(GetObjectInfo1 , RET , empty , (E , E')) = $assign(# RET , E) .
@@ -520,13 +520,13 @@ mod ENUMERATOR-OBJECT-TEE-CALL is
   var HANDLE : Oid .
   var RET : ReturnCode .
   var STORID : StorageIdentifier .
-  var OBJTYPE : ObjectType .
-  vars OBJSIZE MAXOBJSIZE : CryptoKeySize .
-  var OBJUSAGES : Set{ObjectUsage} .
+  var OBJTYPE : Type .
+  vars OBJSIZE MAXOBJSIZE : Nat .
+  var OBJUSAGES : Set{Usage} .
   var DATASIZE : DataSize .
   var DATAPOS : DataPosition .
-  var DATAFLAGS : Set{DataFlag} .
-  var FILE : FileId .
+  var DATAFLAGS : Set{DataAccessFlag} .
+  var FILE : FileName .
   var E E' R : Exp .
   var EL : ExpList .
 
@@ -564,8 +564,8 @@ mod ENUMERATOR-OBJECT-TEE-CALL is
 ------------------------------------------------------------
 
   eq makeCall(GetNextPersistentObject , (# HANDLE)) = apiCall(GetNextPersistentObject , handle(HANDLE)) .
-  eq makeReturnStmt(GetNextPersistentObject , TEE-SUCCESS , (info(teeObjectInfo(OBJTYPE , OBJSIZE , MAXOBJSIZE , OBJUSAGES , DATASIZE , DATAPOS , DATAFLAGS)) , fileId(FILE)) , (R , E , E'))
-    = $assign(# TEE-SUCCESS , R)
+  eq makeReturnStmt(GetNextPersistentObject , success , (info(teeObjectInfo(OBJTYPE , OBJSIZE , MAXOBJSIZE , OBJUSAGES , DATASIZE , DATAPOS , DATAFLAGS)) , fileId(FILE)) , (R , E , E'))
+    = $assign(# success , R)
       E . objectType := # OBJTYPE ; E . objectSize := # OBJSIZE ; E . maxObjectSize := # MAXOBJSIZE ;
       E . objectUsage := # OBJUSAGES ; E . dataSize := # DATASIZE ; E . dataPosition := # DATAPOS ; E . handleFlags := # DATAFLAGS ;
       $assign(# FILE , E') .
@@ -597,7 +597,7 @@ mod DATA-STREAM-OBJECT-TEE-CALL is
 ------------------------------------------------------------
 
   eq makeCall(ReadObjectData , (# HANDLE , # DATASIZE)) = apiCall(ReadObjectData , (handle(HANDLE) , size(DATASIZE))) .
-  eq makeReturnStmt(ReadObjectData , TEE-SUCCESS , data(DATA) , EL) = $assign((# TEE-SUCCESS , # DATA) , EL) .
+  eq makeReturnStmt(ReadObjectData , success , data(DATA) , EL) = $assign((# success , # DATA) , EL) .
   eq makeReturnStmt(ReadObjectData , RET , empty , (E , E')) = $assign(# RET , E) .
   
 ------------------------------------------------------------
@@ -649,7 +649,7 @@ mod TEE-INTERNAL-CLIENT-CALL is
 ------------------------------------------------------------
 
   eq makeCall(TeeOpenTASession , (# TA , # TO )) = apiCall(TeeOpenTASession , (uuid(TA) , taCancelReqTime(TO))) .
-  eq makeReturnStmt(TeeOpenTASession , TEE-SUCCESS , (handle(HANDLE) , returnOrig(RO)) , EL) = $assign((# TEE-SUCCESS , # HANDLE , # RO) , EL) .
+  eq makeReturnStmt(TeeOpenTASession , success , (handle(HANDLE) , returnOrig(RO)) , EL) = $assign((# success , # HANDLE , # RO) , EL) .
 
   op TeeOpenTASessionLib : -> Program .
   eq TeeOpenTASessionLib 
@@ -668,7 +668,7 @@ mod TEE-INTERNAL-CLIENT-CALL is
   eq makeCall(TeeInvokeTACommand , (# HANDLE , # FUNC , VL)) = apiCall(TeeInvokeTACommand , (handle(HANDLE) , funcId(FUNC) , values(VL))) .
   eq makeReturnStmt(TeeInvokeTACommand , RET , values(V) , (E1 , E2)) = 
     auto 'ret := # RET ;
-    E2 := # TEE-ORIGIN-TRUSTED-APP ;
+    E2 := # originTrustedApp ;
     E1 := V ; .
 
   op TeeInvokeTACommandLib : -> Program .
@@ -709,17 +709,16 @@ mod TEE-IMP-VALUE-TYPE is
   var H : Oid .
   var F : FuncId .
   var R : ReturnCode .
-  var OT : ObjectType .
-  var AT : Set{TeeAttribute} .
+  var OT : Type .
+  var AT : Set{CryptoAttribute} .
   var AI : Set{AttrId} .
-  var AC : AttrContent .
-  var OU : Set{ObjectUsage} .
-  var KS : CryptoKeySize .
+  var AC : AttrValue .
+  var OU : Set{Usage} .
   var SI : StorageIdentifier .
-  var DF : Set{DataFlag} .
+  var DF : Set{DataAccessFlag} .
   var DL : List{Data} .
   var DS : DataSize .
-  var FI : FileId .
+  var FI : FileName .
   var DP : DataPosition .
   var SK : SeekType .
   var PT : TeeParamType .
@@ -736,7 +735,6 @@ mod TEE-IMP-VALUE-TYPE is
   eq typeOfExp(SC, # AI) = ty(TEE-AttributeIds) .
   eq typeOfExp(SC, # AC) = ty(TEE-AttrContent) .
   eq typeOfExp(SC, # OU) = ty(TEE-Usages) .
-  eq typeOfExp(SC, # KS) = ty(TEE-KeySize) .
   eq typeOfExp(SC, # SI) = ty(TEE-StorageId) .
   eq typeOfExp(SC, # DF) = ty(TEE-DataFlags) .
   eq typeOfExp(SC, # DL) = ty(TEE-Buffer) .
@@ -755,7 +753,7 @@ mod TEE-API-IMP-PROGRAM is
   pr TEE-INTERNAL-CLIENT-CALL .
   pr TEE-IMP-VALUE-TYPE .
 
-  op Params : -> Type [ctor] .
+  op Params : -> ImpType [ctor] .
 
   op syscalls : -> Program .
   eq syscalls =

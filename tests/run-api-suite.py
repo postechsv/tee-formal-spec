@@ -145,7 +145,7 @@ def canonical_returns(target: str) -> str:
         if len(args) == 1:
             args.extend(("noReturnCode", "empty"))
         elif len(args) == 2:
-            if args[1].startswith(("TEE-SUCCESS", "TEE-ERROR")):
+            if args[1].startswith(("success", "error")):
                 args.append("empty")
             else:
                 args.insert(1, "noReturnCode")
@@ -162,12 +162,12 @@ def api_query(command: str, number: int) -> str:
     target = canonical_returns(target)
     # Object patterns list only the attributes relevant to the assertion.  Make
     # the omitted attributes explicit, as required by configuration matching.
-    kernel = re.compile(r"(<\s*ta\s*:\s*TaKernel\s*\|.*?)(>\s*\.)", re.DOTALL)
+    kernel = re.compile(r"(<\s*ta\s*:\s*TAKernel\s*\|.*?)(>\s*\.)", re.DOTALL)
     target, count = kernel.subn(
         r"\1, API-ATTS-{}:AttributeSet \2".format(number), target, count=1
     )
     if count != 1:
-        raise TestFailure("API target has no TaKernel assertion")
+        raise TestFailure("API target has no TAKernel assertion")
     target = re.sub(r">\s*\.\s*$", r"> API-CF-{}:Configuration .".format(number), target)
     return source + marker + target
 

@@ -17,18 +17,18 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
   pr TEE-ATTRIBUTE-AUX .
 
   var N : Nat .
-  vars MAXOBJSIZE KEYSIZE : CryptoKeySize .
+  vars MAXOBJSIZE KEYSIZE : Nat .
   var TK : Oid .
   var OI : Oid .
   vars HANDLE HANDLE1 HANDLE2 : Oid .
-  var ATTRS : Set{TeeAttribute} .
+  var ATTRS : Set{CryptoAttribute} .
   vars IDS IDS2 : Set{AttrId} .
   var ID : AttrId .
   var REF : AttrRef .
   var VAL : AttrVal .
-  var V : AttrContent .
-  vars OBJTYPE OBJTYPE' : ObjectType .
-  vars OBJUSAGES OBJUSAGES' : Set{ObjectUsage} .
+  var V : AttrValue .
+  vars OBJTYPE OBJTYPE' : Type .
+  vars OBJUSAGES OBJUSAGES' : Set{Usage} .
 
 ------------------------------------------------------------
 --- Auxilary Functions
@@ -36,72 +36,72 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 
 --- For TEE_PopulateTransientObject
 --- All mandatory attributes SHALL be specified, otherwise the routine will panic.
-  op mandatory : ObjectType -> Set{AttrId} .
-  eq mandatory(TEE-TYPE-AES) = (TEE-ATTR-SECRET-VALUE) .
-  eq mandatory(TEE-TYPE-DES) = (TEE-ATTR-SECRET-VALUE) .
-  eq mandatory(TEE-TYPE-DES3) = (TEE-ATTR-SECRET-VALUE) .
-  eq mandatory(TEE-TYPE-SM4) = (TEE-ATTR-SECRET-VALUE) .
-  eq mandatory(TEE-TYPE-HMAC-MD5) = (TEE-ATTR-SECRET-VALUE) .
-  eq mandatory(TEE-TYPE-HMAC-SHA1) = (TEE-ATTR-SECRET-VALUE) .
-  eq mandatory(TEE-TYPE-HMAC-SHA224) = (TEE-ATTR-SECRET-VALUE) .
-  eq mandatory(TEE-TYPE-HMAC-SHA256) = (TEE-ATTR-SECRET-VALUE) .
-  eq mandatory(TEE-TYPE-HMAC-SHA384) = (TEE-ATTR-SECRET-VALUE) .
-  eq mandatory(TEE-TYPE-HMAC-SHA512) = (TEE-ATTR-SECRET-VALUE) .
-  eq mandatory(TEE-TYPE-HMAC-SHA3-224) = (TEE-ATTR-SECRET-VALUE) .
-  eq mandatory(TEE-TYPE-HMAC-SHA3-256) = (TEE-ATTR-SECRET-VALUE) .
-  eq mandatory(TEE-TYPE-HMAC-SHA3-384) = (TEE-ATTR-SECRET-VALUE) .
-  eq mandatory(TEE-TYPE-HMAC-SHA3-512) = (TEE-ATTR-SECRET-VALUE) .
-  eq mandatory(TEE-TYPE-HMAC-SM3) = (TEE-ATTR-SECRET-VALUE) .
-  eq mandatory(TEE-TYPE-GENERIC-SECRET) = (TEE-ATTR-SECRET-VALUE) .
-  eq mandatory(TEE-TYPE-RSA-PUBLIC-KEY) = (TEE-ATTR-RSA-MODULUS , TEE-ATTR-RSA-PUBLIC-EXPONENT) .
-  eq mandatory(TEE-TYPE-RSA-KEYPAIR) = (TEE-ATTR-RSA-MODULUS , TEE-ATTR-RSA-PUBLIC-EXPONENT , TEE-ATTR-RSA-PRIVATE-EXPONENT) .
-  eq mandatory(TEE-TYPE-ECDSA-PUBLIC-KEY) = (TEE-ATTR-ECC-PUBLIC-VALUE-X , TEE-ATTR-ECC-PUBLIC-VALUE-Y , TEE-ATTR-ECC-CURVE) .
-  eq mandatory(TEE-TYPE-ECDSA-KEYPAIR) = (TEE-ATTR-ECC-PRIVATE-VALUE , TEE-ATTR-ECC-PUBLIC-VALUE-X , TEE-ATTR-ECC-PUBLIC-VALUE-Y , TEE-ATTR-ECC-CURVE) .
-  eq mandatory(TEE-TYPE-ECDH-PUBLIC-KEY) = (TEE-ATTR-ECC-PUBLIC-VALUE-X , TEE-ATTR-ECC-PUBLIC-VALUE-Y , TEE-ATTR-ECC-CURVE) .
-  eq mandatory(TEE-TYPE-ECDH-KEYPAIR) = (TEE-ATTR-ECC-PRIVATE-VALUE , TEE-ATTR-ECC-PUBLIC-VALUE-X , TEE-ATTR-ECC-PUBLIC-VALUE-Y , TEE-ATTR-ECC-CURVE) .
-  eq mandatory(TEE-TYPE-DSA-PUBLIC-KEY) = (TEE-ATTR-DSA-PRIME , TEE-ATTR-DSA-SUBPRIME , TEE-ATTR-DSA-BASE , TEE-ATTR-DSA-PUBLIC-VALUE) .
-  eq mandatory(TEE-TYPE-DSA-KEYPAIR) = (TEE-ATTR-DSA-PRIME , TEE-ATTR-DSA-SUBPRIME , TEE-ATTR-DSA-BASE , TEE-ATTR-DSA-PRIVATE-VALUE , TEE-ATTR-DSA-PUBLIC-VALUE) .
-  eq mandatory(TEE-TYPE-DH-KEYPAIR) = (TEE-ATTR-DH-PRIME , TEE-ATTR-DH-BASE , TEE-ATTR-DH-PUBLIC-VALUE , TEE-ATTR-DH-PRIVATE-VALUE) .
-  eq mandatory(TEE-TYPE-ED25519-PUBLIC-KEY) = TEE-ATTR-ED25519-PUBLIC-VALUE .
-  eq mandatory(TEE-TYPE-ED25519-KEYPAIR) = (TEE-ATTR-ED25519-PUBLIC-VALUE , TEE-ATTR-ED25519-PRIVATE-VALUE) .
-  eq mandatory(TEE-TYPE-X25519-PUBLIC-KEY) = TEE-ATTR-X25519-PUBLIC-VALUE .
-  eq mandatory(TEE-TYPE-X25519-KEYPAIR) = (TEE-ATTR-X25519-PUBLIC-VALUE , TEE-ATTR-X25519-PRIVATE-VALUE) .
-  eq mandatory(TEE-TYPE-ED448-PUBLIC-KEY) = TEE-ATTR-ED448-PUBLIC-VALUE .
-  eq mandatory(TEE-TYPE-ED448-KEYPAIR) = (TEE-ATTR-ED448-PUBLIC-VALUE , TEE-ATTR-ED448-PRIVATE-VALUE) .
-  eq mandatory(TEE-TYPE-X448-PUBLIC-KEY) = TEE-ATTR-X448-PUBLIC-VALUE .
-  eq mandatory(TEE-TYPE-X448-KEYPAIR) = (TEE-ATTR-X448-PUBLIC-VALUE , TEE-ATTR-X448-PRIVATE-VALUE) .
-  eq mandatory(TEE-TYPE-SM2-DSA-PUBLIC-KEY) = (TEE-ATTR-ECC-PUBLIC-VALUE-X , TEE-ATTR-ECC-PUBLIC-VALUE-Y) .
-  eq mandatory(TEE-TYPE-SM2-DSA-KEYPAIR) = (TEE-ATTR-ECC-PRIVATE-VALUE , TEE-ATTR-ECC-PUBLIC-VALUE-X , TEE-ATTR-ECC-PUBLIC-VALUE-Y) .
-  eq mandatory(TEE-TYPE-SM2-KEP-PUBLIC-KEY) = (TEE-ATTR-ECC-PUBLIC-VALUE-X , TEE-ATTR-ECC-PUBLIC-VALUE-Y) .
-  eq mandatory(TEE-TYPE-SM2-KEP-KEYPAIR) = (TEE-ATTR-ECC-PRIVATE-VALUE , TEE-ATTR-ECC-PUBLIC-VALUE-X , TEE-ATTR-ECC-PUBLIC-VALUE-Y) .
-  eq mandatory(TEE-TYPE-SM2-PKE-PUBLIC-KEY) = (TEE-ATTR-ECC-PUBLIC-VALUE-X , TEE-ATTR-ECC-PUBLIC-VALUE-Y) .
-  eq mandatory(TEE-TYPE-SM2-PKE-KEYPAIR) = (TEE-ATTR-ECC-PRIVATE-VALUE , TEE-ATTR-ECC-PUBLIC-VALUE-X , TEE-ATTR-ECC-PUBLIC-VALUE-Y) .
+  op mandatory : Type -> Set{AttrId} .
+  eq mandatory(typeAes) = (secretValue) .
+  eq mandatory(typeDes) = (secretValue) .
+  eq mandatory(typeDes3) = (secretValue) .
+  eq mandatory(typeSm4) = (secretValue) .
+  eq mandatory(typeHmacMd5) = (secretValue) .
+  eq mandatory(typeHmacSha1) = (secretValue) .
+  eq mandatory(typeHmacSha224) = (secretValue) .
+  eq mandatory(typeHmacSha256) = (secretValue) .
+  eq mandatory(typeHmacSha384) = (secretValue) .
+  eq mandatory(typeHmacSha512) = (secretValue) .
+  eq mandatory(typeHmacSha3224) = (secretValue) .
+  eq mandatory(typeHmacSha3256) = (secretValue) .
+  eq mandatory(typeHmacSha3384) = (secretValue) .
+  eq mandatory(typeHmacSha3512) = (secretValue) .
+  eq mandatory(typeHmacSm3) = (secretValue) .
+  eq mandatory(typeGenericSecret) = (secretValue) .
+  eq mandatory(typeRsaPublicKey) = (rsaModulus , rsaPublicExponent) .
+  eq mandatory(typeRsaKeypair) = (rsaModulus , rsaPublicExponent , rsaPrivateExponent) .
+  eq mandatory(typeEcdsaPublicKey) = (eccPublicValueX , eccPublicValueY , eccCurve) .
+  eq mandatory(typeEcdsaKeypair) = (eccPrivateValue , eccPublicValueX , eccPublicValueY , eccCurve) .
+  eq mandatory(typeEcdhPublicKey) = (eccPublicValueX , eccPublicValueY , eccCurve) .
+  eq mandatory(typeEcdhKeypair) = (eccPrivateValue , eccPublicValueX , eccPublicValueY , eccCurve) .
+  eq mandatory(typeDsaPublicKey) = (dsaPrime , dsaSubprime , dsaBase , dsaPublicValue) .
+  eq mandatory(typeDsaKeypair) = (dsaPrime , dsaSubprime , dsaBase , dsaPrivateValue , dsaPublicValue) .
+  eq mandatory(typeDhKeypair) = (dhPrime , dhBase , dhPublicValue , dhPrivateValue) .
+  eq mandatory(typeEd25519PublicKey) = ed25519PublicValue .
+  eq mandatory(typeEd25519Keypair) = (ed25519PublicValue , ed25519PrivateValue) .
+  eq mandatory(typeX25519PublicKey) = x25519PublicValue .
+  eq mandatory(typeX25519Keypair) = (x25519PublicValue , x25519PrivateValue) .
+  eq mandatory(typeEd448PublicKey) = ed448PublicValue .
+  eq mandatory(typeEd448Keypair) = (ed448PublicValue , ed448PrivateValue) .
+  eq mandatory(typeX448PublicKey) = x448PublicValue .
+  eq mandatory(typeX448Keypair) = (x448PublicValue , x448PrivateValue) .
+  eq mandatory(typeSm2DsaPublicKey) = (eccPublicValueX , eccPublicValueY) .
+  eq mandatory(typeSm2DsaKeypair) = (eccPrivateValue , eccPublicValueX , eccPublicValueY) .
+  eq mandatory(typeSm2KepPublicKey) = (eccPublicValueX , eccPublicValueY) .
+  eq mandatory(typeSm2KepKeypair) = (eccPrivateValue , eccPublicValueX , eccPublicValueY) .
+  eq mandatory(typeSm2PkePublicKey) = (eccPublicValueX , eccPublicValueY) .
+  eq mandatory(typeSm2PkeKeypair) = (eccPrivateValue , eccPublicValueX , eccPublicValueY) .
   ---@dmc owise enumerate(OBJTYPE)
   eq mandatory(OBJTYPE) = empty [owise] .
 
 --- For TEE_PopulateTransientObject
 --- Only the attributes specified in Table 5-10 associated with the object's type are valid.
 --- The presence of any other attribute in the attribute list is an error and will cause the routine to panic.
-  op allowed : ObjectType -> Set{AttrId} .
+  op allowed : Type -> Set{AttrId} .
   ---@dmc owise enumerate(OBJTYPE)
   eq allowed(OBJTYPE) = mandatory(OBJTYPE) [owise] .
-  eq allowed(TEE-TYPE-RSA-KEYPAIR) = (TEE-ATTR-RSA-MODULUS , TEE-ATTR-RSA-PUBLIC-EXPONENT ,
-                                      TEE-ATTR-RSA-PRIVATE-EXPONENT , TEE-ATTR-RSA-PRIME1 ,
-                                      TEE-ATTR-RSA-PRIME2 , TEE-ATTR-RSA-EXPONENT1 ,
-                                      TEE-ATTR-RSA-EXPONENT2 , TEE-ATTR-RSA-COEFFICIENT) .
-  eq allowed(TEE-TYPE-DH-KEYPAIR) = (TEE-ATTR-DH-PRIME , TEE-ATTR-DH-SUBPRIME , TEE-ATTR-DH-BASE ,
-                                     TEE-ATTR-DH-X-BITS , TEE-ATTR-DH-PUBLIC-VALUE , TEE-ATTR-DH-PRIVATE-VALUE) .
-  eq allowed(TEE-TYPE-ED25519-PUBLIC-KEY) = TEE-ATTR-ED25519-PUBLIC-VALUE .
-  eq allowed(TEE-TYPE-ED25519-KEYPAIR) = (TEE-ATTR-ED25519-PUBLIC-VALUE , TEE-ATTR-ED25519-PRIVATE-VALUE) .
+  eq allowed(typeRsaKeypair) = (rsaModulus , rsaPublicExponent ,
+                                      rsaPrivateExponent , rsaPrime1 ,
+                                      rsaPrime2 , rsaExponent1 ,
+                                      rsaExponent2 , rsaCoefficient) .
+  eq allowed(typeDhKeypair) = (dhPrime , dhSubprime , dhBase ,
+                                     dhXBits , dhPublicValue , dhPrivateValue) .
+  eq allowed(typeEd25519PublicKey) = ed25519PublicValue .
+  eq allowed(typeEd25519Keypair) = (ed25519PublicValue , ed25519PrivateValue) .
 
   --- GP Table 5-10: RSA CRT parameters are optional as a complete group.
   op rsaCrtAttributes : -> Set{AttrId} .
-  eq rsaCrtAttributes = (TEE-ATTR-RSA-PRIME1, TEE-ATTR-RSA-PRIME2,
-                         TEE-ATTR-RSA-EXPONENT1, TEE-ATTR-RSA-EXPONENT2,
-                         TEE-ATTR-RSA-COEFFICIENT) .
+  eq rsaCrtAttributes = (rsaPrime1, rsaPrime2,
+                         rsaExponent1, rsaExponent2,
+                         rsaCoefficient) .
 
-  op validOptionalAttributeGroups : ObjectType Set{AttrId} -> Bool .
-  eq validOptionalAttributeGroups(TEE-TYPE-RSA-KEYPAIR, IDS) =
+  op validOptionalAttributeGroups : Type Set{AttrId} -> Bool .
+  eq validOptionalAttributeGroups(typeRsaKeypair, IDS) =
     intersection(IDS, rsaCrtAttributes) == empty or rsaCrtAttributes subset IDS .
   ---@dmc owise enumerate(OBJTYPE)
   eq validOptionalAttributeGroups(OBJTYPE, IDS) = true [owise] .
@@ -110,75 +110,75 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 --- If attribute values are larger than the maximum size specified when the object was created, the implementation SHALL panic.
 
 --- For TEE_PopulateTransientObject
-  op checkCompatible : ObjectType Set{TeeAttribute} -> Bool .
+  op checkCompatible : Type Set{CryptoAttribute} -> Bool .
   eq checkCompatible(OBJTYPE , ATTRS) =
     mandatory(OBJTYPE) subset getAttrIds(ATTRS) and
     getAttrIds(ATTRS) subset allowed(OBJTYPE) and
     validOptionalAttributeGroups(OBJTYPE, getAttrIds(ATTRS)) .
 
 --- For TEE_GenerateKey
-  op randomAttributes : ObjectType Set{TeeAttribute} -> Set{TeeAttribute} [ctor] .
-  op randomize : Set{AttrId} -> Set{TeeAttribute} .
+  op randomAttributes : Type Set{CryptoAttribute} -> Set{CryptoAttribute} [ctor] .
+  op randomize : Set{AttrId} -> Set{CryptoAttribute} .
   eq randomize(empty) = empty .
-  eq randomize((ID , IDS)) = (teeAttribute(ID , randomAttrVal) , randomize(IDS)) .
+  eq randomize((ID , IDS)) = (attr(ID , randomAttrVal) , randomize(IDS)) .
   eq randomAttributes(OBJTYPE , ATTRS) = (ATTRS , randomize(mandatory(OBJTYPE))) .
 
-  op noKeyGenParams : ObjectType -> Bool .
-  eq noKeyGenParams(TEE-TYPE-AES) = true .
-  eq noKeyGenParams(TEE-TYPE-DES3) = true .
-  eq noKeyGenParams(TEE-TYPE-SM4) = true .
-  eq noKeyGenParams(TEE-TYPE-HMAC-MD5) = true .
-  eq noKeyGenParams(TEE-TYPE-HMAC-SHA1) = true .
-  eq noKeyGenParams(TEE-TYPE-HMAC-SHA224) = true .
-  eq noKeyGenParams(TEE-TYPE-HMAC-SHA256) = true .
-  eq noKeyGenParams(TEE-TYPE-HMAC-SHA384) = true .
-  eq noKeyGenParams(TEE-TYPE-HMAC-SHA512) = true .
-  eq noKeyGenParams(TEE-TYPE-HMAC-SHA3-224) = true .
-  eq noKeyGenParams(TEE-TYPE-HMAC-SHA3-256) = true .
-  eq noKeyGenParams(TEE-TYPE-HMAC-SHA3-384) = true .
-  eq noKeyGenParams(TEE-TYPE-HMAC-SHA3-512) = true .
-  eq noKeyGenParams(TEE-TYPE-HMAC-SM3) = true .
-  eq noKeyGenParams(TEE-TYPE-GENERIC-SECRET) = true .
-  eq noKeyGenParams(TEE-TYPE-ED25519-KEYPAIR) = true .
-  eq noKeyGenParams(TEE-TYPE-X25519-KEYPAIR) = true .
-  eq noKeyGenParams(TEE-TYPE-ED448-KEYPAIR) = true .
-  eq noKeyGenParams(TEE-TYPE-X448-KEYPAIR) = true .
-  eq noKeyGenParams(TEE-TYPE-SM2-DSA-KEYPAIR) = true .
-  eq noKeyGenParams(TEE-TYPE-SM2-KEP-KEYPAIR) = true .
-  eq noKeyGenParams(TEE-TYPE-SM2-PKE-KEYPAIR) = true .
+  op noKeyGenParams : Type -> Bool .
+  eq noKeyGenParams(typeAes) = true .
+  eq noKeyGenParams(typeDes3) = true .
+  eq noKeyGenParams(typeSm4) = true .
+  eq noKeyGenParams(typeHmacMd5) = true .
+  eq noKeyGenParams(typeHmacSha1) = true .
+  eq noKeyGenParams(typeHmacSha224) = true .
+  eq noKeyGenParams(typeHmacSha256) = true .
+  eq noKeyGenParams(typeHmacSha384) = true .
+  eq noKeyGenParams(typeHmacSha512) = true .
+  eq noKeyGenParams(typeHmacSha3224) = true .
+  eq noKeyGenParams(typeHmacSha3256) = true .
+  eq noKeyGenParams(typeHmacSha3384) = true .
+  eq noKeyGenParams(typeHmacSha3512) = true .
+  eq noKeyGenParams(typeHmacSm3) = true .
+  eq noKeyGenParams(typeGenericSecret) = true .
+  eq noKeyGenParams(typeEd25519Keypair) = true .
+  eq noKeyGenParams(typeX25519Keypair) = true .
+  eq noKeyGenParams(typeEd448Keypair) = true .
+  eq noKeyGenParams(typeX448Keypair) = true .
+  eq noKeyGenParams(typeSm2DsaKeypair) = true .
+  eq noKeyGenParams(typeSm2KepKeypair) = true .
+  eq noKeyGenParams(typeSm2PkeKeypair) = true .
   ---@dmc owise enumerate(OBJTYPE)
   eq noKeyGenParams(OBJTYPE) = false [owise] .
 
-  op mandatoryParamsForKeyGen : ObjectType Set{TeeAttribute} -> Bool .
+  op mandatoryParamsForKeyGen : Type Set{CryptoAttribute} -> Bool .
   ceq mandatoryParamsForKeyGen(OBJTYPE , ATTRS) = true
     if noKeyGenParams(OBJTYPE) and getAttrIds(ATTRS) == empty .
-  eq mandatoryParamsForKeyGen(TEE-TYPE-RSA-KEYPAIR , ATTRS) =
-    getAttrIds(ATTRS) subset TEE-ATTR-RSA-PUBLIC-EXPONENT .
-  eq mandatoryParamsForKeyGen(TEE-TYPE-DSA-KEYPAIR , ATTRS) =
-    (TEE-ATTR-DSA-PRIME , TEE-ATTR-DSA-SUBPRIME , TEE-ATTR-DSA-BASE)
+  eq mandatoryParamsForKeyGen(typeRsaKeypair , ATTRS) =
+    getAttrIds(ATTRS) subset rsaPublicExponent .
+  eq mandatoryParamsForKeyGen(typeDsaKeypair , ATTRS) =
+    (dsaPrime , dsaSubprime , dsaBase)
       subset getAttrIds(ATTRS)
     and getAttrIds(ATTRS)
-      subset (TEE-ATTR-DSA-PRIME , TEE-ATTR-DSA-SUBPRIME , TEE-ATTR-DSA-BASE) .
-  eq mandatoryParamsForKeyGen(TEE-TYPE-DH-KEYPAIR , ATTRS) =
-    (TEE-ATTR-DH-PRIME , TEE-ATTR-DH-BASE) subset getAttrIds(ATTRS)
+      subset (dsaPrime , dsaSubprime , dsaBase) .
+  eq mandatoryParamsForKeyGen(typeDhKeypair , ATTRS) =
+    (dhPrime , dhBase) subset getAttrIds(ATTRS)
     and getAttrIds(ATTRS) subset
-      (TEE-ATTR-DH-PRIME , TEE-ATTR-DH-BASE , TEE-ATTR-DH-SUBPRIME , TEE-ATTR-DH-X-BITS) .
-  eq mandatoryParamsForKeyGen(TEE-TYPE-ECDSA-KEYPAIR , ATTRS) =
-    getAttrIds(ATTRS) == TEE-ATTR-ECC-CURVE .
-  eq mandatoryParamsForKeyGen(TEE-TYPE-ECDH-KEYPAIR , ATTRS) =
-    getAttrIds(ATTRS) == TEE-ATTR-ECC-CURVE .
+      (dhPrime , dhBase , dhSubprime , dhXBits) .
+  eq mandatoryParamsForKeyGen(typeEcdsaKeypair , ATTRS) =
+    getAttrIds(ATTRS) == eccCurve .
+  eq mandatoryParamsForKeyGen(typeEcdhKeypair , ATTRS) =
+    getAttrIds(ATTRS) == eccCurve .
   eq mandatoryParamsForKeyGen(OBJTYPE , ATTRS) = false [owise] .
 
   --- GP 5.6.7: domain parameters determine the size of DSA, DH, and generic
   --- ECC keys, so callers pass zero.  Other generated keys use a Table 5-9
   --- size supported by the destination object type.
-  op validKeySizeForGeneration : ObjectType CryptoKeySize -> Bool .
-  eq validKeySizeForGeneration(TEE-TYPE-DSA-KEYPAIR , N Bits) = (N == 0) .
-  eq validKeySizeForGeneration(TEE-TYPE-DH-KEYPAIR , N Bits) = (N == 0) .
-  eq validKeySizeForGeneration(TEE-TYPE-ECDSA-KEYPAIR , N Bits) = (N == 0) .
-  eq validKeySizeForGeneration(TEE-TYPE-ECDH-KEYPAIR , N Bits) = (N == 0) .
+  op validKeySizeForGeneration : Type Nat -> Bool .
+  eq validKeySizeForGeneration(typeDsaKeypair , N) = (N == 0) .
+  eq validKeySizeForGeneration(typeDhKeypair , N) = (N == 0) .
+  eq validKeySizeForGeneration(typeEcdsaKeypair , N) = (N == 0) .
+  eq validKeySizeForGeneration(typeEcdhKeypair , N) = (N == 0) .
   ---@dmc owise enumerate(OBJTYPE)
-  ---@dmc exclude-ctors(TEE-TYPE-DSA-KEYPAIR,TEE-TYPE-DH-KEYPAIR,TEE-TYPE-ECDSA-KEYPAIR,TEE-TYPE-ECDH-KEYPAIR)
+  ---@dmc exclude-ctors(typeDsaKeypair,typeDhKeypair,typeEcdsaKeypair,typeEcdhKeypair)
   eq validKeySizeForGeneration(OBJTYPE , KEYSIZE) = supported(OBJTYPE , KEYSIZE) [owise] .
 
 ------------------------------------------------------------
@@ -192,13 +192,13 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 --- This rule allocates an uninitialized transient object of object type (OBJTYPE) with max object size (MAXOBJSIZE).
 
   crl [allocate-transient-success] :
-    < TK : TaKernel | status : normal , api-call : noCall , api-return : noReturn ,
+    < TK : TAKernel | status : (normal).AppStatus , api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : AllocateTransientObject ,
                       current-params : type(OBJTYPE) , size(MAXOBJSIZE) ,
                       counter : N  >
     =>
-    < TK : TaKernel | api-state : finished , counter : N + 2 ,
-                      api-return : apiReturn(AllocateTransientObject , TEE-SUCCESS, handle(oid(N + 1 , TK))) >
+    < TK : TAKernel | api-state : finished , counter : N + 2 ,
+                      api-return : apiReturn(AllocateTransientObject , success, handle(oid(N + 1 , TK))) >
     < oid(N , TK) : TransientObject | type : OBJTYPE , max-size : MAXOBJSIZE ,
                                         attributes : empty , usages : allObjectUsages,
                                         initialized : false >
@@ -209,20 +209,20 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 --- This rule returns TEE_ERROR_OUT_OF_MEMORY if not enough resources are available to allocate the handle.
 
   rl [allocate-transient-out-of-memory-err] :
-    < TK : TaKernel | status : outOfMemory , api-call : noCall , api-return : noReturn ,
+    < TK : TAKernel | status : outOfMemory , api-call : noCall , api-return : noReturn ,
                       current-api : AllocateTransientObject >
     =>
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(AllocateTransientObject , TEE-ERROR-OUT-OF-MEMORY) >
+    < TK : TAKernel | api-state : finished , api-return : apiReturn(AllocateTransientObject , errorOutOfMemory) >
   .
 
 --- This rule returns TEE_ERROR_NOT_SUPPORTED if the key size or obj size is not supported.
 
   crl [allocate-transient-not-supported-err] :
-    < TK : TaKernel | status : normal , api-call : noCall , api-return : noReturn ,
+    < TK : TAKernel | status : (normal).AppStatus , api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : AllocateTransientObject ,
                       current-params : type(OBJTYPE) , size(MAXOBJSIZE) >
     =>
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(AllocateTransientObject , TEE-ERROR-NOT-SUPPORTED) >
+    < TK : TAKernel | api-state : finished , api-return : apiReturn(AllocateTransientObject , errorNotSupported) >
   if not supported(OBJTYPE, MAXOBJSIZE)
   .
 
@@ -240,11 +240,11 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
   msg finishDeleteTransient : Oid -> Msg .
 
   crl [free-transient-not-null-subroutine] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+    < TK : TAKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : FreeTransientObject ,
                       current-params : handle(HANDLE) >
     =>
-    < TK : TaKernel | api-state : waitDeleteTransient >
+    < TK : TAKernel | api-state : waitDeleteTransient >
     deleteTransient(HANDLE , TK)
   if not nullHandle(HANDLE)
   .
@@ -260,20 +260,20 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 
   rl [free-transient-not-null-success] :
     finishDeleteTransient(TK)
-    < TK : TaKernel | api-state : waitDeleteTransient ,
+    < TK : TAKernel | api-state : waitDeleteTransient ,
                       current-api : FreeTransientObject >
     =>
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(FreeTransientObject) >
+    < TK : TAKernel | api-state : finished , api-return : apiReturn(FreeTransientObject) >
   .
 
 --- This rule does nothing when the input handle is null (TEE_HANDLE_NULL).
 
   crl [free-transient-null-success] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+    < TK : TAKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : FreeTransientObject ,
                       current-params : handle(HANDLE) >
     =>
-    < TK : TaKernel | api-state : finished ,
+    < TK : TAKernel | api-state : finished ,
                       api-return : apiReturn(FreeTransientObject , handle(null)) >
   if nullHandle(HANDLE)
   .
@@ -291,11 +291,11 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
   msg retResetTransient : Oid -> Msg .
 
   crl [reset-transient-not-null-subroutine] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+    < TK : TAKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : ResetTransientObject ,
                       current-params : handle(HANDLE) >
     =>
-    < TK : TaKernel | api-state : waitResetTransient >
+    < TK : TAKernel | api-state : waitResetTransient >
     reqResetTransient(HANDLE , TK)
   if not nullHandle(HANDLE)
   .
@@ -314,20 +314,20 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 
   rl [reset-transient-not-null-success] :
     retResetTransient(TK)
-    < TK : TaKernel | api-state : waitResetTransient ,
+    < TK : TAKernel | api-state : waitResetTransient ,
                       current-api : ResetTransientObject >
     =>
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(ResetTransientObject) >
+    < TK : TAKernel | api-state : finished , api-return : apiReturn(ResetTransientObject) >
   .
 
 --- This rule does nothing when the input handle is null (TEE_HANDLE_NULL).
 
   crl [reset-transient-null-success] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+    < TK : TAKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : ResetTransientObject ,
                       current-params : handle(HANDLE) >
     =>
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(ResetTransientObject) >
+    < TK : TAKernel | api-state : finished , api-return : apiReturn(ResetTransientObject) >
   if nullHandle(HANDLE)
   .
 
@@ -341,15 +341,15 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 --- The following three rules populates the transient object pointed by the input handle with input attributes when
 --- the given object type (OBJTYPE) supports the input attributes (ATTRS).
 
-  msg reqPopulateTransient : Oid Set{TeeAttribute} Oid -> Msg .
+  msg reqPopulateTransient : Oid Set{CryptoAttribute} Oid -> Msg .
   msg retPopulateTransient : Oid -> Msg .
 
   rl [populate-transient-subroutine] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+    < TK : TAKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : PopulateTransientObject ,
                       current-params : handle(HANDLE) , attrs(ATTRS) >
     =>
-    < TK : TaKernel | api-state : waitPopulateTransient >
+    < TK : TAKernel | api-state : waitPopulateTransient >
     reqPopulateTransient(HANDLE , ATTRS , TK)
   .
 
@@ -369,13 +369,13 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 
   crl [populate-transient-invalid-attributes-panic] :
     reqPopulateTransient(HANDLE , ATTRS , TK)
-    < TK : TaKernel | status : normal , api-state : waitPopulateTransient ,
+    < TK : TAKernel | status : (normal).AppStatus , api-state : waitPopulateTransient ,
                       current-api : PopulateTransientObject >
     < OI : TransientObject | initialized : false,
                              type : OBJTYPE >
     < HANDLE : ObjectHandle | oid : OI  >
     =>
-    < TK : TaKernel | status : panic , api-state : finished >
+    < TK : TAKernel | status : panic , api-state : finished >
     < OI : TransientObject | initialized : true >
     < HANDLE : ObjectHandle | >
   if not checkCompatible(OBJTYPE , ATTRS)
@@ -383,22 +383,22 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 
   rl [populate-transient-initialized-object-panic] :
     reqPopulateTransient(HANDLE , ATTRS , TK)
-    < TK : TaKernel | status : normal , api-state : waitPopulateTransient ,
+    < TK : TAKernel | status : (normal).AppStatus , api-state : waitPopulateTransient ,
                       current-api : PopulateTransientObject >
     < OI : TransientObject | >
     < HANDLE : ObjectHandle | oid : OI  >
     =>
-    < TK : TaKernel | status : panic , api-state : finished >
+    < TK : TAKernel | status : panic , api-state : finished >
     < OI : TransientObject | >
     < HANDLE : ObjectHandle | >
   .
 
   rl [populate-transient-success] :
     retPopulateTransient(TK)
-    < TK : TaKernel | api-state : waitPopulateTransient ,
+    < TK : TAKernel | api-state : waitPopulateTransient ,
                       current-api : PopulateTransientObject , api-return : noReturn >
     =>
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(PopulateTransientObject , TEE-SUCCESS) >
+    < TK : TAKernel | api-state : finished , api-return : apiReturn(PopulateTransientObject , success) >
   .
 
 --- TODO : NEED TO UPDATE
@@ -406,14 +406,14 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 
 --- The implementation can attempt to detect whether the attribute values are consistent.
 --- If it detects invalid attributes, it SHALL return the error code TEE_ERROR_BAD_PARAMETERS.
-  --- op validAttrValues : ObjectType Set{TeeAttribute} -> Bool .
+  --- op validAttrValues : Type Set{CryptoAttribute} -> Bool .
   --- eq validAttrValues(OBJTYPE , ATTRS) = true .
 
   --- crl [populate-transient-bad-params-err] :
   ---   apiCall(PopulateTransientObjectCall(HANDLE , ATTRS) , TI)
   ---                            type : OBJTYPE , max-size : MAXOBJSIZE >
   ---   =>
-  ---   apiReturn(PopulateTransientObjectReturn(TEE-ERROR-BAD-PARAMETERS) , TI)
+  ---   apiReturn(PopulateTransientObjectReturn(errorBadParameters) , TI)
   --- if validAttributes(OBJTYPE , MAXOBJSIZE , ATTRS) /\ not validAttrValues(OBJTYPE , ATTRS)
   --- .
 
@@ -426,21 +426,21 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 --- The following two rules creates a buffer attribute and a value attribute, respectively:
 
   rl [init-ref-attribute] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+    < TK : TAKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : InitRefAttribute ,
                       current-params : constId(REF) , constVal(V) >
     =>
-    < TK : TaKernel | api-state : finished ,
-                      api-return : apiReturn(InitRefAttribute , attrs(teeAttribute(REF , V))) >
+    < TK : TAKernel | api-state : finished ,
+                      api-return : apiReturn(InitRefAttribute , attrs(attr(REF , V))) >
   .
 
   rl [init-value-attribute] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+    < TK : TAKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : InitValueAttribute ,
                       current-params : constId(VAL) , constVal(V) >
     =>
-    < TK : TaKernel | api-state : finished ,
-                      api-return : apiReturn(InitValueAttribute , attrs(teeAttribute(VAL , V))) >
+    < TK : TAKernel | api-state : finished ,
+                      api-return : apiReturn(InitValueAttribute , attrs(attr(VAL , V))) >
   .
 
 ------------------------------------------------------------
@@ -455,11 +455,11 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 --- Note: rules acquiring attributes from a persistent object is in persistent.maude file.
 
   crl [copy-object-attributes-subroutine] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+    < TK : TAKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : CopyObjectAttributes1 ,
                       current-params : srcHandle(HANDLE2) , trgHandle(HANDLE1) >
     =>
-    < TK : TaKernel | api-state : waitReqAttribute >
+    < TK : TAKernel | api-state : waitReqAttribute >
     reqAttribute(HANDLE2 , TK)
   if not nullHandle(HANDLE1) /\ not nullHandle(HANDLE2)
   .
@@ -480,23 +480,23 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
   --- GP programmer errors: the source must be initialized.
   rl [copy-object-attributes-uninitialized-source-panic] :
     reqAttribute(HANDLE , TK)
-    < TK : TaKernel | status : normal , api-state : waitReqAttribute ,
+    < TK : TAKernel | status : (normal).AppStatus , api-state : waitReqAttribute ,
                       current-api : CopyObjectAttributes1 >
     < OI : TransientObject | initialized : false >
     < HANDLE : ObjectHandle | oid : OI >
     =>
-    < TK : TaKernel | status : panic , api-state : finished >
+    < TK : TAKernel | status : panic , api-state : finished >
     < OI : TransientObject | >
     < HANDLE : ObjectHandle | >
   .
 
   rl [copy-object-attributes-subroutine]:
     retAttributeTr(ATTRS , OBJTYPE , OBJUSAGES , TK)
-    < TK : TaKernel | api-state : waitReqAttribute ,
+    < TK : TAKernel | api-state : waitReqAttribute ,
                       current-api : CopyObjectAttributes1 ,
                       current-params : srcHandle(HANDLE2) , trgHandle(HANDLE1) >
     =>
-    < TK : TaKernel | api-state : waitCopyAttribute >
+    < TK : TAKernel | api-state : waitCopyAttribute >
     reqCopyAttribute(HANDLE1 , ATTRS , OBJTYPE , OBJUSAGES , TK)
   .
 
@@ -519,25 +519,25 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
   --- type must be compatible with the source object type.
   rl [copy-object-attributes-initialized-destination-panic] :
     reqCopyAttribute(HANDLE , ATTRS , OBJTYPE , OBJUSAGES , TK)
-    < TK : TaKernel | status : normal , api-state : waitCopyAttribute ,
+    < TK : TAKernel | status : (normal).AppStatus , api-state : waitCopyAttribute ,
                       current-api : CopyObjectAttributes1 >
     < OI : TransientObject | initialized : true >
     < HANDLE : ObjectHandle | oid : OI  >
     =>
-    < TK : TaKernel | status : panic , api-state : finished >
+    < TK : TAKernel | status : panic , api-state : finished >
     < OI : TransientObject | >
     < HANDLE : ObjectHandle | >
   .
 
   crl [copy-object-attributes-incompatible-type-panic] :
     reqCopyAttribute(HANDLE , ATTRS , OBJTYPE , OBJUSAGES , TK)
-    < TK : TaKernel | status : normal , api-state : waitCopyAttribute ,
+    < TK : TAKernel | status : (normal).AppStatus , api-state : waitCopyAttribute ,
                       current-api : CopyObjectAttributes1 >
     < OI : TransientObject | initialized : false,
                              type : OBJTYPE' >
     < HANDLE : ObjectHandle | oid : OI  >
     =>
-    < TK : TaKernel | status : panic , api-state : finished >
+    < TK : TAKernel | status : panic , api-state : finished >
     < OI : TransientObject | >
     < HANDLE : ObjectHandle | >
   if not typeCompatible(OBJTYPE', OBJTYPE)
@@ -545,10 +545,10 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 
   rl [copy-object-attributes-success]:
     finishCopyAttribute(TK)
-    < TK : TaKernel | api-state : waitCopyAttribute ,
+    < TK : TAKernel | api-state : waitCopyAttribute ,
                       current-api : CopyObjectAttributes1 >
     =>
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(CopyObjectAttributes1 , TEE-SUCCESS) >
+    < TK : TAKernel | api-state : finished , api-return : apiReturn(CopyObjectAttributes1 , success) >
   .
 
 ------------------------------------------------------------
@@ -560,15 +560,15 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 
 --- The following three rules populate the transient object pointed by the input handle with an encrypted key material.
 
-  msg reqGenerateKey : Oid CryptoKeySize Set{TeeAttribute} Oid -> Msg .
+  msg reqGenerateKey : Oid Nat Set{CryptoAttribute} Oid -> Msg .
   msg retGenerateKey : Oid -> Msg .
 
   rl [generate-key-subroutine] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+    < TK : TAKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : GenerateKey ,
                       current-params : handle(HANDLE) , size(KEYSIZE) , attrs(ATTRS) >
     =>
-    < TK : TaKernel | api-state : waitReqGenerateKey >
+    < TK : TAKernel | api-state : waitReqGenerateKey >
     reqGenerateKey(HANDLE , KEYSIZE , ATTRS , TK)
   .
 
@@ -589,13 +589,13 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 
   crl [generate-key-oversized-key-panic] :
     reqGenerateKey(HANDLE , KEYSIZE , ATTRS , TK)
-    < TK : TaKernel | status : normal , api-state : waitReqGenerateKey ,
+    < TK : TAKernel | status : (normal).AppStatus , api-state : waitReqGenerateKey ,
                       current-api : GenerateKey >
     < OI : TransientObject | initialized : false,
                              type : OBJTYPE , max-size : MAXOBJSIZE >
     < HANDLE : ObjectHandle | oid : OI  >
     =>
-    < TK : TaKernel | status : panic , api-state : finished >
+    < TK : TAKernel | status : panic , api-state : finished >
     < OI : TransientObject | >
     < HANDLE : ObjectHandle | >
   if not (KEYSIZE <= MAXOBJSIZE)
@@ -603,13 +603,13 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 
   crl [generate-key-unsupported-key-size-panic] :
     reqGenerateKey(HANDLE , KEYSIZE , ATTRS , TK)
-    < TK : TaKernel | status : normal , api-state : waitReqGenerateKey ,
+    < TK : TAKernel | status : (normal).AppStatus , api-state : waitReqGenerateKey ,
                       current-api : GenerateKey >
     < OI : TransientObject | initialized : false,
                              type : OBJTYPE , max-size : MAXOBJSIZE >
     < HANDLE : ObjectHandle | oid : OI  >
     =>
-    < TK : TaKernel | status : panic , api-state : finished >
+    < TK : TAKernel | status : panic , api-state : finished >
     < OI : TransientObject | >
     < HANDLE : ObjectHandle | >
   if KEYSIZE <= MAXOBJSIZE /\ not validKeySizeForGeneration(OBJTYPE , KEYSIZE)
@@ -617,13 +617,13 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 
   crl [generate-key-missing-parameters-panic] :
     reqGenerateKey(HANDLE , KEYSIZE , ATTRS , TK)
-    < TK : TaKernel | status : normal , api-state : waitReqGenerateKey ,
+    < TK : TAKernel | status : (normal).AppStatus , api-state : waitReqGenerateKey ,
                       current-api : GenerateKey >
     < OI : TransientObject | initialized : false,
                              type : OBJTYPE , max-size : MAXOBJSIZE >
     < HANDLE : ObjectHandle | oid : OI  >
     =>
-    < TK : TaKernel | status : panic , api-state : finished >
+    < TK : TAKernel | status : panic , api-state : finished >
     < OI : TransientObject | initialized : true >
     < HANDLE : ObjectHandle | >
   if KEYSIZE <= MAXOBJSIZE /\ validKeySizeForGeneration(OBJTYPE , KEYSIZE)
@@ -632,35 +632,35 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 
   rl [generate-key-initialized-object-panic] :
     reqGenerateKey(HANDLE , KEYSIZE , ATTRS , TK)
-    < TK : TaKernel | status : normal , api-state : waitReqGenerateKey ,
+    < TK : TAKernel | status : (normal).AppStatus , api-state : waitReqGenerateKey ,
                       current-api : GenerateKey >
     < OI : TransientObject | >
     < HANDLE : ObjectHandle | oid : OI  >
     =>
-    < TK : TaKernel | status : panic , api-state : finished >
+    < TK : TAKernel | status : panic , api-state : finished >
     < OI : TransientObject | >
     < HANDLE : ObjectHandle | >
   .
 
   rl [generate-key-success] :
     retGenerateKey(TK)
-    < TK : TaKernel | api-state : waitReqGenerateKey ,
+    < TK : TAKernel | api-state : waitReqGenerateKey ,
                       current-api : GenerateKey >
     =>
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(GenerateKey , TEE-SUCCESS) >
+    < TK : TAKernel | api-state : finished , api-return : apiReturn(GenerateKey , success) >
   .
 
 --- TODO: NEED TO UPDATE
 --- This rule returns TEE_ERROR_BAD_PARAMETERS if an incorrect or inconsistent attribute is detected.
 
-  --- op validParamValues : ObjectType Set{TeeAttribute} -> Bool .
+  --- op validParamValues : Type Set{CryptoAttribute} -> Bool .
   --- eq validParamValues(OBJTYPE , ATTRS) = true .
 
   --- crl [generate-key-bad-params-err] :
   ---   apiCall(GenerateKeyCall(HANDLE , KEYSIZE , ATTRS) , TI)
   ---                            type : OBJTYPE , max-size : MAXOBJSIZE >
   ---   =>
-  ---   apiReturn(GenerateKeyReturn(TEE-ERROR-BAD-PARAMETERS) , TI)
+  ---   apiReturn(GenerateKeyReturn(errorBadParameters) , TI)
   --- if validParamsForKeyGen(OBJTYPE , MAXOBJSIZE , ATTRS , KEYSIZE) /\ not validParamValues(OBJTYPE , ATTRS)
   --- .
 

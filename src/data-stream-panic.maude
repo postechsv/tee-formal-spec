@@ -7,37 +7,37 @@ omod DATA-STREAM-PANIC is
   var TK : Oid .
   var HANDLE : Oid .
   var PARAMS : Set{TeeApiParam} .
-  var DATAFLAGS : Set{DataFlag} .
+  var DATAFLAGS : Set{DataAccessFlag} .
 
   --- Persistent data-stream access rights are preconditions.  Violating them
   --- panics before the normal storage request can be issued.
   crl [read-access-panic] :
-    < TK : TaKernel | status : normal, api-state : started,
+    < TK : TAKernel | status : (normal).AppStatus, api-state : started,
                       current-api : ReadObjectData,
                       current-params : handle(HANDLE), PARAMS >
     < HANDLE : ObjectHandle | flags : DATAFLAGS >
     =>
-    < TK : TaKernel | status : panic, api-state : finished >
+    < TK : TAKernel | status : panic, api-state : finished >
     < HANDLE : ObjectHandle | >
-  if not (TEE-DATA-FLAG-ACCESS-READ in DATAFLAGS) .
+  if not (accessRead in DATAFLAGS) .
 
   crl [write-access-panic] :
-    < TK : TaKernel | status : normal, api-state : started,
+    < TK : TAKernel | status : (normal).AppStatus, api-state : started,
                       current-api : WriteObjectData,
                       current-params : handle(HANDLE), PARAMS >
     < HANDLE : ObjectHandle | flags : DATAFLAGS >
     =>
-    < TK : TaKernel | status : panic, api-state : finished >
+    < TK : TAKernel | status : panic, api-state : finished >
     < HANDLE : ObjectHandle | >
-  if not (TEE-DATA-FLAG-ACCESS-WRITE in DATAFLAGS) .
+  if not (accessWrite in DATAFLAGS) .
 
   crl [truncate-access-panic] :
-    < TK : TaKernel | status : normal, api-state : started,
+    < TK : TAKernel | status : (normal).AppStatus, api-state : started,
                       current-api : TruncateObjectData,
                       current-params : handle(HANDLE), PARAMS >
     < HANDLE : ObjectHandle | flags : DATAFLAGS >
     =>
-    < TK : TaKernel | status : panic, api-state : finished >
+    < TK : TAKernel | status : panic, api-state : finished >
     < HANDLE : ObjectHandle | >
-  if not (TEE-DATA-FLAG-ACCESS-WRITE in DATAFLAGS) .
+  if not (accessWrite in DATAFLAGS) .
 endom

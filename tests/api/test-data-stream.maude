@@ -16,16 +16,16 @@ set print color off .
 
 --- [BB-D-RD-1] read-object-data-success
 search [1] in TEST-AUX :
-  retTrustedOS(storageStatus(storageNormal) , ta)
-  < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
+  retTrustedOS(storageStatus(normal) , ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : noCall, api-return : noReturn,
                     current-api : ReadObjectData, api-state : started,
                     current-params : (handle(oid(101, ta)), size(dataSize(1))),
                     counter : 0, storage : oid(0, ta) >
   < oid(101, ta) : ObjectHandle | oid : oid(1, oid(0, ta)),
-                                           flags : TEE-DATA-FLAG-ACCESS-READ,
+                                           flags : accessRead,
                                            pos : pos(0) >
-  < oid(1, oid(0, ta)) : PersistentObject | type : TEE-TYPE-AES,
-                           max-size : 128 Bits,
+  < oid(1, oid(0, ta)) : PersistentObject | type : typeAes,
+                           max-size : 128,
                            attributes : empty,
                            usages : empty,
                            data-stream-id : oid(1, ta),
@@ -35,19 +35,19 @@ search [1] in TEST-AUX :
                                      persistent-owner-id : oid(1, oid(0, ta)),
                                      device-owner-id : devId >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(ReadObjectData , TEE-SUCCESS , data(randomData)) > .
+  < ta : TAKernel | api-state : finished,
+                    api-return : apiReturn(ReadObjectData , success , data(randomData)) > .
 
 --- [BB-D-RD-2] read-object-data-storage-error
 search [1] in TEST-AUX :
-  retTrustedOS(storageStatus(storageCorrupt) , ta)
-  < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
+  retTrustedOS(storageStatus(corrupted) , ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : noCall, api-return : noReturn,
                     current-api : ReadObjectData, api-state : started,
                     current-params : (handle(oid(1, ta)), size(dataSize(1))),
                     counter : 0, storage : oid(0, ta) >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(ReadObjectData , TEE-ERROR-CORRUPT-OBJECT) > .
+  < ta : TAKernel | api-state : finished,
+                    api-return : apiReturn(ReadObjectData , errorCorruptObject) > .
 
 --- ============================================================
 --- WriteObjectData
@@ -55,17 +55,17 @@ search [1] in TEST-AUX :
 
 --- [BB-D-WR-1] write-object-data-success
 search [1] in TEST-AUX :
-  retTrustedOS(storageStatus(storageNormal) , ta)
-  < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
+  retTrustedOS(storageStatus(normal) , ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : noCall, api-return : noReturn,
                     current-api : WriteObjectData, api-state : started,
                     current-params : (handle(oid(102, ta)), data(randomData)),
                     counter : 0, storage : oid(0, ta) >
   < oid(102, ta) : ObjectHandle | oid : oid(1, oid(0, ta)),
-                                           flags : TEE-DATA-FLAG-ACCESS-WRITE,
+                                           flags : accessWrite,
                                            pos : pos(0) >
   < oid(1, oid(0, ta)) : PersistentObject | data-stream : randomData,
-                           type : TEE-TYPE-AES,
-                           max-size : 128 Bits,
+                           type : typeAes,
+                           max-size : 128,
                            attributes : empty,
                            usages : empty,
                            data-stream-id : oid(2, ta),
@@ -75,19 +75,19 @@ search [1] in TEST-AUX :
                                      persistent-owner-id : oid(1, oid(0, ta)),
                                      device-owner-id : devId >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(WriteObjectData , TEE-SUCCESS) > .
+  < ta : TAKernel | api-state : finished,
+                    api-return : apiReturn(WriteObjectData , success) > .
 
 --- [BB-D-WR-2] write-object-data-storage-not-available
 search [1] in TEST-AUX :
-  retTrustedOS(storageStatus(storageInAccessible) , ta)
-  < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
+  retTrustedOS(storageStatus(notAvailable) , ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : noCall, api-return : noReturn,
                     current-api : WriteObjectData, api-state : started,
                     current-params : (handle(oid(2, ta)), data(randomData)),
                     counter : 0, storage : oid(0, ta) >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(WriteObjectData , TEE-ERROR-STORAGE-NOT-AVAILABLE) > .
+  < ta : TAKernel | api-state : finished,
+                    api-return : apiReturn(WriteObjectData , errorStorageNotAvailable) > .
 
 --- ============================================================
 --- TruncateObjectData
@@ -95,17 +95,17 @@ search [1] in TEST-AUX :
 
 --- [BB-D-TR-1] truncate-object-data-success
 search [1] in TEST-AUX :
-  retTrustedOS(storageStatus(storageNormal) , ta)
-  < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
+  retTrustedOS(storageStatus(normal) , ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : noCall, api-return : noReturn,
                     current-api : TruncateObjectData, api-state : started,
                     current-params : (handle(oid(103, ta)), size(dataSize(0))),
                     counter : 0, storage : oid(0, ta) >
   < oid(103, ta) : ObjectHandle | oid : oid(1, oid(0, ta)),
-                                           flags : TEE-DATA-FLAG-ACCESS-WRITE,
+                                           flags : accessWrite,
                                            pos : pos(0) >
   < oid(1, oid(0, ta)) : PersistentObject | data-stream : randomData,
-                           type : TEE-TYPE-AES,
-                           max-size : 128 Bits,
+                           type : typeAes,
+                           max-size : 128,
                            attributes : empty,
                            usages : empty,
                            data-stream-id : oid(3, ta),
@@ -115,19 +115,19 @@ search [1] in TEST-AUX :
                                      persistent-owner-id : oid(1, oid(0, ta)),
                                      device-owner-id : devId >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(TruncateObjectData , TEE-SUCCESS) > .
+  < ta : TAKernel | api-state : finished,
+                    api-return : apiReturn(TruncateObjectData , success) > .
 
 --- [BB-D-TR-2] truncate-object-data-storage-error
 search [1] in TEST-AUX :
-  retTrustedOS(storageStatus(storageCorrupt) , ta)
-  < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
+  retTrustedOS(storageStatus(corrupted) , ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : noCall, api-return : noReturn,
                     current-api : TruncateObjectData, api-state : started,
                     current-params : (handle(oid(3, ta)), size(dataSize(0))),
                     counter : 0, storage : oid(0, ta) >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(TruncateObjectData , TEE-ERROR-CORRUPT-OBJECT) > .
+  < ta : TAKernel | api-state : finished,
+                    api-return : apiReturn(TruncateObjectData , errorCorruptObject) > .
 
 --- ============================================================
 --- SeekObjectData
@@ -135,17 +135,17 @@ search [1] in TEST-AUX :
 
 --- [BB-D-SK-1] seek-object-data-success
 search [1] in TEST-AUX :
-  retTrustedOS(storageStatus(storageNormal) , ta)
-  < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
+  retTrustedOS(storageStatus(normal) , ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : noCall, api-return : noReturn,
                     current-api : SeekObjectData, api-state : started,
-                    current-params : (handle(oid(104, ta)), offset(0), type(TEE-DATA-SEEK-SET)),
+                    current-params : (handle(oid(104, ta)), offset(0), type(seekSet)),
                     counter : 0, storage : oid(0, ta) >
   < oid(104, ta) : ObjectHandle | oid : oid(1, oid(0, ta)),
-                                           flags : TEE-DATA-FLAG-ACCESS-READ,
+                                           flags : accessRead,
                                            pos : pos(0) >
   < oid(1, oid(0, ta)) : PersistentObject | data-stream : randomData,
-                           type : TEE-TYPE-AES,
-                           max-size : 128 Bits,
+                           type : typeAes,
+                           max-size : 128,
                            attributes : empty,
                            usages : empty,
                            data-stream-id : oid(4, ta),
@@ -155,16 +155,16 @@ search [1] in TEST-AUX :
                                      persistent-owner-id : oid(1, oid(0, ta)),
                                      device-owner-id : devId >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(SeekObjectData , TEE-SUCCESS) > .
+  < ta : TAKernel | api-state : finished,
+                    api-return : apiReturn(SeekObjectData , success) > .
 
 --- [BB-D-SK-2] seek-object-data-storage-not-available
 search [1] in TEST-AUX :
-  retTrustedOS(storageStatus(storageInAccessible) , ta)
-  < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
+  retTrustedOS(storageStatus(notAvailable) , ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : noCall, api-return : noReturn,
                     current-api : SeekObjectData, api-state : started,
-                    current-params : (handle(oid(4, ta)), offset(0), type(TEE-DATA-SEEK-SET)),
+                    current-params : (handle(oid(4, ta)), offset(0), type(seekSet)),
                     counter : 0, storage : oid(0, ta) >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(SeekObjectData , TEE-ERROR-STORAGE-NOT-AVAILABLE) > .
+  < ta : TAKernel | api-state : finished,
+                    api-return : apiReturn(SeekObjectData , errorStorageNotAvailable) > .

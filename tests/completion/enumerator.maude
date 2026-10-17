@@ -13,19 +13,19 @@ mod COMPLETION-TEST is
 endm
 
 search [1] in COMPLETION-TEST :
-  < testTa : TaKernel | api-call : noCall, api-return : noReturn,
+  < testTa : TAKernel | api-call : noCall, api-return : noReturn,
                         api-state : started, current-api : StartPersistentObjectEnumerator,
-                        current-params : storageId(TEE-STORAGE-ILLEGAL-VALUE) >
+                        current-params : storageId(storageIllegalValue) >
 =>*
-  < testTa : TaKernel | api-call : noCall,
+  < testTa : TAKernel | api-call : noCall,
                         api-state : finished, current-api : StartPersistentObjectEnumerator,
-                        current-params : storageId(TEE-STORAGE-ILLEGAL-VALUE),
+                        current-params : storageId(storageIllegalValue),
                         api-return : apiReturn(StartPersistentObjectEnumerator,
-                                               TEE-ERROR-ITEM-NOT-FOUND, empty) > .
+                                               errorItemNotFound, empty) > .
 
 --- Enumerator handles use the same top-level object representation.
 search [1] in COMPLETION-TEST :
-  < testTa : TaKernel | api-call : noCall, api-return : noReturn,
+  < testTa : TAKernel | api-call : noCall, api-return : noReturn,
                         api-state : started,
                         current-api : ResetPersistentObjectEnumerator,
                         current-params : handle(oid(101, testTa)) >
@@ -33,7 +33,7 @@ search [1] in COMPLETION-TEST :
       persistent-objects : testFileId, enumerating : true >
   < oid(101, testTa) : ObjectEnumHandle | oid : oid(1, testTa) >
 =>*
-  < testTa : TaKernel | api-call : noCall, api-state : finished,
+  < testTa : TAKernel | api-call : noCall, api-state : finished,
                         current-api : ResetPersistentObjectEnumerator,
                         current-params : handle(oid(101, testTa)),
                         api-return : apiReturn(ResetPersistentObjectEnumerator,
@@ -46,17 +46,17 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   reqNextObject(oid(0, otherTa), testFileId, testTa)
   < oid(0, oid(0, testTa)) : PersistentObject |
-      type : TEE-TYPE-DES, max-size : 64 Bits, attributes : empty,
+      type : typeDes, max-size : 64, attributes : empty,
       usages : empty, data-stream-id : oid(1, testTa),
       file-name : testFileId >
   < oid(1, testTa) : DataStreamObject | data-size : dataSize(1) >
   < oid(0, oid(0, otherTa)) : PersistentObject |
-      type : TEE-TYPE-AES, max-size : 128 Bits, attributes : empty,
-      usages : TEE-USAGE-ENCRYPT, data-stream-id : oid(2, testTa),
+      type : typeAes, max-size : 128, attributes : empty,
+      usages : usageEncrypt, data-stream-id : oid(2, testTa),
       file-name : testFileId >
   < oid(2, testTa) : DataStreamObject | data-size : dataSize(2) >
 =>1
-  retNextObject(teeObjectInfo(TEE-TYPE-AES, keySize(empty), 128 Bits,
-                              TEE-USAGE-ENCRYPT, dataSize(2), pos(0), empty),
+  retNextObject(teeObjectInfo(typeAes, keySize(empty), 128,
+                              usageEncrypt, dataSize(2), pos(0), empty),
                 testTa)
   C .

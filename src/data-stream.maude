@@ -26,7 +26,7 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   var WHENCE : SeekType .
   var DATA : List{Data} .
   var DM : Map{DataPosition,Data} .
-  var DATAFLAGS : Set{DataFlag} .
+  var DATAFLAGS : Set{DataAccessFlag} .
   var STATUS : StorageStatus .
   var HS : Configuration .
 
@@ -36,15 +36,15 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 
 --- For TEE_ReadObjectData
 
-  op isReadable : Set{DataFlag} -> Bool .
-  eq isReadable((TEE-DATA-FLAG-ACCESS-READ , DATAFLAGS)) = true .
+  op isReadable : Set{DataAccessFlag} -> Bool .
+  eq isReadable((accessRead , DATAFLAGS)) = true .
   ---@dmc owise recurse(sep=_,_, empty=empty)
   eq isReadable(DATAFLAGS) = false [owise] .
 
 --- For TEE_WriteObjectData
 
-  op isWritable : Set{DataFlag} -> Bool .
-  eq isWritable((TEE-DATA-FLAG-ACCESS-WRITE , DATAFLAGS)) = true .
+  op isWritable : Set{DataAccessFlag} -> Bool .
+  eq isWritable((accessWrite , DATAFLAGS)) = true .
   ---@dmc owise recurse(sep=_,_, empty=empty)
   eq isWritable(DATAFLAGS) = false [owise] .
 
@@ -68,10 +68,10 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   msg finishReadData : List{Data} Oid -> Msg .
 
   rl [read-object-data-subroutine] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+    < TK : TAKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : ReadObjectData >
     => 
-    < TK : TaKernel | api-state : waitStorageCheck >
+    < TK : TAKernel | api-state : waitStorageCheck >
     reqTrustedOS(getStorageStatus , TK)
   .
 
@@ -89,13 +89,13 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 
 --- Model/Implementation Specific Version (2 rules)
   rl [read-object-data-subroutine] :
-    retTrustedOS(storageStatus(storageNormal) , TK)
-    < TK : TaKernel | api-state : waitStorageCheck , 
+    retTrustedOS(storageStatus(normal) , TK)
+    < TK : TAKernel | api-state : waitStorageCheck , 
                       current-api : ReadObjectData ,
                       current-params : handle(HANDLE) , size(DATASIZE) ,
                       storage : SI >
     =>
-    < TK : TaKernel | api-state : waitReadObjectData >
+    < TK : TAKernel | api-state : waitReadObjectData >
     readObjectData(HANDLE , DATASIZE , TK , SI)
   .
 
@@ -104,10 +104,10 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 
   crl [read-object-data-storage-err] :
     retTrustedOS(storageStatus(STATUS) , TK)
-    < TK : TaKernel | api-state : waitStorageCheck , 
+    < TK : TAKernel | api-state : waitStorageCheck , 
                       current-api : ReadObjectData >
     =>
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(ReadObjectData , storageErrCode(STATUS)) >
+    < TK : TAKernel | api-state : finished , api-return : apiReturn(ReadObjectData , storageErrCode(STATUS)) >
   if abnormalStorage(STATUS)
   .
 
@@ -150,10 +150,10 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 --- Model/Implementation Specific Version
   rl [read-object-data-success] :
     finishReadData(DATA , TK)
-    < TK : TaKernel | api-state : waitReadObjectData , 
+    < TK : TAKernel | api-state : waitReadObjectData , 
                       current-api : ReadObjectData >
     =>
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(ReadObjectData , TEE-SUCCESS , data(DATA)) >
+    < TK : TAKernel | api-state : finished , api-return : apiReturn(ReadObjectData , success , data(DATA)) >
   .
 
 ------------------------------------------------------------
@@ -172,21 +172,21 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   msg finishWriteData : Oid -> Msg .
 
   rl [write-object-data-subroutine] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+    < TK : TAKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : WriteObjectData >
     => 
-    < TK : TaKernel | api-state : waitStorageCheck >
+    < TK : TAKernel | api-state : waitStorageCheck >
     reqTrustedOS(getStorageStatus , TK)
   .
 
   rl [write-object-data-subroutine] :
-    retTrustedOS(storageStatus(storageNormal) , TK)
-    < TK : TaKernel | api-state : waitStorageCheck , 
+    retTrustedOS(storageStatus(normal) , TK)
+    < TK : TAKernel | api-state : waitStorageCheck , 
                       current-api : WriteObjectData ,
                       current-params : handle(HANDLE) , data(DATA) , 
                       storage : SI >
     =>
-    < TK : TaKernel | api-state : waitWriteObjectData >
+    < TK : TAKernel | api-state : waitWriteObjectData >
     writeObjectData(HANDLE , DATA , TK , SI)
   .
 
@@ -285,18 +285,18 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 
   rl [write-object-data-top-level-finish-overflow] :
     writeObjectOverflowTop(TK)
-    < TK : TaKernel | api-state : waitWriteObjectData, current-api : WriteObjectData >
+    < TK : TAKernel | api-state : waitWriteObjectData, current-api : WriteObjectData >
     =>
-    < TK : TaKernel | api-state : finished,
-      api-return : apiReturn(WriteObjectData, TEE-ERROR-OVERFLOW) >
+    < TK : TAKernel | api-state : finished,
+      api-return : apiReturn(WriteObjectData, errorOverflow) >
   .
 
   rl [write-object-data-success] :
     finishWriteData(TK)
-    < TK : TaKernel | api-state : waitWriteObjectData , 
+    < TK : TAKernel | api-state : waitWriteObjectData , 
                       current-api : WriteObjectData >
     =>
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(WriteObjectData , TEE-SUCCESS) >
+    < TK : TAKernel | api-state : finished , api-return : apiReturn(WriteObjectData , success) >
   .
 
 --- This rule returns TEE_ERROR_OVERFLOW if the value of the data position indicator resulting from this operation would be greater than TEE_DATA_MAX_POSITION.
@@ -304,15 +304,15 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 
   crl [write-object-data-top-level-overflow] :
     writeObjectData(HANDLE , DATA , TK , SI)
-    < TK : TaKernel | api-state : waitWriteObjectData , current-api : WriteObjectData >
+    < TK : TAKernel | api-state : waitWriteObjectData , current-api : WriteObjectData >
     < oid(M, SI) : PersistentObject | >
     < HANDLE : ObjectHandle | oid : oid(M, SI), flags : DATAFLAGS,
                               pos : DATAPOS >
     =>
     < oid(M, SI) : PersistentObject | >
     < HANDLE : ObjectHandle | >
-    < TK : TaKernel | api-state : finished , current-api : WriteObjectData,
-                      api-return : apiReturn(WriteObjectData, TEE-ERROR-OVERFLOW) >
+    < TK : TAKernel | api-state : finished , current-api : WriteObjectData,
+                      api-return : apiReturn(WriteObjectData, errorOverflow) >
   if isWritable(DATAFLAGS) /\ not withinMaxPosition(advancePos(DATAPOS, sizeOfData(DATA)))
   .
 
@@ -322,10 +322,10 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 
   crl [write-object-data-storage-err] :
     retTrustedOS(storageStatus(STATUS) , TK)
-    < TK : TaKernel | api-state : waitStorageCheck , 
+    < TK : TAKernel | api-state : waitStorageCheck , 
                       current-api : WriteObjectData >
     =>
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(WriteObjectData , storageErrCode(STATUS)) >
+    < TK : TAKernel | api-state : finished , api-return : apiReturn(WriteObjectData , storageErrCode(STATUS)) >
   if abnormalStorage(STATUS)
   .
 
@@ -344,21 +344,21 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   msg finishTruncateData : Oid -> Msg .
 
   rl [truncate-object-data-subroutine] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+    < TK : TAKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : TruncateObjectData >
     => 
-    < TK : TaKernel | api-state : waitStorageCheck >
+    < TK : TAKernel | api-state : waitStorageCheck >
     reqTrustedOS(getStorageStatus , TK)
   .
 
   rl [truncate-object-data-subroutine] :
-    retTrustedOS(storageStatus(storageNormal) , TK)
-    < TK : TaKernel | api-state : waitStorageCheck , 
+    retTrustedOS(storageStatus(normal) , TK)
+    < TK : TAKernel | api-state : waitStorageCheck , 
                       current-api : TruncateObjectData ,
                       current-params : handle(HANDLE) , size(DATASIZE) , 
                       storage : SI >
     =>
-    < TK : TaKernel | api-state : waitTruncateObjectData >
+    < TK : TAKernel | api-state : waitTruncateObjectData >
     truncateObjectData(HANDLE , DATASIZE , TK , SI)
   .
 
@@ -412,10 +412,10 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 
   rl [truncate-object-data-success] :
     finishTruncateData(TK)
-    < TK : TaKernel | api-state : waitTruncateObjectData , 
+    < TK : TAKernel | api-state : waitTruncateObjectData , 
                       current-api : TruncateObjectData >
     =>
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(TruncateObjectData , TEE-SUCCESS) >
+    < TK : TAKernel | api-state : finished , api-return : apiReturn(TruncateObjectData , success) >
   .
 
 --- This rule returns TEE_ERROR_STORAGE_NO_SPACE if insufficient storage space is available to perform the operation.
@@ -424,10 +424,10 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 
   crl [truncate-object-data-storage-err] :
     retTrustedOS(storageStatus(STATUS) , TK)
-    < TK : TaKernel | api-state : waitStorageCheck , 
+    < TK : TAKernel | api-state : waitStorageCheck , 
                       current-api : TruncateObjectData >
     =>
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(TruncateObjectData , storageErrCode(STATUS)) >
+    < TK : TAKernel | api-state : finished , api-return : apiReturn(TruncateObjectData , storageErrCode(STATUS)) >
   if abnormalStorage(STATUS)
   .
 
@@ -445,21 +445,21 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   msg finishSeekData : Oid -> Msg .
 
   rl [seek-object-data-subroutine] :
-    < TK : TaKernel | api-call : noCall , api-return : noReturn ,
+    < TK : TAKernel | api-call : noCall , api-return : noReturn ,
                       api-state : started , current-api : SeekObjectData >
     => 
-    < TK : TaKernel | api-state : waitStorageCheck >
+    < TK : TAKernel | api-state : waitStorageCheck >
     reqTrustedOS(getStorageStatus , TK)
   .
 
   rl [seek-object-data-subroutine] :
-    retTrustedOS(storageStatus(storageNormal) , TK)
-    < TK : TaKernel | api-state : waitStorageCheck , 
+    retTrustedOS(storageStatus(normal) , TK)
+    < TK : TAKernel | api-state : waitStorageCheck , 
                       current-api : SeekObjectData ,
                       current-params : handle(HANDLE) , offset(OFST) , type(WHENCE) ,
                       storage : SI >
     =>
-    < TK : TaKernel | api-state : waitSeekObjectData >
+    < TK : TAKernel | api-state : waitSeekObjectData >
     seekObjectData(HANDLE , OFST , WHENCE , TK , SI)
   .
 
@@ -506,18 +506,18 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 
   rl [seek-object-data-top-level-finish-overflow] :
     seekObjectOverflowTop(TK)
-    < TK : TaKernel | api-state : waitSeekObjectData, current-api : SeekObjectData >
+    < TK : TAKernel | api-state : waitSeekObjectData, current-api : SeekObjectData >
     =>
-    < TK : TaKernel | api-state : finished,
-      api-return : apiReturn(SeekObjectData, TEE-ERROR-OVERFLOW) >
+    < TK : TAKernel | api-state : finished,
+      api-return : apiReturn(SeekObjectData, errorOverflow) >
   .
 
   rl [seek-object-data-success] :
     finishSeekData(TK)
-    < TK : TaKernel | api-state : waitSeekObjectData , 
+    < TK : TAKernel | api-state : waitSeekObjectData , 
                       current-api : SeekObjectData >
     =>
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(SeekObjectData , TEE-SUCCESS) >
+    < TK : TAKernel | api-state : finished , api-return : apiReturn(SeekObjectData , success) >
   .
 
 --- This rule returns TEE_ERROR_OVERFLOW if the value of the data position indicator resulting from this operation would be greater than TEE_DATA_MAX_POSITION.
@@ -528,10 +528,10 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 
   crl [seek-object-data-storage-err] :
     retTrustedOS(storageStatus(STATUS) , TK)
-    < TK : TaKernel | api-state : waitStorageCheck , 
+    < TK : TAKernel | api-state : waitStorageCheck , 
                       current-api : SeekObjectData >
     =>
-    < TK : TaKernel | api-state : finished , api-return : apiReturn(SeekObjectData , storageErrCode(STATUS)) >
+    < TK : TAKernel | api-state : finished , api-return : apiReturn(SeekObjectData , storageErrCode(STATUS)) >
   if abnormalStorage(STATUS)
   .
 

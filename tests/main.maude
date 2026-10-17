@@ -16,24 +16,24 @@ mod TEST-DRIVER is
 
   op initTrustedOSwithNoKey : -> Configuration .
   eq initTrustedOSwithNoKey
-  = < osId : TeeOSKernel | sess : (sessionId(0) |-> testTa) , session-counter : 1 ,
+  = < osId : TrustedOS | sess : (sessionId(0) |-> testTa) , session-counter : 1 ,
                            service-request-ta-inst : noOid ,
                            service-in : nil , service-out : nil ,
                            temporary-objects : empty >
-    < oid(0, testTa) : Storage | status : storageNormal , files : empty , counter : 0 > .
+    < oid(0, testTa) : Storage | status : (normal).StorageStatus , files : empty , counter : 0 > .
 
   op initTrustedOS : -> Configuration .
   eq initTrustedOS
-  = < osId : TeeOSKernel | sess : (sessionId(0) |-> testTa) , session-counter : 1 ,
+  = < osId : TrustedOS | sess : (sessionId(0) |-> testTa) , session-counter : 1 ,
                            service-request-ta-inst : noOid ,
                            service-in : nil , service-out : nil ,
                            temporary-objects : empty >
-    < oid(0, testTa) : Storage | status : storageNormal , files : testFileId , counter : 0 > .
+    < oid(0, testTa) : Storage | status : (normal).StorageStatus , files : testFileId , counter : 0 > .
 
 
   op testKey : -> Configuration .
   eq testKey =
-    < persistentObjId : PersistentObject | type : TEE-TYPE-DATA , max-size : 0 Bits  ,
+    < persistentObjId : PersistentObject | type : pureData , max-size : 0  ,
                                            file-name : testFileId ,
                                            attributes : empty , usages : empty , data-stream-id : dataStreamId >
     < dataStreamId : DataStreamObject | data-size : dataSize(1) , content : newContent(attrContentData(randomAttrVal)) >
@@ -44,8 +44,8 @@ mod TEST-DRIVER is
   ---                                 invoke-req-queue : nil , invoke-ret-queue : nil > .
 
   op initTestTa : Program -> Configuration .
-  eq initTestTa(P) = < testTa : TrustApp | proc : none , prog : P , running : false ,
-                                           status : normal , api-call : noCall , api-return : noReturn ,
+  eq initTestTa(P) = < testTa : TrustedApp | proc : none , prog : P , running : false ,
+                                           status : (normal).AppStatus , api-call : noCall , api-return : noReturn ,
                                            current-api : noApi , api-state : noState , current-params : empty , counter : 0 ,
                                            storage : oid(0, testTa) , os-kernel : osId ,
                                                                                       client-service : clientService(testRa , main) ,

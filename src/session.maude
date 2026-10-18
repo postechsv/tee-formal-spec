@@ -37,21 +37,22 @@ omod SESSION-BEHAVIOR is
   vars TK RK : Oid .
   var KS : KConfig .
   var VL : ValueList .
+  var RET : ValueList .
 
 
   rl [handle-session-req] :
     < OI : Session | req : {HANDLE, FUNC, VL, TK} , ta-id : RK >
-    < RK : TrustedApp | task : noTask , prog : P , proc : none , running : false >
+    < RK : TrustedApp | proc : none , prog : P >
     =>
-    < OI : Session | >
-    < RK : TrustedApp | proc : run(syscalls P, FUNC, VL) , running : true >
+    < OI : Session | req : {HANDLE, FUNC, VL, TK} , ta-id : RK >
+    < RK : TrustedApp | proc : mkConf(syscalls P, FUNC, VL) , client-service : clientService(TK, FUNC) >
   .
 
-  rl [handle-session-req] :
+  crl [handle-session-req] :
     < OI : Session | req : {HANDLE, FUNC, VL, TK} , ret : noRet , ta-id : RK >
-    < RK : TrustedApp | task : noTask , proc : (k(.K) KS) , running : true >
+    < RK : TrustedApp | proc : (k(.K) KS) , client-service : clientService(TK, FUNC) >
     =>
-    < OI : Session | req : noReq , ret : {HANDLE, FUNC, TK, readReturn(FUNC, KS)}  >
-    < RK : TrustedApp | proc : none , running : false >
-  .
+    < OI : Session | req : noReq , ret : {HANDLE, FUNC, TK, RET} >
+    < RK : TrustedApp | proc : none , client-service : noClientService >
+  if RET := getVals(outVars(FUNC, KS), KS) .
 endom

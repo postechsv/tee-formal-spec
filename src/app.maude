@@ -6,10 +6,6 @@ omod PROGRAM-APP is
   pr K-CONFIG .
 
   class App | prog : Program, proc : KConfig .
-
---- Model/Implementation Specific Version
-  class ProgramApp | running : Bool .
-  subclass ProgramApp < App .
 endom
 
 --- This module defines auxiliary operators for App programs.
@@ -38,11 +34,6 @@ omod PROGRAM-APP-AUX is
   var BODY : K .
   var PARAMS : ExpList .
   var CS : Stmt .
-
-  op run : Program FuncId ValueList -> KConfig .
-  op readReturn : FuncId KConfig -> ValueList .
-
-  op mRet : -> Var [ctor] .
 
   op mkPreStmt : ExpList ValueList -> Stmt .
   op mkDecl : ImpType Var -> Stmt .
@@ -74,23 +65,35 @@ omod PROGRAM-APP-AUX is
 ---@dmc owise recurse(sep=_,_, empty=empty)
   eq getParams(FUNC, FMAP) = nil [owise] .
 
-  --- The return type of the entry function declares mRet.
-  op getRetType : FuncId Map{FuncSig,K} -> ImpType .
-  eq getRetType(FUNC, (T FUNC(PARAMS) |-> S , FMAP)) = T .
+  --- callFunc(P, FUNC, VL): declares the parameters of FUNC with their values VL (an output
+  --- parameter, passed by reference, is declared here, so the caller can read it back), and
+  --- then calls FUNC on them as a statement.
+  op callFunc : Program FuncId ValueList -> Stmt .
+  ceq callFunc(P, FUNC, VL) = mkPreStmt(PARAMS, VL) FUNC(XL) ;
+  if PARAMS := getParams(FUNC, mkFunMap(P)) /\ XL := getVars(PARAMS) .
 
-  ceq run(P , FUNC , VL) 
-    = mkInitConf(
-        T mRet ; 
-        P S 
-        mRet := FUNC (XL) ;
-      ) 
-  if PARAMS := getParams(FUNC, mkFunMap(P)) 
-  /\ T := getRetType(FUNC, mkFunMap(P))
-  /\ XL := getVars(PARAMS) /\ S := mkPreStmt(PARAMS, VL) .
-  
-  ceq readReturn(FUNC, KS env(ENV) store(MEM) fdecl(((T FUNC(PARAMS) |-> S) , FMAP))) 
-    = findAllValues((mRet,XL), ENV, MEM) 
-  if XL := getVars(PARAMS) . 
+  --- mkConf(P, FUNC, VL): the initial K configuration that runs P followed by callFunc.
+  op mkConf : Program FuncId ValueList -> KConfig .
+  eq mkConf(P, FUNC, VL) = mkInitConf(P callFunc(P, FUNC, VL)) .
+
+  --- The output parameters of a function are its pointer or reference parameters.
+  op isOutType : ImpType -> Bool .
+  eq isOutType(T *) = true .
+  eq isOutType(T &) = true .
+  ---@dmc owise enumerate(T)
+  eq isOutType(T) = false [owise] .
+
+  op getOutVars : ExpList -> VarList .
+  ceq getOutVars((T X, PARAMS)) = X , getOutVars(PARAMS) if isOutType(T) .
+  eq getOutVars((T X, PARAMS)) = getOutVars(PARAMS) [owise] .
+  eq getOutVars(nil) = nil .
+
+  op outVars : FuncId KConfig -> VarList .
+  eq outVars(FUNC, fdecl(FMAP) KS) = getOutVars(getParams(FUNC, FMAP)) .
+
+  --- getVals(XL, KS): the values of the variables XL in the environment of KS.
+  op getVals : VarList KConfig -> ValueList .
+  eq getVals(XL, env(ENV) store(MEM) KS) = findAllValues(XL, ENV, MEM) .
 
   op findAllValues : VarList Map{Var,Nat} Map{Nat,Value?} -> ValueList .
   eq findAllValues((X,XL), ENV, MEM) = findValue(X, ENV, MEM) , findAllValues(XL, ENV, MEM) .

@@ -79,53 +79,31 @@ omod TEE-CLIENT-API-BEHAVIOR is
   ---   < DEVID : Device | objects : {REE} | {< OSI : TeeOS | clean-objects : MOBJ > < TI : TrustedApp | status : normal > killTaFinish(RI , TI) TEE} >
   --- .
 
---- Version In Paper
-  --- crl [accept-smc-request] :
-  ---   smcReq(ARGS)
-  ---   < OS : TrustedOS | sess : SM >
-  ---   =>
-  ---   < OS : TrustedOS | >
-  ---   invkTa(TI , RI , ARGS)
-  --- if RI := getRequestor(ARGS) /\ TI := getTargetTa(ARGS , SM)
-  --- .
+  var FID : FuncId .
+  var RET : ValueList .
 
---- Model/Implementation Specific Version
-  rl [accept-smc-request-subroutine] :
-    smcReq(requestor(RI) invokeMessage({SID , FUNC , VL}))
-    < KI : TrustedOS | sess : (SID |-> TK , SMAP) >
+--- handle-smc-request: the TrustedOS forwards the SMC request to the TA of the session.
+  rl [handle-smc-request] :
+    < KI : TrustedOS | sess : (SID |-> TK , SMAP) > smcReq(RI, SID, FID, VL)
     =>
-    < KI : TrustedOS | >
-    invkTa(TK , {SID , FUNC , VL} , RI)
-  .
+    < KI : TrustedOS | > (msg invkTa[FID VL] from RI to TK) .
 
---- Version In Paper
-  --- crl [return-smc-request] :
-  ---   invkTaRet(RI , RES)
-  ---   < OS : TrustedOS | >
-  ---   =>
-  ---   < OS : TrustedOS | >
-  ---   smcRet(ARGS)
-  --- if ARGS := makeSmcArgs(RI , RES)
-  --- .
+--- handle-smc-request-finish: the TrustedOS returns the TA's output values as an SMC response.
+  rl [handle-smc-request-finish] :
+    < KI : TrustedOS | > (msg invkTaRet[RET] from TI to RI)
+    =>
+    < KI : TrustedOS | > smcRet(RI, RET) .
 
---- Model/Implementation Specific Version (2 rules)
-  rl [return-smc-request-subroutine] :
-    invkTaRet({SID , FUNC , VL} , RI)
+--- A TA that panics before answering returns target-dead to the client of its request.
+  rl [return-smc-request-panic] :
+    < TI : TrustedApp | status : panic, client-service : clientService(RI, FID) >
     < KI : TrustedOS | >
     =>
     < KI : TrustedOS | >
-    smcRet(requestor(RI) invokeMessage({SID , FUNC , VL}))
+    < TI : TrustedApp | status : panic, client-service : noClientService >
+    smcRet(RI, # errorTargetDead)
   .
 
-  rl [return-smc-request-subroutine] :
-    < TI : TrustedApp | status : panic, task : task({SID , FUNC , VL} , RI) >
-    < KI : TrustedOS | >
-    =>
-    < KI : TrustedOS | >
-    < TI : TrustedApp | status : panic, client-service : noClientService,
-                      task : noTask, state-changed : false >
-    smcRet(requestor(RI) invokeMessage({SID , FUNC , (# errorTargetDead, VL)}))
-  .
 endom
 
 omod TEE-INTERNAL-CLIENT-API-BEHAVIOR is

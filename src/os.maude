@@ -1,95 +1,55 @@
-fmod INVOKE-MESSAGE is
+--- This module defines calls to invoke TA (Appendix D.1 of the paper). The request
+--- invkTa[FID VL] carries the TA service FID and its argument values VL; the response
+--- invkTaRet[VL] carries the values of the output parameters.
+
+omod INVOKE-TA-CALL is
+  pr TEE-MSG .
+  pr IMP-FUNC-SIG .
+  pr IMP-EXP-LIST .
+
+  op invkTa[__] : APIFuncId ValueList -> Req [ctor] .
+  op invkTaRet[_] : ValueList -> Req [ctor] .
+endom
+
+--- This module defines SMC calls between REE and TEE execution environments.
+--- smcReq(RI, SID, FID, VL) is an SMC request of RA RI for service FID in session SID;
+--- smcRet(RI, VL) is the response carrying the output values VL.
+
+omod SECURE-MONITOR-CALL is
+  pr OBJECT-ID .
   pr SESSION-ID .
   pr IMP-FUNC-SIG .
   pr IMP-EXP-LIST .
 
-  sort InvokeMessage .
-
-  op {_,_,_} : SessionId FuncId ValueList -> InvokeMessage [ctor] .
-endfm
-
-view InvokeMessage from TRIV to INVOKE-MESSAGE is
-  sort Elt to InvokeMessage .
-endv
-
---- This module defines calls to invoke TA.
-
-omod INVOKE-TA-CALL is
-  pr OBJECT-ID .
-  pr INVOKE-MESSAGE .
-
-  msg invkTa : Oid InvokeMessage Oid -> Msg .
-  msg invkTaRet : InvokeMessage Oid -> Msg .
+  msg smcReq : Oid SessionId APIFuncId ValueList -> Msg .
+  msg smcRet : Oid ValueList -> Msg .
 endom
 
---- This module defines SMC arguments.
-
-omod SECURE-MONITOR-CALL-ARG is
-  pr TEE-CLIENT-API .
-  pr INVOKE-MESSAGE .
-
-  sort SmcArgument .
-
-  op invokeMessage : InvokeMessage -> SmcArgument [ctor] .
-  op requestor : Oid -> SmcArgument [ctor] .
-  op {_,_} : TeeClientApi ValueList -> SmcArgument [ctor] .
-endom
-
-view SmcArgument from TRIV to SECURE-MONITOR-CALL-ARG is
-  sort Elt to SmcArgument .
-endv
-
---- This module defines SMC calls between REE and TEE execution environments.
-
-omod SECURE-MONITOR-CALL is
-  pr LIST{SmcArgument} .
-
-  msg smcReq : List{SmcArgument} -> Msg .
-  msg smcRet : List{SmcArgument} -> Msg .
-endom
-
---- This module defines execution environments for REE and TEE.
+--- This module defines execution environments for REE and TEE (Appendix D.1 of the paper).
 
 mod EXECUTION-ENV is
   pr SECURE-MONITOR-CALL .
   inc CONFIGURATION .
 
-  sort Env .
+  sort Envs .
 
-  var ARGS : List{SmcArgument} .
   vars REE TEE : Configuration .
+  vars RI : Oid .
+  var SID : SessionId .
+  var FID : APIFuncId .
+  var VL : ValueList .
 
-  op {_} : Configuration -> Env [ctor] .
-  op _|_ : Env Env -> Env [format (d d n d)] .
-  
---- Version In Paper
-  --- rl [accept-smc-request] : 
-  ---   { REE smcReq(ARGS) } | { TEE } 
-  ---   => 
-  ---   { REE } | { TEE smcReq(ARGS) } 
-  --- . 
-  
-  --- rl [return-smc-request] : 
-  ---   { REE } | { TEE smcRet(ARGS) } 
-  ---   => 
-  ---   { REE smcRet(ARGS) } | { TEE } 
-  --- .
+  op {_}|{_} : Configuration Configuration -> Envs [ctor] .
 
---- Model/Implementation Specific Version (In Order)
-  ---@dmc keep-builtin
-  crl [accept-smc-request] :
-    { REE smcReq(ARGS) } | { TEE }
+  rl [accept-smc-request] :
+    {REE smcReq(RI, SID, FID, VL)} | {TEE}
     =>
-    { REE } | { TEE smcReq(ARGS) }
-  if TEE =/= none
-  .
+    {REE} | {TEE smcReq(RI, SID, FID, VL)} .
 
   rl [return-smc-request] :
-    { REE } | { TEE smcRet(ARGS) }
+    {REE} | {TEE smcRet(RI, VL)}
     =>
-    { REE smcRet(ARGS) } | { TEE }
-  .
-
+    {REE smcRet(RI, VL)} | {TEE} .
 endm
 
 --- This module defines storage status constants.
@@ -145,7 +105,6 @@ omod TEE-OS is
   pr SET{FileName} .
   pr MAP{AppId,ProgramCell} .
   pr MAP{SessionId,Oid} .
-  pr MAP{SessionId,List{SmcArgument}} .
   pr MAP{Oid,Set{Oid}} * (op undefined to noObject) .
   pr LIST{Service} .
   pr LIST{ServiceReturn} .
@@ -181,7 +140,7 @@ omod DEVICE is
   pr OBJECT-ID .
   pr EXECUTION-ENV .
 
-  class Device | execution-envs : Env .
+  class Device | execution-envs : Envs .
 
 endom
 

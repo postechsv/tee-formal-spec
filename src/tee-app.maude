@@ -1,15 +1,5 @@
 --- This file defines the abstract trusted application (TA) class and the commands it uses
 
-omod TASK is
-  pr INVOKE-MESSAGE .
-
-  sorts Task Task? .
-  subsort Task < Task? .
-
-  op task : InvokeMessage Oid -> Task [ctor] .
-  op noTask : -> Task? [ctor] .
-endom
-
 omod CLIENT-SERVICE is
   pr CONFIGURATION .
   pr IMP-FUNC-SIG .
@@ -27,13 +17,10 @@ endom
 omod TRUST-APP is
   pr PROGRAM-APP .
   pr TA-KERNEL .
-  pr TASK .
   pr CLIENT-SERVICE .
 
---- Implementation additions (not in the paper): task, task-counter, state-changed.
-  class TrustedApp | client-service : ClientService? ,
-                     task : Task?, task-counter : Nat, state-changed : Bool .
-  subclass TrustedApp < App TAKernel ProgramApp .
+  class TrustedApp | client-service : ClientService? .
+  subclass TrustedApp < App TAKernel .
 endom
 
 --- This module defines messages for TAs.
@@ -62,12 +49,11 @@ omod TRUST-APP-BEHAVIOR is
 
   var RI : Oid .
   var TI : Oid .
-  var SID : SessionId .
-  var FUNC : FuncId .
+  var FID : FuncId .
   var P : Program .
   var KS : KConfig .
   var VL : ValueList .
-  var N : Nat .
+  var RET : ValueList .
 
 --- Version In Paper
   --- crl [handle-invoke-ta] :
@@ -79,47 +65,24 @@ omod TRUST-APP-BEHAVIOR is
   --- if F := getFunc(ARGS) /\ VL := getParams(ARGS) 
   --- .
 
---- Model/Implementation Specific Version (2 rules)
---- Receive parameters from RA.
-
-  rl [accept-invoke-ta] :
-    invkTa(TI , {SID , FUNC , VL} , RI)
-    < TI : TrustedApp | task : noTask , running : false >
-    =>
-    < TI : TrustedApp | client-service : clientService(RI , FUNC) ,
-                      task : task({SID , FUNC , VL} , RI) >
-  .
-
---- Handle REE request by running TA program.
-
+--- invkTa[FID VL] from RI to TI (the TrustedOS forwards an SMC request). A TA that is
+--- available (proc : none) and normal starts to run the service FID with the values VL,
+--- and records the requesting client and service in client-service.
   rl [handle-invoke-ta] :
-    < TI : TrustedApp | task : task({SID , FUNC , VL} , RI) , task-counter : N ,
-                      proc : none , prog : P , running : false >
-    => 
-    < TI : TrustedApp | task-counter : N + 1 ,
-                      proc : run(syscalls P , FUNC , VL) , running : true > 
-  .
+    (msg invkTa[FID VL] from RI to TI)
+    < TI : TrustedApp | proc : none, prog : P, status : (normal).AppStatus >
+    =>
+    < TI : TrustedApp | proc : mkConf(syscalls P, FID, VL),
+                        client-service : clientService(RI, FID) > .
 
---- Version In Paper
-  --- crl [handle-invoke-ta-finish] :
-  ---   invkTa(TI , RI , ARGS)
-  ---   < TI : TrustedApp | proc : KS >
-  ---   => 
-  ---   < TI : TrustedApp | proc : none >
-  ---   invkTaRet(RI , RV)
-  --- if finished(KS) /\ RV := getRes(KS) /\ RI := getRequestor(ARGS) 
-  --- .
-
---- Model/Implementation Specific Version
---- Return REE request results.
-
-  rl [handle-invoke-ta-finish] :
-    < TI : TrustedApp | proc : (k(.K) KS) , task : task({SID , FUNC , VL} , RI) , running : true >
-    => 
-    < TI : TrustedApp | proc : none , client-service : noClientService ,
-                      task : noTask , running : false >
-    invkTaRet({SID , FUNC , readReturn(FUNC, KS)} , RI) 
-  .
+--- When the program has finished, the output values of the service are returned as
+--- invkTaRet, and the TA is available again.
+  crl [handle-invoke-ta-finish] :
+    < TI : TrustedApp | proc : (k(.K) KS), client-service : clientService(RI, FID) >
+    =>
+    < TI : TrustedApp | proc : none, client-service : noClientService >
+    (msg invkTaRet[RET] from TI to RI)
+  if RET := getVals(outVars(FID, KS), KS) .
 
 endom
 
@@ -159,7 +122,7 @@ omod TRUST-APP-IMP-BEHAVIOR is
                       api-call : noCall >
     =>
     < TI : TrustedApp | proc : (k($waitSysCall(TEEAPI) ~> K) KS) ,
-                      api-call : init(makeCall(TEEAPI , VL)), state-changed : false >
+                      api-call : init(makeCall(TEEAPI , VL)) >
   .
 
 --- Version In Paper
@@ -177,7 +140,7 @@ omod TRUST-APP-IMP-BEHAVIOR is
                       api-call : return(apiCall(TEEAPI , (retCode(RET) , PARAMS))) >
     =>
     < TI : TrustedApp | proc : (k(makeReturnStmt(TEEAPI , RET , PARAMS , EL) ~> K) KS) ,
-                      api-call : noCall, state-changed : false >
+                      api-call : noCall >
   .
 
 endom

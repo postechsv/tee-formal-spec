@@ -4,12 +4,16 @@ load ../cases/aux
 
 mod COMPLETION-TEST is
   pr TEE-BEHAVIOR .
+  pr TEE-IMP-BEHAVIOR .
   pr TEST-AUX .
   var C : Configuration .
   var TESTDIGEST : List{Data} .
   var CIPHERRESULT : List{Data} .
   var TESTMAC : List{Data} .
   var P : Program .
+  op serviceProg : -> Program .
+  op addService : -> FuncId [ctor] .
+  eq serviceProg = void addService (int srcKey, int destKey, int * res) { res := srcKey + destKey ; } .
 endm
 
 --- TeeOpenTASession creates a top-level session handle linked to its owner.
@@ -33,21 +37,25 @@ search [1] in COMPLETION-TEST :
       status : (normal).AppStatus, os-kernel : osId,
       storage : oid(0, oid(0, osId)), counter : 1,
       api-call : noCall,
-      prog : P, proc : none, running : false,
-      client-service : noClientService, task : noTask, task-counter : 0 >
+      prog : P, proc : none,
+      client-service : noClientService >
   < oid(0, oid(0, osId)) : Storage |
       status : (normal).StorageStatus, files : empty, counter : 0 >
   C .
 
---- A received invocation records the paper-level client/service pair.
+--- A received invocation runs the TA service to completion: the TA answers with invkTaRet
+--- carrying the output value of res (22), and it is available again with no client-service.
 search [1] in COMPLETION-TEST :
-  invkTa(testTa, {sessionId(0), main, nil}, testRa)
+  (msg invkTa[addService (# 10, # 12, # 0)] from testRa to testTa)
   < testTa : TrustedApp |
-      client-service : noClientService, task : noTask, running : false >
-=>1
+      proc : none, prog : serviceProg, client-service : noClientService,
+      status : (normal).AppStatus, storage : oid(0, testTa), os-kernel : osId,
+      counter : 0, api-call : noCall >
+=>+
+  (msg invkTaRet[# 22] from testTa to testRa)
   < testTa : TrustedApp |
-      client-service : clientService(testRa, main),
-      task : task({sessionId(0), main, nil}, testRa), running : false >
+      proc : none, client-service : noClientService, status : (normal).AppStatus,
+      AS2:AttributeSet >
   C .
 
 --- TeeInvokeTACommand resolves a top-level session handle in both directions.

@@ -54,15 +54,9 @@ omod CRYPTO-PANIC is
     < HANDLE : OperationHandle | >
   if not operationClassCompatible(API, OC) .
 
-  --- GP 6.2.6 forbids replacing or clearing a key while the operation is
-  --- initialized.  This also applies when key is TEE_HANDLE_NULL.
-  rl [set-operation-key-initialized-panic] :
-    < TK : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(SetOperationKey , (handle(HANDLE) , PARAMS))) >
-    < HANDLE : OperationHandle | state : handleState((init, HSF)) >
-    =>
-    < TK : TAKernel | status : panic >
-    < HANDLE : OperationHandle | >
-  .
+  --- No initialized-state panic for SetOperationKey: Fig. 11 of the paper has
+  --- SetOperationKey leave the INIT state (set or clear), so the operation-specific
+  --- rules in cryptographic.maude handle it.
 
   --- GP 6.2.7 applies the same initial-state precondition to the two-key API.
   rl [set-operation-key2-initialized-panic] :

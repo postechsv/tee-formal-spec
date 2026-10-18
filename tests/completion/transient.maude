@@ -57,6 +57,26 @@ search [1] in COMPLETION-TEST :
 =>*
   < testTa : TAKernel | status : panic, api-call : final(apiCall(CopyObjectAttributes1 , empty)) > C .
 
+--- Table 5-11 direction: the source may be a keypair and the destination its public key (App. A typeCompatible(source, destination)).
+search [1] in COMPLETION-TEST :
+  (msg setAttrs[^ typeRsaKeypair ^ (empty).Set{CryptoAttribute} ^ (empty).Set{Usage}] from testTa to oid(101, testTa))
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(apiCall(CopyObjectAttributes1 , empty)) >
+  < oid(1, testTa) : TransientObject | initialized : false,
+      type : typeRsaPublicKey, attributes : empty, usages : usageEncrypt >
+  < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa) >
+=>*
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : return(apiCall(CopyObjectAttributes1 , retCode(success))) > C .
+
+--- The reverse direction (a public key cannot populate a keypair) panics.
+search [1] in COMPLETION-TEST :
+  (msg setAttrs[^ typeRsaPublicKey ^ (empty).Set{CryptoAttribute} ^ (empty).Set{Usage}] from testTa to oid(101, testTa))
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(apiCall(CopyObjectAttributes1 , empty)) >
+  < oid(1, testTa) : TransientObject | initialized : false,
+      type : typeRsaKeypair, attributes : empty, usages : usageEncrypt >
+  < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa) >
+=>*
+  < testTa : TAKernel | status : panic, api-call : final(apiCall(CopyObjectAttributes1 , empty)) > C .
+
 --- GP 5.6.4: missing or unsupported attributes are programmer errors.
 search [1] in COMPLETION-TEST :
   (msg reqPopulateTransient[^ (empty).Set{CryptoAttribute}] from testTa to oid(101, testTa))

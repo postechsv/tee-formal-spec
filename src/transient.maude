@@ -25,8 +25,8 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
   var ATTRS : Set{CryptoAttribute} .
   vars IDS IDS2 : Set{AttrId} .
   var ID : AttrId .
-  var REF : AttrRef .
-  var VAL : AttrVal .
+  var REF : AttrId .
+  var VAL : AttrId .
   var V : AttrValue .
   vars OBJTYPE OBJTYPE' : Type .
   vars OBJUSAGES OBJUSAGES' : Set{Usage} .
@@ -398,16 +398,19 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 --- See page 149 of the G.P. documentation for more details.
 --- The following two rules creates a buffer attribute and a value attribute, respectively:
 
-  rl [init-ref-attribute] :
+  --- A buffer attribute is a reference attribute identifier, or secretValue.
+  crl [init-ref-attribute] :
     < TK : TAKernel | api-call : init(apiCall(InitRefAttribute , (constId(REF) , constVal(V)))) >
     =>
     < TK : TAKernel | api-call : return(apiCall(InitRefAttribute , (retCode(noReturnCode) , attrs(attr(REF , V))))) >
+  if (REF in refAttrIds) or (REF == secretValue)
   .
 
-  rl [init-value-attribute] :
+  crl [init-value-attribute] :
     < TK : TAKernel | api-call : init(apiCall(InitValueAttribute , (constId(VAL) , constVal(V)))) >
     =>
     < TK : TAKernel | api-call : return(apiCall(InitValueAttribute , (retCode(noReturnCode) , attrs(attr(VAL , V))))) >
+  if VAL in valAttrIds
   .
 
 ------------------------------------------------------------
@@ -420,25 +423,25 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 --- The flow follows Figure 27 and Table 17 of the paper: getAttrs to the source handle, retAttrs or getAttrsFail,
 --- setAttrs to the target handle, then setAttrsSuccess or setAttrsFail.
 
-  crl [copy-object-attrs-get-attrs] :
+  rl [copy-object-attrs-get-attrs] :
     < TK : TAKernel | api-call : init(apiCall(CopyObjectAttributes1 , (srcHandle(HANDLE2) , trgHandle(HANDLE1)))) >
     =>
     < TK : TAKernel | api-call : exec(apiCall(CopyObjectAttributes1 , (srcHandle(HANDLE2) , trgHandle(HANDLE1))) , 0) >
     (msg getAttrs[] from TK to HANDLE2)
-  if not nullHandle(HANDLE1) /\ not nullHandle(HANDLE2)
   .
 
-  --- Source is a transient object.  The source must be initialized (GP programmer error otherwise).
-  rl [copy-object-attrs-try-ret-attrs-transient] :
+  --- Paper (App. B.2): the source handle answers retAttrs when its object is initialized, and getAttrsFail otherwise.
+  --- Only a transient object carries an 'initialized' attribute (Sec. 3.1). A persistent source is always
+  --- treated as initialized (see the rule below), so the paper's rule is split by the source's class.
+  rl [copy-object-attrs-try-ret-attrs] :
     (msg getAttrs[] from TK to HANDLE)
     < HANDLE : ObjectHandle | oid : OI >
-    < OI : TransientObject | type : TYPE , attributes : ATTRS ,
-                             usages : USAGES , initialized : B >
+    < OI : TransObj | type : TYPE , attributes : ATTRS ,
+                      usages : USAGES , initialized : B >
     =>
     < HANDLE : ObjectHandle | >
-    < OI : TransientObject | >
-    (if B then (msg retAttrs[^ TYPE ^ ATTRS ^ USAGES] from HANDLE to TK)
-     else (msg getAttrsFail[] from HANDLE to TK) fi)
+    < OI : TransObj | >
+    (msg (if B then retAttrs[^ TYPE ^ ATTRS ^ USAGES] else getAttrsFail[] fi) from HANDLE to TK)
   .
 
   rl [copy-object-attrs-req-set-attrs] :
@@ -458,14 +461,13 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
     < TK : TAKernel | status : panic >
   .
 
-  --- Target handle: copy the attributes when the target is uninitialized and the types are compatible
-  --- See: (typeCompatible(target, source), as in the paper's copy rule).
+  --- Paper (App. B.2): the target copies the received attributes when it is uninitialized and the types are compatible.
   rl [copy-object-attrs-copy-attrs] :
     (msg setAttrs[^ TYPE' ^ ATTRS ^ USAGES'] from O to HI)
     < OI : TransientObject | type : TYPE , usages : USAGES , initialized : false >
     < HI : ObjectHandle | oid : OI >
     =>
-    (if typeCompatible(TYPE , TYPE')
+    (if typeCompatible(TYPE' , TYPE)
      then < OI : TransientObject | usages : intersection(USAGES , USAGES') ,
                                    initialized : true , attributes : ATTRS >
           (msg setAttrsSuccess[] from HI to O)

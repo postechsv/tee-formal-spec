@@ -10,7 +10,7 @@ omod GENERIC-OBJECT-BEHAVIOR is
   pr TEE-MSG .
   pr TRANSIENT-OBJECT .
   pr PERSISTENT-OBJECT .
-  pr DATA-STREAM-OBJECT .
+  pr DATA-STREAM-OPERATOR .
   pr OBJECT-HANDLE .
   pr HANDLE-AUX .
   pr TRUSTED-STORAGE-OBJECT-AUX .
@@ -32,6 +32,7 @@ omod GENERIC-OBJECT-BEHAVIOR is
   var DATAFLAGS : Set{DataAccessFlag} .
   var DATAPOS : DataPosition .
   var DATASIZE : DataSize .
+  var STREAMDATA : List{Data} .
   var HS : Configuration .
   var STATUS : StorageStatus .
   var INFO : TeeObjectInfo .
@@ -46,11 +47,12 @@ omod GENERIC-OBJECT-BEHAVIOR is
   op canAcquireAttr : AttrId Set{Usage} -> Bool .
   eq canAcquireAttr(ID , OBJUSAGES) = not (not publicType(ID) and not (protectedType(ID) and extractable(OBJUSAGES))) .
 
+  --- secretValue is an AttrId that is protected like the protected attribute identifiers.
   op protectedType : AttrId -> Bool .
-  eq protectedType(ID) = ID :: AttrProtected .
+  eq protectedType(ID) = (ID in protectedAttrIds) or (ID == secretValue) .
 
   op publicType : AttrId -> Bool .
-  eq publicType(ID) = ID :: AttrPublic .
+  eq publicType(ID) = ID in publicAttrIds .
 
   op extractable : Set{Usage} -> Bool .
   eq extractable(OBJUSAGES) = (usageExtractable) in OBJUSAGES .
@@ -61,7 +63,7 @@ omod GENERIC-OBJECT-BEHAVIOR is
 --- For TEE_GetObjectBufferAttribute
 
   op bufferType : AttrId -> Bool .
-  eq bufferType(ID) = ID :: AttrRef .
+  eq bufferType(ID) = (ID in refAttrIds) or (ID == secretValue) .
 
   --- AttrValue is atomic in this model, so every buffer attribute occupies one abstract unit.
   op attrContentSize : AttrValue -> DataSize .
@@ -80,7 +82,7 @@ omod GENERIC-OBJECT-BEHAVIOR is
 --- For TEE_GetObjectValueAttribute
 
   op valueType : AttrId -> Bool .
-  eq valueType(ID) = ID :: AttrVal .
+  eq valueType(ID) = ID in valAttrIds .
 
 ------------------------------------------------------------
 --- 'TEE_GetObjectInfo1'
@@ -131,16 +133,14 @@ omod GENERIC-OBJECT-BEHAVIOR is
     < oid(M, SI) : PersistentObject |
                               type : OBJTYPE, max-size : MAXOBJSIZE,
                               attributes : ATTRS, usages : OBJUSAGES,
-                              data-stream-id : DI >
+                              data-stream : STREAMDATA >
     < HANDLE : ObjectHandle | oid : oid(M, SI), flags : DATAFLAGS,
-                              pos : DATAPOS >
-    < DI : DataStreamObject | data-size : DATASIZE >
+                              pos : N >
     =>
     < oid(M, SI) : PersistentObject | >
     < HANDLE : ObjectHandle | >
-    < DI : DataStreamObject | >
     (msg retObjectInfoPr[^ OBJTYPE ^ keySize(ATTRS) ^ MAXOBJSIZE ^ OBJUSAGES ^
-                           DATASIZE ^ DATAPOS ^ DATAFLAGS] from HANDLE to TK)
+                           sizeOfData(STREAMDATA) ^ pos(N) ^ DATAFLAGS] from HANDLE to TK)
   .
 
   rl [get-obj-info-persistent-subroutine] :

@@ -17,12 +17,11 @@ omod PROGRAM-APP-AUX is
 
   var X : Var .
   var T U : ImpType .
-  var XL : VarList .
   var V : Value .
-  var L : Nat .
   var P : Program .
   var VL : ValueList .
   var KS : KConfig .
+  var K : K .
   var ENV : Map{Var,Nat} .
   var MEM : Map{Nat,Value?} .
   var FUNC : FuncId .
@@ -33,23 +32,12 @@ omod PROGRAM-APP-AUX is
   var FMAP : Map{FuncSig,K} .
   var BODY : K .
   var PARAMS : ExpList .
-  var CS : Stmt .
+  var PL : ExpList .
+  var XL : VarList .
+  var L : Nat .
 
-  op mkPreStmt : ExpList ValueList -> Stmt .
-  op mkDecl : ImpType Var -> Stmt .
-  --- A by-reference entry parameter is declared with its pointee type.
-  eq mkDecl(U *, X) = U X ; .
-  eq mkDecl(U &, X) = U X ; .
-  ceq mkDecl(T, X) = T X ; if not T :: RType .
-  eq mkPreStmt((T X, PARAMS), (V,VL)) = mkDecl(T, X) X := V ; mkPreStmt(PARAMS, VL) .
-  eq mkPreStmt(nil, nil) = skip .
-
-  op getVars : ExpList -> VarList .
-  eq getVars((T X, PARAMS)) = X , getVars(PARAMS) .
-  eq getVars(nil) = nil .
-
-  --- The function map holds user functions (their body is a Stmt) and trusted library
-  --- functions ($libFun, their body is internal K).
+--- The function map holds user functions (their body is a Stmt) and trusted library
+--- functions ($libFun, their body is internal K).
   op mkFunMap : Program -> Map{FuncSig,K} .
   eq mkFunMap(P) = mkFunMap(getSList(P)) .
 
@@ -65,19 +53,11 @@ omod PROGRAM-APP-AUX is
 ---@dmc owise recurse(sep=_,_, empty=empty)
   eq getParams(FUNC, FMAP) = nil [owise] .
 
-  --- callFunc(P, FUNC, VL): declares the parameters of FUNC with their values VL (an output
-  --- parameter, passed by reference, is declared here, so the caller can read it back), and
-  --- then calls FUNC on them as a statement.
-  op callFunc : Program FuncId ValueList -> Stmt .
-  ceq callFunc(P, FUNC, VL) = mkPreStmt(PARAMS, VL) FUNC(XL) ;
-  if PARAMS := getParams(FUNC, mkFunMap(P)) /\ XL := getVars(PARAMS) .
+--- getFuncParams(P, FUNC): the parameter list of the function FUNC declared in P.
+  op getFuncParams : Program FuncId -> ExpList .
+  eq getFuncParams(P, FUNC) = getParams(FUNC, mkFunMap(P)) .
 
-  --- entryConf(P, FUNC, VL): the initial configuration (mkConf) that runs P followed by
-  --- callFunc.
-  op entryConf : Program FuncId ValueList -> KConfig .
-  eq entryConf(P, FUNC, VL) = mkConf(P callFunc(P, FUNC, VL)) .
-
-  --- The output parameters of a function are its pointer or reference parameters.
+--- The output parameters of a function are its pointer or reference parameters.
   op isOutType : ImpType -> Bool .
   eq isOutType(T *) = true .
   eq isOutType(T &) = true .
@@ -89,10 +69,46 @@ omod PROGRAM-APP-AUX is
   eq getOutVars((T X, PARAMS)) = getOutVars(PARAMS) [owise] .
   eq getOutVars(nil) = nil .
 
-  op outVars : FuncId KConfig -> VarList .
-  eq outVars(FUNC, fdecl(FMAP) KS) = getOutVars(getParams(FUNC, FMAP)) .
+--- callFunc(P, FUNC, VL) (Fig 4 / App D.3): declares the output parameters of FUNC, each
+--- initialised with its entry of VL, and then calls FUNC.  An output parameter is passed by
+--- reference, so the caller reads it back after the call; an input parameter is passed
+--- with its value.  Only the output parameters are declared here.
+  op callFunc : Program FuncId ValueList -> K .
+  ceq callFunc(P, FUNC, VL) = outDecls(PARAMS, VL) ~> FUNC(callArgs(PARAMS, VL)) ;
+  if PARAMS := getFuncParams(P, FUNC) .
 
-  --- getVals(XL, KS): the values of the variables XL in the environment of KS.
+  op outDecls : ExpList ValueList -> K .
+  ceq outDecls((T X, PARAMS), (V, VL))
+    = hoistPExp(U X) ~> X := V ; ~> outDecls(PARAMS, VL)
+  if isOutType(T) /\ U := pointee(T) .
+  ---@dmc owise enumerate(T)
+  eq outDecls((T X, PARAMS), (V, VL)) = outDecls(PARAMS, VL) [owise] .
+  eq outDecls(nil, nil) = .K .
+
+  op callArgs : ExpList ValueList -> ExpList .
+  ceq callArgs((T X, PARAMS), (V, VL)) = X , callArgs(PARAMS, VL) if isOutType(T) .
+  ---@dmc owise enumerate(T)
+  eq callArgs((T X, PARAMS), (V, VL)) = V , callArgs(PARAMS, VL) [owise] .
+  eq callArgs(nil, nil) = nil .
+
+  op pointee : ImpType -> ImpType .
+  eq pointee(U *) = U .
+  eq pointee(U &) = U .
+
+--- mkConf(P, FUNC, VL) (App D.3): the initial configuration that runs the program P
+--- followed by callFunc(P, FUNC, VL) in the k cell, with all other cells empty.  The
+--- program is run only if it is well typed (the typing gate of mkConf(P)).
+  op mkConf : Program FuncId ValueList -> KConfig .
+  ceq mkConf(P, FUNC, VL)
+    = k(hoistK(getSList(P)) ~> $genv ~> P ~> callFunc(P, FUNC, VL)) env(empty) genv(empty)
+      store(empty) fdecl(empty) sdecl(empty) stack(nilStack) nextLoc(0)
+      labels(labelsOf(getSList(P))) arrlen(empty)
+  if wellTyped(P) = true .
+  ---@dmc keep-builtin
+  ceq mkConf(P, FUNC, VL) = illTyped if wellTyped(P) =/= true .
+
+--- The output values of a finished function: the values of its output variables, read
+--- from the environment of the configuration KS.
   op getVals : VarList KConfig -> ValueList .
   eq getVals(XL, env(ENV) store(MEM) KS) = findAllValues(XL, ENV, MEM) .
 

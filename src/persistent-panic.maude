@@ -3,6 +3,8 @@
 
 omod PERSISTENT-PANIC is
   inc GENERAL-PANIC .
+  pr TEE-MSG .
+  pr TEE-OS-BEHAVIOR .
 
   var TK : Oid .
   var HANDLE : Oid .
@@ -28,4 +30,20 @@ omod PERSISTENT-PANIC is
     < TK : TAKernel | status : panic >
     < HANDLE : ObjectHandle | >
   if not (accessWriteMeta in DATAFLAGS) .
+
+  --- The paper gives no rule for CreatePersistentObject when the storage status is abnormal (Fig. 10 only
+  --- covers a normal storage). Following the paper's other failure cases, the TA panics.
+  op create : -> ReqId [ctor] .
+  var ARGS : ArgList .
+  var SI : Oid .
+  var STATUS : StorageStatus .
+
+  crl [create-persistent-abnormal-storage-panic] :
+    (msg create[ARGS] from TK to SI)
+    < TK : TAKernel | status : (normal).AppStatus >
+    < SI : Storage | status : STATUS >
+    =>
+    < TK : TAKernel | status : panic >
+    < SI : Storage | >
+  if abnormalStorage(STATUS) .
 endom

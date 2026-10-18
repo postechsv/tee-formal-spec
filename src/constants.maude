@@ -109,13 +109,6 @@ endfm
 fmod TEE-ATTRIBUTE is
   pr NAT .
   sorts AttrId AttrValue CryptoAttribute .
-  sorts AttrPublicRef AttrProtectedRef AttrPublicVal .
-  sorts AttrPublic AttrProtected AttrVal AttrRef .
-  subsort AttrPublic AttrProtected AttrVal AttrRef < AttrId .
-  subsort AttrPublicRef AttrPublicVal < AttrPublic .
-  subsort AttrProtectedRef < AttrProtected .
-  subsort AttrPublicRef AttrProtectedRef < AttrRef .
-  subsort AttrPublicVal < AttrVal .
 
   op attr : AttrId AttrValue -> CryptoAttribute [ctor] .
   op randomAttrVal : -> AttrValue [ctor] .
@@ -126,56 +119,58 @@ fmod TEE-ATTRIBUTE is
 
 --- Table 6-15
 
-  op secretValue : -> AttrProtectedRef .
+  --- Paper (App. A): secretValue is an attribute identifier. Its protected classification (readable through
+  --- TEE_GetObjectBufferAttribute with extractable usage) is given by explicit equations in generic.maude.
+  op secretValue : -> AttrId [ctor] .
   
-  op rsaModulus : -> AttrPublicRef .
-  op rsaPublicExponent : -> AttrPublicRef .
-  op rsaPrivateExponent : -> AttrProtectedRef .
-  op rsaPrime1 : -> AttrProtectedRef .
-  op rsaPrime2 : -> AttrProtectedRef .
-  op rsaExponent1 : -> AttrProtectedRef .
-  op rsaExponent2 : -> AttrProtectedRef .
-  op rsaCoefficient : -> AttrProtectedRef .
+  op rsaModulus : -> AttrId [ctor] .
+  op rsaPublicExponent : -> AttrId [ctor] .
+  op rsaPrivateExponent : -> AttrId [ctor] .
+  op rsaPrime1 : -> AttrId [ctor] .
+  op rsaPrime2 : -> AttrId [ctor] .
+  op rsaExponent1 : -> AttrId [ctor] .
+  op rsaExponent2 : -> AttrId [ctor] .
+  op rsaCoefficient : -> AttrId [ctor] .
   
-  op dsaPrime : -> AttrPublicRef .
-  op dsaSubprime : -> AttrPublicRef .
-  op dsaBase : -> AttrPublicRef .
-  op dsaPublicValue : -> AttrPublicRef .
-  op dsaPrivateValue : -> AttrProtectedRef .
+  op dsaPrime : -> AttrId [ctor] .
+  op dsaSubprime : -> AttrId [ctor] .
+  op dsaBase : -> AttrId [ctor] .
+  op dsaPublicValue : -> AttrId [ctor] .
+  op dsaPrivateValue : -> AttrId [ctor] .
 
-  op dhPrime : -> AttrPublicRef .
-  op dhSubprime : -> AttrPublicRef .
-  op dhBase : -> AttrPublicRef .
-  op dhXBits : -> AttrPublicVal .
-  op dhPublicValue : -> AttrPublicRef .
-  op dhPrivateValue : -> AttrProtectedRef .
+  op dhPrime : -> AttrId [ctor] .
+  op dhSubprime : -> AttrId [ctor] .
+  op dhBase : -> AttrId [ctor] .
+  op dhXBits : -> AttrId [ctor] .
+  op dhPublicValue : -> AttrId [ctor] .
+  op dhPrivateValue : -> AttrId [ctor] .
 
-  op rsaOaepLabel : -> AttrPublicRef .
-  op rsaPssSaltLength : -> AttrPublicVal .
+  op rsaOaepLabel : -> AttrId [ctor] .
+  op rsaPssSaltLength : -> AttrId [ctor] .
 
-  op eccPublicValueX : -> AttrPublicRef .
-  op eccPublicValueY : -> AttrPublicRef .
-  op eccPrivateValue : -> AttrProtectedRef .
-  op eccCurve : -> AttrPublicVal .
+  op eccPublicValueX : -> AttrId [ctor] .
+  op eccPublicValueY : -> AttrId [ctor] .
+  op eccPrivateValue : -> AttrId [ctor] .
+  op eccCurve : -> AttrId [ctor] .
 
-  op ed25519Ctx : -> AttrPublicRef .
-  op ed25519PublicValue : -> AttrPublicRef .
-  op ed25519PrivateValue : -> AttrProtectedRef .
-  op ed25519Ph : -> AttrPublicVal .
+  op ed25519Ctx : -> AttrId [ctor] .
+  op ed25519PublicValue : -> AttrId [ctor] .
+  op ed25519PrivateValue : -> AttrId [ctor] .
+  op ed25519Ph : -> AttrId [ctor] .
 
-  op x25519PublicValue : -> AttrPublicRef .
-  op x25519PrivateValue : -> AttrProtectedRef .
+  op x25519PublicValue : -> AttrId [ctor] .
+  op x25519PrivateValue : -> AttrId [ctor] .
 
-  op ed448PublicValue : -> AttrPublicRef .
-  op ed448PrivateValue : -> AttrProtectedRef .
-  op x448PublicValue : -> AttrPublicRef .
-  op x448PrivateValue : -> AttrProtectedRef .
+  op ed448PublicValue : -> AttrId [ctor] .
+  op ed448PrivateValue : -> AttrId [ctor] .
+  op x448PublicValue : -> AttrId [ctor] .
+  op x448PrivateValue : -> AttrId [ctor] .
 
-  op sm2IdInitiator : -> AttrPublicRef .
-  op sm2IdResponder : -> AttrPublicRef .
-  op sm2KepUser : -> AttrPublicVal .
-  op sm2KepConfirmationIn : -> AttrPublicRef .
-  op sm2KepConfirmationOut : -> AttrPublicRef .
+  op sm2IdInitiator : -> AttrId [ctor] .
+  op sm2IdResponder : -> AttrId [ctor] .
+  op sm2KepUser : -> AttrId [ctor] .
+  op sm2KepConfirmationIn : -> AttrId [ctor] .
+  op sm2KepConfirmationOut : -> AttrId [ctor] .
 
 endfm
 
@@ -196,6 +191,14 @@ fmod TEE-ATTRIBUTE-AUX is
   var ATTRID : AttrId .
   var C : AttrValue .
   var ATTRS : Set{CryptoAttribute} .
+
+  --- Classes of the attribute identifiers.  Paper App. A declares every attribute identifier
+  --- as a constant of sort AttrId, so the classes are given by these sets, not by sorts.
+  ops publicAttrIds protectedAttrIds refAttrIds valAttrIds : -> Set{AttrId} .
+  eq publicAttrIds = (rsaModulus , rsaPublicExponent , dsaPrime , dsaSubprime , dsaBase , dsaPublicValue , dhPrime , dhSubprime , dhBase , dhXBits , dhPublicValue , rsaOaepLabel , rsaPssSaltLength , eccPublicValueX , eccPublicValueY , eccCurve , ed25519Ctx , ed25519PublicValue , ed25519Ph , x25519PublicValue , ed448PublicValue , x448PublicValue , sm2IdInitiator , sm2IdResponder , sm2KepUser , sm2KepConfirmationIn , sm2KepConfirmationOut) .
+  eq protectedAttrIds = (rsaPrivateExponent , rsaPrime1 , rsaPrime2 , rsaExponent1 , rsaExponent2 , rsaCoefficient , dsaPrivateValue , dhPrivateValue , eccPrivateValue , ed25519PrivateValue , x25519PrivateValue , ed448PrivateValue , x448PrivateValue) .
+  eq refAttrIds = (rsaModulus , rsaPublicExponent , rsaPrivateExponent , rsaPrime1 , rsaPrime2 , rsaExponent1 , rsaExponent2 , rsaCoefficient , dsaPrime , dsaSubprime , dsaBase , dsaPublicValue , dsaPrivateValue , dhPrime , dhSubprime , dhBase , dhPublicValue , dhPrivateValue , rsaOaepLabel , eccPublicValueX , eccPublicValueY , eccPrivateValue , ed25519Ctx , ed25519PublicValue , ed25519PrivateValue , x25519PublicValue , x25519PrivateValue , ed448PublicValue , ed448PrivateValue , x448PublicValue , x448PrivateValue , sm2IdInitiator , sm2IdResponder , sm2KepConfirmationIn , sm2KepConfirmationOut) .
+  eq valAttrIds = (dhXBits , rsaPssSaltLength , eccCurve , ed25519Ph , sm2KepUser) .
 
   op getAttrIds : Set{CryptoAttribute} -> Set{AttrId} .
   eq getAttrIds((attr(ATTRID , C) , ATTRS)) = (ATTRID , getAttrIds(ATTRS)) .
@@ -229,6 +232,13 @@ fmod CRYPTO-KEY-SIZE is
 
   eq keySize((attr(secretValue,
                            sizedAttrVal(N, MATERIAL)), ATTRS)) = N .
+
+  --- Total version for operations: an attribute set without sized secret material has key size 0.
+  op attrsKeySize : Set{CryptoAttribute} -> Nat .
+  eq attrsKeySize((attr(secretValue,
+                           sizedAttrVal(N, MATERIAL)), ATTRS)) = N .
+  ---@dmc owise recurse(sep=_,_, empty=empty)
+  eq attrsKeySize(ATTRS) = 0 [owise] .
 
 endfm
 

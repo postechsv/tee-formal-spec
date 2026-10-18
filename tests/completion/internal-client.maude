@@ -7,6 +7,10 @@ mod COMPLETION-TEST is
   pr TEE-IMP-BEHAVIOR .
   pr TEST-AUX .
   var C : Configuration .
+  var LOC : Nat .
+  var ENVM : Map{Var,Nat} .
+  var MEMM : Map{Nat,Value?} .
+  var KSM : KConfig .
   var TESTDIGEST : List{Data} .
   var CIPHERRESULT : List{Data} .
   var TESTMAC : List{Data} .
@@ -38,7 +42,7 @@ search [1] in COMPLETION-TEST :
       storage : oid(0, oid(0, osId)), counter : 1,
       api-call : noCall,
       prog : P, proc : none,
-      client-service : noClientService >
+      client-service : none >
   < oid(0, oid(0, osId)) : Storage |
       status : (normal).StorageStatus, files : empty, counter : 0 >
   C .
@@ -48,15 +52,24 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   (msg invkTa[addService (# 10, # 12, # 0)] from testRa to testTa)
   < testTa : TrustedApp |
-      proc : none, prog : serviceProg, client-service : noClientService,
+      proc : none, prog : serviceProg, client-service : none,
       status : (normal).AppStatus, storage : oid(0, testTa), os-kernel : osId,
       counter : 0, api-call : noCall >
 =>+
   (msg invkTaRet[# 22] from testTa to testRa)
   < testTa : TrustedApp |
-      proc : none, client-service : noClientService, status : (normal).AppStatus,
+      proc : none, client-service : none, status : (normal).AppStatus,
       AS2:AttributeSet >
   C .
+
+--- mkConf(P, FID, VL) (App. D.3) runs the program P and then callFunc(FID, VL): the output
+--- parameter res is declared with the value of its argument (0), and addService is called
+--- with the input values 3 and 4, so the output res is 7.
+search [1] in COMPLETION-TEST :
+  mkConf(serviceProg, addService, (# 3, # 4, # 0))
+=>+
+  k(.K) stack(nilStack) env((res |-> LOC) ; ENVM) store((LOC |-> # 7) ; MEMM) KSM:KConfig
+  .
 
 --- TeeInvokeTACommand resolves a top-level session handle in both directions.
 --- The session object is oid(1, testTa); its handle is oid(2, testTa).
@@ -73,4 +86,16 @@ search [1] in COMPLETION-TEST :
   < oid(2, testTa) : TaSessionHandle | oid : oid(1, testTa) >
 =>1
   (msg finishReqInvoke[^ main ^ (nil).ImpList] from oid(2, testTa) to testTa)
+  C .
+
+--- A TA that panics while serving the request of RA testRa returns target-dead to testRa,
+--- and the TA is left with no client-service.
+search [1] in COMPLETION-TEST :
+  < osId : TrustedOS | OSATTS:AttributeSet >
+  < testTa : TrustedApp | status : panic, client-service : {testRa, addService}, TAATTS:AttributeSet >
+  C
+=>1
+  smcRet(testRa, # errorTargetDead)
+  < osId : TrustedOS | OSATTS:AttributeSet >
+  < testTa : TrustedApp | status : panic, client-service : none, TAATTS:AttributeSet >
   C .

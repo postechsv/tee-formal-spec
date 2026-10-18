@@ -23,7 +23,6 @@ search [1] in TEST-AUX :
                            max-size : 128,
                            attributes : empty,
                            usages : empty,
-                           data-stream-id : oid(1, ta),
                            file-name : testFileId >
 =>*
   < ta : TAKernel | api-call : return(apiCall(OpenPersistentObject , (retCode(success) , handle(oid(0, ta))))) > .
@@ -56,7 +55,7 @@ search [1] in TEST-AUX :
 --- [BB-P-CP-1] create-persistent-success (transform transient)
 search [1] in TEST-AUX :
   < ta : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(CreatePersistentObject , (fileId(testFileId), handle(oid(1, ta)), flags(accessRead), data(nil), size(dataSize(0)), opt(null)))), storage : oid(0, ta), counter : 0 >
-  < oid(1, ta) : ObjectHandle | oid : t, flags : empty, pos : pos(0) >
+  < oid(1, ta) : ObjectHandle | oid : t, flags : empty, pos : 0 >
   < t : TransientObject | type : typeAes, max-size : 128, usages : usageEncrypt, attributes : attr(secretValue, randomAttrVal), initialized : true >
   < oid(0, ta) : Storage | status : (normal).StorageStatus, files : empty, counter : 0 >
 =>*
@@ -73,8 +72,7 @@ search [1] in TEST-AUX :
 search [1] in TEST-AUX :
   < ta : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(CreatePersistentObject , (fileId(testFileId), flags(accessRead), handle(null), data(nil), size(dataSize(0)), opt(null)))), storage : oid(0, ta), counter : 0 >
   < oid(0, ta) : Storage | status : (normal).StorageStatus, files : testFileId, counter : 0 >
-  < oid(0, oid(0, ta)) : PersistentObject | file-name : testFileId, data-stream-id : oid(1, oid(0, ta)) >
-  < oid(1, oid(0, ta)) : DataStreamObject | persistent-owner-id : oid(0, oid(0, ta)), data-size : dataSize(0), content : empty >
+  < oid(0, oid(0, ta)) : PersistentObject | file-name : testFileId, data-stream : nil >
 =>*
   < ta : TAKernel | api-call : return(apiCall(CreatePersistentObject , (retCode(errorAccessConflict) , handle(null)))) > .
 
@@ -84,12 +82,21 @@ search [1] in TEST-AUX :
 =>*
   < ta : TAKernel | api-call : return(apiCall(CreatePersistentObject , (retCode(errorOutOfMemory) , handle(null)))) > .
 
---- [BB-P-CP-5] create-persistent-storage-not-available
+--- [BB-P-CP-5] create-persistent-overwrite (paper Fig. 10: overwrite flag forwards create to the existing object)
+search [1] in TEST-AUX :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(CreatePersistentObject , (fileId(testFileId), flags((accessRead , overwrite)), handle(null), data(randomData), size(dataSize(1)), opt(null)))), storage : oid(0, ta), counter : 0 >
+  < oid(0, ta) : Storage | status : (normal).StorageStatus, files : testFileId, counter : 0 >
+  < oid(0, oid(0, ta)) : PersistentObject | file-name : testFileId, data-stream : nil >
+=>*
+  < ta : TAKernel | api-call : return(apiCall(CreatePersistentObject , (retCode(success) , handle(oid(0, oid(0, ta)))))) > .
+
+
+--- [BB-P-CP-6] create-persistent-abnormal-storage-panic (no paper rule: an abnormal storage status panics the TA)
 search [1] in TEST-AUX :
   < ta : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(CreatePersistentObject , (fileId(testFileId), flags(accessRead), handle(null), data(nil), size(dataSize(0)), opt(null)))), storage : oid(0, ta), counter : 0 >
-  < oid(0, ta) : Storage | status : (notAvailable).StorageStatus, files : empty, counter : 0 >
+  < oid(0, ta) : Storage | status : (corrupted).StorageStatus, files : empty, counter : 0 >
 =>*
-  < ta : TAKernel | api-call : return(apiCall(CreatePersistentObject , (retCode(errorStorageNotAvailable) , handle(null)))) > .
+  < ta : TAKernel | status : panic > .
 
 
 --- ============================================================
@@ -102,16 +109,11 @@ search [1] in TEST-AUX :
   < ta : TAKernel | status : (normal).AppStatus, api-call : final(apiCall(CloseAndDeletePersistentObject1 , handle(oid(2, ta)))), counter : 0, storage : oid(0, ta) >
   < oid(2, ta) : ObjectHandle | oid : oid(1, oid(0, ta)),
                                            flags : accessWriteMeta,
-                                           pos : pos(0) >
+                                           pos : 0 >
   < oid(1, oid(0, ta)) : PersistentObject | type : typeAes,
                            max-size : 128,
                            attributes : empty,
-                           usages : empty,
-                           data-stream-id : oid(4, ta), file-name : testFileId >
-  < oid(4, ta) : DataStreamObject | data-size : dataSize(0),
-                                     content : newContent(randomData),
-                                     persistent-owner-id : oid(1, oid(0, ta)),
-                                     device-owner-id : devId >
+                           usages : empty, file-name : testFileId >
 =>*
   < ta : TAKernel | api-call : return(apiCall(CloseAndDeletePersistentObject1 , retCode(success))) > .
 
@@ -138,12 +140,11 @@ search [1] in TEST-AUX :
   < ta : TAKernel | status : (normal).AppStatus, api-call : final(apiCall(RenamePersistentObject , (fileId(newTestFileId), handle(oid(106, ta))))), counter : 0, storage : oid(0, ta) >
   < oid(106, ta) : ObjectHandle | oid : oid(1, oid(0, ta)),
                                            flags : accessWriteMeta,
-                                           pos : pos(0) >
+                                           pos : 0 >
   < oid(1, oid(0, ta)) : PersistentObject | type : typeAes,
                            max-size : 128,
                            attributes : empty,
                            usages : empty,
-                           data-stream-id : oid(6, ta),
                            file-name : testFileId >
 =>*
   < ta : TAKernel | api-call : return(apiCall(RenamePersistentObject , retCode(success))) > .
@@ -167,9 +168,13 @@ search [1] in TEST-AUX :
 --- CopyObjectAttributes1 (persistent source)
 --- ============================================================
 
---- [BB-P-CO-1] copy-object-attributes-storage-not-available
+--- [BB-P-CO-1] copy-object-attributes-persistent-source (paper App. B.2: the single copy-object-attrs-try-ret-attrs rule
+--- answers from a persistent source; the copy then sets the attributes on the uninitialized transient target)
 search [1] in TEST-AUX :
-  (msg retStatus[^ (notAvailable).StorageStatus] from oid(0, ta) to ta)
-  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(apiCall(CopyObjectAttributes1 , empty) , 1), counter : 0 >
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(CopyObjectAttributes1 , (trgHandle(oid(3, ta)), srcHandle(oid(2, ta))))), counter : 0, storage : oid(0, ta) >
+  < oid(2, ta) : ObjectHandle | oid : oid(1, oid(0, ta)), flags : accessRead, pos : 0 >
+  < oid(1, oid(0, ta)) : PersistentObject | type : typeAes, max-size : 128, attributes : attr(secretValue, randomAttrVal), usages : usageEncrypt, file-name : testFileId >
+  < oid(3, ta) : ObjectHandle | oid : t, flags : empty, pos : 0 >
+  < t : TransientObject | type : typeAes, max-size : 128, usages : usageEncrypt, attributes : empty, initialized : false >
 =>*
-  < ta : TAKernel | api-call : return(apiCall(CopyObjectAttributes1 , retCode(errorStorageNotAvailable))) > .
+  < ta : TAKernel | api-call : return(apiCall(CopyObjectAttributes1 , retCode(success))) > .

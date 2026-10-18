@@ -12,72 +12,61 @@ mod COMPLETION-TEST is
   var P : Program .
 endm
 
---- ReadObjectData resolves and advances a top-level persistent handle.
+--- ReadObjectData (paper, App. B.1) removes the first fragment of the data stream of a top-level persistent handle.
 search [1] in COMPLETION-TEST :
-  (msg read[^ dataSize(1)] from testTa to oid(101, testTa))
+  (msg read[] from testTa to oid(101, testTa))
   < oid(1, oid(0, testTa)) : PersistentObject |
-      data-stream-id : oid(2, oid(0, testTa)) >
+      data-stream : randomData >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
       flags : accessRead,
-      pos : pos(0) >
-  < oid(2, oid(0, testTa)) : DataStreamObject | data-size : dataSize(1),
-      content : newContent(randomData) >
+      pos : 0 >
 =>*
   (msg retData[^ randomData] from oid(101, testTa) to testTa)
+  < oid(1, oid(0, testTa)) : PersistentObject |
+      data-stream : nil >
   C .
 
 --- WriteObjectData updates the top-level handle position and stream contents.
 search [1] in COMPLETION-TEST :
   (msg writeObjectData[^ randomData ^ oid(0, testTa)] from testTa to oid(101, testTa))
   < oid(1, oid(0, testTa)) : PersistentObject |
-      data-stream : nil, data-stream-id : oid(2, oid(0, testTa)) >
+      data-stream : nil >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
       flags : accessWrite,
-      pos : pos(0) >
-  < oid(2, oid(0, testTa)) : DataStreamObject | data-size : dataSize(0),
-      content : empty >
+      pos : 0 >
 =>*
-  (msg finishWriteData[] from oid(2, oid(0, testTa)) to testTa)
+  (msg finishWriteData[] from oid(101, testTa) to testTa)
   < oid(1, oid(0, testTa)) : PersistentObject |
-      data-stream : randomData, data-stream-id : oid(2, oid(0, testTa)) >
+      data-stream : randomData >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
       flags : accessWrite,
-      pos : pos(1) >
-  < oid(2, oid(0, testTa)) : DataStreamObject | data-size : dataSize(1),
-      content : (pos(0) |-> randomData) > .
+      pos : 1 > .
 
 --- TruncateObjectData updates a persistent stream through a top-level handle.
 search [1] in COMPLETION-TEST :
   (msg truncateObjectData[^ dataSize(3) ^ oid(0, testTa)] from testTa to oid(101, testTa))
   < oid(1, oid(0, testTa)) : PersistentObject |
-      data-stream : randomData, data-stream-id : oid(2, oid(0, testTa)) >
+      data-stream : randomData >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
       flags : accessWrite >
-  < oid(2, oid(0, testTa)) : DataStreamObject | data-size : dataSize(1),
-      content : newContent(randomData) >
 =>*
-  (msg finishTruncateData[] from oid(2, oid(0, testTa)) to testTa)
+  (msg finishTruncateData[] from oid(101, testTa) to testTa)
   < oid(1, oid(0, testTa)) : PersistentObject |
-      data-stream : (randomData zeroData zeroData),
-      data-stream-id : oid(2, oid(0, testTa)) >
+      data-stream : (randomData zeroData zeroData) >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
-      flags : accessWrite >
-  < oid(2, oid(0, testTa)) : DataStreamObject | data-size : dataSize(3),
-      content : (pos(0) |-> randomData, pos(1) |-> zeroData,
-                 pos(2) |-> zeroData) > .
+      flags : accessWrite > .
 
 --- SeekObjectData obtains the stream size and updates the top-level handle.
 search [1] in COMPLETION-TEST :
   (msg seekObjectData[^ 2 ^ seekEnd ^ oid(0, testTa)] from testTa to oid(101, testTa))
   < oid(1, oid(0, testTa)) : PersistentObject |
-      data-stream-id : oid(2, oid(0, testTa)) >
+      data-stream : (randomData zeroData zeroData) >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
-      pos : pos(0) >
-  < oid(2, oid(0, testTa)) : DataStreamObject | data-size : dataSize(3) >
+      pos : 0 >
 =>*
   (msg finishSeekData[] from oid(101, testTa) to testTa)
   < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
-      pos : pos(5) >
+      pos : 5 >
   C .
 
 --- The top-level seek path preserves the handle and reports position overflow.
@@ -85,10 +74,9 @@ search [1] in COMPLETION-TEST :
   (msg seekObjectData[^ 1 ^ seekCur ^ oid(0, testTa)] from testTa to oid(101, testTa))
   < testTa : TAKernel | api-call : final(apiCall(SeekObjectData , empty)) >
   < oid(1, oid(0, testTa)) : PersistentObject |
-      data-stream-id : oid(2, oid(0, testTa)) >
+      data-stream : nil >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
-      pos : pos(4294967295) >
-  < oid(2, oid(0, testTa)) : DataStreamObject | data-size : dataSize(1) >
+      pos : 4294967295 >
 =>*
   < testTa : TAKernel | api-call : return(apiCall(SeekObjectData , retCode(errorOverflow))) >
   C .
@@ -101,3 +89,22 @@ search [1] in COMPLETION-TEST :
   < testTa : TAKernel | status : panic, api-call : init(apiCall(ReadObjectData , (handle(oid(101, testTa)), size(dataSize(1))))) >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
       flags : accessWrite > .
+
+--- Writing and truncating need accessWrite; a handle without it panics (no paper rule: failure is a panic).
+search [1] in COMPLETION-TEST :
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(WriteObjectData , (handle(oid(101, testTa)), size(dataSize(1))))) >
+  < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
+      flags : accessRead >
+=>1
+  < testTa : TAKernel | status : panic, api-call : init(apiCall(WriteObjectData , (handle(oid(101, testTa)), size(dataSize(1))))) >
+  < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
+      flags : accessRead > .
+
+search [1] in COMPLETION-TEST :
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(TruncateObjectData , (handle(oid(101, testTa)), size(dataSize(1))))) >
+  < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
+      flags : accessRead > 
+=>1
+  < testTa : TAKernel | status : panic, api-call : init(apiCall(TruncateObjectData , (handle(oid(101, testTa)), size(dataSize(1))))) >
+  < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
+      flags : accessRead > .

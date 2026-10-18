@@ -5,11 +5,8 @@
 omod RICH-APP is
   pr PROGRAM-APP .
 
-  class RA .
-  subclass RA < App .
-
   class RichApp .
-  subclass RichApp < RA .
+  subclass RichApp < App .
 endom
 
 --- This module defines basic behaviours for rich application.
@@ -45,16 +42,16 @@ omod RICH-APP-BEHAVIOR is
 
 --- invoke-ta-smc: the $in task of TEEC_InvokeCommand creates the SMC request.
   rl [invoke-ta-smc] :
-    < RI : RichApp | proc : (k($in(# SID , # FID , VL) ~> $waitSysCall(TeecInvokeCommand) ~> K) KS) >
+    < RI : RichApp | proc : (k($in(# SID , # FID , VL) ~> $wait(teecInvokeCommand) ~> K) KS) >
     =>
-    < RI : RichApp | proc : (k($waitSysCall(TeecInvokeCommand) ~> K) KS) >
+    < RI : RichApp | proc : (k($wait(teecInvokeCommand) ~> K) KS) >
     smcReq(RI, SID, FID, VL)
   .
 
 --- invoke-ta-finish: the SMC response assigns the output values to the output expressions.
   rl [invoke-ta-finish] :
     smcRet(RI, RET)
-    < RI : RichApp | proc : (k($waitSysCall(TeecInvokeCommand) ~> $out(OUT) ~> K) KS) >
+    < RI : RichApp | proc : (k($wait(teecInvokeCommand) ~> $out(OUT) ~> K) KS) >
     =>
     < RI : RichApp | proc : (k(assign(OUT, RET) ~> K) KS) >
   .

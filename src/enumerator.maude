@@ -16,7 +16,7 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
   pr ID-GEN .
   pr TA-KERNEL .
   pr PERSISTENT-OBJECT .
-  pr DATA-STREAM-OBJECT .
+  pr DATA-STREAM-OPERATOR .
   pr ENUMERATOR-OBJECT .
   pr ENUMERATOR-OBJECT-FUNC .
   pr TEE-MSG .
@@ -37,6 +37,7 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
   var ATTRS : Set{CryptoAttribute} .
   var OBJUSAGES : Set{Usage} .
   var DATASIZE : DataSize .
+  var STREAMDATA : List{Data} .
   var INFO : TeeObjectInfo .
   var PARAMS : Set{TeeApiParam} .
   var STORID : StorageIdentifier .
@@ -307,13 +308,11 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
   rl [get-next-persistent-subroutine] :
     (msg reqNextObject[^ FILE] from TK to SI)
     < oid(M, SI) : PersistentObject | type : OBJTYPE , max-size : MAXOBJSIZE , attributes : ATTRS ,
-                              usages : OBJUSAGES , data-stream-id : DI ,
+                              usages : OBJUSAGES , data-stream : STREAMDATA ,
                               file-name : FILE >
-    < DI : DataStreamObject | data-size : DATASIZE >
     =>
     < oid(M, SI) : PersistentObject | >
-    < DI : DataStreamObject | >
-    (msg retNextObject[^ teeObjectInfo(OBJTYPE , keySize(ATTRS) , MAXOBJSIZE , OBJUSAGES , DATASIZE , pos(0) , empty)] from SI to TK)
+    (msg retNextObject[^ teeObjectInfo(OBJTYPE , keySize(ATTRS) , MAXOBJSIZE , OBJUSAGES , sizeOfData(STREAMDATA) , pos(0) , empty)] from SI to TK)
   .
 
   rl [get-next-persistent-success] :

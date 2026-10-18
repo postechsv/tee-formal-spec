@@ -318,7 +318,7 @@ fmod IMP-INTERNAL is
   op $libFun : FuncSig K -> LibFun [ctor] .
 
   op $setLoc : Var Nat -> IStmt [ctor] .
-  op $waitSysCall : TeeApi -> IStmt [ctor] .
+  op $wait : TeeApi -> IStmt [ctor] .
   op $assign : ExpList ExpList -> IStmt [ctor] .
   op $prep(_) : ExpList -> IStmt [ctor] .
   op $in(_) : ValueList -> IStmt [ctor] .
@@ -1117,7 +1117,7 @@ mod IMP-SEMANTICS is
   var G : Map{Var,Nat} .
   var VT : ConcBType .
   var RT : RType .
-  var VA : Value .
+  var VA VS : Value .
   var PX : PExp .
   var PVL PEL : PVList .
 
@@ -1133,17 +1133,17 @@ mod IMP-SEMANTICS is
 ---   * while unrolling (an unbounded loop would make equational reduction diverge);
 ---   * call entry, argument binding and return (they push and pop frames);
 ---   * steps that interact with the TEE (tee-app.maude, tee-api-call.maude,
----     $waitSysCall, $in, $out, ree-app.maude).
+---     $wait, $in, $out, ree-app.maude).
 --- Equations never overlap: each left-hand side is a distinct head of the k cell,
 --- and where two left-hand sides share a head their conditions are disjoint.
 
---- Variable reads and lvalues.  A read of an undef store cell has no equation (the
---- condition V :: Value fails), so the program is stuck on the read.
-  ceq [lookup]: k({ X } ~> K) env((X |-> L) ; ENV) store((L |-> V) ; MEM)
-   = k({ V } ~> K) env((X |-> L) ; ENV) store((L |-> V) ; MEM) if V :: Value .
+--- Variable reads and lvalues (rules, as in Fig 3).  A read of an undef store cell (the
+--- sort Value does not match undef), so no rule applies and the program is stuck on the read.
+  rl [lookup]: k({ X } ~> K) env((X |-> L) ; ENV) store((L |-> VS) ; MEM)
+   => k({ VS } ~> K) env((X |-> L) ; ENV) store((L |-> VS) ; MEM) .
 
-  eq [lookup-lv]: k({ lvalue(X) } ~> K) env((X |-> L) ; ENV)
-   = k({ loc(L) } ~> K) env((X |-> L) ; ENV) .
+  rl [lookup-lv]: k({ lvalue(X) } ~> K) env((X |-> L) ; ENV)
+   => k({ loc(L) } ~> K) env((X |-> L) ; ENV) .
 
 --- Struct members: a member is a location of the struct's sobj entry.
   ceq [member-read]: k({ loc(L) . X } ~> K) store((L |-> sobj((X |-> N) ; SO)) ; (N |-> V) ; MEM)
@@ -1153,8 +1153,8 @@ mod IMP-SEMANTICS is
 
 --- Assignment to a location (the value is already evaluated).
 --- An assignment only updates an existing entry (L |-> W): alloc always runs before it.
-  ceq [assign]: k(loc(L) := V ; ~> K) store((L |-> V') ; MEM)
-   = k(K) store((L |-> V) ; MEM) if not V :: SObj .
+  crl [assign]: k(loc(L) := V ; ~> K) store((L |-> V') ; MEM)
+   => k(K) store((L |-> V) ; MEM) if not V :: SObj .
 --- Struct assignment copies the members: the target keeps its own locations.
   eq k(loc(L) := sobj(SO2) ; ~> K) store((L |-> sobj(SO1)) ; MEM)
    = k(K) store((L |-> sobj(SO1)) ; copyMembers(SO1, SO2, MEM)) .
@@ -1190,8 +1190,8 @@ mod IMP-SEMANTICS is
 
 --- Conditional.  A branch is a block: it runs in the environment of the if, and
 --- its marker restores that environment when the branch ends (block scoping).
-  eq [if-true]: k(if (# true)  {S} else {S'} ~> K) env(ENV) = k(hoistK(getSList(S))  ~> S  ~> $restoreEnv(ENV) ~> K) env(ENV) .
-  eq [if-false]: k(if (# false) {S} else {S'} ~> K) env(ENV) = k(hoistK(getSList(S')) ~> S' ~> $restoreEnv(ENV) ~> K) env(ENV) .
+  rl [if-true]: k(if (# true)  {S} else {S'} ~> K) env(ENV) => k(hoistK(getSList(S))  ~> S  ~> $restoreEnv(ENV) ~> K) env(ENV) .
+  rl [if-false]: k(if (# false) {S} else {S'} ~> K) env(ENV) => k(hoistK(getSList(S')) ~> S' ~> $restoreEnv(ENV) ~> K) env(ENV) .
   eq k($restoreEnv(ENV') ~> K) env(ENV) = k(K) env(ENV') .
 
 --- Loop.  Rule: unrolling a loop is not bounded, so it is not an equation.
@@ -1285,10 +1285,10 @@ mod IMP-SEMANTICS is
 
 --- Return statement (rules: they pop frames).
 
-  rl k(return V ; ~> K) env(ENV) stack(item(ENV',LM',K',L') |> STACK) nextLoc(L) labels(LM)
+  rl [fRetn]: k(return V ; ~> K) env(ENV) stack(item(ENV',LM',K',L') |> STACK) nextLoc(L) labels(LM)
   => k({ V } ~> K') env(ENV') stack(STACK) nextLoc(L') labels(LM') .
 
-  rl k(.K) env(ENV) stack(item(ENV',LM',K',L') |> STACK) nextLoc(L) labels(LM)
+  rl [fQuit]: k(.K) env(ENV) stack(item(ENV',LM',K',L') |> STACK) nextLoc(L) labels(LM)
   => k(K') env(ENV') stack(STACK) nextLoc(L') labels(LM') . --- for void return
 
 --- End of the argument preparation of a syscall.

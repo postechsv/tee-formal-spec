@@ -1,12 +1,12 @@
 --- This file defines behaviors of data stream APIs.
 
 --- This module defines the data stream access APIs, defined in chapter 5 section 9 of G.P. documentation.
+--- The data stream of a persistent object is the list of its data fragments (paper, Sec. 3.1, PersistObj).
 
 omod DATA-STREAM-OBJECT-BEHAVIOR is
   pr ID-GEN .
   pr TA-KERNEL .
   pr PERSISTENT-OBJECT .
-  pr DATA-STREAM-OBJECT .
   pr DATA-STREAM-OPERATOR .
   pr DATA-STREAM-SEEK-TYPE .
   pr DATA-STREAM-OBJECT-FUNC .
@@ -19,22 +19,24 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   var HANDLE : Oid .
   var SI : Oid .
   var M : Nat .
-  var DATAPOS : DataPosition .
-  vars DS DATASIZE : DataSize .
+  var N : Nat .
+  var DATAPOS : Nat .
+  var DATASIZE : DataSize .
   var OFST : Int .
   var WHENCE : SeekType .
   var DATA : List{Data} .
-  var DM : Map{DataPosition,Data} .
+  var STREAM : List{Data} .
+  var D : Data .
   var DATAFLAGS : Set{DataAccessFlag} .
+  var FLAGS : Set{DataAccessFlag} .
   var STATUS : StorageStatus .
   var HS : Configuration .
   var HI : Oid .
-  var FLAGS : Set{DataAccessFlag} .
+  var PI : Oid .
   var PARAMS : Set{TeeApiParam} .
 
   op ^_ : Int -> Arg [ctor] .
   op ^_ : SeekType -> Arg [ctor] .
-  op ^_ : Map{DataPosition,Data} -> Arg [ctor] .
 
 ------------------------------------------------------------
 --- Auxilary Functions
@@ -58,48 +60,43 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 --- 'TEE_ReadObjectData'
 ------------------------------------------------------------
 
---- The 'TEE_ReadObjectData' function attempts to read size bytes from the data stream associated with the object into the buffer. 
+--- The 'TEE_ReadObjectData' function reads the first data fragment of the data stream of the persistent object (Appendix B.1).
 --- See page 171 of the G.P. documentation for more details.
---- The read path follows Appendix B.1 of the paper: the TA sends getStatus to the storage, the storage answers retStatus
---- The storage side is in os-service.maude. The TA then sends read to the handle, and the handle answers retData.
+--- The TA sends getStatus to the storage. If the storage status is normal, the TA sends read to the handle, and the handle
+--- returns the fragment with retData. The read is destructive: it removes the fragment from the data stream.
 
   op read : -> ReqId [ctor] .
   op retData : -> ReqId [ctor] .
 
   rl [read-object-data-get-storage-status] :
     < TK : TAKernel | status : (normal).AppStatus ,
-                      api-call : init(apiCall(ReadObjectData , (handle(HI) , size(DATASIZE)))) , storage : SI >
-    => 
-    < TK : TAKernel | api-call : exec(apiCall(ReadObjectData , (handle(HI) , size(DATASIZE))) , 0) >
-    (msg getStatus[] from TK to SI) 
-  .
-
-  rl [read-object-data-storage-status-check] : 
-    (msg retStatus[^ STATUS] from SI to TK) 
-    < TK : TAKernel | status : (normal).AppStatus ,
-                      api-call : exec(apiCall(ReadObjectData , (handle(HI) , size(DATASIZE))) , 0) >
-  => 
-    if STATUS == normal 
-    then < TK : TAKernel | api-call : final(apiCall(ReadObjectData , (handle(HI) , size(DATASIZE)))) > 
-         (msg read[^ DATASIZE] from TK to HI)
-    else < TK : TAKernel | api-call : return(apiCall(ReadObjectData , retCode(storageErrCode(STATUS)))) > fi 
-  .
-
---- This rule returns TEE_ERROR_CORRUPT_OBJECT if the object is corrupt.
---- This rule returns TEE_ERROR_STORAGE_NOT_AVAILABLE if the persistent object is stored in a storage area which is currently inaccessible.
---- See: (The storage status check above returns these errors; abnormal statuses are handled by the same branch.)
-
-  crl [read-object-data-from-persist] :
-    (msg read[^ DATASIZE] from TK to HANDLE)
-    < oid(M, SI) : PersistentObject | data-stream-id : DI >
-    < HANDLE : ObjectHandle | oid : oid(M, SI), flags : DATAFLAGS, pos : DATAPOS >
-    < DI : DataStreamObject | data-size : DS , content : DM >
+                      api-call : init(apiCall(ReadObjectData , (handle(HI) , PARAMS))) , storage : SI >
     =>
-    < oid(M, SI) : PersistentObject | >
-    < HANDLE : ObjectHandle | pos : updatePos(DATAPOS, DATASIZE, DS) >
-    < DI : DataStreamObject | >
-    (msg retData[^ read(DATAPOS, DATASIZE, DM)] from HANDLE to TK)
-  if isReadable(DATAFLAGS)
+    < TK : TAKernel | api-call : exec(apiCall(ReadObjectData , (handle(HI) , PARAMS)) , 0) >
+    (msg getStatus[] from TK to SI)
+  .
+
+  rl [read-object-data-storage-status-check] :
+    (msg retStatus[^ STATUS] from SI to TK)
+    < TK : TAKernel | status : (normal).AppStatus ,
+                      api-call : exec(apiCall(ReadObjectData , (handle(HI) , PARAMS)) , 0) >
+  =>
+    if STATUS == normal
+    then < TK : TAKernel | api-call : final(apiCall(ReadObjectData , (handle(HI) , PARAMS))) >
+         (msg read[] from TK to HI)
+    else < TK : TAKernel | api-call : return(apiCall(ReadObjectData , retCode(storageErrCode(STATUS)))) > fi
+  .
+
+--- The handle with the read access flag removes the first data fragment from the data stream of its object and returns it (paper, App. B.1).
+
+  rl [read-object-data-from-persist] :
+    (msg read[] from TK to HI)
+    < HI : ObjHandle | oid : PI , flags : (accessRead , FLAGS) >
+    < PI : PersistObj | data-stream : D STREAM >
+  =>
+    < HI : ObjHandle | >
+    < PI : PersistObj | data-stream : STREAM >
+    (msg retData[^ D] from HI to TK)
   .
 
   rl [read-object-data-success] :
@@ -115,18 +112,16 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 
 --- The 'TEE_WriteObjectData' function reads size bytes of data from the buffer and writes the data to the data stream object.
 --- See page 173 of the G.P. documentation for more details.
+--- The paper gives no rule for this function. The data fragments are written at the handle position, which advances by
+--- the number of written fragments.
 
   op writeObjectData : -> ReqId [ctor] .
-  op writeObjectDataTop : -> ReqId [ctor] .
-  op writeObjectStreamTop : -> ReqId [ctor] .
-  op writeObjectOwnerTop : -> ReqId [ctor] .
-  op writeDataStreamTop : -> ReqId [ctor] .
   op writeObjectOverflowTop : -> ReqId [ctor] .
   op finishWriteData : -> ReqId [ctor] .
 
   rl [write-object-data-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(apiCall(WriteObjectData , PARAMS)) , storage : SI >
-    => 
+    =>
     < TK : TAKernel | api-call : exec(apiCall(WriteObjectData , PARAMS) , 0) >
     (msg getStatus[] from TK to SI)
   .
@@ -134,117 +129,22 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   rl [write-object-data-subroutine] :
     (msg retStatus[^ (normal).StorageStatus] from SI to TK)
     < TK : TAKernel | status : (normal).AppStatus ,
-                      api-call : exec(apiCall(WriteObjectData , (handle(HANDLE) , data(DATA))) , 0) ,
+                      api-call : exec(apiCall(WriteObjectData , (handle(HI) , data(DATA))) , 0) ,
                       storage : SI >
     =>
-    < TK : TAKernel | api-call : final(apiCall(WriteObjectData , (handle(HANDLE) , data(DATA)))) >
-    (msg writeObjectData[^ DATA ^ SI] from TK to HANDLE)
+    < TK : TAKernel | api-call : final(apiCall(WriteObjectData , (handle(HI) , data(DATA)))) >
+    (msg writeObjectData[^ DATA ^ SI] from TK to HI)
   .
 
   crl [write-object-data-top-level-handle] :
     (msg writeObjectData[^ DATA ^ SI] from TK to HANDLE)
-    < oid(M, SI) : PersistentObject |
-                              data-stream-id : DI >
-    < HANDLE : ObjectHandle | oid : oid(M, SI), flags : DATAFLAGS,
-                              pos : DATAPOS >
-    < DI : DataStreamObject | data-size : DS , content : DM >
+    < oid(M, SI) : PersistentObject | data-stream : STREAM >
+    < HANDLE : ObjectHandle | oid : oid(M, SI), flags : DATAFLAGS, pos : DATAPOS >
     =>
-    < oid(M, SI) : PersistentObject |
-      data-stream : read(pos(0), updateSize(DS, DATAPOS, sizeOfData(DATA)),
-        writeStream(DATA, DATAPOS, DS, DM)) >
-    < HANDLE : ObjectHandle |
-      pos : advancePos(DATAPOS, sizeOfData(DATA)) >
-    < DI : DataStreamObject |
-      data-size : updateSize(DS, DATAPOS, sizeOfData(DATA)),
-      content : writeStream(DATA, DATAPOS, DS, DM) >
-    (msg finishWriteData[] from DI to TK)
-  if isWritable(DATAFLAGS) /\ withinMaxPosition(advancePos(DATAPOS, sizeOfData(DATA)))
-  .
-
-  rl [write-object-data-top-level-resolve-owner] :
-    (msg writeObjectData[^ DATA ^ SI] from TK to HANDLE)
-    < oid(M, SI) : PersistentObject |
-                              data-stream-id : DI >
-    =>
-    < oid(M, SI) : PersistentObject | >
-    (msg writeObjectDataTop[^ DATA ^ SI ^ oid(M, SI) ^ DI] from TK to HANDLE)
-  .
-
-  crl [write-object-data-top-level-update-handle] :
-    (msg writeObjectDataTop[^ DATA ^ SI ^ OI ^ DI] from TK to HANDLE)
-    < HANDLE : ObjectHandle | oid : OI, flags : DATAFLAGS,
-                              pos : DATAPOS >
-    =>
-    < HANDLE : ObjectHandle |
-      pos : advancePos(DATAPOS, sizeOfData(DATA)) >
-    (msg writeObjectStreamTop[^ DATA ^ DATAPOS ^ OI ^ DI] from TK to OI)
-  if isWritable(DATAFLAGS) /\ withinMaxPosition(advancePos(DATAPOS, sizeOfData(DATA)))
-  .
-
-  crl [write-object-data-top-level-detect-overflow] :
-    (msg writeObjectDataTop[^ DATA ^ SI ^ OI ^ DI] from TK to HANDLE)
-    < HANDLE : ObjectHandle | oid : OI, flags : DATAFLAGS,
-                              pos : DATAPOS >
-    =>
-    < HANDLE : ObjectHandle | >
-    (msg writeObjectOverflowTop[] from HANDLE to TK)
-  if isWritable(DATAFLAGS) /\ not withinMaxPosition(advancePos(DATAPOS, sizeOfData(DATA)))
-  .
-
-  rl [write-object-data-top-level-update-stream] :
-    (msg writeObjectStreamTop[^ DATA ^ DATAPOS ^ OI ^ DI] from TK to OI)
-    < OI : PersistentObject | >
-    < DI : DataStreamObject | data-size : DS, content : DM >
-    =>
-    < OI : PersistentObject |
-      data-stream : read(pos(0), updateSize(DS, DATAPOS, sizeOfData(DATA)),
-        writeStream(DATA, DATAPOS, DS, DM)) >
-    < DI : DataStreamObject |
-      data-size : updateSize(DS, DATAPOS, sizeOfData(DATA)),
-      content : writeStream(DATA, DATAPOS, DS, DM) >
-    (msg finishWriteData[] from DI to TK)
-  .
-
-  rl [write-object-data-top-level-resolve-stream] :
-    (msg writeObjectStreamTop[^ DATA ^ DATAPOS ^ OI ^ DI] from TK to OI)
-    < DI : DataStreamObject | data-size : DS, content : DM >
-    =>
-    < DI : DataStreamObject | >
-    (msg writeObjectOwnerTop[^ DATA ^ DATAPOS ^ OI ^ DI ^ DS ^ DM] from TK to OI)
-  .
-
-  rl [write-object-data-top-level-update-owner] :
-    (msg writeObjectOwnerTop[^ DATA ^ DATAPOS ^ OI ^ DI ^ DS ^ DM] from TK to OI)
-    < OI : PersistentObject | data-stream-id : DI >
-    =>
-    < OI : PersistentObject |
-      data-stream : read(pos(0), updateSize(DS, DATAPOS, sizeOfData(DATA)),
-        writeStream(DATA, DATAPOS, DS, DM)) >
-    (msg writeDataStreamTop[^ DATA ^ DATAPOS ^ DI] from TK to DI)
-  .
-
-  rl [write-object-data-top-level-update-data-stream] :
-    (msg writeDataStreamTop[^ DATA ^ DATAPOS ^ DI] from TK to DI)
-    < DI : DataStreamObject | data-size : DS, content : DM >
-    =>
-    < DI : DataStreamObject |
-      data-size : updateSize(DS, DATAPOS, sizeOfData(DATA)),
-      content : writeStream(DATA, DATAPOS, DS, DM) >
-    (msg finishWriteData[] from DI to TK)
-  .
-
-  rl [write-object-data-top-level-finish-overflow] :
-    (msg writeObjectOverflowTop[] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(WriteObjectData , PARAMS)) >
-    =>
-    < TK : TAKernel | api-call : return(apiCall(WriteObjectData , retCode(errorOverflow))) >
-  .
-
-  rl [write-object-data-success] :
-    (msg finishWriteData[] from DI to TK)
-    < TK : TAKernel | api-call : final(apiCall(WriteObjectData , PARAMS)) >
-    =>
-    < TK : TAKernel | api-call : return(apiCall(WriteObjectData , retCode(success))) >
+    < oid(M, SI) : PersistentObject | data-stream : writeStream(DATA, DATAPOS, STREAM) >
+    < HANDLE : ObjectHandle | pos : advancePos(DATAPOS, sizeOfData(DATA)) >
+    (msg finishWriteData[] from HANDLE to TK)
+  if isWritable(DATAFLAGS) /\ withinMaxPos(advancePos(DATAPOS, sizeOfData(DATA)))
   .
 
 --- This rule returns TEE_ERROR_OVERFLOW if the value of the data position indicator resulting from this operation would be greater than TEE_DATA_MAX_POSITION.
@@ -253,13 +153,19 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
     (msg writeObjectData[^ DATA ^ SI] from TK to HANDLE)
     < TK : TAKernel | api-call : final(apiCall(WriteObjectData , PARAMS)) >
     < oid(M, SI) : PersistentObject | >
-    < HANDLE : ObjectHandle | oid : oid(M, SI), flags : DATAFLAGS,
-                              pos : DATAPOS >
+    < HANDLE : ObjectHandle | oid : oid(M, SI), flags : DATAFLAGS, pos : DATAPOS >
     =>
     < oid(M, SI) : PersistentObject | >
     < HANDLE : ObjectHandle | >
     < TK : TAKernel | api-call : return(apiCall(WriteObjectData , retCode(errorOverflow))) >
-  if isWritable(DATAFLAGS) /\ not withinMaxPosition(advancePos(DATAPOS, sizeOfData(DATA)))
+  if isWritable(DATAFLAGS) /\ not withinMaxPos(advancePos(DATAPOS, sizeOfData(DATA)))
+  .
+
+  rl [write-object-data-success] :
+    (msg finishWriteData[] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(apiCall(WriteObjectData , PARAMS)) >
+    =>
+    < TK : TAKernel | api-call : return(apiCall(WriteObjectData , retCode(success))) >
   .
 
 --- This rule returns TEE_ERROR_STORAGE_NO_SPACE if insufficient storage space is available.
@@ -280,17 +186,14 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 
 --- The 'TEE_TruncateObjectData' function changes the size of a data stream.
 --- See page 175 of the G.P. documentation for more details.
+--- The paper gives no rule for this function. The data stream is resized to the requested number of fragments.
 
   op truncateObjectData : -> ReqId [ctor] .
-  op truncateObjectDataTop : -> ReqId [ctor] .
-  op truncateObjectStreamTop : -> ReqId [ctor] .
-  op truncateObjectOwnerTop : -> ReqId [ctor] .
-  op truncateDataStreamTop : -> ReqId [ctor] .
   op finishTruncateData : -> ReqId [ctor] .
 
   rl [truncate-object-data-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(apiCall(TruncateObjectData , PARAMS)) , storage : SI >
-    => 
+    =>
     < TK : TAKernel | api-call : exec(apiCall(TruncateObjectData , PARAMS) , 0) >
     (msg getStatus[] from TK to SI)
   .
@@ -305,55 +208,21 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
     (msg truncateObjectData[^ DATASIZE ^ SI] from TK to HANDLE)
   .
 
---- This rule finds the persistent object pointed to by the input handle and its associated data stream, and
---- changes the size of the found data stream when input size is greater then the current size of the data stream.
+--- The handle with the write access flag resizes the data stream of its object.
 
-  rl [truncate-object-data-top-level-resolve-owner] :
-    (msg truncateObjectData[^ DATASIZE ^ SI] from TK to HANDLE)
-    < oid(M, SI) : PersistentObject |
-                              data-stream-id : DI >
+  crl [truncate-object-data-top-level] :
+    (msg truncateObjectData[^ dataSize(N) ^ SI] from TK to HANDLE)
+    < oid(M, SI) : PersistentObject | data-stream : STREAM >
+    < HANDLE : ObjectHandle | oid : oid(M, SI), flags : DATAFLAGS >
     =>
-    < oid(M, SI) : PersistentObject | >
-    (msg truncateObjectDataTop[^ DATASIZE ^ SI ^ oid(M, SI) ^ DI] from TK to HANDLE)
-  .
-
-  crl [truncate-object-data-top-level-check-handle] :
-    (msg truncateObjectDataTop[^ DATASIZE ^ SI ^ OI ^ DI] from TK to HANDLE)
-    < HANDLE : ObjectHandle | oid : OI, flags : DATAFLAGS >
-    =>
+    < oid(M, SI) : PersistentObject | data-stream : resizeStream(N , STREAM) >
     < HANDLE : ObjectHandle | >
-    (msg truncateObjectStreamTop[^ DATASIZE ^ OI ^ DI] from TK to DI)
+    (msg finishTruncateData[] from HANDLE to TK)
   if isWritable(DATAFLAGS)
   .
 
-  rl [truncate-object-data-top-level-resolve-stream] :
-    (msg truncateObjectStreamTop[^ DATASIZE ^ OI ^ DI] from TK to DI)
-    < DI : DataStreamObject | data-size : DS, content : DM >
-    =>
-    < DI : DataStreamObject | >
-    (msg truncateObjectOwnerTop[^ DATASIZE ^ OI ^ DI ^ DS ^ DM] from TK to OI)
-  .
-
-  rl [truncate-object-data-top-level-update-owner] :
-    (msg truncateObjectOwnerTop[^ DATASIZE ^ OI ^ DI ^ DS ^ DM] from TK to OI)
-    < OI : PersistentObject | data-stream-id : DI >
-    =>
-    < OI : PersistentObject |
-      data-stream : read(pos(0), DATASIZE, resizeContent(DS, DATASIZE, DM)) >
-    (msg truncateDataStreamTop[^ DATASIZE ^ DI ^ DS ^ DM] from TK to DI)
-  .
-
-  rl [truncate-object-data-top-level-update-stream] :
-    (msg truncateDataStreamTop[^ DATASIZE ^ DI ^ DS ^ DM] from TK to DI)
-    < DI : DataStreamObject | >
-    =>
-    < DI : DataStreamObject | data-size : DATASIZE,
-                              content : resizeContent(DS, DATASIZE, DM) >
-    (msg finishTruncateData[] from DI to TK)
-  .
-
   rl [truncate-object-data-success] :
-    (msg finishTruncateData[] from DI to TK)
+    (msg finishTruncateData[] from HANDLE to TK)
     < TK : TAKernel | api-call : final(apiCall(TruncateObjectData , PARAMS)) >
     =>
     < TK : TAKernel | api-call : return(apiCall(TruncateObjectData , retCode(success))) >
@@ -377,16 +246,15 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 
 --- The 'TEE_SeekObjectData' function sets the data position indicator associated with the object handle.
 --- See page 176 of the G.P. documentation for more details.
+--- The paper gives no rule for this function. The position is a fragment index; SEEK_END uses the number of fragments.
 
   op seekObjectData : -> ReqId [ctor] .
-  op seekObjectDataTop : -> ReqId [ctor] .
-  op seekObjectHandleTop : -> ReqId [ctor] .
   op seekObjectOverflowTop : -> ReqId [ctor] .
   op finishSeekData : -> ReqId [ctor] .
 
   rl [seek-object-data-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(apiCall(SeekObjectData , PARAMS)) , storage : SI >
-    => 
+    =>
     < TK : TAKernel | api-call : exec(apiCall(SeekObjectData , PARAMS) , 0) >
     (msg getStatus[] from TK to SI)
   .
@@ -403,42 +271,28 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 
 --- This rule sets the data position to input offset (OFST) when 'whence' is TEE_DATA_SEEK_SET.
 --- This rule sets the data position to its current position plus input offset when 'whence' is TEE_DATA_SEEK_CUR.
---- The following three rules define 'TEE_SeekObjectData' when 'whence' in TEE_DATA_SEEK_END.
-
-  rl [seek-object-data-top-level-resolve-owner] :
-    (msg seekObjectData[^ OFST ^ WHENCE ^ SI] from TK to HANDLE)
-    < oid(M, SI) : PersistentObject |
-                              data-stream-id : DI >
-    =>
-    < oid(M, SI) : PersistentObject | >
-    (msg seekObjectDataTop[^ OFST ^ WHENCE ^ SI ^ oid(M, SI) ^ DI] from TK to HANDLE)
-  .
-
-  rl [seek-object-data-top-level-resolve-stream] :
-    (msg seekObjectDataTop[^ OFST ^ WHENCE ^ SI ^ OI ^ DI] from TK to HANDLE)
-    < DI : DataStreamObject | data-size : DATASIZE >
-    =>
-    < DI : DataStreamObject | >
-    (msg seekObjectHandleTop[^ OFST ^ WHENCE ^ OI ^ DATASIZE] from TK to HANDLE)
-  .
+--- The rules for 'whence' is TEE_DATA_SEEK_END use the number of fragments of the data stream.
 
   crl [seek-object-data-top-level-update-handle] :
-    (msg seekObjectHandleTop[^ OFST ^ WHENCE ^ OI ^ DATASIZE] from TK to HANDLE)
-    < HANDLE : ObjectHandle | oid : OI, pos : DATAPOS >
+    (msg seekObjectData[^ OFST ^ WHENCE ^ SI] from TK to HANDLE)
+    < oid(M, SI) : PersistentObject | data-stream : STREAM >
+    < HANDLE : ObjectHandle | oid : oid(M, SI), pos : DATAPOS >
     =>
-    < HANDLE : ObjectHandle |
-      pos : seekPos(WHENCE, DATAPOS, OFST, DATASIZE) >
+    < oid(M, SI) : PersistentObject | >
+    < HANDLE : ObjectHandle | pos : seekPos(WHENCE, DATAPOS, OFST, sizeOfData(STREAM)) >
     (msg finishSeekData[] from HANDLE to TK)
-  if withinMaxPosition(seekPos(WHENCE, DATAPOS, OFST, DATASIZE))
+  if withinMaxPos(seekPos(WHENCE, DATAPOS, OFST, sizeOfData(STREAM)))
   .
 
   crl [seek-object-data-top-level-detect-overflow] :
-    (msg seekObjectHandleTop[^ OFST ^ WHENCE ^ OI ^ DATASIZE] from TK to HANDLE)
-    < HANDLE : ObjectHandle | oid : OI, pos : DATAPOS >
+    (msg seekObjectData[^ OFST ^ WHENCE ^ SI] from TK to HANDLE)
+    < oid(M, SI) : PersistentObject | data-stream : STREAM >
+    < HANDLE : ObjectHandle | oid : oid(M, SI), pos : DATAPOS >
     =>
+    < oid(M, SI) : PersistentObject | >
     < HANDLE : ObjectHandle | >
     (msg seekObjectOverflowTop[] from HANDLE to TK)
-  if not withinMaxPosition(seekPos(WHENCE, DATAPOS, OFST, DATASIZE))
+  if not withinMaxPos(seekPos(WHENCE, DATAPOS, OFST, sizeOfData(STREAM)))
   .
 
   rl [seek-object-data-top-level-finish-overflow] :

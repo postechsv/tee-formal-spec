@@ -10,7 +10,6 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   pr PERSISTENT-OBJECT .
   pr PERSISTENT-OBJECT-FUNC .
   pr TEE-MSG .
-  pr DATA-STREAM-OBJECT .
   pr DATA-STREAM-OPERATOR .
   pr HANDLE-AUX .
   pr OBJECT-HANDLE .
@@ -29,7 +28,6 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   var ATTRS : Set{CryptoAttribute} .
   vars OBJTYPE : Type .
   var DATALIST : List{Data} .
-  var DATASIZE : DataSize .
   var STATUS : StorageStatus .
   var PARAMS : Set{TeeApiParam} .
   var STORID : StorageIdentifier .
@@ -40,7 +38,7 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   var HI : Oid .
   var FLAGS : Set{DataAccessFlag} .
   var FILES : Set{FileName} .
-  var METHOD : CreateMethod .
+  var METHOD : MethodId .
   var NEWHI NEWPI NEWDS : Oid .
 
 ------------------------------------------------------------
@@ -226,208 +224,151 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
 
 --- The 'TEE_CreatePersistenObject' function creates a persistent object with the initial attributes and an initial data stream content.
 --- See page 159 of the G.P. documentation for more details.
---- The flow follows Figures 9 and 10 and Table 2 of the paper. The TA sends create to the storage. The storage either
---- reports an abnormal status (createAbnormal), rejects the request (createFail), overwrites the object with the same name
---- See: (forwarding create to that object), or creates the object directly when no object has the same name.
---- A new persistent object takes three storage identifiers: the handle (N), the object (N + 1) and its data stream (N + 2).
+--- The rules follow Section 4.2 (Figure 10, Table 2) of the paper. The message arguments are the paper's: the method, the file name,
+--- the access flags, the handle, and the initial data. The API-level parameters of the apiCall (storageId, size) are matched by the
+--- rest of the parameter set and are not used.
+--- Counters: the storage advances its counter by 2 per created object, one for the handle (N) and one for the object (N + 1).
 
-  sort CreateMethod .
-  ops methodPure methodTransform methodPersist : -> CreateMethod [ctor] .
-  op ^_ : CreateMethod -> Arg [ctor] .
+  var TYPE : Type .
+  var USAGES : Set{Usage} .
+  var DATA : List{Data} .
 
-  op chooseMethod : Oid Oid -> CreateMethod .
-  ceq chooseMethod(H, OPT) = methodPure if nullHandle(H) .
-  ceq chooseMethod(H, OPT) = methodTransform if not nullHandle(H) /\ nullHandle(OPT) .
-  ceq chooseMethod(H, OPT) = methodPersist if not nullHandle(H) /\ not nullHandle(OPT) .
+  sort MethodId .
+  ops pure transform persist : -> MethodId [ctor] .
+  op ^_ : MethodId -> Arg [ctor] .
+
+  op chooseMethod : ArgList Oid -> MethodId .
+  eq chooseMethod((^ FILE ^ FLAGS ^ HI ^ DATA), OPT)
+   = if HI == null then pure else (if OPT == null then transform else persist fi) fi .
 
   op create : -> ReqId [ctor] .
   op createSuccess : -> ReqId [ctor] .
   op createFail : -> ReqId [ctor] .
-  op createAbnormal : -> ReqId [ctor] .
 
---- Determine the method and send create to the storage (paper: create-persistent-determine-case).
+--- The TA determines the method and sends create to the storage (paper: create-persistent-determine-case).
 
-  crl [create-persistent-determine-case] :
-    < TK : TAKernel | status : (normal).AppStatus , storage : SI ,
-                      api-call : init(apiCall(CreatePersistentObject , (storageId(STORID) , fileId(FILE) , flags(DATAFLAGS) ,
-                                                                         handle(HANDLE) , data(DATALIST) , size(DATASIZE) , opt(OPTHANDLE)))) >
+  rl [create-persistent-determine-case] :
+    < TK : TAKernel | api-call : init(apiCall(CreatePersistentObject , (fileId(FILE) , flags(FLAGS) , handle(HI) ,
+                                                                         data(DATA) , opt(OPTHANDLE) , PARAMS))) ,
+                      storage : SI , status : (normal).AppStatus >
     =>
-    < TK : TAKernel | api-call : final(apiCall(CreatePersistentObject , (storageId(STORID) , fileId(FILE) , flags(DATAFLAGS) ,
-                                                                         handle(HANDLE) , data(DATALIST) , size(DATASIZE) , opt(OPTHANDLE)))) >
-    (msg create[^ chooseMethod(HANDLE , OPTHANDLE) ^ FILE ^ DATAFLAGS ^ HANDLE ^ DATALIST ^ DATASIZE] from TK to SI)
-  if supportedStorage(STORID)
-  .
+    < TK : TAKernel | api-call : final(apiCall(CreatePersistentObject , (fileId(FILE) , flags(FLAGS) , handle(HI) ,
+                                                                         data(DATA) , opt(OPTHANDLE) , PARAMS))) >
+    (msg create[^ chooseMethod((^ FILE ^ FLAGS ^ HI ^ DATA), OPTHANDLE) ^ FILE ^ FLAGS ^ HI ^ DATA]
+       from TK to SI) .
 
-  rl [create-persistent-default-private-storage] :
-    < TK : TAKernel | api-call : init(apiCall(CreatePersistentObject , (fileId(FILE) , flags(DATAFLAGS) , handle(HANDLE) ,
-                                                                         data(DATALIST) , size(DATASIZE) , opt(OPTHANDLE)))) >
-    =>
-    < TK : TAKernel | api-call : init(apiCall(CreatePersistentObject , (storageId(storagePrivate) , fileId(FILE) , flags(DATAFLAGS) ,
-                                                                         handle(HANDLE) , data(DATALIST) , size(DATASIZE) , opt(OPTHANDLE)))) >
-  .
-
-  crl [create-persistent-storage-id-not-found] :
-    < TK : TAKernel | status : (normal).AppStatus ,
-                      api-call : init(apiCall(CreatePersistentObject , (storageId(STORID) , PARAMS))) >
-    =>
-    < TK : TAKernel | api-call : return(apiCall(CreatePersistentObject , (retCode(errorItemNotFound) , handle(null)))) >
-  if not supportedStorage(STORID)
-  .
-
---- Storage: an abnormal storage status ends the creation.
-
-  crl [create-persist-abnormal-storage] :
-    (msg create[^ METHOD ^ FILE ^ FLAGS ^ HI ^ DATALIST ^ DATASIZE] from TK to SI)
-    < SI : Storage | status : STATUS >
-    =>
-    (msg createAbnormal[^ STATUS] from SI to TK)
-    < SI : Storage | >
-  if abnormalStorage(STATUS)
-  .
-
---- Storage: the file exists. The object is overwritten when the overwrite flag is set, and rejected otherwise (Fig. 10).
+--- Storage: the file exists. The request is forwarded to the object when the overwrite flag is set, and rejected otherwise (Fig. 10).
 
   crl [create-persist-overwrite-check] :
-    (msg create[^ METHOD ^ FILE ^ FLAGS ^ HI ^ DATALIST ^ DATASIZE] from TK to SI)
-    < PI : PersistentObject | file-name : FILE >
+    (msg create[^ METHOD ^ FILE ^ FLAGS ^ HI ^ DATA] from TK to SI)
+    < PI : PersistObj | file-name : FILE >
     < SI : Storage | status : (normal).StorageStatus , files : FILES , counter : N >
     =>
-    < PI : PersistentObject | >
-    (if overwrite in FLAGS
-     then < SI : Storage | counter : N + 3 >
-          (msg create[^ METHOD ^ FILE ^ FLAGS ^ HI ^ DATALIST ^ DATASIZE ^ N ^ TK] from SI to PI)
-     else < SI : Storage | >
-          (msg createFail[] from SI to TK) fi)
+    < PI : PersistObj | >
+    if not (overwrite in FLAGS)
+    then < SI : Storage | > (msg createFail[] from SI to TK)
+    else < SI : Storage | counter : N + 2 > (msg create[^ METHOD ^ FILE ^ FLAGS ^ HI ^ DATA ^ N ^ TK] from SI to PI) fi
   if FILE in FILES
   .
 
---- Storage: the file does not exist. The method decides how the object is created.
+--- Storage: the file does not exist, so the object is created directly. The paper gives no rule for this path;
+--- the rules below use the method of Fig. 10 and the identifiers of the forwarded case (newOid(N) and newOid(N + 1)).
 
   crl [create-persist-pure-new] :
-    (msg create[^ methodPure ^ FILE ^ FLAGS ^ HI ^ DATALIST ^ DATASIZE] from TK to SI)
+    (msg create[^ pure ^ FILE ^ FLAGS ^ HI ^ DATA] from TK to SI)
     < SI : Storage | status : (normal).StorageStatus , files : FILES , counter : N >
     =>
-    < SI : Storage | files : (FILE , FILES) , counter : N + 3 >
-    < NEWHI : ObjectHandle | oid : NEWPI , flags : FLAGS , pos : pos(0) >
+    < SI : Storage | files : (FILE , FILES) , counter : N + 2 >
+    < NEWHI : ObjectHandle | oid : NEWPI , flags : FLAGS , pos : 0 >
     < NEWPI : PersistentObject | type : pureData , usages : empty , max-size : 0 , attributes : empty ,
-                                 file-name : FILE , data-stream : read(pos(0), DATASIZE, newContent(DATALIST)) ,
-                                 data-stream-id : NEWDS >
-    < NEWDS : DataStreamObject | persistent-owner-id : NEWPI , data-size : DATASIZE , content : newContent(DATALIST) >
+                                 file-name : FILE , data-stream : DATA >
     (msg createSuccess[^ NEWHI] from NEWPI to TK)
-  if not (FILE in FILES) /\ NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI) /\ NEWDS := newOid(N + 2, SI)
+  if not (FILE in FILES) /\ NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI)
   .
 
   crl [create-persist-transform-new] :
-    (msg create[^ methodTransform ^ FILE ^ FLAGS ^ HI ^ DATALIST ^ DATASIZE] from TK to SI)
+    (msg create[^ transform ^ FILE ^ FLAGS ^ HI ^ DATA] from TK to SI)
     < HI : ObjectHandle | oid : OI >
-    < OI : TransientObject | type : OBJTYPE , usages : OBJUSAGES , attributes : ATTRS , initialized : true >
+    < OI : TransObj | type : TYPE , usages : USAGES , max-size : M , attributes : ATTRS >
     < SI : Storage | status : (normal).StorageStatus , files : FILES , counter : N >
     =>
-    < SI : Storage | files : (FILE , FILES) , counter : N + 3 >
-    < NEWHI : ObjectHandle | oid : NEWPI , flags : FLAGS , pos : pos(0) >
-    < NEWPI : PersistentObject | type : OBJTYPE , usages : OBJUSAGES , max-size : keySize(ATTRS) ,
-                                 attributes : ATTRS , file-name : FILE , data-stream : read(pos(0), DATASIZE, newContent(DATALIST)) ,
-                                 data-stream-id : NEWDS >
-    < NEWDS : DataStreamObject | persistent-owner-id : NEWPI , data-size : DATASIZE , content : newContent(DATALIST) >
+    < SI : Storage | files : (FILE , FILES) , counter : N + 2 >
+    < NEWHI : ObjectHandle | oid : NEWPI , flags : FLAGS , pos : 0 >
+    < NEWPI : PersistentObject | type : TYPE , usages : USAGES , max-size : M ,
+                                 attributes : ATTRS , file-name : FILE , data-stream : DATA >
     (msg createSuccess[^ NEWHI] from NEWPI to TK)
-  if not (FILE in FILES) /\ NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI) /\ NEWDS := newOid(N + 2, SI)
+  if not (FILE in FILES) /\ NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI)
   .
 
   crl [create-persist-persist-new] :
-    (msg create[^ methodPersist ^ FILE ^ FLAGS ^ HI ^ DATALIST ^ DATASIZE] from TK to SI)
+    (msg create[^ persist ^ FILE ^ FLAGS ^ HI ^ DATA] from TK to SI)
     < HI : ObjectHandle | oid : OI >
-    < OI : CryptoObj | type : OBJTYPE , usages : OBJUSAGES , attributes : ATTRS >
+    < OI : CryptoObj | type : TYPE , usages : USAGES , max-size : M , attributes : ATTRS >
     < SI : Storage | status : (normal).StorageStatus , files : FILES , counter : N >
     =>
-    < SI : Storage | files : (FILE , FILES) , counter : N + 3 >
-    < NEWHI : ObjectHandle | oid : NEWPI , flags : FLAGS , pos : pos(0) >
-    < NEWPI : PersistentObject | type : OBJTYPE , usages : OBJUSAGES , max-size : keySize(ATTRS) ,
-                                 attributes : ATTRS , file-name : FILE , data-stream : read(pos(0), DATASIZE, newContent(DATALIST)) ,
-                                 data-stream-id : NEWDS >
-    < NEWDS : DataStreamObject | persistent-owner-id : NEWPI , data-size : DATASIZE , content : newContent(DATALIST) >
+    < SI : Storage | files : (FILE , FILES) , counter : N + 2 >
+    < OI : CryptoObj | > < HI : ObjectHandle | >
+    < NEWHI : ObjectHandle | oid : NEWPI , flags : FLAGS , pos : 0 >
+    < NEWPI : PersistentObject | type : TYPE , usages : USAGES , max-size : M ,
+                                 attributes : ATTRS , file-name : FILE , data-stream : DATA >
     (msg createSuccess[^ NEWHI] from NEWPI to TK)
-  if not (FILE in FILES) /\ NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI) /\ NEWDS := newOid(N + 2, SI)
+  if not (FILE in FILES) /\ NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI)
   .
 
---- Storage: the forwarded create reaches the old object, which is replaced by the new one (Fig. 10 methods, paper Table 2).
---- The old object, its data stream and the handles opened on it are removed.
+--- Storage forwarded create (paper: create-persist-pure, create-persist-transform, create-persist-persist).
+--- The persistent object PI is replaced by the new object NEWPI, and a new handle NEWHI is opened for the TA.
 
   crl [create-persist-pure] :
-    (msg create[^ methodPure ^ FILE ^ FLAGS ^ HI ^ DATALIST ^ DATASIZE ^ N ^ TK] from SI to PI)
-    < PI : PersistentObject | file-name : FILE , data-stream-id : DI >
-    < DI : DataStreamObject | persistent-owner-id : PI >
-    HS
+    (msg create[^ pure ^ FILE ^ FLAGS ^ HI ^ DATA ^ N ^ TK] from SI to PI)
+    < PI : PersistObj | file-name : FILE >
     =>
-    removePersistentHandles(PI , HS)
-    < NEWHI : ObjectHandle | oid : NEWPI , flags : FLAGS , pos : pos(0) >
+    < NEWHI : ObjectHandle | oid : NEWPI , flags : FLAGS , pos : 0 >
     < NEWPI : PersistentObject | type : pureData , usages : empty , max-size : 0 , attributes : empty ,
-                                 file-name : FILE , data-stream : read(pos(0), DATASIZE, newContent(DATALIST)) ,
-                                 data-stream-id : NEWDS >
-    < NEWDS : DataStreamObject | persistent-owner-id : NEWPI , data-size : DATASIZE , content : newContent(DATALIST) >
+                                 file-name : FILE , data-stream : DATA >
     (msg createSuccess[^ NEWHI] from NEWPI to TK)
-  if NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI) /\ NEWDS := newOid(N + 2, SI)
+  if NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI)
   .
 
   crl [create-persist-transform] :
-    (msg create[^ methodTransform ^ FILE ^ FLAGS ^ HI ^ DATALIST ^ DATASIZE ^ N ^ TK] from SI to PI)
-    < PI : PersistentObject | file-name : FILE , data-stream-id : DI >
-    < DI : DataStreamObject | persistent-owner-id : PI >
+    (msg create[^ transform ^ FILE ^ FLAGS ^ HI ^ DATA ^ N ^ TK] from SI to PI)
+    < PI : PersistObj | file-name : FILE >
     < HI : ObjectHandle | oid : OI >
-    < OI : TransientObject | type : OBJTYPE , usages : OBJUSAGES , attributes : ATTRS , initialized : true >
-    HS
+    < OI : TransObj | type : TYPE , usages : USAGES , max-size : M , attributes : ATTRS >
     =>
-    removePersistentHandles(PI , HS)
-    < NEWHI : ObjectHandle | oid : NEWPI , flags : FLAGS , pos : pos(0) >
-    < NEWPI : PersistentObject | type : OBJTYPE , usages : OBJUSAGES , max-size : keySize(ATTRS) ,
-                                 attributes : ATTRS , file-name : FILE , data-stream : read(pos(0), DATASIZE, newContent(DATALIST)) ,
-                                 data-stream-id : NEWDS >
-    < NEWDS : DataStreamObject | persistent-owner-id : NEWPI , data-size : DATASIZE , content : newContent(DATALIST) >
+    < NEWHI : ObjectHandle | oid : NEWPI , flags : FLAGS , pos : 0 >
+    < NEWPI : PersistentObject | type : TYPE , usages : USAGES , max-size : M ,
+                                 attributes : ATTRS , file-name : FILE , data-stream : DATA >
     (msg createSuccess[^ NEWHI] from NEWPI to TK)
-  if NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI) /\ NEWDS := newOid(N + 2, SI)
+  if NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI)
   .
 
   crl [create-persist-persist] :
-    (msg create[^ methodPersist ^ FILE ^ FLAGS ^ HI ^ DATALIST ^ DATASIZE ^ N ^ TK] from SI to PI)
-    < PI : PersistentObject | file-name : FILE , data-stream-id : DI >
-    < DI : DataStreamObject | persistent-owner-id : PI >
+    (msg create[^ persist ^ FILE ^ FLAGS ^ HI ^ DATA ^ N ^ TK] from SI to PI)
+    < PI : PersistObj | file-name : FILE >
     < HI : ObjectHandle | oid : OI >
-    < OI : CryptoObj | type : OBJTYPE , usages : OBJUSAGES , attributes : ATTRS >
-    HS
+    < OI : CryptoObj | type : TYPE , usages : USAGES , max-size : M , attributes : ATTRS >
     =>
-    removePersistentHandles(PI , HS)
-    < HI : ObjectHandle | >
-    < OI : CryptoObj | >
-    < NEWHI : ObjectHandle | oid : NEWPI , flags : FLAGS , pos : pos(0) >
-    < NEWPI : PersistentObject | type : OBJTYPE , usages : OBJUSAGES , max-size : keySize(ATTRS) ,
-                                 attributes : ATTRS , file-name : FILE , data-stream : read(pos(0), DATASIZE, newContent(DATALIST)) ,
-                                 data-stream-id : NEWDS >
-    < NEWDS : DataStreamObject | persistent-owner-id : NEWPI , data-size : DATASIZE , content : newContent(DATALIST) >
+    < OI : CryptoObj | > < HI : ObjectHandle | >
+    < NEWHI : ObjectHandle | oid : NEWPI , flags : FLAGS , pos : 0 >
+    < NEWPI : PersistentObject | type : TYPE , usages : USAGES , max-size : M ,
+                                 attributes : ATTRS , file-name : FILE , data-stream : DATA >
     (msg createSuccess[^ NEWHI] from NEWPI to TK)
-  if NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI) /\ NEWDS := newOid(N + 2, SI)
+  if NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI)
   .
 
---- The TA receives the result of create (Fig. 10 post-processing).
+--- The TA receives the result of create (paper: create-persist-success, create-persist-fail, create-persist-mem-err).
 
   rl [create-persist-success] :
     (msg createSuccess[^ HI] from PI to TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-call : final(apiCall(CreatePersistentObject , PARAMS)) >
+    < TK : TAKernel | api-call : final(apiCall(CreatePersistentObject , PARAMS)), status : (normal).AppStatus >
     =>
-    < TK : TAKernel | api-call : return(apiCall(CreatePersistentObject , (retCode(success) , handle(HI)))) >
-  .
+    < TK : TAKernel | api-call : return(apiCall(CreatePersistentObject , (retCode(success) , handle(HI)))) > .
 
   rl [create-persist-fail] :
     (msg createFail[] from SI to TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-call : final(apiCall(CreatePersistentObject , PARAMS)) >
+    < TK : TAKernel | api-call : final(apiCall(CreatePersistentObject , PARAMS)), status : (normal).AppStatus >
     =>
-    < TK : TAKernel | api-call : return(apiCall(CreatePersistentObject , (retCode(errorAccessConflict) , handle(null)))) >
-  .
-
-  rl [create-persist-storage-err] :
-    (msg createAbnormal[^ STATUS] from SI to TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-call : final(apiCall(CreatePersistentObject , PARAMS)) >
-    =>
-    < TK : TAKernel | api-call : return(apiCall(CreatePersistentObject , (retCode(storageErrCode(STATUS)) , handle(null)))) >
-  .
+    < TK : TAKernel | api-call : return(apiCall(CreatePersistentObject , (retCode(errorAccessConflict) , handle(null)))) > .
 
 --- This rule returns TEE_ERROR_OUT_OF_MEMORY if there is not enough memory to complete the operation.
 
@@ -488,8 +429,7 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
 
   crl [close-and-delete-persistent-top-level-start] :
     (msg deletePersistent[^ SI] from TK to HANDLE)
-    < oid(M, SI) : PersistentObject | data-stream-id : DI, file-name : FILE >
-    < DI : DataStreamObject | persistent-owner-id : oid(M, SI) >
+    < oid(M, SI) : PersistentObject | file-name : FILE >
     < HANDLE : ObjectHandle | oid : oid(M, SI), flags : DATAFLAGS >
     HS
     =>
@@ -640,52 +580,17 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   if abnormalStorage(STATUS)
   .
 
-------------------------------------------------------------
---- 'TEE_CopyObjectAttributes1' (persistent source)
-------------------------------------------------------------
-
---- A persistent source answers getAttrs with retAttrsPr. The TA then checks the storage status before
---- sending setAttrs, so a corrupt or unavailable storage returns its error code.
+--- CopyObjectAttributes1 with a persistent source (paper App. B.2, copy-object-attrs-try-ret-attrs). A persistent
+--- object has no 'initialized' attribute (Sec. 3.1), so it always answers retAttrs; the transient rule is in transient.maude.
 
   rl [copy-object-attrs-try-ret-attrs-persistent] :
     (msg getAttrs[] from TK to HANDLE)
-    < OI : PersistentObject | type : OBJTYPE, attributes : ATTRS, usages : OBJUSAGES >
     < HANDLE : ObjectHandle | oid : OI >
+    < OI : PersistObj | type : TYPE , attributes : ATTRS , usages : USAGES >
     =>
-    < OI : PersistentObject | >
     < HANDLE : ObjectHandle | >
-    (msg retAttrsPr[^ OBJTYPE ^ ATTRS ^ OBJUSAGES] from HANDLE to TK)
-  .
-
-  rl [copy-object-attributes-subroutine] :
-    (msg retAttrsPr[^ OBJTYPE ^ ATTRS ^ OBJUSAGES] from HANDLE to TK)
-    < TK : TAKernel | status : (normal).AppStatus ,
-                      api-call : exec(apiCall(CopyObjectAttributes1 , (trgHandle(HI) , srcHandle(HANDLE))) , 0) , storage : SI >
-    =>
-    < TK : TAKernel | api-call : exec(apiCall(CopyObjectAttributes1 ,
-                                  (trgHandle(HI) , srcHandle(HANDLE) , attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES))) , 1) >
-    (msg getStatus[] from TK to SI)
-  .
-
-  rl [copy-object-attributes-storage-ok] :
-    (msg retStatus[^ (normal).StorageStatus] from SI to TK)
-    < TK : TAKernel | api-call : exec(apiCall(CopyObjectAttributes1 ,
-                                  (trgHandle(HI) , srcHandle(HANDLE) , attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES))) , 1) >
-    =>
-    < TK : TAKernel | api-call : final(apiCall(CopyObjectAttributes1 ,
-                                  (trgHandle(HI) , srcHandle(HANDLE) , attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES)))) >
-    (msg setAttrs[^ OBJTYPE ^ ATTRS ^ OBJUSAGES] from TK to HI)
-  .
-
---- This rule returns TEE_ERROR_CORRUPT_OBJECT when the persistent object is corrupt.
---- This rule returns TEE_ERROR_STORAGE_NOT_AVAILABLE when the persistent object is stored in a storage area which is currently inaccessible.
-
-  crl [copy-object-attributes-storage-err] :
-    (msg retStatus[^ STATUS] from SI to TK)
-    < TK : TAKernel | api-call : exec(apiCall(CopyObjectAttributes1 , PARAMS) , 1) >
-    =>
-    < TK : TAKernel | api-call : return(apiCall(CopyObjectAttributes1 , retCode(storageErrCode(STATUS)))) >
-  if abnormalStorage(STATUS)
+    < OI : PersistObj | >
+    (msg retAttrs[^ TYPE ^ ATTRS ^ USAGES] from HANDLE to TK)
   .
 
 endom

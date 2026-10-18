@@ -1,15 +1,17 @@
 --- This file defines the abstract trusted application (TA) class and the commands it uses
 
+--- The client-service attribute of a TA (App. D.1): a pair {RI, FID} of the requesting RA
+--- and the service function, or none.  The sort Pair{Oid,APIFuncId}? of the paper is
+--- written ClientService? here.
 omod CLIENT-SERVICE is
   pr CONFIGURATION .
   pr IMP-FUNC-SIG .
 
-  --- Executable representation of the paper's Pair{Oid,APIFuncId}? type.
   sorts ClientService ClientService? .
   subsort ClientService < ClientService? .
 
-  op clientService : Oid APIFuncId -> ClientService [ctor] .
-  op noClientService : -> ClientService? [ctor] .
+  op {_,_} : Oid APIFuncId -> ClientService [ctor] .
+  op none : -> ClientService? [ctor] .
 endom
 
 --- This module defines the abstract TA class.
@@ -52,37 +54,29 @@ omod TRUST-APP-BEHAVIOR is
   var FID : FuncId .
   var P : Program .
   var KS : KConfig .
-  var VL : ValueList .
   var RET : ValueList .
+  var VL : ValueList .
 
---- Version In Paper
-  --- crl [handle-invoke-ta] :
-  ---   invkTa(TI , RI , ARGS)
-  ---   < TI : TrustedApp | proc : none , prog : P >
-  ---   => 
-  ---   < TI : TrustedApp | proc : run(P , F , VL) >
-  ---   invkTa(TI , RI , ARGS) 
-  --- if F := getFunc(ARGS) /\ VL := getParams(ARGS) 
-  --- .
-
---- invkTa[FID VL] from RI to TI (the TrustedOS forwards an SMC request). A TA that is
---- available (proc : none) and normal starts to run the service FID with the values VL,
---- and records the requesting client and service in client-service.
+--- handle-invoke-ta: an invkTa request for the service FID with the values VL starts the
+--- program of the TA (with the callFunc of mkConf) for the requesting RA RI.
   rl [handle-invoke-ta] :
     (msg invkTa[FID VL] from RI to TI)
-    < TI : TrustedApp | proc : none, prog : P, status : (normal).AppStatus >
+    < TI : TrustedApp | proc : none , client-service : none ,
+                        prog : P , status : (normal).AppStatus >
     =>
-    < TI : TrustedApp | proc : entryConf(syscalls P, FID, VL),
-                        client-service : clientService(RI, FID) > .
+    < TI : TrustedApp | proc : mkConf(syscalls P , FID , VL) ,
+                        client-service : {RI , FID} >
+  .
 
---- When the program has finished, the output values of the service are returned as
---- invkTaRet, and the TA is available again.
+--- handle-invoke-ta-finish: when the program has finished, the output values of the
+--- service are returned to the RA as invkTaRet, and the TA is available again.
   crl [handle-invoke-ta-finish] :
-    < TI : TrustedApp | proc : (k(.K) KS), client-service : clientService(RI, FID) >
+    < TI : TrustedApp | proc : (k(.K) KS) , client-service : {RI , FID} ,
+                        prog : P , status : (normal).AppStatus >
     =>
-    < TI : TrustedApp | proc : none, client-service : noClientService >
+    < TI : TrustedApp | proc : none , client-service : none >
     (msg invkTaRet[RET] from TI to RI)
-  if RET := getVals(outVars(FID, KS), KS) .
+  if RET := getVals(getOutVars(getFuncParams(P , FID)), KS) .
 
 endom
 
@@ -107,40 +101,25 @@ omod TRUST-APP-IMP-BEHAVIOR is
 --- IMP Semantics
 ------------------------------------------------------------
 
---- Version In Paper
-  --- crl [tee-api-call] :
-  ---   < TI : TrustedApp | proc : (k(FUNC(VL) ~> K) KS) >
-  ---   => 
-  ---   < TI : TrustedApp | proc : (k($wait(FUNC) ~> K) KS) , api-call : FUNC(VL) >
-  --- if isTeeApi(FUNC) 
-  --- .
-
-
---- Implementation: the IMP call starts the paper's init status; the API rules move it on.
-  rl [tee-api-call] :
-    < TI : TrustedApp | proc : (k($in(VL) ~> $waitSysCall(TEEAPI) ~> K) KS) ,
-                      api-call : noCall >
+--- tee-api-call-accept (App. D.2): the $in task of a TEE API call, with the TA in normal
+--- status and no call in progress, accepts the call and sets its api-call to init.  The
+--- call itself is run by the object rules of the TEE API.
+  rl [tee-api-call-accept] :
+    < TI : TrustedApp | proc : (k($in(VL) ~> $wait(TEEAPI) ~> K) KS) ,
+                        api-call : noCall , status : (normal).AppStatus >
     =>
-    < TI : TrustedApp | proc : (k($waitSysCall(TEEAPI) ~> K) KS) ,
-                      api-call : init(makeCall(TEEAPI , VL)) >
+    < TI : TrustedApp | proc : (k($wait(TEEAPI) ~> K) KS) ,
+                        api-call : init(makeCall(TEEAPI , VL)) >
   .
 
---- Version In Paper
-  --- crl [tee-api-call-return] :
-  ---   < TI : TrustedApp | proc : (k($wait(FUNC) ~> $out(XL) ~> K) KS) ,
-  ---               api-call : return(FUNC , VL) >
-  ---   => 
-  ---   < TI : TrustedApp | proc : (k(STMT ~> K) KS) , api-call : noCall >
-  --- if isTeeApi(FUNC) /\ STMT := makeRetStmt(VL , XL) 
-  --- .
-
---- Implementation: the return status hands the results back to the IMP program.
+--- tee-api-call-return (App. D.2): when the call has returned, the $out task assigns the
+--- return values to the output parameters (makeReturnStmt).
   rl [tee-api-call-return] :
-    < TI : TrustedApp | proc : (k($waitSysCall(TEEAPI) ~> $out(EL) ~> K) KS) ,
-                      api-call : return(apiCall(TEEAPI , (retCode(RET) , PARAMS))) >
+    < TI : TrustedApp | proc : (k($wait(TEEAPI) ~> $out(EL) ~> K) KS) ,
+                        api-call : return(apiCall(TEEAPI , (retCode(RET) , PARAMS))) >
     =>
     < TI : TrustedApp | proc : (k(makeReturnStmt(TEEAPI , RET , PARAMS , EL) ~> K) KS) ,
-                      api-call : noCall >
+                        api-call : noCall >
   .
 
 endom

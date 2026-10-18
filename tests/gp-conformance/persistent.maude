@@ -16,6 +16,18 @@ red in PERSISTENT-OBJECT-BEHAVIOR :
 red in PERSISTENT-OBJECT-BEHAVIOR :
   not accessRightCheckingAux(accessWriteMeta, empty) .
 
---- The paper selects pure creation whenever the source handle is NULL.
-red in PERSISTENT-OBJECT-BEHAVIOR :
-  chooseMethod(null, null) == methodPure .
+--- Paper (Sec. 4.2, create-persistent-determine-case): the method is pure when the handle is NULL,
+--- transform when the optional handle is NULL, and persist otherwise. The file name is a variable.
+mod CHOOSE-METHOD-CHECK is
+  pr PERSISTENT-OBJECT-BEHAVIOR .
+  var F : FileName .
+endm
+
+red in CHOOSE-METHOD-CHECK :
+  chooseMethod((^ F ^ (empty).Set{DataAccessFlag} ^ null ^ nil), null) == pure .
+
+red in CHOOSE-METHOD-CHECK :
+  chooseMethod((^ F ^ (empty).Set{DataAccessFlag} ^ oid(1, null) ^ nil), null) == transform .
+
+red in CHOOSE-METHOD-CHECK :
+  chooseMethod((^ F ^ (empty).Set{DataAccessFlag} ^ oid(1, null) ^ nil), oid(2, null)) == persist .

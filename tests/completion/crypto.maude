@@ -14,10 +14,10 @@ endm
 
 --- TEE_CipherDoFinal must leave waitCipherDoFinal and return CipherDoFinal.
 search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | api-call : final(apiCall(CipherDoFinal , empty)) >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(apiCall(CipherDoFinal , empty)) >
   (msg finishCipherDoFinal[^ randomData] from oid(101, testTa) to testTa)
 =>*
-  < testTa : TAKernel | api-call : return(apiCall(CipherDoFinal , (retCode(success) , data(randomData)))) > .
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : return(apiCall(CipherDoFinal , (retCode(success) , data(randomData)))) > .
 
 --- TEE_IsAlgorithmSupported distinguishes supported and unsupported elements.
 search [1] in COMPLETION-TEST :
@@ -34,10 +34,10 @@ search [1] in COMPLETION-TEST :
 
 --- AE final calls return both ciphertext and tag and use their own wait state.
 search [1] in COMPLETION-TEST :
-  (msg finishAEEncryptFinal[^ randomData ^ macValue(randomData, algAesGcm, nil)] from oid(101, testTa) to testTa)
+  (msg finishAEEncryptFinal[^ randomData ^ macValue(randomData, algAesGcm, empty)] from oid(101, testTa) to testTa)
   < testTa : TAKernel | api-call : final(apiCall(AEEncryptFinal , empty)) >
 =>*
-  < testTa : TAKernel | api-call : return(apiCall(AEEncryptFinal , (retCode(success) , data(randomData), mac(macValue(randomData, algAesGcm, nil))))) > .
+  < testTa : TAKernel | api-call : return(apiCall(AEEncryptFinal , (retCode(success) , data(randomData), mac(macValue(randomData, algAesGcm, empty))))) > .
 
 --- A matching AE tag succeeds; a mismatching tag returns MAC_INVALID.
 search [1] in COMPLETION-TEST :
@@ -52,52 +52,21 @@ search [1] in COMPLETION-TEST :
 =>*
   < testTa : TAKernel | api-call : return(apiCall(AEDecryptFinal , retCode(errorMacInvalid))) > .
 
---- GP short-buffer paths return the required size without invoking the operation.
-search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | api-call : init(apiCall(CipherUpdate , (handle(oid(1, testTa)), data(randomData),
-                                          capacity(dataSize(0))))) >
-=>*
-  < testTa : TAKernel | api-call : return(apiCall(CipherUpdate , (retCode(errorShortBuffer) , size(dataSize(1))))) > .
-
 --- CipherUpdate rejects insufficient (empty) decrypt input, as in the paper.
 --- Paper (Fig. 14, cipher-update): runOp(decrypt, nil) = failure, since nil is
 --- not an encrypted(...) term, so the handle sends failCipher and the TA goes
 --- to status : panic. The G.P. empty-input shortcut is intentionally absent.
 search [1] in COMPLETION-TEST :
-  (msg reqCipher[^ (nil).List{Data}] from testTa to oid(101, testTa))
+  (msg reqCipher[^ oid(101, testTa) ^ (nil).List{Data}] from testTa to oid(101, testTa))
   < testTa : TAKernel | status : (normal).AppStatus,
       api-call : final(apiCall(CipherUpdate , (handle(oid(101, testTa)), data((nil).List{Data})))) >
   < oid(1, testTa) : CryptoOperation |
       mode : modeDecrypt, state : active, algorithm : algAesCtr ,
-      keys : key(attr(secretValue, sizedAttrVal(128, 1))) >
+      attributes : attr(secretValue, sizedAttrVal(128, 1)) >
   < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       opclass : clsCipher, state : handleState((init, keySet)) >
 =>*
   < testTa : TAKernel | status : panic, PANIC-ATTS:AttributeSet > C .
-
---- GP permits exact in-place cipher buffers but panics on partial overlap.
-search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(CipherUpdate , (handle(oid(1, testTa)), data(randomData),
-                        srcRegion(bufferRegion(100, 16)),
-                        destRegion(bufferRegion(108, 16))))) >
-=>1
-  < testTa : TAKernel | status : panic, CU-ATTS:AttributeSet > .
-
-search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(CipherUpdate , (handle(oid(1, testTa)), data(randomData),
-                        srcRegion(bufferRegion(100, 16)),
-                        destRegion(bufferRegion(100, 16))))) >
-=>1
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(apiCall(CipherUpdate , (handle(oid(1, testTa)), data(randomData),
-                        srcRegion(bufferRegion(100, 16)),
-                        destRegion(bufferRegion(100, 16))))) >
-  (msg reqCipher[^ randomData] from testTa to oid(1, testTa)) .
-
-search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | api-call : init(apiCall(CipherDoFinal , (handle(oid(1, testTa)), data(randomData),
-                                          capacity(dataSize(0))))) >
-=>*
-  < testTa : TAKernel | api-call : return(apiCall(CipherDoFinal , (retCode(errorShortBuffer) , size(dataSize(1))))) > .
 
 --- Crypto operation state and its top-level operation handle reset together.
 --- AllocateOperation initializes the paper-level state and operation class on
@@ -125,16 +94,16 @@ search [1] in COMPLETION-TEST :
 --- ResetOperation (paper, reset-oper-try-reset-success) leaves the top-level
 --- handle unchanged, including its init flag.
 search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | api-call : init(apiCall(ResetOperation , handle(oid(101, testTa)))) >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(ResetOperation , handle(oid(101, testTa)))) >
   < oid(1, testTa) : CryptoOperation |
-      acc-data : randomData, initialization-vector : randomData,
+      acc-data : randomData,
       state : active >
   < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : handleState((init, keySet)) >
 =>*
-  < testTa : TAKernel | api-call : return(apiCall(ResetOperation , retCode(noReturnCode))) >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : return(apiCall(ResetOperation , retCode(noReturnCode))) >
   < oid(1, testTa) : CryptoOperation |
-      acc-data : nil, initialization-vector : nil,
+      acc-data : nil,
       state : initial >
   < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : handleState((init, keySet)) > .
@@ -205,19 +174,17 @@ search [1] in COMPLETION-TEST :
 --- CipherInit (paper, Fig. 13) updates the operation object and the top-level
 --- handle in one step: the operation becomes active and the handle gains init.
 search [1] in COMPLETION-TEST :
-  (msg reqCipherInit[^ randomData] from testTa to oid(101, testTa))
+  (msg reqCipherInit[] from testTa to oid(101, testTa))
   < oid(1, testTa) : CryptoOperation |
       algorithm : algAesGcm,
-      state : initial,
-      initialization-vector : nil >
+      state : initial >
   < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : handleState(keySet), opclass : clsCipher >
 =>*
   (msg finishCipherInit[] from oid(101, testTa) to testTa)
   < oid(1, testTa) : CryptoOperation |
       algorithm : algAesGcm,
-      state : active,
-      initialization-vector : randomData >
+      state : active >
   < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : handleState((init, keySet)), opclass : clsCipher > .
 
@@ -225,7 +192,7 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   (msg reqCopyOperation[^ opObjectAttr(algAesGcm, modeEncrypt,
                  active,
-                 key(attr(secretValue, sizedAttrVal(128, 1)))) ^ opHandleAttr(true, true, false)] from testTa to oid(101, testTa))
+                 attr(secretValue, sizedAttrVal(128, 1))) ^ opHandleAttr(true, true, false) ^ (nil).List{CryptoKey}] from testTa to oid(101, testTa))
   < oid(1, testTa) : CryptoOperation |
       algorithm : algAesGcm, mode : modeEncrypt,
       max-size : 256,
@@ -239,15 +206,14 @@ search [1] in COMPLETION-TEST :
       algorithm : algAesGcm, mode : modeEncrypt,
       max-size : 256,
       state : active,
-      attributes : attr(secretValue, sizedAttrVal(128, 1)),
-      keys : key(attr(secretValue, sizedAttrVal(128, 1))) >
+      attributes : attr(secretValue, sizedAttrVal(128, 1)), keys : nil >
   < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : handleState((init, keySet)), key-material-set : true > .
 
 --- CopyOperation panics when source and destination algorithms differ.
 search [1] in COMPLETION-TEST :
   (msg reqCopyOperation[^ opObjectAttr(algAesGcm, modeEncrypt,
-      active, nil) ^ opHandleAttr(false, false, false)] from testTa to oid(101, testTa))
+      active, empty) ^ opHandleAttr(false, false, false) ^ (nil).List{CryptoKey}] from testTa to oid(101, testTa))
   < oid(1, testTa) : CryptoOperation |
       algorithm : algAesCtr, mode : modeEncrypt,
       max-size : 256 >
@@ -259,7 +225,7 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   (msg reqCopyOperation[^ opObjectAttr(algAesGcm, modeEncrypt,
       active,
-      key(attr(secretValue, sizedAttrVal(256, 1)))) ^ opHandleAttr(false, true, false)] from testTa to oid(101, testTa))
+      attr(secretValue, sizedAttrVal(256, 1))) ^ opHandleAttr(false, true, false) ^ (nil).List{CryptoKey}] from testTa to oid(101, testTa))
   < oid(1, testTa) : CryptoOperation |
       algorithm : algAesGcm, mode : modeEncrypt,
       max-size : 128 >
@@ -292,7 +258,21 @@ search [1] in COMPLETION-TEST :
 =>*
   (msg finishDigestExtract[^ TESTDIGEST] from oid(101, testTa) to testTa)
   < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
-      state : handleState(extract), opclass : clsDigest >
+      state : handleState((init, keySet, extract)), opclass : clsDigest >
+  C .
+
+--- Fig. 12: TEE_DigestExtract keeps the key-set and init flags and adds extract.
+search [1] in COMPLETION-TEST :
+  (msg digestExtract[] from testTa to oid(101, testTa))
+  < oid(1, testTa) : CryptoOperation |
+      acc-data : randomData, algorithm : algSha256,
+      state : extract >
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
+      state : handleState((init, keySet)), opclass : clsDigest >
+=>*
+  (msg finishDigestExtract[^ TESTDIGEST] from oid(101, testTa) to testTa)
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
+      state : handleState((init, keySet, extract)), opclass : clsDigest >
   C .
 
 --- CipherDoFinal resets the operation and its top-level initialized flag.
@@ -300,7 +280,6 @@ search [1] in COMPLETION-TEST :
   (msg reqCipherFinal[^ randomData] from testTa to oid(101, testTa))
   < oid(1, testTa) : CryptoOperation |
       attributes : attr(secretValue, randomAttrVal),
-      keys : key(attr(secretValue, randomAttrVal)),
       algorithm : algAesGcm, mode : modeEncrypt,
       state : active >
   < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
@@ -315,7 +294,7 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   (msg asymEncrypt[^ randomData] from testTa to oid(101, testTa))
   < oid(1, testTa) : CryptoOperation |
-      keys : key(attr(rsaModulus, randomAttrVal)),
+      attributes : attr(rsaModulus, randomAttrVal),
       algorithm : algRsaesPkcs1OaepMgf1Sha1,
       max-size : 2048, mode : modeEncrypt >
   < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
@@ -349,7 +328,7 @@ search [1] in COMPLETION-TEST :
   < testTa : TAKernel | api-call : init(apiCall(AsymmetricEncrypt , (handle(oid(101, testTa)),
                                           data(randomData), capacity(dataSize(0))))) >
   < oid(1, testTa) : CryptoOperation |
-      keys : key(attr(rsaModulus, randomAttrVal)),
+      attributes : attr(rsaModulus, randomAttrVal),
       algorithm : algRsaesPkcs1OaepMgf1Sha1,
       max-size : 2048, mode : modeEncrypt >
   < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
@@ -357,7 +336,7 @@ search [1] in COMPLETION-TEST :
 =>*
   < testTa : TAKernel | api-call : return(apiCall(AsymmetricEncrypt , (retCode(errorShortBuffer) , size(dataSize(256))))) >
   < oid(1, testTa) : CryptoOperation |
-      keys : key(attr(rsaModulus, randomAttrVal)),
+      attributes : attr(rsaModulus, randomAttrVal),
       algorithm : algRsaesPkcs1OaepMgf1Sha1,
       max-size : 2048, mode : modeEncrypt >
   < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
@@ -367,7 +346,7 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   (msg asymSignDigest[^ repeatDigestByte(randomData, 32)] from testTa to oid(101, testTa))
   < oid(1, testTa) : CryptoOperation |
-      keys : key(attr(rsaModulus, randomAttrVal)),
+      attributes : attr(rsaModulus, randomAttrVal),
       algorithm : algRsassaPkcs1V15Sha256,
       mode : modeSign >
   < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
@@ -382,7 +361,7 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   (msg reqAEUpdate[^ randomData] from testTa to oid(101, testTa))
   < oid(1, testTa) : CryptoOperation |
-      keys : key(attr(secretValue, randomAttrVal)),
+      attributes : attr(secretValue, randomAttrVal),
       acc-data : nil, algorithm : algAesGcm,
       mode : modeEncrypt,
       state : initial >
@@ -398,7 +377,7 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   (msg aeEncryptFinal[^ randomData] from testTa to oid(101, testTa))
   < oid(1, testTa) : CryptoOperation |
-      keys : key(attr(secretValue, randomAttrVal)),
+      attributes : attr(secretValue, randomAttrVal),
       acc-data : randomData, algorithm : algAesGcm,
       mode : modeEncrypt,
       state : active >
@@ -414,7 +393,7 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   (msg macComputeFinal[^ randomData] from testTa to oid(101, testTa))
   < oid(1, testTa) : CryptoOperation |
-      keys : key(attr(secretValue, randomAttrVal)),
+      attributes : attr(secretValue, randomAttrVal),
       acc-data : randomData, algorithm : algHmacSha256,
       state : active >
   < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
@@ -437,7 +416,7 @@ search [1] in COMPLETION-TEST :
 
 --- ResetOperation without configured key material is a programmer error.
 search [1] in COMPLETION-TEST :
-  (msg resetOp[] from testTa to oid(101, testTa))
+  (msg resetOp[^ oid(101, testTa)] from testTa to oid(101, testTa))
   < testTa : TAKernel | status : (normal).AppStatus, api-call : final(apiCall(ResetOperation , empty)) >
   < oid(1, testTa) : CryptoOperation | >
   < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
@@ -450,21 +429,44 @@ search [1] in COMPLETION-TEST :
   < testTa : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(SetOperationKey , (handle(oid(101, testTa)),
                                           keyHandle(null)))) >
   < oid(1, testTa) : CryptoOperation |
-      attributes : attr(secretValue, randomAttrVal),
-      keys : key(attr(secretValue, randomAttrVal)),
+      attributes : attr(secretValue, randomAttrVal), keys : nil,
       state : active >
   < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : handleState(keySet), key-material-set : true >
 =>1
   < testTa : TAKernel | status : (normal).AppStatus, CLEAR-TK-ATTS:AttributeSet > C .
 
---- GP 6.2.6: an initialized operation rejects key replacement or clearing.
+--- Fig. 11: TEE_SetOperationKey with a null key clears an initialized operation
+--- Its handle goes from KEY_SET and INIT to not KEY_SET and not INIT.
 search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(SetOperationKey , (handle(oid(1, testTa)),
-                                          keyHandle(null)))) >
-  < oid(1, testTa) : OperationHandle | state : handleState(init) >
-=>1
-  < testTa : TAKernel | status : panic, SETKEY-PANIC-ATTS:AttributeSet > C .
+  < testTa : TAKernel | status : (normal).AppStatus,
+      api-call : init(apiCall(SetOperationKey , (handle(oid(101, testTa)) , keyHandle(null)))) >
+  < oid(1, testTa) : CryptoOperation |
+      attributes : attr(secretValue, randomAttrVal), keys : nil, state : active >
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
+      state : handleState((init, keySet)), key-material-set : true >
+=>*
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : return(apiCall(SetOperationKey , retCode(success))) >
+  < oid(1, testTa) : CryptoOperation |
+      attributes : empty, keys : nil, state : initial >
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
+      state : handleState(empty), key-material-set : false > .
+
+--- Fig. 11: TEE_SetOperationKey with a new key on an initialized operation installs it
+--- and clears init (KEY_SET and INIT to KEY_SET and not INIT).
+search [1] in COMPLETION-TEST :
+  (msg reqSetOperationKey[^ typeAes ^ (attr(secretValue, randomAttrVal)).Set{CryptoAttribute} ^ usageEncrypt] from testTa to oid(101, testTa))
+  < oid(1, testTa) : CryptoOperation |
+      algorithm : algAesCtr, mode : modeEncrypt, max-size : 256,
+      attributes : attr(secretValue, sizedAttrVal(128, 1)), keys : nil,
+      state : active >
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
+      state : handleState((init, keySet)), key-material-set : true >
+=>*
+  (msg finishSetOperationKey[] from oid(101, testTa) to testTa)
+  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
+      state : handleState(keySet), key-material-set : true >
+  C .
 
 --- GP 6.2.6: a non-null key object must be initialized.
 search [1] in COMPLETION-TEST :
@@ -554,7 +556,6 @@ search [1] in COMPLETION-TEST :
       algorithm : algAesCtr, mode : modeEncrypt,
       max-size : 128,
       attributes : attr(secretValue, sizedAttrVal(128, 1)),
-      keys : key(attr(secretValue, sizedAttrVal(128, 1))),
       state : initial >
 =>1
   (msg installTopOperationKey[^ oid(1, testTa) ^ attr(secretValue, sizedAttrVal(128, 2))] from testTa to oid(101, testTa))
@@ -562,7 +563,6 @@ search [1] in COMPLETION-TEST :
       algorithm : algAesCtr, mode : modeEncrypt,
       max-size : 128,
       attributes : attr(secretValue, sizedAttrVal(128, 2)),
-      keys : key(attr(secretValue, sizedAttrVal(128, 2))),
       state : initial > .
 
 search [1] in COMPLETION-TEST :
@@ -588,7 +588,7 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   < testTa : TAKernel | api-call : init(apiCall(GetOperationInfo , handle(oid(101, testTa)))) >
   < oid(1, testTa) : CryptoOperation |
-      keys : key(attr(secretValue, sizedAttrVal(128, 1))),
+      attributes : attr(secretValue, sizedAttrVal(128, 1)),
       max-size : 256, algorithm : algAesCtr,
       mode : modeEncrypt,
       state : initial >

@@ -10,10 +10,10 @@ fmod CRYPTO-DATA-TYPE is
   pr OPERATION-CLASS .
   pr OPERATION-MODE .
   pr OPERATION-STATE .
-  pr SET{CryptoKey} .
+  pr SET{CryptoAttribute} .
 
   sorts OpObjectAttr OpHandleAttr .
-  op opObjectAttr : Algorithm Mode State Set{CryptoKey} -> OpObjectAttr [ctor] .
+  op opObjectAttr : Algorithm Mode State Set{CryptoAttribute} -> OpObjectAttr [ctor] .
   op opHandleAttr : Bool Bool Bool -> OpHandleAttr [ctor] .
 
   sort TeeOperationInfo .
@@ -53,22 +53,6 @@ mod CRYPTO-API-PARAM is
   op digest : List{Data} -> TeeApiParam [ctor] .
 endm
 
---- This module defines the attribute set of a list of GP keys (the paper-level
---- attributes of a cryptographic operation).
-
-fmod KEY-ATTRIBUTES is
-  pr LIST{CryptoKey} .
-  pr SET{CryptoAttribute} .
-
-  var KEYATTRS : Set{CryptoAttribute} .
-  var KEYLIST : List{CryptoKey} .
-
-  op keyAttributes : List{CryptoKey} -> Set{CryptoAttribute} .
-  eq keyAttributes(nil) = empty .
-  eq keyAttributes(key(KEYATTRS) KEYLIST) =
-    (KEYATTRS , keyAttributes(KEYLIST)) .
-endfm
-
 --- This module defines CryptoOperation class, modeling the cryptographic operation of the G.P. documentation.
 
 omod CRYPTO-OPERATION is
@@ -82,7 +66,6 @@ omod CRYPTO-OPERATION is
   pr OPERATION-MODE .
   pr OPERATION-CLASS .
   pr OPERATION-STATE .
-  pr KEY-ATTRIBUTES .
 
 --- Paper-level class, represented with the concrete GP datatypes used by the
 --- executable model.  Each CryptoKey wraps a set of TEE attributes; the list
@@ -94,8 +77,9 @@ omod CRYPTO-OPERATION is
                    mode : Mode,
                    state : State .
 
---- Model/Implementation Specific Version.  The key list retains the boundary
---- between multiple GP keys while the paper-level attribute set stays exact.
+--- Model/Implementation Specific Version.  The key list is used only by the two-key operations,
+--- that is AES-XTS and SM2-KEP (TEE_SetOperationKey2 and TEE_GetOperationInfoMultiple).
+--- Every other operation uses the paper-level attribute set.
   class CryptoOperation | keys : List{CryptoKey},
                           initialization-vector : List{Data} .
   subclass CryptoOperation < CryptoOp .
@@ -135,7 +119,7 @@ endfm
 fmod ENCRYPTION is
   pr LIST{Data} .
   pr ALGORITHM-IDENTIFIER .
-  pr KEY-ATTRIBUTES .
+  pr SET{CryptoAttribute} .
   pr OPERATION-MODE .
 
   var DATA : List{Data} .
@@ -162,25 +146,25 @@ endfm
 fmod MAC is
   pr LIST{Data} .
   pr ALGORITHM-IDENTIFIER .
-  pr LIST{CryptoKey} .
+  pr SET{CryptoAttribute} .
 
   var DATA : List{Data} .
   var ALGO : Algorithm .
-  var KEYS : List{CryptoKey} .
+  var ATTRS : Set{CryptoAttribute} .
   var D : Data .
   var N : Nat .
 
-  op macValue : List{Data} Algorithm List{CryptoKey} -> List{Data} [ctor] .
+  op macValue : List{Data} Algorithm Set{CryptoAttribute} -> List{Data} [ctor] .
 
-  op computeMAC : Algorithm List{CryptoKey} List{Data} -> List{Data} .
-  op macByte : List{Data} Algorithm List{CryptoKey} -> Data [ctor] .
+  op computeMAC : Algorithm Set{CryptoAttribute} List{Data} -> List{Data} .
+  op macByte : List{Data} Algorithm Set{CryptoAttribute} -> Data [ctor] .
   op repeatMacByte : Data Nat -> List{Data} .
   eq repeatMacByte(D , 0) = nil .
   eq repeatMacByte(D , s(N)) = D repeatMacByte(D , N) .
-  eq computeMAC(algHmacSha256 , KEYS , DATA) =
-    repeatMacByte(macByte(DATA , algHmacSha256 , KEYS) , 32) .
+  eq computeMAC(algHmacSha256 , ATTRS , DATA) =
+    repeatMacByte(macByte(DATA , algHmacSha256 , ATTRS) , 32) .
   ---@dmc owise enumerate(arg1)
-  eq computeMAC(ALGO , KEYS , DATA) = macValue(DATA , ALGO , KEYS) [owise] .
+  eq computeMAC(ALGO , ATTRS , DATA) = macValue(DATA , ALGO , ATTRS) [owise] .
 endfm
 
 --- This module defines signature.
@@ -188,16 +172,16 @@ endfm
 fmod SIGN is
   pr LIST{Data} .
   pr ALGORITHM-IDENTIFIER .
-  pr LIST{CryptoKey} .
+  pr SET{CryptoAttribute} .
 
   var DATA : List{Data} .
   var ALGO : Algorithm .
-  var KEYS : List{CryptoKey} .
+  var ATTRS : Set{CryptoAttribute} .
 
-  op signed : List{Data} Algorithm List{CryptoKey} -> List{Data} [ctor] .
+  op signed : List{Data} Algorithm Set{CryptoAttribute} -> List{Data} [ctor] .
 
-  op signDigest : Algorithm List{CryptoKey} List{Data} -> List{Data} .
-  eq signDigest(ALGO , KEYS , DATA) = signed(DATA , ALGO , KEYS) .
+  op signDigest : Algorithm Set{CryptoAttribute} List{Data} -> List{Data} .
+  eq signDigest(ALGO , ATTRS , DATA) = signed(DATA , ALGO , ATTRS) .
 endfm
 
 --- This module defines the cryptographic operation APIs, defined in chapter 6 of the G.P. documentation.
@@ -256,6 +240,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   var API : TeeApi .
   var OPRESULT : List{Data} .
   var CSTATE : State .
+  var KATTRS : Set{CryptoAttribute} .
+  op ^_ : List{CryptoKey} -> Arg [ctor] .
 
 ------------------------------------------------------------
 --- Auxilary Functions
@@ -275,7 +261,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   eq dataSizeFits(dataSize(N) , dataSize(M)) = M <= N .
 
   op outputSize : List{Data} -> DataSize .
-  eq outputSize(macValue(DATA , ALGO , KEYS)) = dataSize(1) .
+  eq outputSize(macValue(DATA , ALGO , KATTRS)) = dataSize(1) .
   ---@dmc owise enumerate(DATA)
   eq outputSize(DATA) = dataSize(size(DATA)) [owise] .
 
@@ -306,8 +292,6 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   eq invalidBufferOverlap(PARAMS) = false [owise] .
 
   op overlapSensitive : TeeApi -> Bool .
-  eq overlapSensitive(CipherUpdate) = true .
-  eq overlapSensitive(CipherDoFinal) = true .
   eq overlapSensitive(AEUpdate) = true .
   eq overlapSensitive(AEEncryptFinal) = true .
   eq overlapSensitive(AEDecryptFinal) = true .
@@ -345,9 +329,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   ---@dmc owise enumerate(DATA)
   eq validRsaCiphertextSize(KEYSIZE , DATA) = size(DATA) == rsaKeyBytes(KEYSIZE) [owise] .
 
-  op validRsaCiphertext : Algorithm List{CryptoKey} List{Data} -> Bool .
-  eq validRsaCiphertext(ALGO , KEYS , DATA) =
-    runOp(ALGO , modeDecrypt , keyAttributes(KEYS) , DATA) =/= failure .
+  op validRsaCiphertext : Algorithm Set{CryptoAttribute} List{Data} -> Bool .
+  eq validRsaCiphertext(ALGO , KATTRS , DATA) =
+    runOp(ALGO , modeDecrypt , KATTRS , DATA) =/= failure .
 
 --- For TEE_AllocateOperation
 --- This operator returns the operation class of the input algorithm (Table 6-1).
@@ -518,6 +502,14 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     teeOperationInfoKey(keySize(ATTRS) , OBJUSAGES) ;
     operationKeyInformation(KEYS , OBJUSAGES , N) .
 
+  --- Single-key operations keep their key material as attributes (paper Sec. 3.2).
+  op operationAttrKeyInformation : Set{CryptoAttribute} Set{Usage} Nat
+                                   -> TeeOperationInfoKeyList .
+  eq operationAttrKeyInformation(ATTRS , OBJUSAGES , 0) = noKeyInformation .
+  eq operationAttrKeyInformation(ATTRS , OBJUSAGES , s(N)) =
+    teeOperationInfoKey(attrsKeySize(ATTRS) , OBJUSAGES) ;
+    operationAttrKeyInformation(empty , OBJUSAGES , N) .
+
   op singleInfoKeySize : Nat TeeOperationInfoKeyList -> Nat .
   eq singleInfoKeySize(1 , teeOperationInfoKey(KEYSIZE , OBJUSAGES) ; OPINFOKEYS) = KEYSIZE .
   ---@dmc owise enumerate(arg1, arg2)
@@ -545,6 +537,15 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   eq operationKeysFit(nil , KEYSIZE) = true .
   eq operationKeysFit(key(ATTRS) KEYS , KEYSIZE) =
     keySize(ATTRS) <= KEYSIZE and operationKeysFit(KEYS , KEYSIZE) .
+
+  op operationAttrsFit : Set{CryptoAttribute} Nat -> Bool .
+  eq operationAttrsFit(ATTRS , KEYSIZE) = attrsKeySize(ATTRS) <= KEYSIZE .
+
+  --- A copied operation fits the target size: by its attributes when it has no two-key list, by its keys otherwise.
+  op copyFits : Set{CryptoAttribute} List{CryptoKey} Nat -> Bool .
+  eq copyFits(ATTRS , nil , KEYSIZE) = operationAttrsFit(ATTRS , KEYSIZE) .
+  eq copyFits(ATTRS , (key(KATTRS) KEYS) , KEYSIZE) =
+    operationKeysFit((key(KATTRS) KEYS) , KEYSIZE) .
 
 --- For a public key object, the allowed operation modes depend on the type of key and are specified in Table 6-5.
   op typeModeCompatible : Type Mode -> Bool .
@@ -769,16 +770,16 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       api-call : init(apiCall(AllocateOperation , (alg(ALGO) , mode(MODE) , size(KEYSIZE)))) ,
                       counter : N >
     =>
-    < TK : TAKernel | api-call : return(apiCall(AllocateOperation , (retCode(success) , handle(oid(N + 1 , TK))))) ,
+    < TK : TAKernel | api-call : return(apiCall(AllocateOperation , (retCode(success) , handle(newOid(N + 1 , TK))))) ,
                       counter : N + 2 >
-    < oid(N , TK) : CryptoOperation |
+    < newOid(N , TK) : CryptoOperation |
                                         attributes : empty , keys : nil , max-size : KEYSIZE ,
                                         acc-data : nil ,
                                         algorithm : ALGO , mode : MODE ,
                                         initialization-vector : nil ,
                                         state : initial >
-    freshOperationHandle(N + 1 , TK , oid(N , TK), determineOpClass(ALGO))
-  if algoCompatible(ALGO , MODE) and validKeySize(ALGO , KEYSIZE)
+    freshOperationHandle(N + 1 , TK , newOid(N , TK), determineOpClass(ALGO))
+  if algoCompatible(ALGO , MODE)
   .
 
 --- Parameter error.  The paper returns errorNotSupported for an incompatible
@@ -789,7 +790,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       api-call : init(apiCall(AllocateOperation , (alg(ALGO) , mode(MODE) , size(KEYSIZE)))) >
     =>
     < TK : TAKernel | api-call : return(apiCall(AllocateOperation , retCode(errorNotSupported))) >
-  if not (algoCompatible(ALGO , MODE) and validKeySize(ALGO , KEYSIZE))
+  if not algoCompatible(ALGO , MODE)
   .
 
   rl [alloc-oper-mem-err] :
@@ -865,15 +866,15 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   rl [req-operation-top-level-handle] :
     (msg reqOperationAttr[] from TK to HANDLE)
     < CI : CryptoOperation |
-                              keys : KEYS , algorithm : ALGO ,
-                              mode : MODE , state : OS >
+                              attributes : KATTRS , keys : KEYS ,
+                              algorithm : ALGO , mode : MODE , state : OS >
     < HANDLE : OperationHandle | oid : CI , state : HS,
                                  key-material-set : B2 >
     =>
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-    (msg retOperationAttr[^ opObjectAttr(ALGO , MODE , OS , KEYS) ^
-                          opHandleAttr(hasInit(HS) , B2 , hasExtract(HS))] from HANDLE to TK)
+    (msg retOperationAttr[^ opObjectAttr(ALGO , MODE , OS , KATTRS) ^
+                          opHandleAttr(hasInit(HS) , B2 , hasExtract(HS)) ^ KEYS] from HANDLE to TK)
   .
 
   rl [get-operation-info-success] :
@@ -895,7 +896,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     (msg reqOperationInfoMultiple[] from TK to HANDLE)
   .
 
-  rl [req-operation-info-multiple] :
+  crl [req-operation-info-multiple] :
     (msg reqOperationInfoMultiple[] from TK to HANDLE)
     < CI : CryptoOperation |
                              keys : KEYS , max-size : KEYSIZE ,
@@ -910,7 +911,26 @@ omod CRYPTO-OPERATION-BEHAVIOR is
         KEYSIZE , expectsTwoKeys(ALGO) , operationInfoKeySet(OC , B2) ,
         operationInfoInitialized(OC , hasInit(HS)) , hasExtract(HS) , OS , operationKeyCount(ALGO , OC) ,
         operationKeyInformation(KEYS , requiredOperationUsage(ALGO , MODE) ,
-                                operationKeyCount(ALGO , OC)))] from HANDLE to TK) .
+                                operationKeyCount(ALGO , OC)))] from HANDLE to TK)
+  if expectsTwoKeys(ALGO) .
+
+  crl [req-operation-info-multiple-attrs] :
+    (msg reqOperationInfoMultiple[] from TK to HANDLE)
+    < CI : CryptoOperation |
+                             attributes : KATTRS , max-size : KEYSIZE ,
+                             algorithm : ALGO , mode : MODE ,
+                             state : OS >
+    < HANDLE : OperationHandle | oid : CI , state : HS,
+                                 key-material-set : B2, opclass : OC >
+    =>
+    < CI : CryptoOperation | >
+    < HANDLE : OperationHandle | >
+    (msg retOperationInfoMultiple[^ teeOperationInfoMultiple(ALGO , OC , MODE , operationDigestLength(ALGO) ,
+        KEYSIZE , expectsTwoKeys(ALGO) , operationInfoKeySet(OC , B2) ,
+        operationInfoInitialized(OC , hasInit(HS)) , hasExtract(HS) , OS , operationKeyCount(ALGO , OC) ,
+        operationAttrKeyInformation(KATTRS , requiredOperationUsage(ALGO , MODE) ,
+                                operationKeyCount(ALGO , OC)))] from HANDLE to TK)
+  if not expectsTwoKeys(ALGO) .
 
   crl [get-operation-info-multiple-success] :
     (msg retOperationInfoMultiple[^ OPINFOMULTI] from HANDLE to TK)
@@ -943,24 +963,24 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   op failResetOp : -> ReqId [ctor] .
 
   rl [reset-oper-req-reset] :
-    < TK : TAKernel | api-call : init(apiCall(ResetOperation , handle(HANDLE))) >
+    < TK : TAKernel | api-call : init(apiCall(ResetOperation , handle(HANDLE))) , status : (normal).AppStatus >
     =>
     < TK : TAKernel | api-call : final(apiCall(ResetOperation , handle(HANDLE))) >
-    (msg resetOp[] from TK to HANDLE) .
+    (msg resetOp[^ HANDLE] from TK to HANDLE) .
 
   rl [reset-oper-try-reset-success] :
-    < CI : CryptoOperation | state : CSTATE >
+    < CI : CryptoOp | state : CSTATE >
     < HANDLE : OpHandle | oid : CI , state : handleState((keySet, HSF)) >
-    (msg resetOp[] from TK to HANDLE)
-  => < CI : CryptoOperation | state : (if CSTATE == active then initial else CSTATE fi) ,
-                              acc-data : nil , initialization-vector : nil >
+    (msg resetOp[^ HANDLE] from TK to HANDLE)
+  => < CI : CryptoOp | state : (if CSTATE == active then initial else CSTATE fi) ,
+                       acc-data : nil >
      < HANDLE : OpHandle | >
      (msg finishResetOp[] from HANDLE to TK) .
 
   crl [reset-oper-try-reset-fail] :
     < CI : CryptoOp | >
     < HANDLE : OpHandle | oid : CI , state : handleState(HSF) >
-    (msg resetOp[] from TK to HANDLE)
+    (msg resetOp[^ HANDLE] from TK to HANDLE)
   => < CI : CryptoOp | >
      < HANDLE : OpHandle | >
      (msg failResetOp[] from HANDLE to TK)
@@ -968,7 +988,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   rl [reset-oper-success] :
     (msg finishResetOp[] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(ResetOperation , PARAMS)) >
+    < TK : TAKernel | api-call : final(apiCall(ResetOperation , PARAMS)) , status : (normal).AppStatus >
     =>
     < TK : TAKernel | api-call : return(apiCall(ResetOperation , retCode(noReturnCode))) > .
 
@@ -1001,7 +1021,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   if not nullHandle(KEY)
   .
 
-  crl [set-operation-key-clear] :
+  rl [set-operation-key-clear] :
     < TK : TAKernel | api-call : init(apiCall(SetOperationKey , (handle(HANDLE) , keyHandle(null) , PARAMS))) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | oid : CI , state : HS >
@@ -1011,7 +1031,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                              state : initial >
     < HANDLE : OperationHandle | state : handleState(empty),
                                  key-material-set : false >
-  if not hasInit(HS) .
+  .
 
   rl [set-operation-key-subroutine-1] :
     (msg retAttributeTr[^ ATTRS ^ OBJTYPE ^ OBJUSAGES] from KEY to TK)
@@ -1036,10 +1056,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   crl [set-operation-key-top-level-handle-success] :
     (msg reqSetOperationKey[^ OBJTYPE ^ ATTRS ^ OBJUSAGES] from TK to HANDLE)
     < CI : CryptoOperation | algorithm : ALGO , mode : MODE,
-                             max-size : KEYSIZE,
-                             keys : KEYS , state : OS >
+                             max-size : KEYSIZE, state : OS >
     =>
-    < CI : CryptoOperation | attributes : ATTRS , keys : key(ATTRS) ,
+    < CI : CryptoOperation | attributes : ATTRS ,
                              state : initial >
     (msg installTopOperationKey[^ CI ^ ATTRS] from TK to HANDLE)
   if not expectsTwoKeys(ALGO) /\ algorithmObjectTypeCompatible(ALGO , OBJTYPE) /\
@@ -1048,14 +1067,13 @@ omod CRYPTO-OPERATION-BEHAVIOR is
      singleKeyMaterialCompatible(ALGO , KEYSIZE , ATTRS)
   .
 
-  crl [install-operation-key-top-level-handle] :
+  rl [install-operation-key-top-level-handle] :
     (msg installTopOperationKey[^ CI ^ ATTRS] from TK to HANDLE)
     < HANDLE : OperationHandle | state : HS >
     =>
     < HANDLE : OperationHandle | state : handleState(keySet),
                                  key-material-set : true >
-    (msg finishSetOperationKey[] from HANDLE to TK)
-  if not hasInit(HS) .
+    (msg finishSetOperationKey[] from HANDLE to TK) .
 
   crl [set-operation-key-top-level-handle-fail] :
     (msg reqSetOperationKey[^ OBJTYPE ^ ATTRS ^ OBJUSAGES] from TK to HANDLE)
@@ -1070,13 +1088,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
           singleKeyMaterialCompatible(ALGO , KEYSIZE , ATTRS))
   .
 
-  crl [reject-operation-key-top-level-handle] :
+  rl [reject-operation-key-top-level-handle] :
     (msg rejectTopOperationKey[] from TK to HANDLE)
     < HANDLE : OperationHandle | state : HS >
     =>
     < HANDLE : OperationHandle | >
-    (msg failSetOperationKey[] from HANDLE to TK)
-  if not hasInit(HS) .
+    (msg failSetOperationKey[] from HANDLE to TK) .
 
   rl [set-operation-key-success] :
     (msg finishSetOperationKey[] from HANDLE to TK)
@@ -1339,35 +1356,35 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   .
 
   rl [copy-operation-subroutine] :
-    (msg retOperationAttr[^ OPOBJATTR ^ OPHANDLEATTR] from SRC to TK)
+    (msg retOperationAttr[^ OPOBJATTR ^ OPHANDLEATTR ^ KEYS] from SRC to TK)
     < TK : TAKernel | api-call : exec(apiCall(CopyOperation , (srcHandle(SRC) , trgHandle(HANDLE) , PARAMS)) , 0) >
     =>
     < TK : TAKernel | api-call : final(apiCall(CopyOperation , (srcHandle(SRC) , trgHandle(HANDLE) , PARAMS))) >
-    (msg reqCopyOperation[^ OPOBJATTR ^ OPHANDLEATTR] from TK to HANDLE)
+    (msg reqCopyOperation[^ OPOBJATTR ^ OPHANDLEATTR ^ KEYS] from TK to HANDLE)
   .
 
   crl [copy-operation-top-level-object] :
-    (msg reqCopyOperation[^ opObjectAttr(ALGO , MODE , OS , KEYS) ^ opHandleAttr(B1 , B2 , B3)] from TK to HANDLE)
+    (msg reqCopyOperation[^ opObjectAttr(ALGO , MODE , OS , KATTRS) ^ opHandleAttr(B1 , B2 , B3) ^ KEYS] from TK to HANDLE)
     < CI : CryptoOperation |
                              algorithm : ALGO , mode : MODE ,
-                             keys : KEYS' , max-size : KEYSIZE ,
+                             max-size : KEYSIZE ,
                              state : OS' >
     =>
-    < CI : CryptoOperation | attributes : keyAttributes(KEYS) ,
+    < CI : CryptoOperation | attributes : KATTRS ,
                              keys : KEYS , state : OS >
     (msg applyCopiedOperationHandle[^ B1 ^ B2 ^ B3] from TK to HANDLE)
-  if operationKeysFit(KEYS , KEYSIZE)
+  if copyFits(KATTRS , KEYS , KEYSIZE)
   .
 
   crl [copy-operation-incompatible-panic] :
-    (msg reqCopyOperation[^ opObjectAttr(ALGO , MODE , OS , KEYS) ^ opHandleAttr(B1 , B2 , B3)] from TK to HANDLE)
+    (msg reqCopyOperation[^ opObjectAttr(ALGO , MODE , OS , KATTRS) ^ opHandleAttr(B1 , B2 , B3) ^ KEYS] from TK to HANDLE)
     < CI : CryptoOperation |
                              algorithm : ALGO2 , mode : MODE2 ,
                              max-size : KEYSIZE >
     =>
     < CI : CryptoOperation | >
     (msg failCopyOperation[] from HANDLE to TK)
-  if ALGO =/= ALGO2 or MODE =/= MODE2 or not operationKeysFit(KEYS , KEYSIZE) .
+  if ALGO =/= ALGO2 or MODE =/= MODE2 or not copyFits(KATTRS , KEYS , KEYSIZE) .
 
   rl [copy-operation-top-level-handle] :
     (msg applyCopiedOperationHandle[^ B1 ^ B2 ^ B3] from TK to HANDLE)
@@ -1589,9 +1606,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   rl [digest-extract-top-level-handle] :
     (msg extractTopDigestHandle[^ DATA] from TK to HANDLE)
-    < HANDLE : OperationHandle | state : HS >
+    < HANDLE : OperationHandle | state : handleState(HSF) >
     =>
-    < HANDLE : OperationHandle | state : handleState(extract) >
+    < HANDLE : OperationHandle | state : handleState((keySet , init , extract , HSF)) >
     (msg finishDigestExtract[^ DATA] from HANDLE to TK)
   .
 
@@ -1608,44 +1625,41 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
 --- The 'TEE_CipherInit' function starts the symmetric cipher operation.
 --- See page 207 of the G.P. documentation for more details.
---- Paper: Fig. 13 and Table 3.  The IV argument (and its length check) is a
---- G.P. extra carried in the request message; an invalid IV fails the
---- initialization, which drives the TA to the panic state.
+--- Paper: Sec. 5.2, Fig. 13 and Table 3.  The request takes only the handle;
+--- the IV is not part of the paper's model.
 
   op reqCipherInit : -> ReqId [ctor] .
   op finishCipherInit : -> ReqId [ctor] .
   op failCipherInit : -> ReqId [ctor] .
 
   rl [cipher-init-req-cipher-init] :
-    < TK : TAKernel | api-call : init(apiCall(CipherInit , (handle(HANDLE) , iv(IV)))) >
+    < TK : TAKernel | api-call : init(apiCall(CipherInit , handle(HANDLE))) , status : (normal).AppStatus >
     =>
-    < TK : TAKernel | api-call : final(apiCall(CipherInit , (handle(HANDLE) , iv(IV)))) >
-    (msg reqCipherInit[^ IV] from TK to HANDLE) .
+    < TK : TAKernel | api-call : final(apiCall(CipherInit , handle(HANDLE))) >
+    (msg reqCipherInit[] from TK to HANDLE) .
 
-  crl [cipher-init-initialize-success] :
-    < HANDLE : OpHandle | oid : CI , state : handleState((keySet, HSF)) ,
+  rl [cipher-init-initialize-success] :
+    < HANDLE : OpHandle | oid : CI , state : handleState((keySet , HSF)) ,
                           opclass : clsCipher >
-    < CI : CryptoOperation | algorithm : ALGO , state : CSTATE >
-    (msg reqCipherInit[^ IV] from TK to HANDLE)
-  => < HANDLE : OpHandle | state : handleState((init, keySet, HSF)) >
-     < CI : CryptoOperation | state : if CSTATE == initial then active
-                                      else (if CSTATE == active then initial else CSTATE fi) fi ,
-                              initialization-vector : IV >
-     (msg finishCipherInit[] from HANDLE to TK)
-  if ivLengthValid(ALGO , IV) .
+    < CI : CryptoOp | state : CSTATE >
+    (msg reqCipherInit[] from TK to HANDLE)
+  => < HANDLE : OpHandle | state : handleState((init , keySet , HSF)) >
+     < CI : CryptoOp | state : if CSTATE == initial then active
+                               else (if CSTATE == active then initial else CSTATE fi) fi >
+     (msg finishCipherInit[] from HANDLE to TK) .
 
   crl [cipher-init-initialize-fail] :
     < HANDLE : OpHandle | oid : CI , state : handleState(HSF) , opclass : OC >
-    < CI : CryptoOp | algorithm : ALGO >
-    (msg reqCipherInit[^ IV] from TK to HANDLE)
+    < CI : CryptoOp | >
+    (msg reqCipherInit[] from TK to HANDLE)
   => < HANDLE : OpHandle | >
      < CI : CryptoOp | >
      (msg failCipherInit[] from HANDLE to TK)
-  if (OC =/= clsCipher) or not (keySet in HSF) or not ivLengthValid(ALGO , IV) .
+  if (OC =/= clsCipher) or not (keySet in HSF) .
 
   rl [cipher-init-success] :
     (msg finishCipherInit[] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(CipherInit , PARAMS)) >
+    < TK : TAKernel | api-call : final(apiCall(CipherInit , PARAMS)) , status : (normal).AppStatus >
     =>
     < TK : TAKernel | api-call : return(apiCall(CipherInit , retCode(noReturnCode))) > .
 
@@ -1661,65 +1675,44 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
 --- The 'TEE_CipherUpdate' function encrypts or decrypts input data.
 --- See page 209 of the G.P. documentation for more details.
---- Paper: Fig. 14 and Table 4.  The output-capacity and buffer-overlap
---- handling are G.P. extras that wrap the request rule.
+--- Paper: Sec. 5.2, Fig. 14 and Table 4.
 
   op reqCipher : -> ReqId [ctor] .
   op finishCipher : -> ReqId [ctor] .
   op failCipher : -> ReqId [ctor] .
 
-  crl [cipher-update-req-cipher] :
-    < TK : TAKernel | api-call : init(apiCall(CipherUpdate , (handle(HANDLE) , data(DATA) , PARAMS))) >
+  rl [cipher-update-req-cipher] :
+    < TK : TAKernel | api-call : init(apiCall(CipherUpdate , (handle(HANDLE) , data(DATA)))) , status : (normal).AppStatus >
     =>
-    < TK : TAKernel | api-call : final(apiCall(CipherUpdate , (handle(HANDLE) , data(DATA) , PARAMS))) >
-    (msg reqCipher[^ DATA] from TK to HANDLE)
-  if not hasOutputCapacity(PARAMS) /\ not invalidBufferOverlap(PARAMS)
-  .
-
-  crl [cipher-update-req-cipher-capacity] :
-    < TK : TAKernel | api-call : init(apiCall(CipherUpdate , (handle(HANDLE) , data(DATA) , PARAMS))) >
-    =>
-    < TK : TAKernel | api-call : final(apiCall(CipherUpdate , (handle(HANDLE) , data(DATA) , PARAMS))) >
-    (msg reqCipher[^ DATA] from TK to HANDLE)
-  if hasOutputCapacity(PARAMS) /\ outputCapacityFits(PARAMS , DATA) /\
-     not invalidBufferOverlap(PARAMS)
-  .
-
-  crl [cipher-update-short-buffer] :
-    < TK : TAKernel | api-call : init(apiCall(CipherUpdate , (handle(HANDLE) , data(DATA) , PARAMS))) >
-    =>
-    < TK : TAKernel | api-call : return(apiCall(CipherUpdate , (retCode(errorShortBuffer) ,
-                                  size(outputSize(DATA))))) >
-  if hasOutputCapacity(PARAMS) /\ not outputCapacityFits(PARAMS , DATA) /\
-     not invalidBufferOverlap(PARAMS)
-  .
+    < TK : TAKernel | api-call : final(apiCall(CipherUpdate , (handle(HANDLE) , data(DATA)))) >
+    (msg reqCipher[^ HANDLE ^ DATA] from TK to HANDLE) .
 
   crl [cipher-update-try-cipher-success] :
-    < CI : CryptoOperation | state : active , keys : KEYS ,
-                             algorithm : ALGO , mode : MODE >
+    < CI : CryptoOp | state : active , attributes : ATTRS ,
+                      algorithm : ALGO , mode : MODE >
     < HANDLE : OpHandle | oid : CI , opclass : clsCipher ,
-                          state : handleState((init, keySet, HSF)) >
-    (msg reqCipher[^ DATA] from TK to HANDLE)
-  => < CI : CryptoOperation | >
+                          state : handleState((init , keySet , HSF)) >
+    (msg reqCipher[^ HANDLE ^ DATA] from TK to HANDLE)
+  => < CI : CryptoOp | >
      < HANDLE : OpHandle | >
      (msg finishCipher[^ OPRESULT] from HANDLE to TK)
-  if [OPRESULT] := runOp(ALGO , MODE , keyAttributes(KEYS) , DATA) .
+  if [OPRESULT] := runOp(ALGO , MODE , ATTRS , DATA) .
 
   crl [cipher-update-try-cipher-fail] :
-    < CI : CryptoOperation | state : CSTATE , keys : KEYS ,
-                             algorithm : ALGO , mode : MODE >
+    < CI : CryptoOp | state : CSTATE , attributes : ATTRS ,
+                      algorithm : ALGO , mode : MODE >
     < HANDLE : OpHandle | oid : CI , opclass : OC ,
                           state : handleState(HSF) >
-    (msg reqCipher[^ DATA] from TK to HANDLE)
-  => < CI : CryptoOperation | >
+    (msg reqCipher[^ HANDLE ^ DATA] from TK to HANDLE)
+  => < CI : CryptoOp | >
      < HANDLE : OpHandle | >
      (msg failCipher[] from HANDLE to TK)
   if not (init in HSF) or not (keySet in HSF) or (CSTATE =/= active) or
-     (OC =/= clsCipher) or runOp(ALGO , MODE , keyAttributes(KEYS) , DATA) == failure .
+     (OC =/= clsCipher) or runOp(ALGO , MODE , ATTRS , DATA) == failure .
 
   rl [cipher-update-success] :
     (msg finishCipher[^ OPRESULT] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(CipherUpdate , PARAMS)) >
+    < TK : TAKernel | api-call : final(apiCall(CipherUpdate , PARAMS)) , status : (normal).AppStatus >
     =>
     < TK : TAKernel | api-call : return(apiCall(CipherUpdate , (retCode(success) , data(OPRESULT)))) > .
 
@@ -1735,64 +1728,44 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
 --- The 'TEE_CipherDoFinal' function encrypts or decrypts the input data and
 --- finalizes the operation.
---- Paper: Fig. 15 and Table 5.
+--- Paper: Sec. 5.2, Fig. 15 and Table 5.
 
   op reqCipherFinal : -> ReqId [ctor] .
   op finishCipherDoFinal : -> ReqId [ctor] .
   op failCipherDoFinal : -> ReqId [ctor] .
 
-  crl [cipher-do-final-req-cipher-final] :
-    < TK : TAKernel | api-call : init(apiCall(CipherDoFinal , (handle(HANDLE) , data(DATA) , PARAMS))) >
+  rl [cipher-do-final-req-cipher-final] :
+    < TK : TAKernel | api-call : init(apiCall(CipherDoFinal , (handle(HANDLE) , data(DATA)))) , status : (normal).AppStatus >
     =>
-    < TK : TAKernel | api-call : final(apiCall(CipherDoFinal , (handle(HANDLE) , data(DATA) , PARAMS))) >
-    (msg reqCipherFinal[^ DATA] from TK to HANDLE)
-  if not hasOutputCapacity(PARAMS) /\ not invalidBufferOverlap(PARAMS)
-  .
-
-  crl [cipher-do-final-req-cipher-final-capacity] :
-    < TK : TAKernel | api-call : init(apiCall(CipherDoFinal , (handle(HANDLE) , data(DATA) , PARAMS))) >
-    =>
-    < TK : TAKernel | api-call : final(apiCall(CipherDoFinal , (handle(HANDLE) , data(DATA) , PARAMS))) >
-    (msg reqCipherFinal[^ DATA] from TK to HANDLE)
-  if hasOutputCapacity(PARAMS) /\ outputCapacityFits(PARAMS , DATA) /\
-     not invalidBufferOverlap(PARAMS)
-  .
-
-  crl [cipher-do-final-short-buffer] :
-    < TK : TAKernel | api-call : init(apiCall(CipherDoFinal , (handle(HANDLE) , data(DATA) , PARAMS))) >
-    =>
-    < TK : TAKernel | api-call : return(apiCall(CipherDoFinal , (retCode(errorShortBuffer) ,
-                                  size(outputSize(DATA))))) >
-  if hasOutputCapacity(PARAMS) /\ not outputCapacityFits(PARAMS , DATA) /\
-     not invalidBufferOverlap(PARAMS)
-  .
+    < TK : TAKernel | api-call : final(apiCall(CipherDoFinal , (handle(HANDLE) , data(DATA)))) >
+    (msg reqCipherFinal[^ DATA] from TK to HANDLE) .
 
   crl [cipher-do-final-try-cipher-final-success] :
-    < CI : CryptoOperation | state : active , keys : KEYS ,
-                             algorithm : ALGO , mode : MODE >
+    < CI : CryptoOp | state : active , attributes : ATTRS ,
+                      algorithm : ALGO , mode : MODE >
     < HANDLE : OpHandle | oid : CI , opclass : clsCipher ,
-                          state : handleState((init, keySet, HSF)) >
+                          state : handleState((init , keySet , HSF)) >
     (msg reqCipherFinal[^ DATA] from TK to HANDLE)
-  => < CI : CryptoOperation | state : initial >
-     < HANDLE : OpHandle | state : handleState((keySet, HSF)) >
+  => < CI : CryptoOp | state : initial >
+     < HANDLE : OpHandle | state : handleState((keySet , HSF)) >
      (msg finishCipherDoFinal[^ OPRESULT] from HANDLE to TK)
-  if [OPRESULT] := runOp(ALGO , MODE , keyAttributes(KEYS) , DATA) .
+  if [OPRESULT] := runOp(ALGO , MODE , ATTRS , DATA) .
 
   crl [cipher-do-final-try-cipher-final-fail] :
-    < CI : CryptoOperation | state : CSTATE , keys : KEYS ,
-                             algorithm : ALGO , mode : MODE >
+    < CI : CryptoOp | state : CSTATE , attributes : ATTRS ,
+                      algorithm : ALGO , mode : MODE >
     < HANDLE : OpHandle | oid : CI , opclass : OC ,
                           state : handleState(HSF) >
     (msg reqCipherFinal[^ DATA] from TK to HANDLE)
-  => < CI : CryptoOperation | >
+  => < CI : CryptoOp | >
      < HANDLE : OpHandle | >
      (msg failCipherDoFinal[] from HANDLE to TK)
   if not (init in HSF) or not (keySet in HSF) or (CSTATE =/= active) or
-     (OC =/= clsCipher) or runOp(ALGO , MODE , keyAttributes(KEYS) , DATA) == failure .
+     (OC =/= clsCipher) or runOp(ALGO , MODE , ATTRS , DATA) == failure .
 
   rl [cipher-do-final-success] :
     (msg finishCipherDoFinal[^ OPRESULT] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(CipherDoFinal , PARAMS)) >
+    < TK : TAKernel | api-call : final(apiCall(CipherDoFinal , PARAMS)) , status : (normal).AppStatus >
     =>
     < TK : TAKernel | api-call : return(apiCall(CipherDoFinal , (retCode(success) , data(OPRESULT)))) > .
 
@@ -1884,7 +1857,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   crl [mac-compute-final-top-level-capacity] :
     < TK : TAKernel | api-call : init(apiCall(MACComputeFinal , (handle(HANDLE) , data(DATA) , PARAMS))) >
     < CI : CryptoOperation |
-                             keys : KEYS , acc-data : DL , algorithm : ALGO,
+                             attributes : KATTRS , acc-data : DL , algorithm : ALGO,
                              state : active >
     < HANDLE : OperationHandle | oid : CI, opclass : clsMAC >
     =>
@@ -1892,27 +1865,27 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
     (msg macComputeFinal[^ DATA] from TK to HANDLE)
-  if hasOutputCapacity(PARAMS) /\ outputCapacityFits(PARAMS , computeMAC(ALGO , KEYS , DL DATA))
+  if hasOutputCapacity(PARAMS) /\ outputCapacityFits(PARAMS , computeMAC(ALGO , KATTRS , DL DATA))
   .
 
   crl [mac-compute-final-top-level-short-buffer] :
     < TK : TAKernel | api-call : init(apiCall(MACComputeFinal , (handle(HANDLE) , data(DATA) , PARAMS))) >
     < CI : CryptoOperation |
-                             keys : KEYS , acc-data : DL , algorithm : ALGO,
+                             attributes : KATTRS , acc-data : DL , algorithm : ALGO,
                              state : active >
     < HANDLE : OperationHandle | oid : CI, opclass : clsMAC >
     =>
     < TK : TAKernel | api-call : return(apiCall(MACComputeFinal , (retCode(errorShortBuffer) ,
-                                  size(outputSize(computeMAC(ALGO , KEYS , DL DATA)))))) >
+                                  size(outputSize(computeMAC(ALGO , KATTRS , DL DATA)))))) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-  if hasOutputCapacity(PARAMS) /\ not outputCapacityFits(PARAMS , computeMAC(ALGO , KEYS , DL DATA))
+  if hasOutputCapacity(PARAMS) /\ not outputCapacityFits(PARAMS , computeMAC(ALGO , KATTRS , DL DATA))
   .
 
   rl [mac-compute-final-top-level-object] :
     (msg macComputeFinal[^ DATA] from TK to HANDLE)
     < CI : CryptoOperation |
-                             keys : KEYS , acc-data : DL ,
+                             attributes : KATTRS , acc-data : DL ,
                              algorithm : ALGO ,
                              state : active >
     < HANDLE : OperationHandle | oid : CI, opclass : clsMAC >
@@ -1920,7 +1893,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < CI : CryptoOperation | acc-data : nil ,
                              state : initial >
     < HANDLE : OperationHandle | >
-    (msg finishTopMacFinal[^ computeMAC(ALGO , KEYS , DL DATA)] from TK to HANDLE)
+    (msg finishTopMacFinal[^ computeMAC(ALGO , KATTRS , DL DATA)] from TK to HANDLE)
   .
 
   rl [mac-compute-final-top-level-handle] :
@@ -2034,7 +2007,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   crl [ae-update-top-level-capacity] :
     < TK : TAKernel | api-call : init(apiCall(AEUpdate , (handle(HANDLE) , data(DATA) , PARAMS))) >
     < CI : CryptoOperation |
-                             keys : KEYS , acc-data : DL, algorithm : ALGO,
+                             attributes : KATTRS , acc-data : DL, algorithm : ALGO,
                              mode : MODE >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAE >
     =>
@@ -2042,7 +2015,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
     (msg reqAEUpdate[^ DATA] from TK to HANDLE)
-  if [OPRESULT] := runOp(ALGO , MODE , keyAttributes(KEYS) , DL DATA) /\ hasOutputCapacity(PARAMS) /\
+  if [OPRESULT] := runOp(ALGO , MODE , KATTRS , DL DATA) /\ hasOutputCapacity(PARAMS) /\
      outputCapacityFits(PARAMS , OPRESULT) /\
      not invalidBufferOverlap(PARAMS)
   .
@@ -2050,7 +2023,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   crl [ae-update-top-level-short-buffer] :
     < TK : TAKernel | api-call : init(apiCall(AEUpdate , (handle(HANDLE) , data(DATA) , PARAMS))) >
     < CI : CryptoOperation |
-                             keys : KEYS , acc-data : DL, algorithm : ALGO,
+                             attributes : KATTRS , acc-data : DL, algorithm : ALGO,
                              mode : MODE >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAE >
     =>
@@ -2058,7 +2031,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                         size(outputSize(OPRESULT))))) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-  if [OPRESULT] := runOp(ALGO , MODE , keyAttributes(KEYS) , DL DATA) /\ hasOutputCapacity(PARAMS) /\
+  if [OPRESULT] := runOp(ALGO , MODE , KATTRS , DL DATA) /\ hasOutputCapacity(PARAMS) /\
      not outputCapacityFits(PARAMS , OPRESULT) /\
      not invalidBufferOverlap(PARAMS)
   .
@@ -2066,7 +2039,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   crl [ae-update-top-level-object] :
     (msg reqAEUpdate[^ DATA] from TK to HANDLE)
     < CI : CryptoOperation |
-                             keys : KEYS , acc-data : DL , algorithm : ALGO ,
+                             attributes : KATTRS , acc-data : DL , algorithm : ALGO ,
                              mode : MODE ,
                              state : OS >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAE >
@@ -2075,7 +2048,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                              state : active >
     < HANDLE : OperationHandle | >
     (msg finishTopAEUpdate[^ OPRESULT] from TK to HANDLE)
-  if [OPRESULT] := runOp(ALGO , MODE , keyAttributes(KEYS) , DL DATA)
+  if [OPRESULT] := runOp(ALGO , MODE , KATTRS , DL DATA)
   .
 
   rl [ae-update-top-level-handle] :
@@ -2109,7 +2082,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   crl [ae-encrypt-final-top-level-capacity] :
     < TK : TAKernel | api-call : init(apiCall(AEEncryptFinal , (handle(HANDLE) , data(DATA) , PARAMS))) >
     < CI : CryptoOperation |
-                             keys : KEYS , acc-data : DL , algorithm : ALGO,
+                             attributes : KATTRS , acc-data : DL , algorithm : ALGO,
                              mode : modeEncrypt >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAE >
     =>
@@ -2117,37 +2090,37 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
     (msg aeEncryptFinal[^ DATA] from TK to HANDLE)
-  if [OPRESULT] := runOp(ALGO , modeEncrypt , keyAttributes(KEYS) , DL DATA) /\ (hasOutputCapacity(PARAMS) or hasTagCapacity(PARAMS)) /\
+  if [OPRESULT] := runOp(ALGO , modeEncrypt , KATTRS , DL DATA) /\ (hasOutputCapacity(PARAMS) or hasTagCapacity(PARAMS)) /\
      (not hasOutputCapacity(PARAMS) or
        outputCapacityFits(PARAMS , OPRESULT)) /\
-     tagCapacityFits(PARAMS , computeMAC(ALGO , KEYS , DL DATA)) /\
+     tagCapacityFits(PARAMS , computeMAC(ALGO , KATTRS , DL DATA)) /\
      not invalidBufferOverlap(PARAMS)
   .
 
   crl [ae-encrypt-final-top-level-short-buffer] :
     < TK : TAKernel | api-call : init(apiCall(AEEncryptFinal , (handle(HANDLE) , data(DATA) , PARAMS))) >
     < CI : CryptoOperation |
-                             keys : KEYS , acc-data : DL , algorithm : ALGO,
+                             attributes : KATTRS , acc-data : DL , algorithm : ALGO,
                              mode : modeEncrypt >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAE >
     =>
     < TK : TAKernel | api-call : return(apiCall(AEEncryptFinal , (retCode(errorShortBuffer) ,
                         (size(outputSize(OPRESULT)) ,
-                         tagSize(outputSize(computeMAC(ALGO , KEYS , DL DATA))))))) >
+                         tagSize(outputSize(computeMAC(ALGO , KATTRS , DL DATA))))))) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-  if [OPRESULT] := runOp(ALGO , modeEncrypt , keyAttributes(KEYS) , DL DATA) /\ (hasOutputCapacity(PARAMS) or hasTagCapacity(PARAMS)) /\
+  if [OPRESULT] := runOp(ALGO , modeEncrypt , KATTRS , DL DATA) /\ (hasOutputCapacity(PARAMS) or hasTagCapacity(PARAMS)) /\
      ((hasOutputCapacity(PARAMS) and
        not outputCapacityFits(PARAMS , OPRESULT)) or
       (hasTagCapacity(PARAMS) and
-       not tagCapacityFits(PARAMS , computeMAC(ALGO , KEYS , DL DATA)))) /\
+       not tagCapacityFits(PARAMS , computeMAC(ALGO , KATTRS , DL DATA)))) /\
      not invalidBufferOverlap(PARAMS)
   .
 
   crl [ae-encrypt-final-top-level-object] :
     (msg aeEncryptFinal[^ DATA] from TK to HANDLE)
     < CI : CryptoOperation |
-                             keys : KEYS , acc-data : DL , algorithm : ALGO ,
+                             attributes : KATTRS , acc-data : DL , algorithm : ALGO ,
                              mode : modeEncrypt ,
                              state : OS >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAE >
@@ -2155,8 +2128,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                               state : initial >
        < HANDLE : OperationHandle | >
        (msg finishTopAEEncryptFinal[^ OPRESULT ^
-                                     computeMAC(ALGO , KEYS , DL DATA)] from TK to HANDLE)
-  if [OPRESULT] := runOp(ALGO , modeEncrypt , keyAttributes(KEYS) , DL DATA) .
+                                     computeMAC(ALGO , KATTRS , DL DATA)] from TK to HANDLE)
+  if [OPRESULT] := runOp(ALGO , modeEncrypt , KATTRS , DL DATA) .
 
   rl [ae-encrypt-final-top-level-handle] :
     (msg finishTopAEEncryptFinal[^ DATA ^ MAC] from TK to HANDLE)
@@ -2185,7 +2158,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   crl [ae-decrypt-final-top-level-capacity] :
     < TK : TAKernel | api-call : init(apiCall(AEDecryptFinal , (handle(HANDLE) , data(DATA) , mac(MAC) , PARAMS))) >
     < CI : CryptoOperation |
-                             keys : KEYS , algorithm : ALGO,
+                             attributes : KATTRS , algorithm : ALGO,
                              mode : modeDecrypt >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAE >
     =>
@@ -2193,7 +2166,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
     (msg aeDecryptFinal[^ DATA ^ MAC] from TK to HANDLE)
-  if [OPRESULT] := runOp(ALGO , modeDecrypt , keyAttributes(KEYS) , DATA) /\ hasOutputCapacity(PARAMS) /\
+  if [OPRESULT] := runOp(ALGO , modeDecrypt , KATTRS , DATA) /\ hasOutputCapacity(PARAMS) /\
      outputCapacityFits(PARAMS , OPRESULT) /\
      not invalidBufferOverlap(PARAMS)
   .
@@ -2201,7 +2174,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   crl [ae-decrypt-final-top-level-short-buffer] :
     < TK : TAKernel | api-call : init(apiCall(AEDecryptFinal , (handle(HANDLE) , data(DATA) , mac(MAC) , PARAMS))) >
     < CI : CryptoOperation |
-                             keys : KEYS , algorithm : ALGO,
+                             attributes : KATTRS , algorithm : ALGO,
                              mode : modeDecrypt >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAE >
     =>
@@ -2209,7 +2182,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                         size(outputSize(OPRESULT))))) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-  if [OPRESULT] := runOp(ALGO , modeDecrypt , keyAttributes(KEYS) , DATA) /\ hasOutputCapacity(PARAMS) /\
+  if [OPRESULT] := runOp(ALGO , modeDecrypt , KATTRS , DATA) /\ hasOutputCapacity(PARAMS) /\
      not outputCapacityFits(PARAMS , OPRESULT) /\
      not invalidBufferOverlap(PARAMS)
   .
@@ -2217,7 +2190,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   crl [ae-decrypt-final-top-level-object] :
     (msg aeDecryptFinal[^ DATA ^ MAC] from TK to HANDLE)
     < CI : CryptoOperation |
-                             keys : KEYS , acc-data : DL , algorithm : ALGO ,
+                             attributes : KATTRS , acc-data : DL , algorithm : ALGO ,
                              mode : modeDecrypt ,
                              state : OS >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAE >
@@ -2225,8 +2198,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                               state : initial >
        < HANDLE : OperationHandle | >
        (msg finishTopAEDecryptFinal[^ OPRESULT ^
-                                     computeMAC(ALGO , KEYS , DL DATA) ^ MAC] from TK to HANDLE)
-  if [OPRESULT] := runOp(ALGO , modeDecrypt , keyAttributes(KEYS) , DATA) .
+                                     computeMAC(ALGO , KATTRS , DL DATA) ^ MAC] from TK to HANDLE)
+  if [OPRESULT] := runOp(ALGO , modeDecrypt , KATTRS , DATA) .
 
   rl [ae-decrypt-final-top-level-handle] :
     (msg finishTopAEDecryptFinal[^ DATA ^ MAC ^ DL] from TK to HANDLE)
@@ -2263,7 +2236,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   crl [asymmetric-encrypt-top-level-capacity] :
     < TK : TAKernel | api-call : init(apiCall(AsymmetricEncrypt , (handle(HANDLE) , data(DATA) , PARAMS))) >
     < CI : CryptoOperation |
-                             keys : KEYS , algorithm : ALGO, max-size : KEYSIZE,
+                             attributes : KATTRS , algorithm : ALGO, max-size : KEYSIZE,
                              mode : modeEncrypt >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAsymmetricCipher >
     =>
@@ -2279,7 +2252,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   crl [asymmetric-encrypt-top-level-short-buffer] :
     < TK : TAKernel | api-call : init(apiCall(AsymmetricEncrypt , (handle(HANDLE) , data(DATA) , PARAMS))) >
     < CI : CryptoOperation |
-                             keys : KEYS , algorithm : ALGO, max-size : KEYSIZE,
+                             attributes : KATTRS , algorithm : ALGO, max-size : KEYSIZE,
                              mode : modeEncrypt >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAsymmetricCipher >
     =>
@@ -2308,14 +2281,14 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   crl [asymmetric-encrypt-top-level-object] :
     (msg asymEncrypt[^ DATA] from TK to HANDLE)
     < CI : CryptoOperation |
-                             keys : KEYS , algorithm : ALGO , max-size : KEYSIZE,
+                             attributes : KATTRS , algorithm : ALGO , max-size : KEYSIZE,
                              mode : modeEncrypt >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAsymmetricCipher >
     =>
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
     (msg finishTopAsymEncrypt[^ OPRESULT] from TK to HANDLE)
-  if [OPRESULT] := runOp(ALGO , modeEncrypt , keyAttributes(KEYS) , DATA) /\ validRsaEncryptInput(ALGO , KEYSIZE , DATA)
+  if [OPRESULT] := runOp(ALGO , modeEncrypt , KATTRS , DATA) /\ validRsaEncryptInput(ALGO , KEYSIZE , DATA)
   .
 
   crl [asymmetric-encrypt-top-level-handle] :
@@ -2362,7 +2335,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   crl [asymmetric-decrypt-top-level-capacity] :
     < TK : TAKernel | api-call : init(apiCall(AsymmetricDecrypt , (handle(HANDLE) , data(DATA) , PARAMS))) >
     < CI : CryptoOperation |
-                             keys : KEYS , algorithm : ALGO, max-size : KEYSIZE,
+                             attributes : KATTRS , algorithm : ALGO, max-size : KEYSIZE,
                              mode : modeDecrypt >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAsymmetricCipher >
     =>
@@ -2370,15 +2343,15 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
     (msg asymDecrypt[^ DATA] from TK to HANDLE)
-  if [OPRESULT] := runOp(ALGO , modeDecrypt , keyAttributes(KEYS) , DATA) /\ hasOutputCapacity(PARAMS) /\
-     validRsaCiphertextSize(KEYSIZE , DATA) /\ validRsaCiphertext(ALGO , KEYS , DATA) /\
+  if [OPRESULT] := runOp(ALGO , modeDecrypt , KATTRS , DATA) /\ hasOutputCapacity(PARAMS) /\
+     validRsaCiphertextSize(KEYSIZE , DATA) /\ validRsaCiphertext(ALGO , KATTRS , DATA) /\
      outputCapacityFits(PARAMS , OPRESULT)
   .
 
   crl [asymmetric-decrypt-top-level-short-buffer] :
     < TK : TAKernel | api-call : init(apiCall(AsymmetricDecrypt , (handle(HANDLE) , data(DATA) , PARAMS))) >
     < CI : CryptoOperation |
-                             keys : KEYS , algorithm : ALGO, max-size : KEYSIZE,
+                             attributes : KATTRS , algorithm : ALGO, max-size : KEYSIZE,
                              mode : modeDecrypt >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAsymmetricCipher >
     =>
@@ -2386,8 +2359,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                         size(outputSize(OPRESULT))))) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-  if [OPRESULT] := runOp(ALGO , modeDecrypt , keyAttributes(KEYS) , DATA) /\ hasOutputCapacity(PARAMS) /\
-     validRsaCiphertextSize(KEYSIZE , DATA) /\ validRsaCiphertext(ALGO , KEYS , DATA) /\
+  if [OPRESULT] := runOp(ALGO , modeDecrypt , KATTRS , DATA) /\ hasOutputCapacity(PARAMS) /\
+     validRsaCiphertextSize(KEYSIZE , DATA) /\ validRsaCiphertext(ALGO , KATTRS , DATA) /\
      not outputCapacityFits(PARAMS , OPRESULT)
   .
 
@@ -2406,27 +2379,27 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   crl [asymmetric-decrypt-top-level-invalid-ciphertext] :
     < TK : TAKernel | api-call : init(apiCall(AsymmetricDecrypt , (handle(HANDLE) , data(DATA) , PARAMS))) >
     < CI : CryptoOperation |
-                             keys : KEYS , algorithm : ALGO, max-size : KEYSIZE,
+                             attributes : KATTRS , algorithm : ALGO, max-size : KEYSIZE,
                              mode : modeDecrypt >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAsymmetricCipher >
     =>
     < TK : TAKernel | api-call : return(apiCall(AsymmetricDecrypt , retCode(errorCiphertextInvalid))) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-  if validRsaCiphertextSize(KEYSIZE , DATA) /\ not validRsaCiphertext(ALGO , KEYS , DATA)
+  if validRsaCiphertextSize(KEYSIZE , DATA) /\ not validRsaCiphertext(ALGO , KATTRS , DATA)
   .
 
   crl [asymmetric-decrypt-top-level-object] :
     (msg asymDecrypt[^ DATA] from TK to HANDLE)
     < CI : CryptoOperation |
-                             keys : KEYS , algorithm : ALGO , max-size : KEYSIZE,
+                             attributes : KATTRS , algorithm : ALGO , max-size : KEYSIZE,
                              mode : modeDecrypt >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAsymmetricCipher >
     =>
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
     (msg finishTopAsymDecrypt[^ OPRESULT] from TK to HANDLE)
-  if [OPRESULT] := runOp(ALGO , modeDecrypt , keyAttributes(KEYS) , DATA) /\ validRsaCiphertextSize(KEYSIZE , DATA) /\ validRsaCiphertext(ALGO , KEYS , DATA)
+  if [OPRESULT] := runOp(ALGO , modeDecrypt , KATTRS , DATA) /\ validRsaCiphertextSize(KEYSIZE , DATA) /\ validRsaCiphertext(ALGO , KATTRS , DATA)
   .
 
   crl [asymmetric-decrypt-top-level-handle] :
@@ -2455,14 +2428,14 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     (msg asymDecrypt[^ DATA] from TK to HANDLE)
     < TK : TAKernel | api-call : final(apiCall(AsymmetricDecrypt , PARAMS)) >
     < CI : CryptoOperation |
-                             keys : KEYS , algorithm : ALGO , max-size : KEYSIZE,
+                             attributes : KATTRS , algorithm : ALGO , max-size : KEYSIZE,
                              mode : modeDecrypt >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAsymmetricCipher >
     =>
     < TK : TAKernel | api-call : return(apiCall(AsymmetricDecrypt , retCode(errorCiphertextInvalid))) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-  if validRsaCiphertextSize(KEYSIZE , DATA) /\ not validRsaCiphertext(ALGO , KEYS , DATA)
+  if validRsaCiphertextSize(KEYSIZE , DATA) /\ not validRsaCiphertext(ALGO , KATTRS , DATA)
   .
 
   rl [asymmetric-decrypt-success] :
@@ -2516,13 +2489,13 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   crl [asymmetric-sign-digest-top-level-object] :
     (msg asymSignDigest[^ DATA] from TK to HANDLE)
     < CI : CryptoOperation |
-                             keys : KEYS , algorithm : ALGO ,
+                             attributes : KATTRS , algorithm : ALGO ,
                              mode : modeSign >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAsymmetricSignature >
     =>
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-    (msg finishTopAsymSignDigest[^ signDigest(ALGO , KEYS , DATA)] from TK to HANDLE)
+    (msg finishTopAsymSignDigest[^ signDigest(ALGO , KATTRS , DATA)] from TK to HANDLE)
   if validSignatureDigestLength(ALGO , DATA)
   .
 
@@ -2573,13 +2546,13 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   crl [asymmetric-verify-digest-top-level-object] :
     (msg asymVerifyDigest[^ DATA] from TK to HANDLE)
     < CI : CryptoOperation |
-                             keys : KEYS , algorithm : ALGO ,
+                             attributes : KATTRS , algorithm : ALGO ,
                              mode : modeVerify >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAsymmetricSignature >
     =>
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-    (msg finishTopAsymVerifyDigest[^ signDigest(ALGO , KEYS , DATA)] from TK to HANDLE)
+    (msg finishTopAsymVerifyDigest[^ signDigest(ALGO , KATTRS , DATA)] from TK to HANDLE)
   if validSignatureDigestLength(ALGO , DATA)
   .
 
@@ -2782,21 +2755,15 @@ mod CRYPTO-OPERATION-TEE-CALL is
   eq makeReturnStmt(DigestExtract , RET , size(DATASIZE) , (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
 
 --- Symmetric Cipher
-  eq makeCall(CipherInit , (# HANDLE , # IV)) = apiCall(CipherInit , (handle(HANDLE) , iv(IV))) .
+  eq makeCall(CipherInit , (# HANDLE)) = apiCall(CipherInit , handle(HANDLE)) .
   eq makeReturnStmt(CipherInit , noReturnCode , empty , nil) = skip .
 
   eq makeCall(CipherUpdate , (# HANDLE , # DL)) = apiCall(CipherUpdate , (handle(HANDLE) , data(DL))) .
-  eq makeCall(CipherUpdate , (# HANDLE , # DL , # DATASIZE)) = apiCall(CipherUpdate , (handle(HANDLE) , data(DL) , capacity(DATASIZE))) .
-  eq makeCall(CipherUpdate , (# HANDLE , # DL , # DATASIZE , # SRC , # DEST)) = apiCall(CipherUpdate , (handle(HANDLE) , data(DL) , capacity(DATASIZE) , srcRegion(SRC) , destRegion(DEST))) .
   eq makeReturnStmt(CipherUpdate , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
-  eq makeReturnStmt(CipherUpdate , RET , size(DATASIZE) , (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
   eq makeReturnStmt(CipherUpdate , RET , empty , (E, E')) = $assign(# RET , E) .
   
   eq makeCall(CipherDoFinal , (# HANDLE , # DL)) = apiCall(CipherDoFinal , (handle(HANDLE) , data(DL))) .
-  eq makeCall(CipherDoFinal , (# HANDLE , # DL , # DATASIZE)) = apiCall(CipherDoFinal , (handle(HANDLE) , data(DL) , capacity(DATASIZE))) .
-  eq makeCall(CipherDoFinal , (# HANDLE , # DL , # DATASIZE , # SRC , # DEST)) = apiCall(CipherDoFinal , (handle(HANDLE) , data(DL) , capacity(DATASIZE) , srcRegion(SRC) , destRegion(DEST))) .
   eq makeReturnStmt(CipherDoFinal , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
-  eq makeReturnStmt(CipherDoFinal , RET , size(DATASIZE) , (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
 
 --- MAC
   eq makeCall(MACInit , (# HANDLE , # IV)) = apiCall(MACInit , (handle(HANDLE) , iv(IV))) .

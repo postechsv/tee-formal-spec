@@ -58,7 +58,7 @@ fmod TEE-API-IMP-PROG-AUX is
    = $libFun(T F(XL),
         $prep(mkEval(IN)) ~>
         $in(nil) ~>
-        $waitSysCall(F) ~>
+        $wait(F) ~>
         $out(OUT) ~>
         S ~>
         return E ;
@@ -68,7 +68,7 @@ fmod TEE-API-IMP-PROG-AUX is
    = $libFun(void F(XL),
         $prep(mkEval(IN)) ~>
         $in(nil) ~>
-        $waitSysCall(F) ~>
+        $wait(F) ~>
         S ~>
         $out(OUT)
       ) .
@@ -236,6 +236,7 @@ endfm
 
 mod TRANSIENT-OBJECT-TEE-CALL is
   pr TEE-API-IMP-CALL .
+  pr TEE-ATTRIBUTE-AUX .
   pr TRANSIENT-OBJECT-FUNC .
   pr HANDLE .
   pr HANDLE-ID-GEN .
@@ -249,8 +250,8 @@ mod TRANSIENT-OBJECT-TEE-CALL is
   var OBJTYPE : Type .
   var KEYSIZE : Nat .
   vars HANDLE HANDLE1 HANDLE2 : Oid .
-  var REF : AttrRef .
-  var VAL : AttrVal .
+  var REF : AttrId .
+  var VAL : AttrId .
   var V : AttrValue .
   var ATTRS : Set{CryptoAttribute} .
   var RET : ReturnCode .
@@ -308,8 +309,10 @@ mod TRANSIENT-OBJECT-TEE-CALL is
   eq makeCall(PopulateTransientObject , (# HANDLE , # ATTRS)) = apiCall(PopulateTransientObject , (handle(HANDLE) , attrs(ATTRS))) .
   eq makeReturnStmt(PopulateTransientObject , RET , empty , R) = $assign(# RET , R) .
 
-  eq makeCall(InitRefAttribute , (# REF , # V)) = apiCall(InitRefAttribute , (constId(REF) , constVal(V))) .
-  eq makeCall(InitRefAttribute , (# REF , # attrContentData(V))) = apiCall(InitRefAttribute , (constId(REF) , constVal(V))) .
+  ceq makeCall(InitRefAttribute , (# REF , # V)) = apiCall(InitRefAttribute , (constId(REF) , constVal(V))) if REF in refAttrIds .
+  --- secretValue is an AttrId (paper App. A) that is a reference attribute (see refAttrIds).
+  eq makeCall(InitRefAttribute , (# secretValue , # V)) = apiCall(InitRefAttribute , (constId(secretValue) , constVal(V))) .
+  ceq makeCall(InitRefAttribute , (# REF , # attrContentData(V))) = apiCall(InitRefAttribute , (constId(REF) , constVal(V))) if REF in refAttrIds .
   eq makeReturnStmt(InitRefAttribute , noReturnCode , attrs(ATTRS) , E) = $assign(# ATTRS , E) .
 
   eq makeCall(InitValueAttribute , (# VAL , # V)) = apiCall(InitValueAttribute , (constId(VAL) , constVal(V))) .

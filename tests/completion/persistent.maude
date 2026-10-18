@@ -25,8 +25,8 @@ search [1] in COMPLETION-TEST :
 --- Creating a persistent object can consume an abstract top-level transient handle.
 search [1] in COMPLETION-TEST :
   < testTa : TAKernel | status : (normal).AppStatus, api-call : init(createPersistent[# ZvStorageId # testFileId # accessRead # oid(101, testTa) # (nil).List{Data} # dataSize(0) # null]), storage : oid(0, testTa), counter : 0, TA-ATTS:AttributeSet >
-  < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa), flags : empty, pos : 0 >
-  < oid(1, testTa) : TransientObject | initialized : true, type : typeAes, attributes : empty, usages : usageExtractable, max-size : 128 >
+  < oid(101, testTa) : ObjHandle | oid : oid(1, testTa), flags : empty, pos : 0 >
+  < oid(1, testTa) : TransObj | initialized : true, type : typeAes, attributes : empty, usages : usageExtractable, max-size : 128 >
   < oid(0, testTa) : Storage | status : (normal).StorageStatus, files : empty, counter : 0 >
 =>*
   < testTa : TAKernel | api-call : return(createPersistent[# success # oid(0, oid(0, testTa))]), TA-ATTS:AttributeSet > C:Configuration .
@@ -34,8 +34,8 @@ search [1] in COMPLETION-TEST :
 --- Transforming a transient object advances its Storage object (two identifiers per persistent object: handle and object).
 search [1] in COMPLETION-TEST :
   < testTa : TAKernel | status : (normal).AppStatus, api-call : init(createPersistent[# ZvStorageId # testFileId # accessRead # oid(101, testTa) # (nil).List{Data} # dataSize(0) # null]), storage : oid(0, testTa), counter : 0, TA-ATTS:AttributeSet >
-  < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa), flags : empty, pos : 0 >
-  < oid(1, testTa) : TransientObject | initialized : true, type : typeAes, attributes : empty, usages : usageExtractable, max-size : 128 >
+  < oid(101, testTa) : ObjHandle | oid : oid(1, testTa), flags : empty, pos : 0 >
+  < oid(1, testTa) : TransObj | initialized : true, type : typeAes, attributes : empty, usages : usageExtractable, max-size : 128 >
   < oid(0, testTa) : Storage | status : (normal).StorageStatus, files : empty, counter : 0 >
 =>*
   < oid(0, testTa) : Storage | files : testFileId, counter : 2, STO-ATTS:AttributeSet > C:Configuration .
@@ -43,7 +43,7 @@ search [1] in COMPLETION-TEST :
 --- OpenPersistentObject resolves an object through the handle's oid relation.
 search [1] in COMPLETION-TEST :
   (msg openPersistentHandle[# testFileId # accessRead # 3] from testTa to oid(0, testTa))
-  < oid(1, oid(0, testTa)) : PersistentObject | file-name : testFileId >
+  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId >
 =>*
   (msg finishOpenPersistentHandle[# oid(3, testTa)] from oid(0, testTa) to testTa)
   C .
@@ -52,56 +52,56 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   (msg openPersistentHandle[# testFileId # (accessRead,
                         shareRead) # 2] from testTa to oid(0, testTa))
-  < oid(1, oid(0, testTa)) : PersistentObject | file-name : testFileId >
-  < oid(1, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
+  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId >
+  < oid(1, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
       flags : accessRead >
 =>*
   (msg failOpenPersistentHandle[] from oid(0, testTa) to testTa)
-  < oid(1, oid(0, testTa)) : PersistentObject | file-name : testFileId >
-  < oid(1, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
+  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId >
+  < oid(1, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
       flags : accessRead > .
 
 --- Opening is scoped to the TA's Storage even when another Storage contains
 --- an object with the same file identifier.
 search [1] in COMPLETION-TEST :
   (msg openPersistentHandle[# testFileId # accessRead # 4] from testTa to oid(0, otherTa))
-  < oid(0, oid(0, testTa)) : PersistentObject | file-name : testFileId >
-  < oid(0, oid(0, otherTa)) : PersistentObject | file-name : testFileId >
+  < oid(0, oid(0, testTa)) : PersistObj | file-name : testFileId >
+  < oid(0, oid(0, otherTa)) : PersistObj | file-name : testFileId >
 =>*
   (msg finishOpenPersistentHandle[# oid(4, testTa)] from oid(0, otherTa) to testTa)
-  < oid(4, testTa) : ObjectHandle |
+  < oid(4, testTa) : ObjHandle |
       oid : oid(0, oid(0, otherTa)),
       flags : accessRead,
       pos : 0 >
-  < oid(0, oid(0, testTa)) : PersistentObject | file-name : testFileId >
-  < oid(0, oid(0, otherTa)) : PersistentObject | file-name : testFileId > .
+  < oid(0, oid(0, testTa)) : PersistObj | file-name : testFileId >
+  < oid(0, oid(0, otherTa)) : PersistObj | file-name : testFileId > .
 
 --- Overwrite removes only the old object in the TA's Storage namespace.
 search [1] in COMPLETION-TEST :
   < testTa : TAKernel | status : (normal).AppStatus, api-call : init(createPersistent[# ZvStorageId # testFileId # (accessRead , overwrite) # null # (nil).List{Data} # dataSize(0) # null]), storage : oid(0, testTa), counter : 0, TA-ATTS:AttributeSet >
   < oid(0, testTa) : Storage | status : (normal).StorageStatus, files : testFileId, counter : 0 >
-  < oid(0, oid(0, testTa)) : PersistentObject | file-name : testFileId, data-stream : nil, REST1:AttributeSet >
-  < oid(0, oid(0, otherTa)) : PersistentObject | file-name : testFileId, data-stream : nil, REST3:AttributeSet >
+  < oid(0, oid(0, testTa)) : PersistObj | file-name : testFileId, data-stream : nil, REST1:AttributeSet >
+  < oid(0, oid(0, otherTa)) : PersistObj | file-name : testFileId, data-stream : nil, REST3:AttributeSet >
 =>*
   < testTa : TAKernel | api-call : return(createPersistent[# success # oid(0, oid(0, testTa))]), TA-ATTS:AttributeSet >
-  < oid(0, oid(0, otherTa)) : PersistentObject | file-name : testFileId, data-stream : nil, REST3:AttributeSet > C:Configuration .
+  < oid(0, oid(0, otherTa)) : PersistObj | file-name : testFileId, data-stream : nil, REST3:AttributeSet > C:Configuration .
 
 --- CloseAndDelete invalidates every top-level handle that references the owner.
 search [1] in COMPLETION-TEST :
   (msg deletePersistent[# oid(0, testTa)] from testTa to oid(101, testTa))
-  < oid(1, oid(0, testTa)) : PersistentObject | file-name : testFileId >
-  < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
+  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId >
+  < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
       flags : accessWriteMeta >
-  < oid(102, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)) >
+  < oid(102, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)) >
 =>*
   (msg finishDeletePersistent[# testFileId] from oid(101, testTa) to testTa) .
 
 --- RenamePersistentObject authorizes through a top-level write-meta handle.
 search [1] in COMPLETION-TEST :
   (msg renamePersistent[# newTestFileId # oid(0, testTa)] from testTa to oid(101, testTa))
-  < oid(1, testTa) : PersistentObject |
+  < oid(1, testTa) : PersistObj |
       file-name : testFileId >
-  < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa),
+  < oid(101, testTa) : ObjHandle | oid : oid(1, testTa),
       flags : accessWriteMeta >
 =>*
   (msg finishRenamePersistent[# testFileId] from oid(1, testTa) to testTa)
@@ -110,10 +110,10 @@ search [1] in COMPLETION-TEST :
 --- Persistent attributes are available through a top-level object handle.
 search [1] in COMPLETION-TEST :
   (msg getAttrs[] from testTa to oid(101, testTa))
-  < oid(1, testTa) : PersistentObject |
+  < oid(1, testTa) : PersistObj |
       type : typeAes, attributes : empty,
       usages : usageExtractable >
-  < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa) >
+  < oid(101, testTa) : ObjHandle | oid : oid(1, testTa) >
 =>1
   (msg retAttrs[# typeAes # (empty).Set{CryptoAttribute} # usageExtractable] from oid(101, testTa) to testTa)
   C .

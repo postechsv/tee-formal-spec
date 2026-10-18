@@ -77,7 +77,7 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   op persistentHandlesCompatible : Oid Set{DataAccessFlag} Configuration -> Bool .
   eq persistentHandlesCompatible(OI, DATAFLAGS, none) = true .
   eq persistentHandlesCompatible(OI, DATAFLAGS,
-       < H : ObjectHandle | oid : OI, flags : DATAFLAGS2 > HS) =
+       < H : ObjHandle | oid : OI, flags : DATAFLAGS2 > HS) =
      accessRightCheckingAux(DATAFLAGS, DATAFLAGS2)
      and persistentHandlesCompatible(OI, DATAFLAGS, HS) .
 ---@dmc owise recurse(sep=__, empty=none)
@@ -92,7 +92,7 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   --- The other elements of the configuration are kept.
   op removePersistentHandles : Oid Configuration -> Configuration .
   eq removePersistentHandles(OI, none) = none .
-  eq removePersistentHandles(OI, < H : ObjectHandle | oid : OI > HS) =
+  eq removePersistentHandles(OI, < H : ObjHandle | oid : OI > HS) =
      removePersistentHandles(OI, HS) .
 ---@dmc owise recurse(sep=__, empty=none)
   eq removePersistentHandles(OI, OBJ HS) =
@@ -174,10 +174,10 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   --- object, a handle oid(N, TK) is created and finishOpenPersistentHandle is sent back to the TA.
   crl [open-persistent-top-level-handle] :
     (msg openPersistentHandle[# FILE # DATAFLAGS # N] from TK to SI)
-    < oid(M, SI) : PersistentObject | file-name : FILE >
+    < oid(M, SI) : PersistObj | file-name : FILE >
     HS
     =>
-    < oid(M, SI) : PersistentObject | >
+    < oid(M, SI) : PersistObj | >
     HS
     freshPersistentHandle(N, TK, DATAFLAGS, oid(M, SI))
     (msg finishOpenPersistentHandle[# oid(N, TK)] from SI to TK)
@@ -188,10 +188,10 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   --- object, failOpenPersistentHandle is sent back to the TA.
   crl [open-persistent-top-level-conflict] :
     (msg openPersistentHandle[# FILE # DATAFLAGS # N] from TK to SI)
-    < oid(M, SI) : PersistentObject | file-name : FILE >
+    < oid(M, SI) : PersistObj | file-name : FILE >
     HS
     =>
-    < oid(M, SI) : PersistentObject | >
+    < oid(M, SI) : PersistObj | >
     HS
     (msg failOpenPersistentHandle[] from SI to TK)
   if not persistentHandlesCompatible(oid(M, SI), DATAFLAGS, HS)
@@ -305,8 +305,8 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
     < SI : Storage | status : (normal).StorageStatus , files : FILES , counter : N >
     =>
     < SI : Storage | files : (FILE , FILES) , counter : N + 2 >
-    < NEWHI : ObjectHandle | oid : NEWPI , flags : FLAGS , pos : 0 >
-    < NEWPI : PersistentObject | type : pureData , usages : empty , max-size : 0 , attributes : empty ,
+    < NEWHI : ObjHandle | oid : NEWPI , flags : FLAGS , pos : 0 >
+    < NEWPI : PersistObj | type : pureData , usages : empty , max-size : 0 , attributes : empty ,
                                  file-name : FILE , data-stream : DATA >
     (msg createSuccess[# NEWHI] from NEWPI to TK)
   if not (FILE in FILES) /\ NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI)
@@ -317,13 +317,13 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   --- referred to by HI.
   crl [create-persist-transform-new] :
     (msg create[# transform # FILE # FLAGS # HI # DATA] from TK to SI)
-    < HI : ObjectHandle | oid : OI >
+    < HI : ObjHandle | oid : OI >
     < OI : TransObj | type : TYPE , usages : USAGES , max-size : M , attributes : ATTRS >
     < SI : Storage | status : (normal).StorageStatus , files : FILES , counter : N >
     =>
     < SI : Storage | files : (FILE , FILES) , counter : N + 2 >
-    < NEWHI : ObjectHandle | oid : NEWPI , flags : FLAGS , pos : 0 >
-    < NEWPI : PersistentObject | type : TYPE , usages : USAGES , max-size : M ,
+    < NEWHI : ObjHandle | oid : NEWPI , flags : FLAGS , pos : 0 >
+    < NEWPI : PersistObj | type : TYPE , usages : USAGES , max-size : M ,
                                  attributes : ATTRS , file-name : FILE , data-stream : DATA >
     (msg createSuccess[# NEWHI] from NEWPI to TK)
   if not (FILE in FILES) /\ NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI)
@@ -333,14 +333,14 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   --- whose properties are moved to the new object, and the handle HI is closed.
   crl [create-persist-persist-new] :
     (msg create[# persist # FILE # FLAGS # HI # DATA] from TK to SI)
-    < HI : ObjectHandle | oid : OI >
+    < HI : ObjHandle | oid : OI >
     < OI : CryptoObj | type : TYPE , usages : USAGES , max-size : M , attributes : ATTRS >
     < SI : Storage | status : (normal).StorageStatus , files : FILES , counter : N >
     =>
     < SI : Storage | files : (FILE , FILES) , counter : N + 2 >
-    < OI : CryptoObj | > < HI : ObjectHandle | >
-    < NEWHI : ObjectHandle | oid : NEWPI , flags : FLAGS , pos : 0 >
-    < NEWPI : PersistentObject | type : TYPE , usages : USAGES , max-size : M ,
+    < OI : CryptoObj | > < HI : ObjHandle | >
+    < NEWHI : ObjHandle | oid : NEWPI , flags : FLAGS , pos : 0 >
+    < NEWPI : PersistObj | type : TYPE , usages : USAGES , max-size : M ,
                                  attributes : ATTRS , file-name : FILE , data-stream : DATA >
     (msg createSuccess[# NEWHI] from NEWPI to TK)
   if not (FILE in FILES) /\ NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI)
@@ -349,45 +349,45 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
 --- Storage forwarded create (create-persist-pure, create-persist-transform, create-persist-persist).
 --- The persistent object PI is replaced by the new object NEWPI, and a new handle NEWHI is opened for the TA.
 
-  --- create-persist-pure: the forwarded pure create creates the PersistentObject NEWPI with type
+  --- create-persist-pure: the forwarded pure create creates the PersistObj NEWPI with type
   --- pureData and a new handle NEWHI, and returns createSuccess.
   crl [create-persist-pure] :
     (msg create[# pure # FILE # FLAGS # HI # DATA # N # TK] from SI to PI)
     < PI : PersistObj | file-name : FILE >
     =>
-    < NEWHI : ObjectHandle | oid : NEWPI , flags : FLAGS , pos : 0 >
-    < NEWPI : PersistentObject | type : pureData , usages : empty , max-size : 0 , attributes : empty ,
+    < NEWHI : ObjHandle | oid : NEWPI , flags : FLAGS , pos : 0 >
+    < NEWPI : PersistObj | type : pureData , usages : empty , max-size : 0 , attributes : empty ,
                                  file-name : FILE , data-stream : DATA >
     (msg createSuccess[# NEWHI] from NEWPI to TK)
   if NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI)
   .
 
-  --- create-persist-transform: the forwarded transform create gives the PersistentObject NEWPI the
+  --- create-persist-transform: the forwarded transform create gives the PersistObj NEWPI the
   --- type, usages, max-size and attributes of the transient object OI referred to by HI.
   crl [create-persist-transform] :
     (msg create[# transform # FILE # FLAGS # HI # DATA # N # TK] from SI to PI)
     < PI : PersistObj | file-name : FILE >
-    < HI : ObjectHandle | oid : OI >
+    < HI : ObjHandle | oid : OI >
     < OI : TransObj | type : TYPE , usages : USAGES , max-size : M , attributes : ATTRS >
     =>
-    < NEWHI : ObjectHandle | oid : NEWPI , flags : FLAGS , pos : 0 >
-    < NEWPI : PersistentObject | type : TYPE , usages : USAGES , max-size : M ,
+    < NEWHI : ObjHandle | oid : NEWPI , flags : FLAGS , pos : 0 >
+    < NEWPI : PersistObj | type : TYPE , usages : USAGES , max-size : M ,
                                  attributes : ATTRS , file-name : FILE , data-stream : DATA >
     (msg createSuccess[# NEWHI] from NEWPI to TK)
   if NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI)
   .
 
   --- create-persist-persist: the forwarded persist create moves the properties of the CryptoObj OI
-  --- referred to by HI to the PersistentObject NEWPI, and closes OI and HI.
+  --- referred to by HI to the PersistObj NEWPI, and closes OI and HI.
   crl [create-persist-persist] :
     (msg create[# persist # FILE # FLAGS # HI # DATA # N # TK] from SI to PI)
     < PI : PersistObj | file-name : FILE >
-    < HI : ObjectHandle | oid : OI >
+    < HI : ObjHandle | oid : OI >
     < OI : CryptoObj | type : TYPE , usages : USAGES , max-size : M , attributes : ATTRS >
     =>
-    < OI : CryptoObj | > < HI : ObjectHandle | >
-    < NEWHI : ObjectHandle | oid : NEWPI , flags : FLAGS , pos : 0 >
-    < NEWPI : PersistentObject | type : TYPE , usages : USAGES , max-size : M ,
+    < OI : CryptoObj | > < HI : ObjHandle | >
+    < NEWHI : ObjHandle | oid : NEWPI , flags : FLAGS , pos : 0 >
+    < NEWPI : PersistObj | type : TYPE , usages : USAGES , max-size : M ,
                                  attributes : ATTRS , file-name : FILE , data-stream : DATA >
     (msg createSuccess[# NEWHI] from NEWPI to TK)
   if NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI)
@@ -479,8 +479,8 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   --- and every handle that refers to it are removed, and finishDeletePersistent is sent to the TA.
   crl [close-and-delete-persistent-top-level-start] :
     (msg deletePersistent[# SI] from TK to HANDLE)
-    < oid(M, SI) : PersistentObject | file-name : FILE >
-    < HANDLE : ObjectHandle | oid : oid(M, SI), flags : DATAFLAGS >
+    < oid(M, SI) : PersistObj | file-name : FILE >
+    < HANDLE : ObjHandle | oid : oid(M, SI), flags : DATAFLAGS >
     HS
     =>
     removePersistentHandles(oid(M, SI), HS)
@@ -492,11 +492,11 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   --- handle is closed, and failDeletePersistent is sent to the TA.
   crl [close-and-delete-persistent-top-level-fail] :
     (msg deletePersistent[# SI] from TK to HANDLE)
-    < oid(M, SI) : PersistentObject | >
-    < HANDLE : ObjectHandle | oid : oid(M, SI), flags : DATAFLAGS >
+    < oid(M, SI) : PersistObj | >
+    < HANDLE : ObjHandle | oid : oid(M, SI), flags : DATAFLAGS >
     =>
-    < oid(M, SI) : PersistentObject | >
-    < HANDLE : ObjectHandle | >
+    < oid(M, SI) : PersistObj | >
+    < HANDLE : ObjHandle | >
     (msg failDeletePersistent[] from HANDLE to TK)
   if not hasWriteMeta(DATAFLAGS)
   .
@@ -595,9 +595,9 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   --- closed and renamePersistentOwner is sent to the object OI.
   crl [rename-persistent-top-level-check-handle] :
     (msg renamePersistent[# FILE # SI] from TK to HANDLE)
-    < HANDLE : ObjectHandle | oid : OI, flags : DATAFLAGS >
+    < HANDLE : ObjHandle | oid : OI, flags : DATAFLAGS >
     =>
-    < HANDLE : ObjectHandle | >
+    < HANDLE : ObjHandle | >
     (msg renamePersistentOwner[# FILE] from TK to OI)
   if hasWriteMeta(DATAFLAGS)
   .
@@ -606,9 +606,9 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   --- finishRenamePersistent returns its old name FILE'.
   rl [rename-persistent-top-level-update-owner] :
     (msg renamePersistentOwner[# FILE] from TK to OI)
-    < OI : PersistentObject | file-name : FILE' >
+    < OI : PersistObj | file-name : FILE' >
     =>
-    < OI : PersistentObject | file-name : FILE >
+    < OI : PersistObj | file-name : FILE >
     (msg finishRenamePersistent[# FILE'] from OI to TK)
   .
 
@@ -657,10 +657,10 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   --- transient rule copy-object-attrs-try-ret-attrs is in transient.maude.
   rl [copy-object-attrs-try-ret-attrs-persistent] :
     (msg getAttrs[] from TK to HANDLE)
-    < HANDLE : ObjectHandle | oid : OI >
+    < HANDLE : ObjHandle | oid : OI >
     < OI : PersistObj | type : TYPE , attributes : ATTRS , usages : USAGES >
     =>
-    < HANDLE : ObjectHandle | >
+    < HANDLE : ObjHandle | >
     < OI : PersistObj | >
     (msg retAttrs[# TYPE # ATTRS # USAGES] from HANDLE to TK)
   .

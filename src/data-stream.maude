@@ -155,11 +155,11 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   --- advances, and finishWriteData is sent back to the TA.
   crl [write-object-data-top-level-handle] :
     (msg writeObjectData[# DATA # SI] from TK to HANDLE)
-    < oid(M, SI) : PersistentObject | data-stream : STREAM >
-    < HANDLE : ObjectHandle | oid : oid(M, SI), flags : DATAFLAGS, pos : DATAPOS >
+    < oid(M, SI) : PersistObj | data-stream : STREAM >
+    < HANDLE : ObjHandle | oid : oid(M, SI), flags : DATAFLAGS, pos : DATAPOS >
     =>
-    < oid(M, SI) : PersistentObject | data-stream : writeStream(DATA, DATAPOS, STREAM) >
-    < HANDLE : ObjectHandle | pos : advancePos(DATAPOS, sizeOfData(DATA)) >
+    < oid(M, SI) : PersistObj | data-stream : writeStream(DATA, DATAPOS, STREAM) >
+    < HANDLE : ObjHandle | pos : advancePos(DATAPOS, sizeOfData(DATA)) >
     (msg finishWriteData[] from HANDLE to TK)
   if isWritable(DATAFLAGS) /\ withinMaxPos(advancePos(DATAPOS, sizeOfData(DATA)))
   .
@@ -170,11 +170,11 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   crl [write-object-data-top-level-overflow] :
     (msg writeObjectData[# DATA # SI] from TK to HANDLE)
     < TK : TAKernel | api-call : final(WriteObjectData[PARAMS]) >
-    < oid(M, SI) : PersistentObject | >
-    < HANDLE : ObjectHandle | oid : oid(M, SI), flags : DATAFLAGS, pos : DATAPOS >
+    < oid(M, SI) : PersistObj | >
+    < HANDLE : ObjHandle | oid : oid(M, SI), flags : DATAFLAGS, pos : DATAPOS >
     =>
-    < oid(M, SI) : PersistentObject | >
-    < HANDLE : ObjectHandle | >
+    < oid(M, SI) : PersistObj | >
+    < HANDLE : ObjHandle | >
     < TK : TAKernel | api-call : return(WriteObjectData[# errorOverflow]) >
   if isWritable(DATAFLAGS) /\ not withinMaxPos(advancePos(DATAPOS, sizeOfData(DATA)))
   .
@@ -234,11 +234,11 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   --- to N fragments, and finishTruncateData is sent back to the TA.
   crl [truncate-object-data-top-level] :
     (msg truncateObjectData[# dataSize(N) # SI] from TK to HANDLE)
-    < oid(M, SI) : PersistentObject | data-stream : STREAM >
-    < HANDLE : ObjectHandle | oid : oid(M, SI), flags : DATAFLAGS >
+    < oid(M, SI) : PersistObj | data-stream : STREAM >
+    < HANDLE : ObjHandle | oid : oid(M, SI), flags : DATAFLAGS >
     =>
-    < oid(M, SI) : PersistentObject | data-stream : resizeStream(N , STREAM) >
-    < HANDLE : ObjectHandle | >
+    < oid(M, SI) : PersistObj | data-stream : resizeStream(N , STREAM) >
+    < HANDLE : ObjHandle | >
     (msg finishTruncateData[] from HANDLE to TK)
   if isWritable(DATAFLAGS)
   .
@@ -302,11 +302,11 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   --- number of fragments.
   crl [seek-object-data-top-level-update-handle] :
     (msg seekObjectData[# OFST # WHENCE # SI] from TK to HANDLE)
-    < oid(M, SI) : PersistentObject | data-stream : STREAM >
-    < HANDLE : ObjectHandle | oid : oid(M, SI), pos : DATAPOS >
+    < oid(M, SI) : PersistObj | data-stream : STREAM >
+    < HANDLE : ObjHandle | oid : oid(M, SI), pos : DATAPOS >
     =>
-    < oid(M, SI) : PersistentObject | >
-    < HANDLE : ObjectHandle | pos : seekPos(WHENCE, DATAPOS, OFST, sizeOfData(STREAM)) >
+    < oid(M, SI) : PersistObj | >
+    < HANDLE : ObjHandle | pos : seekPos(WHENCE, DATAPOS, OFST, sizeOfData(STREAM)) >
     (msg finishSeekData[] from HANDLE to TK)
   if withinMaxPos(seekPos(WHENCE, DATAPOS, OFST, sizeOfData(STREAM)))
   .
@@ -315,11 +315,11 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   --- seekObjectOverflowTop is sent back to the TA.
   crl [seek-object-data-top-level-detect-overflow] :
     (msg seekObjectData[# OFST # WHENCE # SI] from TK to HANDLE)
-    < oid(M, SI) : PersistentObject | data-stream : STREAM >
-    < HANDLE : ObjectHandle | oid : oid(M, SI), pos : DATAPOS >
+    < oid(M, SI) : PersistObj | data-stream : STREAM >
+    < HANDLE : ObjHandle | oid : oid(M, SI), pos : DATAPOS >
     =>
-    < oid(M, SI) : PersistentObject | >
-    < HANDLE : ObjectHandle | >
+    < oid(M, SI) : PersistObj | >
+    < HANDLE : ObjHandle | >
     (msg seekObjectOverflowTop[] from HANDLE to TK)
   if not withinMaxPos(seekPos(WHENCE, DATAPOS, OFST, sizeOfData(STREAM)))
   .

@@ -220,7 +220,7 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
     =>
     < TK : TAKernel | api-call : return(AllocateTransientObject[# success # oid(N + 1 , TK)]) ,
                       counter : N + 2 >
-    < oid(N , TK) : TransientObject | type : OBJTYPE , max-size : MAXOBJSIZE ,
+    < oid(N , TK) : TransObj | type : OBJTYPE , max-size : MAXOBJSIZE ,
                                         attributes : empty , usages : allObjectUsages,
                                         initialized : false >
     freshTransientHandle(N + 1 , TK , oid(N , TK))
@@ -270,8 +270,8 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
   --- finishDeleteTransient is sent back to the TA.
   rl [free-transient-top-level-handle] :
     (msg deleteTransient[] from TK to HANDLE)
-    < OI : TransientObject | >
-    < HANDLE : ObjectHandle | oid : OI >
+    < OI : TransObj | >
+    < HANDLE : ObjHandle | oid : OI >
     =>
     (msg finishDeleteTransient[] from HANDLE to TK)
   .
@@ -316,12 +316,12 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
   --- allObjectUsages, and retResetTransient is sent back to the TA.
   rl [reset-transient-top-level-handle] :
     (msg reqResetTransient[] from TK to HANDLE)
-    < OI : TransientObject | >
-    < HANDLE : ObjectHandle | oid : OI >
+    < OI : TransObj | >
+    < HANDLE : ObjHandle | oid : OI >
     =>
-    < OI : TransientObject | initialized : false,
+    < OI : TransObj | initialized : false,
                              attributes : empty , usages : allObjectUsages >
-    < HANDLE : ObjectHandle | >
+    < HANDLE : ObjHandle | >
     (msg retResetTransient[] from HANDLE to TK)
   .
 
@@ -365,13 +365,13 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
   --- takes ATTRS and becomes initialized, and retPopulateTransient is sent back to the TA.
   crl [populate-transient-top-level-handle] :
     (msg reqPopulateTransient[# ATTRS] from TK to HANDLE)
-    < OI : TransientObject | initialized : false,
+    < OI : TransObj | initialized : false,
                              type : OBJTYPE >
-    < HANDLE : ObjectHandle | oid : OI  >
+    < HANDLE : ObjHandle | oid : OI  >
     =>
-    < OI : TransientObject | initialized : true,
+    < OI : TransObj | initialized : true,
                              attributes : ATTRS >
-    < HANDLE : ObjectHandle | >
+    < HANDLE : ObjHandle | >
     (msg retPopulateTransient[] from HANDLE to TK)
   if checkCompatible(OBJTYPE , ATTRS)
   .
@@ -382,13 +382,13 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
     (msg reqPopulateTransient[# ATTRS] from TK to HANDLE)
     < TK : TAKernel | status : (normal).AppStatus ,
                       api-call : final(PopulateTransientObject[PARAMS]) >
-    < OI : TransientObject | initialized : false,
+    < OI : TransObj | initialized : false,
                              type : OBJTYPE >
-    < HANDLE : ObjectHandle | oid : OI  >
+    < HANDLE : ObjHandle | oid : OI  >
     =>
     < TK : TAKernel | status : panic >
-    < OI : TransientObject | initialized : true >
-    < HANDLE : ObjectHandle | >
+    < OI : TransObj | initialized : true >
+    < HANDLE : ObjHandle | >
   if not checkCompatible(OBJTYPE , ATTRS)
   .
 
@@ -397,12 +397,12 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
     (msg reqPopulateTransient[# ATTRS] from TK to HANDLE)
     < TK : TAKernel | status : (normal).AppStatus ,
                       api-call : final(PopulateTransientObject[PARAMS]) >
-    < OI : TransientObject | >
-    < HANDLE : ObjectHandle | oid : OI  >
+    < OI : TransObj | >
+    < HANDLE : ObjHandle | oid : OI  >
     =>
     < TK : TAKernel | status : panic >
-    < OI : TransientObject | >
-    < HANDLE : ObjectHandle | >
+    < OI : TransObj | >
+    < HANDLE : ObjHandle | >
   .
 
   --- populate-transient-success: retPopulateTransient returns success.
@@ -470,11 +470,11 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
   --- so a persistent source is answered by copy-object-attrs-try-ret-attrs-persistent instead.
   rl [copy-object-attrs-try-ret-attrs] :
     (msg getAttrs[] from TK to HANDLE)
-    < HANDLE : ObjectHandle | oid : OI >
+    < HANDLE : ObjHandle | oid : OI >
     < OI : TransObj | type : TYPE , attributes : ATTRS ,
                       usages : USAGES , initialized : B >
     =>
-    < HANDLE : ObjectHandle | >
+    < HANDLE : ObjHandle | >
     < OI : TransObj | >
     (msg (if B then retAttrs[# TYPE # ATTRS # USAGES] else getAttrsFail[] fi) from HANDLE to TK)
   .
@@ -504,24 +504,24 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
   --- otherwise it returns setAttrsFail.
   rl [copy-object-attrs-copy-attrs] :
     (msg setAttrs[# TYPE' # ATTRS # USAGES'] from O to HI)
-    < OI : TransientObject | type : TYPE , usages : USAGES , initialized : false >
-    < HI : ObjectHandle | oid : OI >
+    < OI : TransObj | type : TYPE , usages : USAGES , initialized : false >
+    < HI : ObjHandle | oid : OI >
     =>
     (if typeCompatible(TYPE' , TYPE)
-     then < OI : TransientObject | usages : intersection(USAGES , USAGES') ,
+     then < OI : TransObj | usages : intersection(USAGES , USAGES') ,
                                    initialized : true , attributes : ATTRS >
           (msg setAttrsSuccess[] from HI to O)
-     else < OI : TransientObject | >
+     else < OI : TransObj | >
           (msg setAttrsFail[] from HI to O) fi)
-    < HI : ObjectHandle | >
+    < HI : ObjHandle | >
   .
 
   --- copy-object-attrs-copy-attrs-fail: setAttrs to an initialized target returns setAttrsFail.
   rl [copy-object-attrs-copy-attrs-fail] :
     (msg setAttrs[ARGS] from O to HI)
-    < HI : ObjectHandle | oid : OI > < OI : TransientObject | initialized : true >
+    < HI : ObjHandle | oid : OI > < OI : TransObj | initialized : true >
     =>
-    < OI : TransientObject | > < HI : ObjectHandle | >
+    < OI : TransObj | > < HI : ObjHandle | >
     (msg setAttrsFail[] from HI to O)
   .
 
@@ -563,13 +563,13 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
   --- retGenerateKey is sent back to the TA.
   crl [generate-key-top-level-handle] :
     (msg reqGenerateKey[# KEYSIZE # ATTRS] from TK to HANDLE)
-    < OI : TransientObject | initialized : false,
+    < OI : TransObj | initialized : false,
                              type : OBJTYPE , max-size : MAXOBJSIZE >
-    < HANDLE : ObjectHandle | oid : OI  >
+    < HANDLE : ObjHandle | oid : OI  >
     =>
-    < OI : TransientObject | initialized : true,
+    < OI : TransObj | initialized : true,
                              attributes : randomAttributes(OBJTYPE , ATTRS) >
-    < HANDLE : ObjectHandle | >
+    < HANDLE : ObjHandle | >
     (msg retGenerateKey[] from HANDLE to TK)
   if KEYSIZE <= MAXOBJSIZE /\ validKeySizeForGeneration(OBJTYPE , KEYSIZE)
      /\ mandatoryParamsForKeyGen(OBJTYPE , ATTRS)
@@ -580,13 +580,13 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
     (msg reqGenerateKey[# KEYSIZE # ATTRS] from TK to HANDLE)
     < TK : TAKernel | status : (normal).AppStatus ,
                       api-call : final(GenerateKey[PARAMS]) >
-    < OI : TransientObject | initialized : false,
+    < OI : TransObj | initialized : false,
                              type : OBJTYPE , max-size : MAXOBJSIZE >
-    < HANDLE : ObjectHandle | oid : OI  >
+    < HANDLE : ObjHandle | oid : OI  >
     =>
     < TK : TAKernel | status : panic >
-    < OI : TransientObject | >
-    < HANDLE : ObjectHandle | >
+    < OI : TransObj | >
+    < HANDLE : ObjHandle | >
   if not (KEYSIZE <= MAXOBJSIZE)
   .
 
@@ -596,13 +596,13 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
     (msg reqGenerateKey[# KEYSIZE # ATTRS] from TK to HANDLE)
     < TK : TAKernel | status : (normal).AppStatus ,
                       api-call : final(GenerateKey[PARAMS]) >
-    < OI : TransientObject | initialized : false,
+    < OI : TransObj | initialized : false,
                              type : OBJTYPE , max-size : MAXOBJSIZE >
-    < HANDLE : ObjectHandle | oid : OI  >
+    < HANDLE : ObjHandle | oid : OI  >
     =>
     < TK : TAKernel | status : panic >
-    < OI : TransientObject | >
-    < HANDLE : ObjectHandle | >
+    < OI : TransObj | >
+    < HANDLE : ObjHandle | >
   if KEYSIZE <= MAXOBJSIZE /\ not validKeySizeForGeneration(OBJTYPE , KEYSIZE)
   .
 
@@ -612,13 +612,13 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
     (msg reqGenerateKey[# KEYSIZE # ATTRS] from TK to HANDLE)
     < TK : TAKernel | status : (normal).AppStatus ,
                       api-call : final(GenerateKey[PARAMS]) >
-    < OI : TransientObject | initialized : false,
+    < OI : TransObj | initialized : false,
                              type : OBJTYPE , max-size : MAXOBJSIZE >
-    < HANDLE : ObjectHandle | oid : OI  >
+    < HANDLE : ObjHandle | oid : OI  >
     =>
     < TK : TAKernel | status : panic >
-    < OI : TransientObject | initialized : true >
-    < HANDLE : ObjectHandle | >
+    < OI : TransObj | initialized : true >
+    < HANDLE : ObjHandle | >
   if KEYSIZE <= MAXOBJSIZE /\ validKeySizeForGeneration(OBJTYPE , KEYSIZE)
      /\ not mandatoryParamsForKeyGen(OBJTYPE , ATTRS)
   .
@@ -628,12 +628,12 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
     (msg reqGenerateKey[# KEYSIZE # ATTRS] from TK to HANDLE)
     < TK : TAKernel | status : (normal).AppStatus ,
                       api-call : final(GenerateKey[PARAMS]) >
-    < OI : TransientObject | >
-    < HANDLE : ObjectHandle | oid : OI  >
+    < OI : TransObj | >
+    < HANDLE : ObjHandle | oid : OI  >
     =>
     < TK : TAKernel | status : panic >
-    < OI : TransientObject | >
-    < HANDLE : ObjectHandle | >
+    < OI : TransObj | >
+    < HANDLE : ObjHandle | >
   .
 
   --- generate-key-success: retGenerateKey returns success.

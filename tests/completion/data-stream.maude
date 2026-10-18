@@ -19,57 +19,57 @@ endm
 --- readObjData removes the first fragment of the data stream of a top-level persistent handle.
 search [1] in COMPLETION-TEST :
   (msg read[] from testTa to oid(101, testTa))
-  < oid(1, oid(0, testTa)) : PersistentObject |
+  < oid(1, oid(0, testTa)) : PersistObj |
       data-stream : randomData >
-  < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
+  < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
       flags : accessRead,
       pos : 0 >
 =>*
   (msg retData[# randomData] from oid(101, testTa) to testTa)
-  < oid(1, oid(0, testTa)) : PersistentObject |
+  < oid(1, oid(0, testTa)) : PersistObj |
       data-stream : nil >
   C .
 
 --- WriteObjectData updates the top-level handle position and stream contents.
 search [1] in COMPLETION-TEST :
   (msg writeObjectData[# randomData # oid(0, testTa)] from testTa to oid(101, testTa))
-  < oid(1, oid(0, testTa)) : PersistentObject |
+  < oid(1, oid(0, testTa)) : PersistObj |
       data-stream : nil >
-  < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
+  < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
       flags : accessWrite,
       pos : 0 >
 =>*
   (msg finishWriteData[] from oid(101, testTa) to testTa)
-  < oid(1, oid(0, testTa)) : PersistentObject |
+  < oid(1, oid(0, testTa)) : PersistObj |
       data-stream : randomData >
-  < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
+  < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
       flags : accessWrite,
       pos : 1 > .
 
 --- TruncateObjectData updates a persistent stream through a top-level handle.
 search [1] in COMPLETION-TEST :
   (msg truncateObjectData[# dataSize(3) # oid(0, testTa)] from testTa to oid(101, testTa))
-  < oid(1, oid(0, testTa)) : PersistentObject |
+  < oid(1, oid(0, testTa)) : PersistObj |
       data-stream : randomData >
-  < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
+  < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
       flags : accessWrite >
 =>*
   (msg finishTruncateData[] from oid(101, testTa) to testTa)
-  < oid(1, oid(0, testTa)) : PersistentObject |
+  < oid(1, oid(0, testTa)) : PersistObj |
       data-stream : (randomData zeroData zeroData) >
-  < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
+  < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
       flags : accessWrite > .
 
 --- SeekObjectData obtains the stream size and updates the top-level handle.
 search [1] in COMPLETION-TEST :
   (msg seekObjectData[# 2 # seekEnd # oid(0, testTa)] from testTa to oid(101, testTa))
-  < oid(1, oid(0, testTa)) : PersistentObject |
+  < oid(1, oid(0, testTa)) : PersistObj |
       data-stream : (randomData zeroData zeroData) >
-  < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
+  < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
       pos : 0 >
 =>*
   (msg finishSeekData[] from oid(101, testTa) to testTa)
-  < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
+  < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
       pos : 5 >
   C .
 
@@ -77,9 +77,9 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   (msg seekObjectData[# 1 # seekCur # oid(0, testTa)] from testTa to oid(101, testTa))
   < testTa : TAKernel | api-call : final(SeekObjectData[# ZvHandle # ZvOffset # ZvType]) >
-  < oid(1, oid(0, testTa)) : PersistentObject |
+  < oid(1, oid(0, testTa)) : PersistObj |
       data-stream : nil >
-  < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
+  < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
       pos : 4294967295 >
 =>*
   < testTa : TAKernel | api-call : return(SeekObjectData[# errorOverflow]) >
@@ -87,28 +87,28 @@ search [1] in COMPLETION-TEST :
 
 search [1] in COMPLETION-TEST :
   < testTa : TAKernel | status : (normal).AppStatus, api-call : init(readObjData[# oid(101, testTa) # dataSize(1)]) >
-  < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
+  < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
       flags : accessWrite >
 =>1
   < testTa : TAKernel | status : panic, api-call : init(readObjData[# oid(101, testTa) # dataSize(1)]) >
-  < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
+  < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
       flags : accessWrite > .
 
 --- Writing and truncating need accessWrite; a handle without it panics (no rule is given: failure is a panic).
 search [1] in COMPLETION-TEST :
   < testTa : TAKernel | status : (normal).AppStatus, api-call : init(WriteObjectData[# oid(101, testTa) # ZvData # dataSize(1)]) >
-  < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
+  < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
       flags : accessRead >
 =>1
   < testTa : TAKernel | status : panic, api-call : init(WriteObjectData[# oid(101, testTa) # ZvData # dataSize(1)]) >
-  < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
+  < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
       flags : accessRead > .
 
 search [1] in COMPLETION-TEST :
   < testTa : TAKernel | status : (normal).AppStatus, api-call : init(TruncateObjectData[# oid(101, testTa) # dataSize(1)]) >
-  < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
+  < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
       flags : accessRead > 
 =>1
   < testTa : TAKernel | status : panic, api-call : init(TruncateObjectData[# oid(101, testTa) # dataSize(1)]) >
-  < oid(101, testTa) : ObjectHandle | oid : oid(1, oid(0, testTa)),
+  < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
       flags : accessRead > .

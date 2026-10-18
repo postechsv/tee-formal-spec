@@ -72,21 +72,18 @@ omod CRYPTO-OPERATION is
   pr OPERATION-STATE .
 
 --- Deviation from the paper.  The paper's CryptoOp has max-size, algorithm, attributes, mode,
---- state and acc-data.  This model adds two attributes and changes nothing else.
+--- state and acc-data.  This model adds only keys to the paper's CryptoOp and changes nothing else.
 --- keys : List{CryptoKey} is the two-key boundary of algorithms such as AES-XTS and SM2-KEP,
 --- used by TEE_SetOperationKey2 and TEE_GetOperationInfoMultiple.  Each CryptoKey wraps a set of TEE
 --- attributes; only the two-key operations use the list, and every other operation leaves it nil
---- and uses the abstract attribute set.  initialization-vector : List{Data} is the operation's IV
---- slot.  No rule reads or writes it beyond its nil value at allocation (TEE_AllocateOperation);
---- the IV of TEE_MACInit and TEE_AEInit travels in the initOperation message to the handle.
+--- and uses the abstract attribute set.
   class CryptoOp | attributes : Set{CryptoAttribute},
                    max-size : Nat,
                    acc-data : List{Data},
                    algorithm : Algorithm,
                    mode : Mode,
                    state : State,
-                   keys : List{CryptoKey},
-                   initialization-vector : List{Data} .
+                   keys : List{CryptoKey} .
 endom
 
 --- This module defines message digest.
@@ -877,7 +874,6 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                                         attributes : empty , keys : nil , max-size : KEYSIZE ,
                                         acc-data : nil ,
                                         algorithm : ALGO , mode : MODE ,
-                                        initialization-vector : nil ,
                                         state : initial >
     freshOperationHandle(N + 1 , TK , newOid(N , TK), getClass(ALGO))
   if algoCompatible(ALGO , MODE)

@@ -1,4 +1,4 @@
---- Static type checking of IMP programs (IMP-TYPING, the gate in mkInitConf).
+--- Static type checking of IMP programs (IMP-TYPING, the gate in mkConf).
 --- Positive cases: wellTyped(P) reduces to true.
 --- Negative cases: wellTyped(P) is stuck, so (wellTyped(P) == true) == false is true.
 load ../../src/main
@@ -8,7 +8,7 @@ mod TYPING-TEST is
   pr TEE-BEHAVIOR .
   pr TEE-IMP-BEHAVIOR .
   pr TEST-AUX .
-  ops x y b a h r s p : -> Var [ctor] .
+  ops x y b a h r s p i c q : -> Var [ctor] .
   op fId : -> FuncId [ctor] .
   op gId : -> FuncId [ctor] .
   op hId : -> FuncId [ctor] .
@@ -29,6 +29,12 @@ red wellTyped(struct Pt { int a ; } ; struct Pt s ; int x ; s . a := # 3 ; x := 
 red wellTyped(auto x ; x := # 1 ; int y ; y := x ;) .
 red wellTyped(int setx(int * p) { p := # 1 ; return # 1 ; } int x ; x := setx(x) ;) .
 red wellTyped(syscalls TEE-Handle h ; TEE-Result r ; r := AllocateTransientObject(# typeAes, # 256, h) ;) .
+--- Arrays: a literal index inside 0 <= I < N, a non-literal index, an element as a by-reference argument.
+red wellTyped(int[3] a ; a[# 0] := # 1 ; int x ; x := a[# 2] ;) .
+red wellTyped(int[3] a ; int i ; i := # 1 ; a[i] := # 5 ; int x ; x := a[i] + a[# 0] ;) .
+red wellTyped(int[2] a ; int setx(int * p) { p := # 1 ; return # 1 ; } int x ; x := setx(a[# 1]) ;) .
+--- By-value struct parameter: the argument is a struct of the parameter's type.
+red wellTyped(struct Pt { int a ; } ; int fId(struct Pt p) { return # 1 ; } struct Pt s ; int x ; x := fId(s) ;) .
 
 --- Negative: each program is ill-typed, so it is not run.
 --- Assignment and expression types.
@@ -53,15 +59,40 @@ red (wellTyped(struct Pt { int a ; } ; struct Pt s ; int x ; x := s . b ;) == tr
 red (wellTyped(goto lbl ;) == true) == false .
 --- TEE types: a TEE-Result is not a handle.
 red (wellTyped(syscalls TEE-Result r ; r := AllocateTransientObject(# typeAes, # 256, r) ;) == true) == false .
+--- By-value struct parameter: the argument must be a struct of the parameter's type.
+red (wellTyped(struct Pt { int a ; } ; int fId(struct Pt p) { return # 1 ; } int x ; x := fId(# 1) ;) == true) == false .
+red (wellTyped(struct Pt { int a ; } ; struct Pt s ; int x ; x := fId(s) ;) == true) == false .
+--- Arrays.  A literal index outside 0 <= I < N is rejected statically; the length is positive.
+red (wellTyped(int[3] a ; a[# 3] := # 1 ;) == true) == false .
+red (wellTyped(int[3] a ; int x ; x := a[# -1] ;) == true) == false .
+red (wellTyped(int[0] a ;) == true) == false .
+--- The index is an int, and the element has the element type.
+red (wellTyped(int[3] a ; a[# true] := # 1 ;) == true) == false .
+red (wellTyped(int[3] a ; bool b ; b := a[# 0] ;) == true) == false .
+--- An array is not a value: it is not read, assigned, compared or returned.
+red (wellTyped(int[3] a ; int x ; x := a ;) == true) == false .
+red (wellTyped(int[3] a ; int[3] b ; a := b ;) == true) == false .
+red (wellTyped(int[3] a ; int[3] b ; bool c ; c := a == b ;) == true) == false .
+red (wellTyped(int[3] fId() { int[3] q ; return q ; }) == true) == false .
+--- An array is not a parameter (by value, or by reference through an element pointer).
+red (wellTyped(int[3] a ; int fId(int[3] p) { return # 1 ; } int x ; x := fId(a) ;) == true) == false .
+red (wellTyped(int fId(int[3] * p) { return # 1 ; }) == true) == false .
+--- An array is not a struct member.
+red (wellTyped(struct Pt { int[2] a ; } ;) == true) == false .
 
 --- Lexical scope: a callee sees the globals declared before it and its own
 --- parameters, never the locals of a caller.  h reads x, which is only a local of g.
 red (wellTyped(int hId() { return x ; } int gId() { int x ; x := # 1 ; return hId() ; } int r ; r := gId() ;) == true) == false .
 
+--- The gate: an ill-typed program has no configuration, mkConf yields the error term.
+red (mkConf(int x ; x := # true ;) == illTyped) == true .
+red (mkConf(bool b ; b := # 1 ;) == illTyped) == true .
+red (mkConf(int x ; x := y ;) == illTyped) == true .
+
 --- Runtime lexical scope: hId reads the global x (2), not the local x of gId (1).
 --- Under dynamic scoping r would be 1 and the search would have no solution.
 search [1] in TYPING-TEST :
-  mkInitConf(int x ; x := # 2 ; int hId() { return x ; } int gId() { int x ; x := # 1 ; return hId() ; } int r ; r := gId() ;)
+  mkConf(int x ; x := # 2 ; int hId() { return x ; } int gId() { int x ; x := # 1 ; return hId() ; } int r ; r := gId() ;)
   =>* k(.K) env((r |-> L) ; ENV) store((L |-> # 2) ; MEM) KS:KConfig .
 
 --- Declarations are hoisted to the block entry, so a use of a name before its local
@@ -78,7 +109,7 @@ red wellTyped(int x ; x := # 1 ; int fId(int x) { return x ; } int y ; y := fId(
 --- Internal items (IStmt, the K sort of the semantics) are not statements: they cannot
 --- be written in a program, so they are not Stmt or Program.  ($trusted, which let a
 --- program write an unchecked body, is gone.)
-red not ($push :: Stmt) .
+red not (invoke(skip) :: Stmt) .
 red not ($in(nil) :: Stmt) .
 red not ($waitSysCall(AllocateTransientObject) :: Program) .
 red not ($prep(nil) :: Stmt) .

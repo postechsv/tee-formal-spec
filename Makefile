@@ -158,9 +158,10 @@ check-dmc:
 	@$(MAKE) --no-print-directory -B DMC=1 DMC_CHECK=1 src
 
 # Static documentation site from src/ (tools/gen-docs.py). Independent of NAME and the features.
-# docs/overview.html is the hand-written body of index.html.
-docs: docs/overview.html tools/gen-docs.py
-	python3 tools/gen-docs.py --src src --out build/docs --overview docs/overview.html --check
+# docs/overview.html is the hand-written body of index.html. docs/examples.json (tools/gen-examples.py)
+# gives the verified examples shown, collapsed, under rules and ops.
+docs: docs/overview.html tools/gen-docs.py docs/examples.json
+	python3 tools/gen-docs.py --src src --out build/docs --overview docs/overview.html --examples docs/examples.json --check
 
 help config:
 	@echo "NAME=$(NAME)  OUT=$(OUT)  MAUDE=$(MAUDE)"

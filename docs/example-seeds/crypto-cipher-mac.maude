@@ -1,0 +1,121 @@
+--- Cipher, MAC and AE operations (TEE_CipherInit, TEE_CipherUpdate, TEE_CipherDoFinal,
+--- TEE_MACInit, TEE_MACUpdate, TEE_MACComputeFinal, TEE_MACCompareFinal, TEE_AEInit,
+--- TEE_AEUpdateAAD, TEE_AEUpdate, TEE_AEEncryptFinal, TEE_AEDecryptFinal) driven from the
+--- TA-level API call through the operation handle. Each search is a bounded example driver.
+
+load ./src/main
+load ./tests/api/aux
+
+set show command off .
+set print attribute off .
+set print color off .
+
+mod SEED-CIPHER-MAC is
+  pr TEST-AUX .
+  var ZsCipher : List{Data} .
+  var ZsMac : List{Data} .
+endm
+
+--- [SEED-CIPHER-INIT] cipher-init with key material set and a clsCipher handle
+search [1] in SEED-CIPHER-MAC :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(cipherInit[# oid(1, ta)]), counter : 0 >
+  < oid(1, ta) : OperationHandle | oid : oid(0, ta), state : handleState(keySet), opclass : clsCipher >
+  < oid(0, ta) : CryptoOperation | state : initial, algorithm : algAesCbcNopad, mode : modeEncrypt,
+                                   attributes : attr(secretValue, sizedAttrVal(128, 1)) >
+=>*
+  < ta : TAKernel | api-call : return(cipherInit[# noReturnCode]) > .
+
+--- [SEED-CIPHER-INIT-FAIL] cipher-init without key material is a panic
+search [1] in SEED-CIPHER-MAC :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(cipherInit[# oid(1, ta)]), counter : 0 >
+  < oid(1, ta) : OperationHandle | oid : oid(0, ta), state : handleState(empty), opclass : clsCipher >
+  < oid(0, ta) : CryptoOperation | state : initial, algorithm : algAesCbcNopad, mode : modeEncrypt >
+=>*
+  < ta : TAKernel | status : panic > .
+
+--- [SEED-CIPHER-UPDATE] cipher-update on an active operation with a valid key
+search [1] in SEED-CIPHER-MAC :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(cipherUpdate[# oid(1, ta) # randomData]), counter : 0 >
+  < oid(1, ta) : OperationHandle | oid : oid(0, ta), state : handleState((init, keySet)), opclass : clsCipher >
+  < oid(0, ta) : CryptoOperation | state : active, algorithm : algAesCtr, mode : modeEncrypt,
+                                   attributes : attr(secretValue, sizedAttrVal(128, 1)) >
+=>*
+  < ta : TAKernel | api-call : return(cipherUpdate[# success # ZsCipher]) > .
+
+--- [SEED-CIPHER-DOFINAL] cipher-do-final on an active operation with a valid key
+search [1] in SEED-CIPHER-MAC :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(cipherDoFinal[# oid(1, ta) # randomData]), counter : 0 >
+  < oid(1, ta) : OperationHandle | oid : oid(0, ta), state : handleState((init, keySet)), opclass : clsCipher >
+  < oid(0, ta) : CryptoOperation | state : active, algorithm : algAesCtr, mode : modeEncrypt,
+                                   attributes : attr(secretValue, sizedAttrVal(128, 1)) >
+=>*
+  < ta : TAKernel | api-call : return(cipherDoFinal[# success # ZsCipher]) > .
+
+--- [SEED-CIPHER-DOFINAL-FAIL] cipher-do-final on a handle without init is a panic
+search [1] in SEED-CIPHER-MAC :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(cipherDoFinal[# oid(1, ta) # randomData]), counter : 0 >
+  < oid(1, ta) : OperationHandle | oid : oid(0, ta), state : handleState(keySet), opclass : clsCipher >
+  < oid(0, ta) : CryptoOperation | state : initial, algorithm : algAesCtr, mode : modeEncrypt,
+                                   attributes : attr(secretValue, sizedAttrVal(128, 1)) >
+=>*
+  < ta : TAKernel | status : panic > .
+
+--- [SEED-MAC-INIT] mac-init sends initOperation to the handle
+search [1] in SEED-CIPHER-MAC :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(MACInit[# oid(1, ta) # randomData]), counter : 0 >
+  < oid(1, ta) : OperationHandle | oid : oid(0, ta), state : handleState(keySet), opclass : clsMAC >
+  < oid(0, ta) : CryptoOperation | state : initial, algorithm : algHmacSha256, mode : modeMac >
+=>*
+  < ta : TAKernel | api-call : final(MACInit[# oid(1, ta) # randomData]) > .
+
+--- [SEED-MAC-UPDATE] mac-update on an active operation, from the update message
+search [1] in SEED-CIPHER-MAC :
+  (msg macUpdate[# randomData] from ta to oid(1, ta))
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(MACUpdate[# oid(1, ta) # randomData]), counter : 0 >
+  < oid(1, ta) : OperationHandle | oid : oid(0, ta), state : handleState((init, keySet)), opclass : clsMAC >
+  < oid(0, ta) : CryptoOperation | state : active, acc-data : nil, algorithm : algHmacSha256, mode : modeMac >
+=>*
+  < ta : TAKernel | api-call : return(MACUpdate[# noReturnCode]) > .
+
+--- [SEED-MAC-COMPUTE] mac-compute-final on an active operation
+search [1] in SEED-CIPHER-MAC :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(MACComputeFinal[# oid(1, ta) # randomData]), counter : 0 >
+  < oid(1, ta) : OperationHandle | oid : oid(0, ta), state : handleState((init, keySet)), opclass : clsMAC >
+  < oid(0, ta) : CryptoOperation | state : active, acc-data : randomData, algorithm : algHmacSha256, mode : modeMac,
+                                   attributes : attr(secretValue, sizedAttrVal(128, 1)) >
+=>*
+  < ta : TAKernel | api-call : return(MACComputeFinal[# success # ZsMac]) > .
+
+--- [SEED-MAC-COMPUTE-CAP] mac-compute-final with an output capacity that fits
+search [1] in SEED-CIPHER-MAC :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(MACComputeFinal[# oid(1, ta) # randomData # dataSize(32)]), counter : 0 >
+  < oid(1, ta) : OperationHandle | oid : oid(0, ta), state : handleState((init, keySet)), opclass : clsMAC >
+  < oid(0, ta) : CryptoOperation | state : active, acc-data : randomData, algorithm : algHmacSha256, mode : modeMac,
+                                   attributes : attr(secretValue, sizedAttrVal(128, 1)) >
+=>*
+  < ta : TAKernel | api-call : return(MACComputeFinal[# success # ZsMac]) > .
+
+--- [SEED-MAC-COMPUTE-SHORT] mac-compute-final with an output capacity that is too small
+search [1] in SEED-CIPHER-MAC :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(MACComputeFinal[# oid(1, ta) # randomData # dataSize(1)]), counter : 0 >
+  < oid(1, ta) : OperationHandle | oid : oid(0, ta), state : handleState((init, keySet)), opclass : clsMAC >
+  < oid(0, ta) : CryptoOperation | state : active, acc-data : randomData, algorithm : algHmacSha256, mode : modeMac,
+                                   attributes : attr(secretValue, sizedAttrVal(128, 1)) >
+=>*
+  < ta : TAKernel | api-call : return(MACComputeFinal[# errorShortBuffer # dataSize(32)]) > .
+
+--- [SEED-MAC-COMPARE] mac-compare-final computes the MAC and compares it
+search [1] in SEED-CIPHER-MAC :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(MACCompareFinal[# oid(1, ta) # randomData # randomData]), counter : 0 >
+  < oid(1, ta) : OperationHandle | oid : oid(0, ta), state : handleState((init, keySet)), opclass : clsMAC >
+  < oid(0, ta) : CryptoOperation | state : active, acc-data : randomData, algorithm : algHmacSha256, mode : modeMac,
+                                   attributes : attr(secretValue, sizedAttrVal(128, 1)) >
+=>*
+  < ta : TAKernel | api-call : return(MACCompareFinal[# errorMacInvalid]) > .
+
+
+--- [SEED-MAC-UPDATE-CALL] mac-update subroutine moves the call to final
+search [1] in SEED-CIPHER-MAC :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(MACUpdate[# oid(1, ta) # randomData]), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : final(MACUpdate[# oid(1, ta) # randomData]) > .

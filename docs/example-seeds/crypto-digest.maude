@@ -1,0 +1,70 @@
+--- Digest operations (TEE_DigestUpdate, TEE_DigestDoFinal, TEE_DigestExtract) driven from the
+--- TA-level API call through the operation handle. Each search is a bounded example driver.
+
+load ./src/main
+load ./tests/api/aux
+
+set show command off .
+set print attribute off .
+set print color off .
+
+mod SEED-DIGEST is
+  pr TEST-AUX .
+  var ZsDigest : List{Data} .
+endm
+
+--- [SEED-DIGEST-UPDATE] digest-update through the operation handle
+search [1] in SEED-DIGEST :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(DigestUpdate[# oid(1, ta) # randomData]), counter : 0 >
+  < oid(1, ta) : OperationHandle | oid : oid(0, ta), state : handleState(empty), opclass : clsDigest >
+  < oid(0, ta) : CryptoOperation | acc-data : nil, algorithm : algSha256, mode : modeDigest, state : initial >
+=>*
+  < ta : TAKernel | api-call : return(DigestUpdate[# noReturnCode]) > .
+
+--- [SEED-DIGEST-DOFINAL] digest-do-final without an output capacity
+search [1] in SEED-DIGEST :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(DigestDoFinal[# oid(1, ta) # randomData]), counter : 0 >
+  < oid(1, ta) : OperationHandle | oid : oid(0, ta), state : handleState(empty), opclass : clsDigest >
+  < oid(0, ta) : CryptoOperation | acc-data : randomData, algorithm : algSha256, mode : modeDigest, state : active >
+=>*
+  < ta : TAKernel | api-call : return(DigestDoFinal[# success # ZsDigest]) > .
+
+--- [SEED-DIGEST-DOFINAL-CAP] digest-do-final with an output capacity that fits
+search [1] in SEED-DIGEST :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(DigestDoFinal[# oid(1, ta) # randomData # dataSize(32)]), counter : 0 >
+  < oid(1, ta) : OperationHandle | oid : oid(0, ta), state : handleState(empty), opclass : clsDigest >
+  < oid(0, ta) : CryptoOperation | acc-data : randomData, algorithm : algSha256, mode : modeDigest, state : active >
+=>*
+  < ta : TAKernel | api-call : return(DigestDoFinal[# success # ZsDigest]) > .
+
+--- [SEED-DIGEST-DOFINAL-SHORT] digest-do-final with an output capacity that is too small
+search [1] in SEED-DIGEST :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(DigestDoFinal[# oid(1, ta) # randomData # dataSize(1)]), counter : 0 >
+  < oid(1, ta) : OperationHandle | oid : oid(0, ta), state : handleState(empty), opclass : clsDigest >
+  < oid(0, ta) : CryptoOperation | acc-data : randomData, algorithm : algSha256, mode : modeDigest, state : active >
+=>*
+  < ta : TAKernel | api-call : return(DigestDoFinal[# errorShortBuffer # dataSize(32)]) > .
+
+--- [SEED-DIGEST-EXTRACT] digest-extract without an output capacity
+search [1] in SEED-DIGEST :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(DigestExtract[# oid(1, ta)]), counter : 0 >
+  < oid(1, ta) : OperationHandle | oid : oid(0, ta), state : handleState(empty), opclass : clsDigest >
+  < oid(0, ta) : CryptoOperation | acc-data : randomData, algorithm : algSha256, mode : modeDigest, state : active >
+=>*
+  < ta : TAKernel | api-call : return(DigestExtract[# success # ZsDigest]) > .
+
+--- [SEED-DIGEST-EXTRACT-CAP] digest-extract with an output capacity that fits
+search [1] in SEED-DIGEST :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(DigestExtract[# oid(1, ta) # dataSize(32)]), counter : 0 >
+  < oid(1, ta) : OperationHandle | oid : oid(0, ta), state : handleState(empty), opclass : clsDigest >
+  < oid(0, ta) : CryptoOperation | acc-data : randomData, algorithm : algSha256, mode : modeDigest, state : active >
+=>*
+  < ta : TAKernel | api-call : return(DigestExtract[# success # ZsDigest]) > .
+
+--- [SEED-DIGEST-EXTRACT-SHORT] digest-extract with an output capacity that is too small
+search [1] in SEED-DIGEST :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(DigestExtract[# oid(1, ta) # dataSize(1)]), counter : 0 >
+  < oid(1, ta) : OperationHandle | oid : oid(0, ta), state : handleState(empty), opclass : clsDigest >
+  < oid(0, ta) : CryptoOperation | acc-data : randomData, algorithm : algSha256, mode : modeDigest, state : active >
+=>*
+  < ta : TAKernel | api-call : return(DigestExtract[# errorShortBuffer # dataSize(32)]) > .

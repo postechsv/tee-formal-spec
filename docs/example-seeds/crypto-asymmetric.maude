@@ -1,0 +1,38 @@
+--- Asymmetric operations (TEE_AsymmetricEncrypt, TEE_AsymmetricDecrypt, TEE_AsymmetricSignDigest,
+--- TEE_AsymmetricVerifyDigest): the call moves to final and the request goes to the handle. Each
+--- search is a bounded example driver.
+
+load ./src/main
+load ./tests/api/aux
+
+set show command off .
+set print attribute off .
+set print color off .
+
+mod SEED-ASYMMETRIC is
+  pr TEST-AUX .
+endm
+
+--- [SEED-ASYM-ENCRYPT-CALL] asymmetric-encrypt moves the call to final
+search [1] in SEED-ASYMMETRIC :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(AsymmetricEncrypt[# oid(101, ta) # randomData]), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : final(AsymmetricEncrypt[# oid(101, ta) # randomData]) > .
+
+--- [SEED-ASYM-DECRYPT-CALL] asymmetric-decrypt moves the call to final
+search [1] in SEED-ASYMMETRIC :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(AsymmetricDecrypt[# oid(101, ta) # randomData]), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : final(AsymmetricDecrypt[# oid(101, ta) # randomData]) > .
+
+--- [SEED-ASYM-SIGN-CALL] asymmetric-sign-digest moves the call to final
+search [1] in SEED-ASYMMETRIC :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(AsymmetricSignDigest[# oid(101, ta) # randomData]), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : final(AsymmetricSignDigest[# oid(101, ta) # randomData]) > .
+
+--- [SEED-ASYM-VERIFY-CALL] asymmetric-verify-digest moves the call to final
+search [1] in SEED-ASYMMETRIC :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(AsymmetricVerifyDigest[# oid(101, ta) # randomData # randomData]), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : final(AsymmetricVerifyDigest[# oid(101, ta) # randomData # randomData]) > .

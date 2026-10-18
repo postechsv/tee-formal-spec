@@ -15,7 +15,7 @@ omod TEE-CLIENT-API-BEHAVIOR is
   var VL : ValueList .
 
 ------------------------------------------------------------
---- Auxilary Functions
+--- Auxiliary Functions
 ------------------------------------------------------------
 
   --- op insertToSmcQueue : SessionId SmcArgument Map{SessionId,List{SmcArgument}} -> Map{SessionId,List{SmcArgument}} .
@@ -133,9 +133,11 @@ omod TEE-INTERNAL-CLIENT-API-BEHAVIOR is
 --- 'TEE_OpenTASession'
 ------------------------------------------------------------
 
---- The 'TEE_OpenTASession' function opens a new session with a Trusted Application.
---- See page 98 of the G.P. documentation for more details.
+  --- The 'TEE_OpenTASession' function opens a new session with a Trusted Application.
+  --- See page 98 of the G.P. documentation for more details.
 
+  --- open-session-subroutine: the init call of TeeOpenTASession becomes final, and the
+  --- TrustedOS is asked to open a session with the TA TA.
   rl [open-session-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus ,
                       api-call : init(apiCall(TeeOpenTASession , (uuid(TA) , PARAMS))) >
@@ -144,6 +146,10 @@ omod TEE-INTERNAL-CLIENT-API-BEHAVIOR is
     reqTrustedOS(openTASession(TA) , TK)
   .
 
+  --- open-session-success: the openSessionSuccess(RK) answer of the TrustedOS finishes the call
+  --- with success and the handle oid(N + 1, TK).  The session object oid(N, TK) is created
+  --- with ta-id RK, the handle oid(N + 1, TK) is created for it, and the counter advances by
+  --- two.
   rl [open-session-success] :
     retTrustedOS(openSessionSuccess(RK), TK)
     < TK : TAKernel | status : (normal).AppStatus , api-call : final(apiCall(TeeOpenTASession , PARAMS)) , counter : N >
@@ -160,12 +166,15 @@ omod TEE-INTERNAL-CLIENT-API-BEHAVIOR is
 --- 'TEE_InvokeTACommand'
 ------------------------------------------------------------
 
---- The 'TEE_InvokeTACommand' function invokes a command within a session opened between the client Trusted Application instance and a destination Trusted Application instance.
---- See page 101 of the G.P. documentation for more details.
+  --- The 'TEE_InvokeTACommand' function invokes a command within a session opened between the
+  --- client Trusted Application instance and a destination Trusted Application instance.
+  --- See page 101 of the G.P. documentation for more details.
 
   op reqInvoke : -> ReqId [ctor] .
   op finishReqInvoke : -> ReqId [ctor] .
 
+  --- invoke-ta-command-subroutine (request): the init call of TeeInvokeTACommand becomes
+  --- final, and the reqInvoke message with FUNC and VL is sent to the session handle HANDLE.
   rl [invoke-ta-command-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus ,
                       api-call : init(apiCall(TeeInvokeTACommand , (handle(HANDLE) , funcId(FUNC) , values(VL) , PARAMS))) >
@@ -174,6 +183,9 @@ omod TEE-INTERNAL-CLIENT-API-BEHAVIOR is
     (msg reqInvoke[^ FUNC ^ VL] from TK to HANDLE)
   .
 
+  --- invoke-ta-command-top-level-handle: the reqInvoke message reaches the session handle
+  --- HANDLE of the idle session OI (req : noReq), and the request {HANDLE, FUNC, VL, TK} is
+  --- stored in the session.
   rl [invoke-ta-command-top-level-handle] :
     (msg reqInvoke[^ FUNC ^ VL] from TK to HANDLE)
     < OI : Session | req : noReq >
@@ -183,6 +195,8 @@ omod TEE-INTERNAL-CLIENT-API-BEHAVIOR is
     < HANDLE : TaSessionHandle | >
   .
 
+  --- invoke-ta-command-top-level-return: the stored return {HANDLE, FUNC, TK, VL} of the session
+  --- OI is cleared, and the finishReqInvoke message with FUNC and VL is sent back to TK.
   rl [invoke-ta-command-top-level-return] :
     < OI : Session | ret : {HANDLE, FUNC, TK, VL} >
     < HANDLE : TaSessionHandle | oid : OI >
@@ -192,6 +206,8 @@ omod TEE-INTERNAL-CLIENT-API-BEHAVIOR is
     (msg finishReqInvoke[^ FUNC ^ VL] from HANDLE to TK)
   .
 
+  --- invoke-ta-command-subroutine (finish): the finishReqInvoke message gives the return code
+  --- RET and the values VL to the final call of TeeInvokeTACommand, which becomes return.
   rl [invoke-ta-command-subroutine] :
     (msg finishReqInvoke[^ FUNC ^ (# RET , VL)] from HANDLE to TK)
     < TK : TAKernel | api-call : final(apiCall(TeeInvokeTACommand , (handle(HANDLE) , PARAMS))) >

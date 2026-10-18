@@ -52,8 +52,8 @@ search [1] in COMPLETION-TEST :
 =>*
   < testTa : TAKernel | api-call : return(apiCall(AEDecryptFinal , retCode(errorMacInvalid))) > .
 
---- CipherUpdate rejects insufficient (empty) decrypt input, as in the paper.
---- Paper (Fig. 14, cipher-update): runOp(decrypt, nil) = failure, since nil is
+--- CipherUpdate rejects insufficient (empty) decrypt input.
+--- runOp(decrypt, nil) = failure (cipher-update), since nil is
 --- not an encrypted(...) term, so the handle sends failCipher and the TA goes
 --- to status : panic. The G.P. empty-input shortcut is intentionally absent.
 search [1] in COMPLETION-TEST :
@@ -69,7 +69,7 @@ search [1] in COMPLETION-TEST :
   < testTa : TAKernel | status : panic, PANIC-ATTS:AttributeSet > C .
 
 --- Crypto operation state and its top-level operation handle reset together.
---- AllocateOperation initializes the paper-level state and operation class on
+--- AllocateOperation initializes the abstract state and operation class on
 --- the top-level OpHandle.
 search [1] in COMPLETION-TEST :
   < testTa : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(AllocateOperation , (alg(algAesGcm),
@@ -91,7 +91,7 @@ search [1] in COMPLETION-TEST :
       opclass : clsCipher, state : handleState(empty),
       key-material-set : false > C .
 
---- ResetOperation (paper, reset-oper-try-reset-success) leaves the top-level
+--- ResetOperation (reset-oper-try-reset-success) leaves the top-level
 --- handle unchanged, including its init flag.
 search [1] in COMPLETION-TEST :
   < testTa : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(ResetOperation , handle(oid(101, testTa)))) >
@@ -171,7 +171,7 @@ search [1] in COMPLETION-TEST :
       max-size : 2048 >
   < oid(101, testTa) : OperationHandle | state : handleState(empty) > C .
 
---- CipherInit (paper, Fig. 13) updates the operation object and the top-level
+--- CipherInit updates the operation object and the top-level
 --- handle in one step: the operation becomes active and the handle gains init.
 search [1] in COMPLETION-TEST :
   (msg reqCipherInit[] from testTa to oid(101, testTa))
@@ -247,7 +247,7 @@ search [1] in COMPLETION-TEST :
       state : handleState(empty), opclass : clsDigest >
   C .
 
---- DigestExtract enters the paper-level extracting handle state.
+--- DigestExtract enters the abstract extracting handle state.
 search [1] in COMPLETION-TEST :
   (msg digestExtract[] from testTa to oid(101, testTa))
   < oid(1, testTa) : CryptoOperation |
@@ -261,7 +261,7 @@ search [1] in COMPLETION-TEST :
       state : handleState((init, keySet, extract)), opclass : clsDigest >
   C .
 
---- Fig. 12: TEE_DigestExtract keeps the key-set and init flags and adds extract.
+--- TEE_DigestExtract keeps the key-set and init flags and adds extract.
 search [1] in COMPLETION-TEST :
   (msg digestExtract[] from testTa to oid(101, testTa))
   < oid(1, testTa) : CryptoOperation |
@@ -436,7 +436,7 @@ search [1] in COMPLETION-TEST :
 =>1
   < testTa : TAKernel | status : (normal).AppStatus, CLEAR-TK-ATTS:AttributeSet > C .
 
---- Fig. 11: TEE_SetOperationKey with a null key clears an initialized operation
+--- TEE_SetOperationKey with a null key clears an initialized operation
 --- Its handle goes from KEY_SET and INIT to not KEY_SET and not INIT.
 search [1] in COMPLETION-TEST :
   < testTa : TAKernel | status : (normal).AppStatus,
@@ -452,7 +452,7 @@ search [1] in COMPLETION-TEST :
   < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : handleState(empty), key-material-set : false > .
 
---- Fig. 11: TEE_SetOperationKey with a new key on an initialized operation installs it
+--- TEE_SetOperationKey with a new key on an initialized operation installs it
 --- and clears init (KEY_SET and INIT to KEY_SET and not INIT).
 search [1] in COMPLETION-TEST :
   (msg reqSetOperationKey[^ typeAes ^ (attr(secretValue, randomAttrVal)).Set{CryptoAttribute} ^ usageEncrypt] from testTa to oid(101, testTa))

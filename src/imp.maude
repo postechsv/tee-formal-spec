@@ -1,5 +1,5 @@
 
---- This file defines the syntax of imperative language and its semantics.
+--- This file defines the syntax of the imperative language and its semantics.
 
 fmod IMP-TYPE is
   sort ImpType .
@@ -43,8 +43,8 @@ fmod IMP-REF-TYPE is
 
   sort RType .
   subsort RType < ImpType .
---- T is a type => T* is a type.
---- T is a type => T& is a type.
+  --- T is a type => T* is a type.
+  --- T is a type => T& is a type.
   op _* : ImpType -> RType [ctor] .
   op _& : ImpType -> RType [ctor] .
 endfm
@@ -71,7 +71,7 @@ view Label from TRIV to IMP-LABEL is
   sort Elt to Label .
 endv
 
---- Values in IMP. Namely, Bool and Int.
+--- Values in IMP.  Namely, Bool and Int.
 
 fmod IMP-VALUE is
   pr INT .
@@ -104,9 +104,9 @@ fmod IMP-BASE-EXP is
   pr IMP-VALUE .
   pr IMP-VAR .
 
---- PExp : Var Decl.
---- FExp : Function related
---- LExp : Var
+  --- PExp: a declaration, a type and a variable.
+  --- FExp: a function call.
+  --- LExp: an lvalue, that is a variable, a struct member or an array element.
   sorts PExp FExp LExp Exp .
   subsort Value < Exp .
   subsort Var < LExp < Exp .
@@ -147,7 +147,7 @@ fmod IMP-FUNC-SIG is
 
   ---@dmc close-sort(FuncId=mkFuncId)
   sorts FuncSig FuncId APIFuncId .
-  --- The paper uses APIFuncId for both TEE API functions and TA service
+  --- APIFuncId is used for both TEE API functions and TA service
   --- entry points.  Executable program function identifiers refine it.
   subsort FuncId < APIFuncId .
 
@@ -156,14 +156,14 @@ fmod IMP-FUNC-SIG is
   var E : Exp .
   var EL : ExpList .
 
---- FuncSig
+--- FuncSig: a function signature T F(PARAMS), or T F() without parameters.
 
   op __(_) : ImpType FuncId ExpList -> FuncSig [ctor] .
   op __() : ImpType FuncId -> FuncSig [ctor] .
 
   eq T F() = T F(nil) .
 
---- For later assertion, not necessary
+--- checkPExp(EL): an assertion helper for later use, not used by the semantics.
   op  checkPExp : ExpList -> Bool .
   ceq checkPExp((E, EL)) = checkPExp(EL) if E :: PExp .
 ---@dmc owise shapes(sep=_,_, empty=nil, elem=Exp)
@@ -264,12 +264,12 @@ fmod IMP-STMT is
   op _{_}; : SType Stmt -> Stmt [ctor prec 49] .
   op _{_}  : FuncSig Stmt -> Stmt [ctor prec 49] .
 
---- Function call
+--- return_: a return statement with the value of an expression.
 
   op return_; : Exp -> Stmt [ctor prec 60] .
 
 
---- decl & initialization
+--- Declaration with initialization: T X ::= E ; is the same as T X ; X := E ; .
 
   eq T X ::= E ; = T X ; X := E ; .
 
@@ -339,7 +339,7 @@ fmod IMP-INTERNAL is
   --- The object of a struct: a location that holds the members (see sAlloc-i).
   op $allocObj : -> IStmt [ctor] .
 
-  --- Call protocol (Fig 4).  A parameter-value pair is pv(param, e), where e is an
+  --- Call protocol.  A parameter-value pair is pv(param, e), where e is an
   --- expression before zip has heated it and a value afterwards.  zip(pvl, pel) heats
   --- the pairs pel; invoke(S) runs a body; bind(pvl) binds the parameters of pvl.
   sorts PVal PVList .
@@ -372,7 +372,7 @@ fmod IMP-PROGRAM is
 endfm
 
 --- Static type system for IMP.  Judgments return constructor-wrapped results
---- Wrapped results (ty, mm, okS): a judgment that fails has no matching equation and
+--- Wrapped results (ty, mm): a judgment that fails has no matching equation and
 --- stays unreduced, so it can never be bound by a pattern.  That is how an
 --- ill-typed program is rejected.  No owise (see gen-dmc).
 --- Scoping follows the semantics: a function body sees its parameters, its own
@@ -473,8 +473,6 @@ fmod IMP-TYPING is
   eq typeOfExp(SC, # I) = ty(int) .
   eq typeOfExp(SC, # B) = ty(bool) .
 
-  --- Variables: a local name shadows a global; an auto variable (declared, not
-  --- yet assigned) is not a value yet.
   --- Pending names.  A block declares its names when it is entered (enterBlock), and
   --- its declarations are hoisted to the block entry at run time (hoistK).  So a use
   --- of a name before its declaration in the same block would name the outer binding
@@ -504,6 +502,8 @@ fmod IMP-TYPING is
   eq enterBlock(top(L, pend(PM) % F), S) = top(L, pend(addDecls(PM, declsOf(getSList(S)))) % F) .
   eq enterBlock(body(L, G, pend(PM) % F), S) = body(L, G, pend(addDecls(PM, declsOf(getSList(S)))) % F) .
 
+  --- varT(SC, X): the type of X in SC.  A local name shadows a global.  An auto variable that is
+  --- declared but not yet assigned, and a pending name have no type here.
   op varT : Scope Var -> TypeR .
   ceq varT(top(L, F), X) = ty(T) if pendOf(X, F) = false /\ ty(T) := lookupT(X, L) /\ T :: NonAuto .
   ceq varT(body(L, G, F), X) = ty(T) if pendOf(X, F) = false /\ $hasMapping(L, X) = true /\ ty(T) := lookupT(X, L) /\ T :: NonAuto .
@@ -666,11 +666,12 @@ fmod IMP-TYPING is
     if FID :: TeeApi .
 
   op checkBody : FuncSig Stmt Map{Var,ImpType} Facts -> Bool .
-  --- The body scope takes the globals of F (its top-level pend fact is dropped) and
-  --- the pending names of its own declarations.
   op dropPend : Facts -> Facts .
   eq dropPend(pend(PM) % F) = F .
 
+  --- checkBody(FSIG, S, L, F): true when the body S of FSIG is well typed.  Its locals are the
+  --- parameters and declarations of S, its globals are L, and its facts are F without the
+  --- top-level pending names (dropPend), plus the pending names of its own declarations.
   ceq checkBody(T FID(PARAMS), S, L, F) = true
     if body(L2, G2, F2) := stmtT(T, body(bindParams(PARAMS), L,
          dropPend(F) % pend(declsOf(getSList(S))) % collectB(getSList(S))), S)
@@ -747,7 +748,6 @@ fmod IMP-EVAL-CONTEXT is
 endfm
 
 --- Strictness of IMP expressions and statements.
----
 --- Evaluation order is fixed and left to right: in E1 op E2, E1 is evaluated to a
 --- value before E2 starts.  C leaves the order of operands unspecified (and makes
 --- some orders undefined behaviour); a fixed order is a deterministic choice that
@@ -858,7 +858,7 @@ fmod IMP-STRICTNESS is
   ceq k(return E ; ~> K) = k({ E } ~> return []; ~> K) if not E :: Value .
    eq k({ V } ~> return []; ~> K) = k(return V ; ~> K) .
 
---- Call-by-value & call-by-reference: zip (Fig 4).  A value parameter heats its
+--- Call-by-value & call-by-reference: zip.  A value parameter heats its
 --- argument e; a reference parameter (U * x or U & x, the same in the semantics) heats
 --- lvalue(e).  The value that comes back is cooled into the pair.  A pair whose argument
 --- is already a value is taken as it is.
@@ -875,9 +875,9 @@ fmod IMP-STRICTNESS is
    eq k({ VA } ~> $zipc(PVL, PX, PEL) ~> K) = k(zip((PVL, pv(PX, VA)), PEL) ~> K) .
    eq k(zip(PVL, (pv(PX, VA), PEL)) ~> K) = k(zip((PVL, pv(PX, VA)), PEL) ~> K) .
 
---- Array element a[E]: an rvalue reads the element at the location of its lvalue
---- the read item, and an lvalue is the location of the element.  The array operand is
---- heated as an lvalue (a location), then the index (see elem in IMP-SEMANTICS).
+--- Array element a[E]: an rvalue is the read item $read applied to the location of the element,
+--- and an lvalue is that location.  The array operand is heated as an lvalue (a location), then
+--- the index (see elem in IMP-SEMANTICS).
   eq k({ E1 [ E2 ] } ~> K)              = k({ lvalue(E1 [ E2 ]) } ~> $read ~> K) .
   eq k({ lvalue(E1 [ E2 ]) } ~> K)      = k({ lvalue(E1) } ~> $idxA(E2) ~> K) .
   eq k({ V1 } ~> $idxA(E2) ~> K)        = k({ elemAt(V1, E2) } ~> K) .
@@ -1023,7 +1023,8 @@ fmod IMP-AUX is
   ceq bodyLabels(BODY) = labelsOf(getSList(S)) if S := BODY .
   ceq bodyLabels(BODY) = empty if not (BODY :: Stmt) .
 
-  --- Environment that a goto leaves behind: the environment saved by the outermost
+  --- unwindEnv(K, ENV): the environment that a goto leaves behind, that is the one saved by
+  --- the outermost
   --- block marker still in the continuation, or the current one if there is none.
   op unwindEnv : K Map{Var,Nat} -> Map{Var,Nat} .
   eq unwindEnv(.K, ENV) = ENV .
@@ -1137,22 +1138,24 @@ mod IMP-SEMANTICS is
 --- Equations never overlap: each left-hand side is a distinct head of the k cell,
 --- and where two left-hand sides share a head their conditions are disjoint.
 
---- Variable reads and lvalues (rules, as in Fig 3).  A read of an undef store cell (the
---- sort Value does not match undef), so no rule applies and the program is stuck on the read.
+  --- lookup, lookup-lv: a read of variable X takes the value of its store cell, and lvalue(X)
+  --- gives the location loc(L) of X.  A read of an undef store cell (the sort Value does not
+  --- match undef) matches no rule, so the program is stuck on the read.
   rl [lookup]: k({ X } ~> K) env((X |-> L) ; ENV) store((L |-> VS) ; MEM)
    => k({ VS } ~> K) env((X |-> L) ; ENV) store((L |-> VS) ; MEM) .
 
   rl [lookup-lv]: k({ lvalue(X) } ~> K) env((X |-> L) ; ENV)
    => k({ loc(L) } ~> K) env((X |-> L) ; ENV) .
 
---- Struct members: a member is a location of the struct's sobj entry.
+  --- member-read, member-lvalue: a member Y of the struct at location L is an entry of its sobj.
+  --- member-read takes the value of the member, and member-lvalue gives its location.
   ceq [member-read]: k({ loc(L) . X } ~> K) store((L |-> sobj((X |-> N) ; SO)) ; (N |-> V) ; MEM)
    = k({ V } ~> K) store((L |-> sobj((X |-> N) ; SO)) ; (N |-> V) ; MEM) if V :: Value .
   eq [member-lvalue]: k({ lvalue(loc(L) . X) } ~> K) store((L |-> sobj((X |-> N) ; SO)) ; MEM)
    = k({ loc(N) } ~> K) store((L |-> sobj((X |-> N) ; SO)) ; MEM) .
 
---- Assignment to a location (the value is already evaluated).
---- An assignment only updates an existing entry (L |-> W): alloc always runs before it.
+  --- assign: stores the evaluated value V at location L.  The entry (L |-> V') must exist,
+  --- since alloc always runs before an assignment.
   crl [assign]: k(loc(L) := V ; ~> K) store((L |-> V') ; MEM)
    => k(K) store((L |-> V) ; MEM) if not V :: SObj .
 --- Struct assignment copies the members: the target keeps its own locations.
@@ -1179,7 +1182,6 @@ mod IMP-SEMANTICS is
   eq k(skip ~> K) = k(K) .
   eq k(K ~> S S' ~> K') = k(K ~> S ~> S' ~> K') .
 
---- Trusted library body (TEE API stub): executed like any other body.
 --- Labels and goto.  goto LB: the continuation becomes the rest of the sequence
 --- from LB (lookupLab), and the environment is the one of the outermost block being
 --- left (unwindEnv).  An unknown label has no equation, so the goto is stuck.
@@ -1188,21 +1190,19 @@ mod IMP-SEMANTICS is
 --- A label that is reached in sequence just runs its statement.
   eq k(LB : S ~> K) = k(S ~> K) .
 
---- Conditional.  A branch is a block: it runs in the environment of the if, and
---- its marker restores that environment when the branch ends (block scoping).
+  --- if-true, if-false: the taken branch runs as a block in the environment of the if.  Its
+  --- $restoreEnv marker restores that environment when the branch ends (block scoping).
   rl [if-true]: k(if (# true)  {S} else {S'} ~> K) env(ENV) => k(hoistK(getSList(S))  ~> S  ~> $restoreEnv(ENV) ~> K) env(ENV) .
   rl [if-false]: k(if (# false) {S} else {S'} ~> K) env(ENV) => k(hoistK(getSList(S')) ~> S' ~> $restoreEnv(ENV) ~> K) env(ENV) .
   eq k($restoreEnv(ENV') ~> K) env(ENV) = k(K) env(ENV') .
 
---- Loop.  Rule: unrolling a loop is not bounded, so it is not an equation.
+  --- while: one unrolling step of a loop, as a rule because unrolling is not bounded.
   rl [while]: k(while (E) {S} ~> K)
   => k(if (E) {(S while (E) {S})} else {skip} ~> K) .
 
---- Declarations.  A declared variable gets a fresh location, bound to its name.
-  --- A declaration reached in the normal flow resets its (hoisted) object to
-  --- indeterminate (undef); it does not allocate again.
-  --- A declaration is split by sort (base type, auto, struct, array), so no rule carries
-  --- a type condition.
+  --- assn, assn-u, assn-s, assnA: a declaration reached in the normal flow resets its hoisted
+  --- object (see reset-s, reset-b and resetA) and does not allocate again.  The rules are split
+  --- by sort (base type, auto, struct, array), so no rule carries a type condition.
   eq [assn]:     k({ CB X } ~> K) = k($reset(X) ~> K) .
   eq [assn-u]:   k({ auto X } ~> K) = k($reset(X) ~> K) .
   eq [assn-s]:   k({ TS X } ~> K) = k($reset(X) ~> K) .
@@ -1230,6 +1230,8 @@ mod IMP-SEMANTICS is
   --- recorded in arrlen.  Its elements are undef.
   eq [allocA]:   k($alloc(CB [ NA ]) ~> K) store(MEM) nextLoc(LN) arrlen(AL)
               = k($loc(LN) ~> K) store(setUndef(LN, NA, MEM)) nextLoc(LN + NA) arrlen(insert(LN, NA, AL)) .
+  --- alloc, allocObj: a scalar object (or the object of a struct) takes the next location from
+  --- nextLoc, and that location is undef.
   eq [alloc]:    k($alloc(BT) ~> K) store(MEM) nextLoc(L) = k($loc(L) ~> K) store(insert(L, undef, MEM)) nextLoc(L + 1) .
   eq [allocObj]: k($allocObj ~> K) store(MEM) nextLoc(L) = k($loc(L) ~> K) store(insert(L, undef, MEM)) nextLoc(L + 1) .
   eq k(alloc(T X) ~> K) = k($alloc(T) ~> $setLoc(X) ~> K) .
@@ -1237,18 +1239,21 @@ mod IMP-SEMANTICS is
 
 --- function & structure declaration
   eq k(FSIG {S} ~> K) fdecl(FDCL) = k(K) fdecl(insert(FSIG, S, FDCL)) .
+  --- $libFun: a trusted library body (TEE API stub) is recorded in fdecl like a user body.
   eq k($libFun(FSIG, BODY) ~> K) fdecl(FDCL) = k(K) fdecl(insert(FSIG, BODY, FDCL)) .
   eq k(struct T {S} ; ~> K) sdecl(SDCL) = k(K) sdecl(insert(struct T, S, SDCL)) .
 
---- Array element.  An index outside 0 <= I < N has no equation: the program is stuck.
---- The check is a value test on the length (arrlen), not a static type condition.
+  --- elem: the element NI of the array at location LN is loc(LN + NI) when NI is below the array
+  --- length NN (arrlen).  The check is a value test, not a static type condition; otherwise no
+  --- equation applies and the program is stuck.
   ceq [elem]: k({ elemAt(loc(LN), # NI) } ~> K) arrlen((LN |-> NN) ; AL)
    = k({ loc(LN + NI) } ~> K) arrlen((LN |-> NN) ; AL) if NI < NN .
---- Read of the element at a location (the rvalue of a[E]).  An undef element is stuck.
+  --- elem-read: the rvalue of a[E] is the value V stored at the location M of the element.  An
+  --- undef element (V not a Value) is stuck.
   ceq [elem-read]: k({ loc(M) } ~> $read ~> K) store((M |-> V) ; MEM)
    = k({ V } ~> K) store((M |-> V) ; MEM) if V :: Value .
 
---- Function call (Fig 4).  fCall, fExec, bindV, bindR, fRetn and fQuit are rules: they
+--- Function call.  fCall, fExec, bindV, bindR, fRetn and fQuit are rules: they
 --- push or pop frames, or enter a body.  The argument pairs are heated by zip (see
 --- IMP-STRICTNESS).  Parameters are typed: T x is passed by value, and U * x or U & x
 --- by reference (the two are the same in the semantics).
@@ -1263,11 +1268,11 @@ mod IMP-SEMANTICS is
   rl [fExec]: k(zip(PVL, nil) ~> invoke(BODY) ~> K) env(ENV) genv(G) stack(STACK) nextLoc(N) labels(LM)
   => k(bind(PVL) ~> hoistBody(BODY)) env(G) genv(G) stack(item(ENV, LM, K, N) |> STACK) nextLoc(N) labels(bodyLabels(BODY)) .
 
---- bindV (Fig 4, typed): a value parameter is a new object that takes the value.
+--- bindV (typed): a value parameter is a new object that takes the value.
   rl [bindV]: k(bind((pv(VT X, VA), PVL)) ~> K)
   => k(alloc(VT X) ~> X := VA ; ~> bind(PVL) ~> K) .
 
---- bindR (Fig 4, typed): a reference parameter names the location of its argument.  No
+--- bindR (typed): a reference parameter names the location of its argument.  No
 --- object is allocated.
   rl [bindR]: k(bind((pv(RT X, loc(L)), PVL)) ~> K) env(ENV)
   => k(bind(PVL) ~> K) env(insert(X, L, ENV)) .
@@ -1280,7 +1285,8 @@ mod IMP-SEMANTICS is
 
   eq k(bind(nil) ~> K) = k(K) .
 
---- The global environment is the environment after the top-level hoisting.
+--- $genv: the global environment genv is set to the current environment, which is the one after
+--- the top-level hoisting.
   eq k($genv ~> K) env(ENV) genv(ENV') = k(K) env(ENV) genv(ENV) .
 
 --- Return statement (rules: they pop frames).
@@ -1294,8 +1300,9 @@ mod IMP-SEMANTICS is
 --- End of the argument preparation of a syscall.
   eq k($prep(nil) ~> K) = k(K) .
 
---- $assign(L, R) stores the values of the list R into the lvalues of L, pairwise.  It
---- is how the output arguments of a TEE syscall are written back (makeReturnStmt).
+--- $assign(EL, EL'): stores the values of EL pairwise into the lvalues of EL' (the first list holds
+--- the values, the second the lvalues).  It is how the output arguments of a TEE syscall are
+--- written back (makeReturnStmt in tee-imp.maude).
   eq k($assign((E,EL), (E',EL')) ~> K) = k(E' := E ; ~> $assign(EL, EL') ~> K) .
   eq k($assign(EL, nil) ~> K) = k(K) .
 endm

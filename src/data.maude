@@ -21,10 +21,12 @@ fmod DATA-POSITION is
   op pos : Nat -> DataPosition [ctor] .
   op dataMaxPosition : -> DataPosition [ctor] .
 
+  --- _<=_: every data position is below dataMaxPosition.
   op _<=_ : DataPosition DataPosition -> Bool .
   eq POS <= dataMaxPosition = true .
 
-  --- GP v1.3.1, Table 5-2: TEE_DATA_MAX_POSITION is 0xFFFFFFFF.
+  --- withinMaxPosition(P): P is at most TEE_DATA_MAX_POSITION, which is 0xFFFFFFFF in
+  --- G.P. v1.3.1, Table 5-2.
   op withinMaxPosition : DataPosition -> Bool .
   eq withinMaxPosition(pos(P)) = P <= 4294967295 .
 endfm
@@ -58,10 +60,10 @@ fmod BASIC-DATA is
 endfm
 
 --- This module defines auxiliary operators for data stream.
---- The data stream of a persistent object is the list of its data fragments (paper, Sec. 3.1).
+--- The data stream of a persistent object is the list of its data fragments.
 --- A data position is the index of a fragment, and a data size is the number of fragments.
---- Read consumes the first fragment (paper, App. B.1); the operators below serve the
---- write, truncate and seek functions, which the paper does not specify.
+--- The read rules consume the first fragment; the operators below compute the fragment updates
+--- used by the write, truncate and seek functions.
 
 fmod DATA-STREAM-OPERATOR is
   pr BASIC-DATA .
@@ -76,47 +78,53 @@ fmod DATA-STREAM-OPERATOR is
   vars D DATA : Data .
   vars DL STREAM : List{Data} .
 
+  --- noData: the data stream without fragments.
   op noData : -> List{Data} .
   eq noData = nil .
 
---- The size of a data stream is the number of its fragments.
+  --- sizeOfData(DL): the size of the data stream DL is the number of its fragments.
   op sizeOfData : List{Data} -> DataSize .
   eq sizeOfData(DL) = dataSize(size(DL)) .
 
---- This operator adds two data sizes.
+  --- _+_: adds two data sizes.
   op _+_ : DataSize DataSize -> DataSize .
   eq dataSize(N) + dataSize(M) = dataSize(N + M) .
 
---- Data positions beyond the end of a stream are filled with zero fragments.
+  --- putAt: stores the fragment D at position N of the stream.  Data positions beyond the end of a
+  --- stream are filled with zero fragments.
   op putAt : Nat Data List{Data} -> List{Data} .
   eq putAt(0 , D , nil) = D .
   eq putAt(0 , D , DATA STREAM) = D STREAM .
   eq putAt(s(N) , D , nil) = zeroData putAt(N , D , nil) .
   eq putAt(s(N) , D , DATA STREAM) = DATA putAt(N , D , STREAM) .
 
---- This operator writes the fragments DL to the stream starting at position P.
+  --- writeAux(P, DL, STREAM): writes the fragments DL to STREAM starting at position P.
   op writeAux : Nat List{Data} List{Data} -> List{Data} .
   eq writeAux(P , nil , STREAM) = STREAM .
   eq writeAux(P , D DL , STREAM) = writeAux(P + 1 , DL , putAt(P , D , STREAM)) .
 
+  --- writeStream(DL, P, STREAM): STREAM with the fragments DL written from position P.
   op writeStream : List{Data} Nat List{Data} -> List{Data} .
   eq writeStream(DL , P , STREAM) = writeAux(P , DL , STREAM) .
 
---- Resize a stream: discard the fragments past the new end or append zero fragments.
+  --- resizeStream(N, DL): resizes the stream to N fragments, discarding the fragments past the new
+  --- end or appending zero fragments.
   op resizeStream : Nat List{Data} -> List{Data} .
   eq resizeStream(0 , DL) = nil .
   eq resizeStream(s(N) , nil) = zeroData resizeStream(N , nil) .
   eq resizeStream(s(N) , D DL) = D resizeStream(N , DL) .
 
---- A successful write advances the position by the number of fragments written.
+  --- advancePos(P, dataSize(N)): P advanced by the number of fragments of a successful write.
   op advancePos : Nat DataSize -> Nat .
   eq advancePos(P , dataSize(N)) = P + N .
 
---- TEE_DATA_MAX_POSITION (GP v1.3.1, Table 5-2) is 0xFFFFFFFF.
+  --- withinMaxPos(P): P is within TEE_DATA_MAX_POSITION (G.P. v1.3.1, Table 5-2), which is
+  --- 0xFFFFFFFF.
   op withinMaxPos : Nat -> Bool .
   eq withinMaxPos(P) = P <= 4294967295 .
 
---- This operator seeks data position indicator.
+  --- seekPos: the data position after a seek by offset I, clamped to 0 when the seek would move
+  --- before the start of the stream.
   op seekPos : SeekType Nat Int DataSize -> Nat .
   ceq seekPos(seekSet , P , I , dataSize(M)) = 0 if I < 0 .
   ceq seekPos(seekCur , P , I , dataSize(M)) = 0 if P + I < 0 .

@@ -9,7 +9,7 @@
 --- which all live in tee-api.maude (always loaded), so they are not split by
 --- feature.  PERSISTENT-PANIC and DATA-STREAM-PANIC hold the access rules of
 --- their group, in persistent-panic.maude and data-stream-panic.maude; disabling
---- a group in features.mk also removes those files.  The modules import data
+--- a group in mk/features.mk also removes those files.  The modules import data
 --- modules only, never behaviors.
 omod GENERAL-PANIC is
   pr TA-KERNEL .
@@ -28,8 +28,9 @@ omod GENERAL-PANIC is
   var HANDLE : Oid .
   var PARAMS : Set{TeeApiParam} .
 
-  --- APIs for which TEE_HANDLE_NULL is a programmer error.  Free-style APIs
-  --- explicitly accept NULL and are intentionally excluded.
+  --- nullHandlePanics(API): true for the APIs for which TEE_HANDLE_NULL is a programmer error.
+  --- Free-style APIs explicitly accept NULL and are intentionally excluded, so they map to
+  --- false.
   op nullHandlePanics : TeeApi -> Bool .
   eq nullHandlePanics(PopulateTransientObject) = true .
   eq nullHandlePanics(CopyObjectAttributes1) = true .
@@ -75,6 +76,9 @@ omod GENERAL-PANIC is
   ---@dmc owise enumerate(API)
   eq nullHandlePanics(API) = false [owise] .
 
+  --- null-handle-panic: an init call of an API whose handle argument HANDLE is the null handle
+  --- panics the TA when nullHandlePanics(API) holds.  The TA status becomes panic, and the
+  --- api-call is left unchanged.
   crl [null-handle-panic] :
     < TK : TAKernel | status : (normal).AppStatus,
                       api-call : init(apiCall(API , (handle(HANDLE) , PARAMS))) >

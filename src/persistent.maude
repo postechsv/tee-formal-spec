@@ -45,9 +45,12 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
 --- 'TEE_OpenPersistentObject' Sharing Rules
 ------------------------------------------------------------
 
---- If more than one handle is opened on the same object, and if any of these object handles wa opned with the flag TEE_DATA_FLAG_ACCESS_READ,
+--- If more than one handle is opened on the same object, and if any of these object handles was opened with the flag TEE_DATA_FLAG_ACCESS_READ,
 --- then all the object handles SHALL have been opened with the flags TEE_DATA_FLAG_SHARE_READ.
 
+  --- accessRightCheckingAux(DATAFLAGS, DATAFLAGS2): true when the two flag sets may be used by two
+  --- handles on the same object: neither has accessWriteMeta or exclusive, and read and write
+  --- access are shared.
   op accessRightCheckingAux : Set{DataAccessFlag} Set{DataAccessFlag} -> Bool .
   eq accessRightCheckingAux(DATAFLAGS , DATAFLAGS2) =
        not (accessWriteMeta in DATAFLAGS)
@@ -63,9 +66,10 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
          or ((shareWrite in DATAFLAGS)
              and (shareWrite in DATAFLAGS2))) .
 
-  --- The paper models only Handle.oid -> resource links.  These functions
-  --- inspect a whole configuration instead of storing a reverse handle set
-  --- on the resource object.
+  --- persistentHandlesCompatible(OI, DATAFLAGS, HS): true when every object handle in HS
+  --- that refers to OI is compatible with DATAFLAGS under accessRightCheckingAux.
+  --- The model stores only Handle.oid -> resource links, so the check scans the whole
+  --- configuration instead of keeping a reverse handle set on the resource object.
   op persistentHandlesCompatible : Oid Set{DataAccessFlag} Configuration -> Bool .
   eq persistentHandlesCompatible(OI, DATAFLAGS, none) = true .
   eq persistentHandlesCompatible(OI, DATAFLAGS,
@@ -80,6 +84,8 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   eq persistentHandlesCompatible(OI, DATAFLAGS, PORTAL HS) =
      persistentHandlesCompatible(OI, DATAFLAGS, HS) .
 
+  --- removePersistentHandles(OI, HS): removes every object handle in HS that refers to OI.
+  --- The other elements of the configuration are kept.
   op removePersistentHandles : Oid Configuration -> Configuration .
   eq removePersistentHandles(OI, none) = none .
   eq removePersistentHandles(OI, < H : ObjectHandle | oid : OI > HS) =
@@ -100,18 +106,22 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
 --- The 'TEE_OpenPersistentObject' function opens a handle on an existing persistent object.
 --- See page 157 of the G.P. documentation for more details.
 
---- The following four rules create a new persistent object handle.
+--- The following rules create a new persistent object handle.
 
   op openPersistentHandle : -> ReqId [ctor] .
   op finishOpenPersistentHandle : -> ReqId [ctor] .
   op failOpenPersistentHandle : -> ReqId [ctor] .
 
+  --- open-persistent-default-private-storage: a request without a storageId is rewritten to use
+  --- storagePrivate.
   rl [open-persistent-default-private-storage] :
     < TK : TAKernel | api-call : init(apiCall(OpenPersistentObject , (fileId(FILE) , flags(DATAFLAGS)))) >
     =>
     < TK : TAKernel | api-call : init(apiCall(OpenPersistentObject , (storageId(storagePrivate) , fileId(FILE) , flags(DATAFLAGS)))) >
   .
 
+  --- open-persistent-subroutine (request): a supported storage is asked for its status with
+  --- getStatus, and the call waits in exec state 0.
   crl [open-persistent-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus ,
                       api-call : init(apiCall(OpenPersistentObject , (storageId(STORID) , fileId(FILE) , PARAMS))) , storage : SI >
@@ -121,8 +131,9 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   if supportedStorage(STORID)
   .
 
---- Stage 0: the storage status. A normal storage is asked whether the file exists (stage 1).
 
+  --- open-persistent-status-normal: Stage 0.  A normal storage status makes the TA ask the storage
+  --- whether FILE exists (checkFileExist, stage 1).
   rl [open-persistent-status-normal] :
     (msg retStatus[^ (normal).StorageStatus] from SI to TK)
     < TK : TAKernel | status : (normal).AppStatus ,
@@ -132,6 +143,8 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
     (msg checkFileExist[^ FILE] from TK to SI)
   .
 
+  --- open-persistent-storage-id-not-found: a storage identifier that is not supported returns
+  --- errorItemNotFound with a null handle.
   crl [open-persistent-storage-id-not-found] :
     < TK : TAKernel | status : (normal).AppStatus ,
                       api-call : init(apiCall(OpenPersistentObject , (storageId(STORID) , PARAMS))) >
@@ -140,6 +153,8 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   if not supportedStorage(STORID)
   .
 
+  --- open-persistent-subroutine (check): when the file exists, the TA sends openPersistentHandle
+  --- with the counter value N to the storage, and the call moves to final.
   rl [open-persistent-subroutine] :
     (msg retFileExist[^ true] from SI to TK)
     < TK : TAKernel | status : (normal).AppStatus ,
@@ -151,6 +166,8 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
     (msg openPersistentHandle[^ FILE ^ DATAFLAGS ^ N] from TK to SI)
   .
 
+  --- open-persistent-top-level-handle: when the flags are compatible with the other handles of the
+  --- object, a handle oid(N, TK) is created and finishOpenPersistentHandle is sent back to the TA.
   crl [open-persistent-top-level-handle] :
     (msg openPersistentHandle[^ FILE ^ DATAFLAGS ^ N] from TK to SI)
     < oid(M, SI) : PersistentObject | file-name : FILE >
@@ -163,6 +180,8 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   if persistentHandlesCompatible(oid(M, SI), DATAFLAGS, HS)
   .
 
+  --- open-persistent-top-level-conflict: when the flags are not compatible with the handles of the
+  --- object, failOpenPersistentHandle is sent back to the TA.
   crl [open-persistent-top-level-conflict] :
     (msg openPersistentHandle[^ FILE ^ DATAFLAGS ^ N] from TK to SI)
     < oid(M, SI) : PersistentObject | file-name : FILE >
@@ -174,6 +193,7 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   if not persistentHandlesCompatible(oid(M, SI), DATAFLAGS, HS)
   .
 
+  --- open-persistent-success: finishOpenPersistentHandle returns success with the new handle.
   rl [open-persistent-success] :
     (msg finishOpenPersistentHandle[^ HANDLE] from SI to TK)
     < TK : TAKernel | status : (normal).AppStatus , api-call : final(apiCall(OpenPersistentObject , PARAMS)) >
@@ -181,8 +201,8 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
     < TK : TAKernel | api-call : return(apiCall(OpenPersistentObject , (retCode(success) , handle(HANDLE)))) >
   .
 
---- The following two rules return TEE_ERROR_ACCESS_CONFLICT if an access right conflict was detected.
 
+  --- open-persistent-fail: returns errorAccessConflict when the storage reports a conflict.
   rl [open-persistent-fail] :
     (msg failOpenPersistentHandle[] from SI to TK)
     < TK : TAKernel | status : (normal).AppStatus , api-call : final(apiCall(OpenPersistentObject , PARAMS)) >
@@ -190,8 +210,9 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
     < TK : TAKernel | api-call : return(apiCall(OpenPersistentObject , (retCode(errorAccessConflict) , handle(null)))) >
   .
 
---- This rule returns TEE_ERROR_ITEM_NOT_FOUND if the object identifier cannot be found in the storage.
 
+  --- open-persistent-file-err: returns errorItemNotFound when the object identifier cannot be found
+  --- in the storage.
   rl [open-persistent-file-err] :
     (msg retFileExist[^ false] from SI to TK)
     < TK : TAKernel | status : (normal).AppStatus , api-call : exec(apiCall(OpenPersistentObject , PARAMS) , 1) >
@@ -199,17 +220,17 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
     < TK : TAKernel | api-call : return(apiCall(OpenPersistentObject , (retCode(errorItemNotFound) , handle(null)))) >
   .
 
---- This rule returns TEE_ERROR_OUT_OF_MEMORY if there is not enough memory to complete the operation.
 
+  --- open-persistent-memory-err: returns errorOutOfMemory when the status is outOfMemory.
   rl [open-persistent-memory-err] :
     < TK : TAKernel | status : outOfMemory , api-call : init(apiCall(OpenPersistentObject , PARAMS)) >
     =>
     < TK : TAKernel | api-call : return(apiCall(OpenPersistentObject , (retCode(errorOutOfMemory) , handle(null)))) >
   .
 
---- This rule returns TEE_ERROR_CORRUPT_OBJECT if the storage or object is corrupt.
---- This rule returns TEE_ERROR_STORAGE_NOT_AVAILABLE if the persistent object is stored in a storage area which is currently inaccessible.
 
+  --- open-persistent-storage-err: returns storageErrCode(STATUS) when abnormalStorage(STATUS)
+  --- holds, e.g. errorCorruptObject or errorStorageNotAvailable.
   crl [open-persistent-storage-err] :
     (msg retStatus[^ STATUS] from SI to TK)
     < TK : TAKernel | status : (normal).AppStatus , api-call : exec(apiCall(OpenPersistentObject , PARAMS) , 0) >
@@ -219,13 +240,13 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   .
 
 ------------------------------------------------------------
---- 'TEE_CreatePersistenObject'
+--- 'TEE_CreatePersistentObject'
 ------------------------------------------------------------
 
---- The 'TEE_CreatePersistenObject' function creates a persistent object with the initial attributes and an initial data stream content.
+--- The 'TEE_CreatePersistentObject' function creates a persistent object with the initial attributes and an initial data stream content.
 --- See page 159 of the G.P. documentation for more details.
---- The rules follow Section 4.2 (Figure 10, Table 2) of the paper. The message arguments are the paper's: the method, the file name,
---- the access flags, the handle, and the initial data. The API-level parameters of the apiCall (storageId, size) are matched by the
+--- The message arguments are: the method, the file name,
+--- the access flags, the handle, and the initial data.  The API-level parameters of the apiCall (storageId, size) are matched by the
 --- rest of the parameter set and are not used.
 --- Counters: the storage advances its counter by 2 per created object, one for the handle (N) and one for the object (N + 1).
 
@@ -245,8 +266,9 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   op createSuccess : -> ReqId [ctor] .
   op createFail : -> ReqId [ctor] .
 
---- The TA determines the method and sends create to the storage (paper: create-persistent-determine-case).
 
+  --- create-persistent-determine-case: the TA determines the method with chooseMethod and sends
+  --- create to the storage.
   rl [create-persistent-determine-case] :
     < TK : TAKernel | api-call : init(apiCall(CreatePersistentObject , (fileId(FILE) , flags(FLAGS) , handle(HI) ,
                                                                          data(DATA) , opt(OPTHANDLE) , PARAMS))) ,
@@ -257,8 +279,9 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
     (msg create[^ chooseMethod((^ FILE ^ FLAGS ^ HI ^ DATA), OPTHANDLE) ^ FILE ^ FLAGS ^ HI ^ DATA]
        from TK to SI) .
 
---- Storage: the file exists. The request is forwarded to the object when the overwrite flag is set, and rejected otherwise (Fig. 10).
 
+  --- create-persist-overwrite-check: when the file exists, the request is forwarded to the object
+  --- if the overwrite flag is set, and rejected with createFail otherwise.
   crl [create-persist-overwrite-check] :
     (msg create[^ METHOD ^ FILE ^ FLAGS ^ HI ^ DATA] from TK to SI)
     < PI : PersistObj | file-name : FILE >
@@ -271,9 +294,10 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   if FILE in FILES
   .
 
---- Storage: the file does not exist, so the object is created directly. The paper gives no rule for this path;
---- the rules below use the method of Fig. 10 and the identifiers of the forwarded case (newOid(N) and newOid(N + 1)).
 
+  --- create-persist-pure-new: when the file does not exist and the method is pure, the storage
+  --- creates the handle newOid(N) and the pureData object newOid(N + 1), and advances its counter
+  --- by 2.
   crl [create-persist-pure-new] :
     (msg create[^ pure ^ FILE ^ FLAGS ^ HI ^ DATA] from TK to SI)
     < SI : Storage | status : (normal).StorageStatus , files : FILES , counter : N >
@@ -286,6 +310,9 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   if not (FILE in FILES) /\ NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI)
   .
 
+  --- create-persist-transform-new: when the file does not exist and the method is transform, the
+  --- new object takes the type, usages, max-size and attributes of the transient object OI
+  --- referred to by HI.
   crl [create-persist-transform-new] :
     (msg create[^ transform ^ FILE ^ FLAGS ^ HI ^ DATA] from TK to SI)
     < HI : ObjectHandle | oid : OI >
@@ -300,6 +327,8 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   if not (FILE in FILES) /\ NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI)
   .
 
+  --- create-persist-persist-new: as create-persist-transform-new, but the source is a CryptoObj OI
+  --- whose properties are moved to the new object, and the handle HI is closed.
   crl [create-persist-persist-new] :
     (msg create[^ persist ^ FILE ^ FLAGS ^ HI ^ DATA] from TK to SI)
     < HI : ObjectHandle | oid : OI >
@@ -315,9 +344,11 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   if not (FILE in FILES) /\ NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI)
   .
 
---- Storage forwarded create (paper: create-persist-pure, create-persist-transform, create-persist-persist).
+--- Storage forwarded create (create-persist-pure, create-persist-transform, create-persist-persist).
 --- The persistent object PI is replaced by the new object NEWPI, and a new handle NEWHI is opened for the TA.
 
+  --- create-persist-pure: the forwarded pure create creates the PersistentObject NEWPI with type
+  --- pureData and a new handle NEWHI, and returns createSuccess.
   crl [create-persist-pure] :
     (msg create[^ pure ^ FILE ^ FLAGS ^ HI ^ DATA ^ N ^ TK] from SI to PI)
     < PI : PersistObj | file-name : FILE >
@@ -329,6 +360,8 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   if NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI)
   .
 
+  --- create-persist-transform: the forwarded transform create gives the PersistentObject NEWPI the
+  --- type, usages, max-size and attributes of the transient object OI referred to by HI.
   crl [create-persist-transform] :
     (msg create[^ transform ^ FILE ^ FLAGS ^ HI ^ DATA ^ N ^ TK] from SI to PI)
     < PI : PersistObj | file-name : FILE >
@@ -342,6 +375,8 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   if NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI)
   .
 
+  --- create-persist-persist: the forwarded persist create moves the properties of the CryptoObj OI
+  --- referred to by HI to the PersistentObject NEWPI, and closes OI and HI.
   crl [create-persist-persist] :
     (msg create[^ persist ^ FILE ^ FLAGS ^ HI ^ DATA ^ N ^ TK] from SI to PI)
     < PI : PersistObj | file-name : FILE >
@@ -356,28 +391,32 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   if NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI)
   .
 
---- The TA receives the result of create (paper: create-persist-success, create-persist-fail, create-persist-mem-err).
 
+  --- create-persist-success: createSuccess with the handle HI returns success with that handle.
   rl [create-persist-success] :
     (msg createSuccess[^ HI] from PI to TK)
     < TK : TAKernel | api-call : final(apiCall(CreatePersistentObject , PARAMS)), status : (normal).AppStatus >
     =>
     < TK : TAKernel | api-call : return(apiCall(CreatePersistentObject , (retCode(success) , handle(HI)))) > .
 
+  --- create-persist-fail: createFail returns errorAccessConflict with a null handle.
   rl [create-persist-fail] :
     (msg createFail[] from SI to TK)
     < TK : TAKernel | api-call : final(apiCall(CreatePersistentObject , PARAMS)), status : (normal).AppStatus >
     =>
     < TK : TAKernel | api-call : return(apiCall(CreatePersistentObject , (retCode(errorAccessConflict) , handle(null)))) > .
 
---- This rule returns TEE_ERROR_OUT_OF_MEMORY if there is not enough memory to complete the operation.
 
+  --- create-persist-mem-err: returns errorOutOfMemory when the status is outOfMemory before the
+  --- request is issued.
   rl [create-persist-mem-err] :
     < TK : TAKernel | status : outOfMemory , api-call : init(apiCall(CreatePersistentObject , PARAMS)) >
     =>
     < TK : TAKernel | api-call : return(apiCall(CreatePersistentObject , (retCode(errorOutOfMemory) , handle(null)))) >
   .
 
+  --- create-persist-mem-err-final: returns errorOutOfMemory when the status is outOfMemory
+  --- and the call is in its final state.
   rl [create-persist-mem-err-final] :
     < TK : TAKernel | status : outOfMemory , api-call : final(apiCall(CreatePersistentObject , PARAMS)) >
     =>
@@ -392,12 +431,14 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
 --- Once this function returns, the object is definitely deleted and no more open handles for the object exists.
 --- See page 164 of the G.P. documentation for more details.
 
---- The following five rules close and delete the persistent object.
+--- The following rules close and delete the persistent object.
 
   op deletePersistent : -> ReqId [ctor] .
   op finishDeletePersistent : -> ReqId [ctor] .
   op failDeletePersistent : -> ReqId [ctor] .
 
+  --- close-and-delete-persistent-subroutine: a handle that is not null asks the storage for its
+  --- status (getStatus).
   crl [close-and-delete-persistent-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(apiCall(CloseAndDeletePersistentObject1 , handle(HANDLE))) , storage : SI >
     =>
@@ -406,6 +447,8 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   if not nullHandle(HANDLE)
   .
 
+  --- close-and-delete-persistent-top-level-start-ok: a normal storage status makes the TA send
+  --- deletePersistent to the handle.
   rl [close-and-delete-persistent-top-level-start-ok] :
     (msg retStatus[^ (normal).StorageStatus] from SI to TK)
     < TK : TAKernel | api-call : exec(apiCall(CloseAndDeletePersistentObject1 , handle(HANDLE)) , 0) ,
@@ -415,6 +458,8 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
     (msg deletePersistent[^ SI] from TK to HANDLE)
   .
 
+  --- close-and-delete-persistent-corrupt-subroutine: a corrupted storage status also makes the TA
+  --- send deletePersistent to the handle.
   rl [close-and-delete-persistent-corrupt-subroutine] :
     (msg retStatus[^ (corrupted).StorageStatus] from SI to TK)
     < TK : TAKernel | api-call : exec(apiCall(CloseAndDeletePersistentObject1 , handle(HANDLE)) , 0) ,
@@ -424,9 +469,12 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
     (msg deletePersistent[^ SI] from TK to HANDLE)
   .
 
+  --- hasWriteMeta(DATAFLAGS): true when DATAFLAGS contains accessWriteMeta.
   op hasWriteMeta : Set{DataAccessFlag} -> Bool .
   eq hasWriteMeta((accessWriteMeta , DATAFLAGS)) = true .
 
+  --- close-and-delete-persistent-top-level-start: when the handle has accessWriteMeta, the object
+  --- and every handle that refers to it are removed, and finishDeletePersistent is sent to the TA.
   crl [close-and-delete-persistent-top-level-start] :
     (msg deletePersistent[^ SI] from TK to HANDLE)
     < oid(M, SI) : PersistentObject | file-name : FILE >
@@ -438,6 +486,8 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   if hasWriteMeta(DATAFLAGS)
   .
 
+  --- close-and-delete-persistent-top-level-fail: without accessWriteMeta the object is kept, the
+  --- handle is closed, and failDeletePersistent is sent to the TA.
   crl [close-and-delete-persistent-top-level-fail] :
     (msg deletePersistent[^ SI] from TK to HANDLE)
     < oid(M, SI) : PersistentObject | >
@@ -449,6 +499,8 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   if not hasWriteMeta(DATAFLAGS)
   .
 
+  --- close-and-delete-persistent-subroutine-notify: finishDeletePersistent makes the TA send
+  --- notifyFileDeletion to the storage.
   rl [close-and-delete-persistent-subroutine-notify] :
     (msg finishDeletePersistent[^ FILE] from HANDLE to TK)
     < TK : TAKernel | api-call : exec(apiCall(CloseAndDeletePersistentObject1 , PARAMS) , 1) , storage : SI >
@@ -457,6 +509,7 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
     (msg notifyFileDeletion[^ FILE] from TK to SI)
   .
 
+  --- close-and-delete-persistent-success: acceptNotification from the storage returns success.
   rl [close-and-delete-persistent-success] :
     (msg acceptNotification[] from SI to TK)
     < TK : TAKernel | api-call : final(apiCall(CloseAndDeletePersistentObject1 , PARAMS)) >
@@ -464,8 +517,9 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
     < TK : TAKernel | api-call : return(apiCall(CloseAndDeletePersistentObject1 , retCode(success))) >
   .
 
---- The following two rules panic the TA if handle is not opened with the write-meta access right.
 
+  --- close-and-delete-persistent-panic: a failDeletePersistent reply panics the TA when the handle
+  --- is not opened with accessWriteMeta.
   rl [close-and-delete-persistent-panic] :
     (msg failDeletePersistent[] from HANDLE to TK)
     < TK : TAKernel | api-call : exec(apiCall(CloseAndDeletePersistentObject1 , PARAMS) , 1) >
@@ -473,8 +527,9 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
     < TK : TAKernel | status : panic >
   .
 
---- This rule does nothing when the input handle is TEE_HANDLE_NULL.
 
+  --- close-and-delete-persistent-null-success: with a null handle, nothing is deleted and success
+  --- is returned with the handle.
   crl [close-and-delete-persistent-null-success] :
     < TK : TAKernel | api-call : init(apiCall(CloseAndDeletePersistentObject1 , handle(HANDLE))) >
     =>
@@ -482,8 +537,9 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   if nullHandle(HANDLE)
   .
 
---- This rule returns TEE_ERROR_STORAGE_NOT_AVAILABLE if the persistent object is stored in a storage area which is currently inaccessible.
 
+  --- close-and-delete-persistent-storage-err: a notAvailable storage status returns
+  --- errorStorageNotAvailable.
   rl [close-and-delete-persistent-storage-err] :
     (msg retStatus[^ (notAvailable).StorageStatus] from SI to TK)
     < TK : TAKernel | api-call : exec(apiCall(CloseAndDeletePersistentObject1 , PARAMS) , 0) >
@@ -498,12 +554,13 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
 --- The 'TEE_RenamePersistentObject' function changes the identifier of an object.
 --- See page 165 of the G.P. documentation for more details.
 
---- The following five rules rename the persistent object's id when there does not exist a persistent object with the same id as the input id.
+--- The following rules rename the persistent object's id when there does not exist a persistent object with the same id as the input id.
 
   op renamePersistent : -> ReqId [ctor] .
   op renamePersistentOwner : -> ReqId [ctor] .
   op finishRenamePersistent : -> ReqId [ctor] .
 
+  --- rename-persistent-subroutine: the TA asks the storage for its status (getStatus).
   rl [rename-persistent-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(apiCall(RenamePersistentObject , (fileId(FILE) , PARAMS))) , storage : SI >
     =>
@@ -511,6 +568,8 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
     (msg getStatus[] from TK to SI)
   .
 
+  --- rename-persistent-status-normal: a normal storage status makes the TA ask whether FILE
+  --- exists (checkFileExist).
   rl [rename-persistent-status-normal] :
     (msg retStatus[^ (normal).StorageStatus] from SI to TK)
     < TK : TAKernel | api-call : exec(apiCall(RenamePersistentObject , (fileId(FILE) , PARAMS)) , 0) , storage : SI >
@@ -519,6 +578,8 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
     (msg checkFileExist[^ FILE] from TK to SI)
   .
 
+  --- rename-persistent-subroutine-ok: when FILE does not exist, the TA sends renamePersistent
+  --- with FILE to the handle.
   rl [rename-persistent-subroutine-ok] :
     (msg retFileExist[^ false] from SI to TK)
     < TK : TAKernel | api-call : exec(apiCall(RenamePersistentObject , (handle(HANDLE) , fileId(FILE))) , 1) ,
@@ -528,6 +589,8 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
     (msg renamePersistent[^ FILE ^ SI] from TK to HANDLE)
   .
 
+  --- rename-persistent-top-level-check-handle: when the handle has accessWriteMeta, the handle is
+  --- closed and renamePersistentOwner is sent to the object OI.
   crl [rename-persistent-top-level-check-handle] :
     (msg renamePersistent[^ FILE ^ SI] from TK to HANDLE)
     < HANDLE : ObjectHandle | oid : OI, flags : DATAFLAGS >
@@ -537,6 +600,8 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   if hasWriteMeta(DATAFLAGS)
   .
 
+  --- rename-persistent-top-level-update-owner: the object OI takes the new name FILE, and
+  --- finishRenamePersistent returns its old name FILE'.
   rl [rename-persistent-top-level-update-owner] :
     (msg renamePersistentOwner[^ FILE] from TK to OI)
     < OI : PersistentObject | file-name : FILE' >
@@ -545,6 +610,8 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
     (msg finishRenamePersistent[^ FILE'] from OI to TK)
   .
 
+  --- rename-persistent-subroutine-notify: finishRenamePersistent makes the TA send
+  --- notifyFileRename with the old and new names to the storage.
   rl [rename-persistent-subroutine-notify] :
     (msg finishRenamePersistent[^ FILE'] from OI to TK)
     < TK : TAKernel | api-call : exec(apiCall(RenamePersistentObject , (fileId(FILE) , PARAMS)) , 2) , storage : SI >
@@ -553,6 +620,7 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
     (msg notifyFileRename[^ FILE' ^ FILE] from TK to SI)
   .
 
+  --- rename-persistent-success: acceptNotification from the storage returns success.
   rl [rename-persistent-success] :
     (msg acceptNotification[] from SI to TK)
     < TK : TAKernel | api-call : final(apiCall(RenamePersistentObject , PARAMS)) >
@@ -560,8 +628,9 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
     < TK : TAKernel | api-call : return(apiCall(RenamePersistentObject , retCode(success))) >
   .
 
---- This rule returns TEE_ERROR_ACCESS_CONFLICT if an object with the same identifier already exists.
 
+  --- rename-persistent-access-conflict: returns errorAccessConflict when an object with the same
+  --- identifier already exists.
   rl [rename-persistent-access-conflict] :
     (msg retFileExist[^ true] from SI to TK)
     < TK : TAKernel | api-call : exec(apiCall(RenamePersistentObject , PARAMS) , 1) >
@@ -569,9 +638,9 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
     < TK : TAKernel | api-call : return(apiCall(RenamePersistentObject , retCode(errorAccessConflict))) >
   .
 
---- This rule returns TEE_ERROR_CORRUPT_OBJECT if the object is corrupt.
---- This rule returns TEE_ERROR_STORAGE_NOT_AVAILABLE if the persistent object is stored in a storage area which is currently inaccessible.
 
+  --- rename-persistent-storage-err: returns storageErrCode(STATUS) when abnormalStorage(STATUS)
+  --- holds, e.g. errorCorruptObject or errorStorageNotAvailable.
   crl [rename-persistent-storage-err] :
     (msg retStatus[^ STATUS] from SI to TK)
     < TK : TAKernel | api-call : exec(apiCall(RenamePersistentObject , PARAMS) , 0) >
@@ -580,9 +649,10 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   if abnormalStorage(STATUS)
   .
 
---- CopyObjectAttributes1 with a persistent source (paper App. B.2, copy-object-attrs-try-ret-attrs). A persistent
---- object has no 'initialized' attribute (Sec. 3.1), so it always answers retAttrs; the transient rule is in transient.maude.
 
+  --- copy-object-attrs-try-ret-attrs-persistent: CopyObjectAttributes1 with a persistent source.
+  --- A persistent object has no 'initialized' attribute, so it always answers retAttrs.  The
+  --- transient rule copy-object-attrs-try-ret-attrs is in transient.maude.
   rl [copy-object-attrs-try-ret-attrs-persistent] :
     (msg getAttrs[] from TK to HANDLE)
     < HANDLE : ObjectHandle | oid : OI >

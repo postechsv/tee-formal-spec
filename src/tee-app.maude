@@ -1,8 +1,7 @@
 --- This file defines the abstract trusted application (TA) class and the commands it uses
 
---- The client-service attribute of a TA (App. D.1): a pair {RI, FID} of the requesting RA
---- and the service function, or none.  The sort Pair{Oid,APIFuncId}? of the paper is
---- written ClientService? here.
+--- The client-service attribute of a TA: either {RI, FID}, the requesting RA RI and the
+--- service function FID, or none.
 omod CLIENT-SERVICE is
   pr CONFIGURATION .
   pr IMP-FUNC-SIG .
@@ -57,8 +56,9 @@ omod TRUST-APP-BEHAVIOR is
   var RET : ValueList .
   var VL : ValueList .
 
---- handle-invoke-ta: an invkTa request for the service FID with the values VL starts the
---- program of the TA (with the callFunc of mkConf) for the requesting RA RI.
+  --- handle-invoke-ta: an invkTa request for the service FID with the values VL starts the
+  --- program of the TA with mkConf(syscalls P, FID, VL) and records {RI, FID} as its
+  --- client-service.
   rl [handle-invoke-ta] :
     (msg invkTa[FID VL] from RI to TI)
     < TI : TrustedApp | proc : none , client-service : none ,
@@ -68,8 +68,8 @@ omod TRUST-APP-BEHAVIOR is
                         client-service : {RI , FID} >
   .
 
---- handle-invoke-ta-finish: when the program has finished, the output values of the
---- service are returned to the RA as invkTaRet, and the TA is available again.
+  --- handle-invoke-ta-finish: when the program has finished, the output values of the
+  --- service are returned to the RA as invkTaRet, and the TA is available again.
   crl [handle-invoke-ta-finish] :
     < TI : TrustedApp | proc : (k(.K) KS) , client-service : {RI , FID} ,
                         prog : P , status : (normal).AppStatus >
@@ -101,9 +101,9 @@ omod TRUST-APP-IMP-BEHAVIOR is
 --- IMP Semantics
 ------------------------------------------------------------
 
---- tee-api-call-accept (App. D.2): the $in task of a TEE API call, with the TA in normal
---- status and no call in progress, accepts the call and sets its api-call to init.  The
---- call itself is run by the object rules of the TEE API.
+  --- tee-api-call-accept: the $in task of a TEE API call, with the TA in normal status and
+  --- no call in progress, accepts the call and sets its api-call to init.  The call itself
+  --- is run by the object rules of the TEE API.
   rl [tee-api-call-accept] :
     < TI : TrustedApp | proc : (k($in(VL) ~> $wait(TEEAPI) ~> K) KS) ,
                         api-call : noCall , status : (normal).AppStatus >
@@ -112,8 +112,9 @@ omod TRUST-APP-IMP-BEHAVIOR is
                         api-call : init(makeCall(TEEAPI , VL)) >
   .
 
---- tee-api-call-return (App. D.2): when the call has returned, the $out task assigns the
---- return values to the output parameters (makeReturnStmt).
+  --- tee-api-call-return: when the call has returned, the $out task is replaced by the
+  --- statement makeReturnStmt(TEEAPI, RET, PARAMS, EL), which assigns the return values to
+  --- the output parameters, and the api-call is set to noCall.
   rl [tee-api-call-return] :
     < TI : TrustedApp | proc : (k($wait(TEEAPI) ~> $out(EL) ~> K) KS) ,
                         api-call : return(apiCall(TEEAPI , (retCode(RET) , PARAMS))) >

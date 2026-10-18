@@ -1,7 +1,7 @@
 --- This file defines behaviors of data stream APIs.
 
 --- This module defines the data stream access APIs, defined in chapter 5 section 9 of G.P. documentation.
---- The data stream of a persistent object is the list of its data fragments (paper, Sec. 3.1, PersistObj).
+--- The data stream of a persistent object is the list of its data fragments (PersistObj).
 
 omod DATA-STREAM-OBJECT-BEHAVIOR is
   pr ID-GEN .
@@ -39,18 +39,20 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   op ^_ : SeekType -> Arg [ctor] .
 
 ------------------------------------------------------------
---- Auxilary Functions
+--- Auxiliary Functions
 ------------------------------------------------------------
 
---- For TEE_ReadObjectData
 
+  --- isReadable(DATAFLAGS): true when DATAFLAGS contains accessRead, as needed by
+  --- TEE_ReadObjectData.
   op isReadable : Set{DataAccessFlag} -> Bool .
   eq isReadable((accessRead , DATAFLAGS)) = true .
   ---@dmc owise recurse(sep=_,_, empty=empty)
   eq isReadable(DATAFLAGS) = false [owise] .
 
---- For TEE_WriteObjectData
 
+  --- isWritable(DATAFLAGS): true when DATAFLAGS contains accessWrite, as needed by
+  --- TEE_WriteObjectData.
   op isWritable : Set{DataAccessFlag} -> Bool .
   eq isWritable((accessWrite , DATAFLAGS)) = true .
   ---@dmc owise recurse(sep=_,_, empty=empty)
@@ -60,14 +62,15 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 --- 'TEE_ReadObjectData'
 ------------------------------------------------------------
 
---- The 'TEE_ReadObjectData' function reads the first data fragment of the data stream of the persistent object (Appendix B.1).
+--- The 'TEE_ReadObjectData' function reads the first data fragment of the data stream of the persistent object.
 --- See page 171 of the G.P. documentation for more details.
---- The TA sends getStatus to the storage. If the storage status is normal, the TA sends read to the handle, and the handle
---- returns the fragment with retData. The read is destructive: it removes the fragment from the data stream.
+--- The TA sends getStatus to the storage.  If the storage status is normal, the TA sends read to the handle, and the handle
+--- returns the fragment with retData.  The read is destructive: it removes the fragment from the data stream.
 
   op read : -> ReqId [ctor] .
   op retData : -> ReqId [ctor] .
 
+  --- read-object-data-get-storage-status: the TA asks the storage for its status (getStatus).
   rl [read-object-data-get-storage-status] :
     < TK : TAKernel | status : (normal).AppStatus ,
                       api-call : init(apiCall(ReadObjectData , (handle(HI) , PARAMS))) , storage : SI >
@@ -76,6 +79,8 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
     (msg getStatus[] from TK to SI)
   .
 
+  --- read-object-data-storage-status-check: a normal status makes the TA send read to the handle;
+  --- otherwise the storage error code is returned.
   rl [read-object-data-storage-status-check] :
     (msg retStatus[^ STATUS] from SI to TK)
     < TK : TAKernel | status : (normal).AppStatus ,
@@ -87,8 +92,9 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
     else < TK : TAKernel | api-call : return(apiCall(ReadObjectData , retCode(storageErrCode(STATUS)))) > fi
   .
 
---- The handle with the read access flag removes the first data fragment from the data stream of its object and returns it (paper, App. B.1).
 
+  --- read-object-data-from-persist: the handle with accessRead removes the first fragment D from
+  --- the data stream of its object and returns it in retData.
   rl [read-object-data-from-persist] :
     (msg read[] from TK to HI)
     < HI : ObjHandle | oid : PI , flags : (accessRead , FLAGS) >
@@ -99,6 +105,7 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
     (msg retData[^ D] from HI to TK)
   .
 
+  --- read-object-data-success: retData returns success with the fragment as data(DATA).
   rl [read-object-data-success] :
     (msg retData[^ DATA] from HANDLE to TK)
     < TK : TAKernel | status : (normal).AppStatus , api-call : final(apiCall(ReadObjectData , PARAMS)) >
@@ -112,13 +119,14 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 
 --- The 'TEE_WriteObjectData' function reads size bytes of data from the buffer and writes the data to the data stream object.
 --- See page 173 of the G.P. documentation for more details.
---- The paper gives no rule for this function. The data fragments are written at the handle position, which advances by
---- the number of written fragments.
+--- The fragment update is computed by writeStream of DATA-STREAM-OPERATOR. The data fragments are
+--- written at the handle position, which advances by the number of written fragments.
 
   op writeObjectData : -> ReqId [ctor] .
   op writeObjectOverflowTop : -> ReqId [ctor] .
   op finishWriteData : -> ReqId [ctor] .
 
+  --- write-object-data-subroutine (request): the TA asks the storage for its status (getStatus).
   rl [write-object-data-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(apiCall(WriteObjectData , PARAMS)) , storage : SI >
     =>
@@ -126,6 +134,8 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
     (msg getStatus[] from TK to SI)
   .
 
+  --- write-object-data-subroutine (status): a normal status makes the TA send writeObjectData with
+  --- the data to the handle.
   rl [write-object-data-subroutine] :
     (msg retStatus[^ (normal).StorageStatus] from SI to TK)
     < TK : TAKernel | status : (normal).AppStatus ,
@@ -136,6 +146,9 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
     (msg writeObjectData[^ DATA ^ SI] from TK to HI)
   .
 
+  --- write-object-data-top-level-handle: when the handle is writable and the new position is within
+  --- the maximum data position, the fragments are written at the handle position, the position
+  --- advances, and finishWriteData is sent back to the TA.
   crl [write-object-data-top-level-handle] :
     (msg writeObjectData[^ DATA ^ SI] from TK to HANDLE)
     < oid(M, SI) : PersistentObject | data-stream : STREAM >
@@ -147,8 +160,9 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   if isWritable(DATAFLAGS) /\ withinMaxPos(advancePos(DATAPOS, sizeOfData(DATA)))
   .
 
---- This rule returns TEE_ERROR_OVERFLOW if the value of the data position indicator resulting from this operation would be greater than TEE_DATA_MAX_POSITION.
 
+  --- write-object-data-top-level-overflow: returns errorOverflow when the handle is writable but the
+  --- new position would be greater than TEE_DATA_MAX_POSITION.
   crl [write-object-data-top-level-overflow] :
     (msg writeObjectData[^ DATA ^ SI] from TK to HANDLE)
     < TK : TAKernel | api-call : final(apiCall(WriteObjectData , PARAMS)) >
@@ -161,6 +175,7 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   if isWritable(DATAFLAGS) /\ not withinMaxPos(advancePos(DATAPOS, sizeOfData(DATA)))
   .
 
+  --- write-object-data-success: finishWriteData returns success.
   rl [write-object-data-success] :
     (msg finishWriteData[] from HANDLE to TK)
     < TK : TAKernel | api-call : final(apiCall(WriteObjectData , PARAMS)) >
@@ -168,10 +183,9 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
     < TK : TAKernel | api-call : return(apiCall(WriteObjectData , retCode(success))) >
   .
 
---- This rule returns TEE_ERROR_STORAGE_NO_SPACE if insufficient storage space is available.
---- This rule returns TEE_ERROR_CORRUPT_OBJECT if the object is corrupt.
---- This rule returns TEE_ERROR_STORAGE_NOT_AVAILABLE if the persistent object is stored in a storage area which is currently inaccessible.
 
+  --- write-object-data-storage-err: returns storageErrCode(STATUS) when abnormalStorage(STATUS)
+  --- holds, e.g. errorStorageNoSpace, errorCorruptObject or errorStorageNotAvailable.
   crl [write-object-data-storage-err] :
     (msg retStatus[^ STATUS] from SI to TK)
     < TK : TAKernel | api-call : exec(apiCall(WriteObjectData , PARAMS) , 0) >
@@ -186,11 +200,12 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 
 --- The 'TEE_TruncateObjectData' function changes the size of a data stream.
 --- See page 175 of the G.P. documentation for more details.
---- The paper gives no rule for this function. The data stream is resized to the requested number of fragments.
+--- The fragment update is computed by resizeStream of DATA-STREAM-OPERATOR.
 
   op truncateObjectData : -> ReqId [ctor] .
   op finishTruncateData : -> ReqId [ctor] .
 
+  --- truncate-object-data-subroutine (request): the TA asks the storage for its status (getStatus).
   rl [truncate-object-data-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(apiCall(TruncateObjectData , PARAMS)) , storage : SI >
     =>
@@ -198,6 +213,8 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
     (msg getStatus[] from TK to SI)
   .
 
+  --- truncate-object-data-subroutine (status): a normal status makes the TA send truncateObjectData
+  --- with the size to the handle.
   rl [truncate-object-data-subroutine] :
     (msg retStatus[^ (normal).StorageStatus] from SI to TK)
     < TK : TAKernel | status : (normal).AppStatus ,
@@ -208,8 +225,9 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
     (msg truncateObjectData[^ DATASIZE ^ SI] from TK to HANDLE)
   .
 
---- The handle with the write access flag resizes the data stream of its object.
 
+  --- truncate-object-data-top-level: the handle with accessWrite resizes the data stream of its object
+  --- to N fragments, and finishTruncateData is sent back to the TA.
   crl [truncate-object-data-top-level] :
     (msg truncateObjectData[^ dataSize(N) ^ SI] from TK to HANDLE)
     < oid(M, SI) : PersistentObject | data-stream : STREAM >
@@ -221,6 +239,7 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   if isWritable(DATAFLAGS)
   .
 
+  --- truncate-object-data-success: finishTruncateData returns success.
   rl [truncate-object-data-success] :
     (msg finishTruncateData[] from HANDLE to TK)
     < TK : TAKernel | api-call : final(apiCall(TruncateObjectData , PARAMS)) >
@@ -228,10 +247,9 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
     < TK : TAKernel | api-call : return(apiCall(TruncateObjectData , retCode(success))) >
   .
 
---- This rule returns TEE_ERROR_STORAGE_NO_SPACE if insufficient storage space is available to perform the operation.
---- This rule returns TEE_ERROR_CORRUPT_OBJECT if the object is corrupt.
---- This rule returns TEE_ERROR_STORAGE_NOT_AVAILABLE if the persistent object is stored in a storage area which is currently inaccessible.
 
+  --- truncate-object-data-storage-err: returns storageErrCode(STATUS) when abnormalStorage(STATUS)
+  --- holds, e.g. errorStorageNoSpace, errorCorruptObject or errorStorageNotAvailable.
   crl [truncate-object-data-storage-err] :
     (msg retStatus[^ STATUS] from SI to TK)
     < TK : TAKernel | api-call : exec(apiCall(TruncateObjectData , PARAMS) , 0) >
@@ -246,12 +264,14 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 
 --- The 'TEE_SeekObjectData' function sets the data position indicator associated with the object handle.
 --- See page 176 of the G.P. documentation for more details.
---- The paper gives no rule for this function. The position is a fragment index; SEEK_END uses the number of fragments.
+--- The position is a fragment index, and the seek from the end uses the number of fragments.
+--- The new position is computed by seekPos of DATA-STREAM-OPERATOR.
 
   op seekObjectData : -> ReqId [ctor] .
   op seekObjectOverflowTop : -> ReqId [ctor] .
   op finishSeekData : -> ReqId [ctor] .
 
+  --- seek-object-data-subroutine (request): the TA asks the storage for its status (getStatus).
   rl [seek-object-data-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(apiCall(SeekObjectData , PARAMS)) , storage : SI >
     =>
@@ -259,6 +279,8 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
     (msg getStatus[] from TK to SI)
   .
 
+  --- seek-object-data-subroutine (status): a normal status makes the TA send seekObjectData to the
+  --- handle with OFST and WHENCE.
   rl [seek-object-data-subroutine] :
     (msg retStatus[^ (normal).StorageStatus] from SI to TK)
     < TK : TAKernel | status : (normal).AppStatus ,
@@ -269,10 +291,11 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
     (msg seekObjectData[^ OFST ^ WHENCE ^ SI] from TK to HANDLE)
   .
 
---- This rule sets the data position to input offset (OFST) when 'whence' is TEE_DATA_SEEK_SET.
---- This rule sets the data position to its current position plus input offset when 'whence' is TEE_DATA_SEEK_CUR.
---- The rules for 'whence' is TEE_DATA_SEEK_END use the number of fragments of the data stream.
 
+  --- seek-object-data-top-level-update-handle: the new position is seekPos(WHENCE, DATAPOS, OFST,
+  --- sizeOfData(STREAM)) when it is within the maximum.  TEE_DATA_SEEK_SET uses OFST as the position,
+  --- TEE_DATA_SEEK_CUR adds OFST to the current position, and TEE_DATA_SEEK_END adds OFST to the
+  --- number of fragments.
   crl [seek-object-data-top-level-update-handle] :
     (msg seekObjectData[^ OFST ^ WHENCE ^ SI] from TK to HANDLE)
     < oid(M, SI) : PersistentObject | data-stream : STREAM >
@@ -284,6 +307,8 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   if withinMaxPos(seekPos(WHENCE, DATAPOS, OFST, sizeOfData(STREAM)))
   .
 
+  --- seek-object-data-top-level-detect-overflow: when the new position is not within the maximum,
+  --- seekObjectOverflowTop is sent back to the TA.
   crl [seek-object-data-top-level-detect-overflow] :
     (msg seekObjectData[^ OFST ^ WHENCE ^ SI] from TK to HANDLE)
     < oid(M, SI) : PersistentObject | data-stream : STREAM >
@@ -295,6 +320,7 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   if not withinMaxPos(seekPos(WHENCE, DATAPOS, OFST, sizeOfData(STREAM)))
   .
 
+  --- seek-object-data-top-level-finish-overflow: seekObjectOverflowTop returns errorOverflow.
   rl [seek-object-data-top-level-finish-overflow] :
     (msg seekObjectOverflowTop[] from HANDLE to TK)
     < TK : TAKernel | api-call : final(apiCall(SeekObjectData , PARAMS)) >
@@ -302,6 +328,7 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
     < TK : TAKernel | api-call : return(apiCall(SeekObjectData , retCode(errorOverflow))) >
   .
 
+  --- seek-object-data-success: finishSeekData returns success.
   rl [seek-object-data-success] :
     (msg finishSeekData[] from HANDLE to TK)
     < TK : TAKernel | api-call : final(apiCall(SeekObjectData , PARAMS)) >
@@ -309,10 +336,9 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
     < TK : TAKernel | api-call : return(apiCall(SeekObjectData , retCode(success))) >
   .
 
---- This rule returns TEE_ERROR_OVERFLOW if the value of the data position indicator resulting from this operation would be greater than TEE_DATA_MAX_POSITION.
---- This rule returns TEE_ERROR_CORRUPT_OBJECT if the object is corrupt.
---- This rule returns TEE_ERROR_STORAGE_NOT_AVAILABLE if the persistent object is stored in a storage area which is currently inaccessible.
 
+  --- seek-object-data-storage-err: returns storageErrCode(STATUS) when abnormalStorage(STATUS)
+  --- holds, e.g. errorCorruptObject or errorStorageNotAvailable.
   crl [seek-object-data-storage-err] :
     (msg retStatus[^ STATUS] from SI to TK)
     < TK : TAKernel | api-call : exec(apiCall(SeekObjectData , PARAMS) , 0) >

@@ -13,6 +13,8 @@ omod CRYPTO-PANIC is
   var HSF : Set{HandleFlag} .
   var OC : OpClass .
 
+  --- operationClassCompatible(API, OC): true when the operation class OC is one that API accepts.
+  --- Other combinations of API and OC are not compatible.
   op operationClassCompatible : TeeApi OpClass -> Bool .
   eq operationClassCompatible(FreeOperation, OC) = true .
   eq operationClassCompatible(GetOperationInfo, OC) = true .
@@ -44,8 +46,8 @@ omod CRYPTO-PANIC is
   ---@dmc owise enumerate(arg1, arg2)
   eq operationClassCompatible(API, OC) = false [owise] .
 
-  --- The paper assigns the operation class to OpHandle.  A class mismatch is
-  --- a programmer error and must panic before an operation-specific rule runs.
+  --- operation-api-class-mismatch-panic: the operation class OC is assigned to OpHandle.  A class mismatch
+  --- is a programmer error and sets the kernel status to panic before an operation-specific rule runs.
   ceq [operation-api-class-mismatch-panic] :
     < TK : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(API , (handle(HANDLE) , PARAMS))) >
     < HANDLE : OperationHandle | oid : CI, opclass : OC >
@@ -54,11 +56,12 @@ omod CRYPTO-PANIC is
     < HANDLE : OperationHandle | >
   if not operationClassCompatible(API, OC) .
 
-  --- No initialized-state panic for SetOperationKey: Fig. 11 of the paper has
-  --- SetOperationKey leave the INIT state (set or clear), so the operation-specific
-  --- rules in cryptographic.maude handle it.
+  --- No initialized-state panic for SetOperationKey: SetOperationKey leaves the INIT state (set or
+  --- clear), so the operation-specific rules in cryptographic.maude handle it.
 
-  --- GP 6.2.7 applies the same initial-state precondition to the two-key API.
+  --- set-operation-key2-initialized-panic: GP 6.2.7 applies the same initial-state precondition to
+  --- the two-key API. A handle in the init state makes TEE_SetOperationKey2 set the kernel status
+  --- to panic.
   rl [set-operation-key2-initialized-panic] :
     < TK : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(SetOperationKey2 , (handle(HANDLE) , PARAMS))) >
     < HANDLE : OperationHandle | state : handleState((init, HSF)) >

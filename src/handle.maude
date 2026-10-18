@@ -1,4 +1,4 @@
---- This file defines various opaque handles defined in Table 2-1 
+--- This file defines various opaque handles defined in Table 2-1
 --- of the G.P. documentation (page 37).
 
 ------------------------------------------------------------
@@ -52,7 +52,7 @@ omod OBJECT-HANDLE is
   pr SET{DataAccessFlag} .
   pr NAT .
 
-  --- Paper-level class (Sec. 3.2): pos denotes the position in a data stream.
+  --- Abstract-level class: pos denotes the position in a data stream.
   class ObjHandle | flags : Set{DataAccessFlag}, pos : Nat .
   subclass ObjHandle < Handle .
 
@@ -70,9 +70,8 @@ omod OBJECT-ENUM-HANDLE is
   subclass ObjectEnumHandle < Handle .
 endom
 
---- This module defines operation handle, a subclass of handle.
 
---- This module defines the handle flags of an operation handle (paper, App. A).
+--- This module defines the handle flags of an operation handle.
 
 fmod HANDLE-FLAG is
   sort HandleFlag .
@@ -102,17 +101,21 @@ fmod HANDLE-STATE is
   eq handleFlags(false, true,  true)  = (keySet, extract) .
   eq handleFlags(true,  true,  true)  = (init, keySet, extract) .
 
+  --- hasInit(S), hasKeySet(S), hasExtract(S): true when the handle state S contains the init,
+  --- keySet or extract flag, respectively.
   ops hasInit hasKeySet hasExtract : HandleState -> Bool .
   eq hasInit(handleState(S)) = init in S .
   eq hasKeySet(handleState(S)) = keySet in S .
   eq hasExtract(handleState(S)) = extract in S .
 endfm
 
+--- This module defines operation handle, a subclass of handle.
 omod OPERATION-HANDLE is
   pr HANDLE .
   pr HANDLE-STATE .
   pr OPERATION-CLASS .
 
+  --- Abstract-level class: the handle state, the key-material-set flag and the operation class.
   class OpHandle | state : HandleState,
                    key-material-set : Bool,
                    opclass : OpClass .
@@ -154,6 +157,8 @@ omod HANDLE-AUX is
   var OI : Oid .
   var OC : OpClass .
 
+  --- The fresh*Handle operators create a new handle object with identifier oid(N, TK) in the
+  --- initial state of its handle class.
   op freshTransientHandle : Nat Oid Oid -> Configuration .
   op freshPersistentHandle : Nat Oid Set{DataAccessFlag} Oid -> Configuration .
   op freshEnumeratorHandle : Nat Oid Oid -> Configuration .
@@ -161,6 +166,7 @@ omod HANDLE-AUX is
   op freshSessionHandle : Nat Oid -> Configuration . 
   op freshSessionHandle : Nat Oid Oid -> Configuration .
   
+  --- nullHandle(HANDLE): true only for the null handle.
   op nullHandle : Oid -> Bool .
   eq nullHandle(null) = true .
   ---@dmc owise enumerate(arg1)

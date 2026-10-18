@@ -1,4 +1,4 @@
---- This module defines calls to invoke TA (Appendix D.1 of the paper). The request
+--- This module defines calls to invoke TA. The request
 --- invkTa[FID VL] carries the TA service FID and its argument values VL; the response
 --- invkTaRet[VL] carries the values of the output parameters.
 
@@ -25,7 +25,7 @@ omod SECURE-MONITOR-CALL is
   msg smcRet : Oid ValueList -> Msg .
 endom
 
---- This module defines execution environments for REE and TEE (Appendix D.1 of the paper).
+--- This module defines execution environments for REE and TEE.
 
 mod EXECUTION-ENV is
   pr SECURE-MONITOR-CALL .
@@ -41,11 +41,15 @@ mod EXECUTION-ENV is
 
   op {_}|{_} : Configuration Configuration -> Envs [ctor] .
 
+  --- accept-smc-request: the REE request smcReq(RI, SID, FID, VL) is moved from the REE
+  --- environment to the TEE environment.
   rl [accept-smc-request] :
     {REE smcReq(RI, SID, FID, VL)} | {TEE}
     =>
     {REE} | {TEE smcReq(RI, SID, FID, VL)} .
 
+  --- return-smc-request: the TEE response smcRet(RI, VL) is moved from the TEE environment to
+  --- the REE environment.
   rl [return-smc-request] :
     {REE} | {TEE smcRet(RI, VL)}
     =>
@@ -113,9 +117,8 @@ omod TEE-OS is
 --- TA storage state is held by separate Storage objects.
   class Storage | status : StorageStatus, files : Set{FileName}, counter : Nat .
 
---- Implementation additions (not in the paper): session-counter,
---- service-request-ta-inst, service-in, service-out, temporary-objects,
---- ta-prog-map (executable service queues).
+  --- The further attributes are session-counter, service-request-ta-inst, service-in,
+  --- service-out, temporary-objects and ta-prog-map, which hold the service queues and maps.
   class TrustedOS | sess : Map{SessionId,Oid},
                     session-counter : Nat,
                     service-request-ta-inst : Oid?,
@@ -134,7 +137,7 @@ mod TEE-OS-SERVICE is
   op openSessionSuccess : Oid -> ServiceReturn [ctor] .
 endm
 
---- This module defines a device class, modeling storage devices.
+--- This module defines a device class, holding the execution environments of a device.
 
 omod DEVICE is
   pr OBJECT-ID .

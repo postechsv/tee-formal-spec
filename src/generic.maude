@@ -1,4 +1,4 @@
---- This file defines behaviors of generic object APIs,
+--- This file defines behaviors of generic object APIs.
 
 --- This module defines the generic object APIs, defined in chapter 5 section 5 of G.P. documentation.
 
@@ -39,11 +39,11 @@ omod GENERIC-OBJECT-BEHAVIOR is
   var PARAMS : Set{TeeApiParam} .
 
 ------------------------------------------------------------
---- Auxilary Functions
+--- Auxiliary Functions
 ------------------------------------------------------------
 
---- For TEE_GetObjectBufferAttribute & TEE_GetObjectValueAttribute
-
+--- canAcquireAttr(ID, OBJUSAGES): true when ID is a public attribute, or a protected one and the
+--- object is extractable.  Used by TEE_GetObjectBufferAttribute and TEE_GetObjectValueAttribute.
   op canAcquireAttr : AttrId Set{Usage} -> Bool .
   eq canAcquireAttr(ID , OBJUSAGES) = not (not publicType(ID) and not (protectedType(ID) and extractable(OBJUSAGES))) .
 
@@ -60,27 +60,30 @@ omod GENERIC-OBJECT-BEHAVIOR is
   op getAttrContent : AttrId Set{CryptoAttribute} -> AttrValue .
   eq getAttrContent(ID, (attr(ID , V) , ATTRS)) = V .
 
---- For TEE_GetObjectBufferAttribute
-
+--- bufferType(ID): true for the reference attributes and for secretValue, the buffer attributes of
+--- TEE_GetObjectBufferAttribute.
   op bufferType : AttrId -> Bool .
   eq bufferType(ID) = (ID in refAttrIds) or (ID == secretValue) .
 
-  --- AttrValue is atomic in this model, so every buffer attribute occupies one abstract unit.
+  --- attrContentSize(V): AttrValue is atomic in this model, so every buffer attribute has
+  --- size dataSize(1).
   op attrContentSize : AttrValue -> DataSize .
   eq attrContentSize(V) = dataSize(1) .
 
+  --- hasCapacity(PARAMS): true when PARAMS contains a capacity parameter.
   op hasCapacity : Set{TeeApiParam} -> Bool .
   eq hasCapacity((capacity(DATASIZE) , PARAMS)) = true .
   ---@dmc owise recurse(sep=_,_, empty=empty)
   eq hasCapacity(PARAMS) = false [owise] .
 
+  --- capacityFitsAttr(PARAMS): false when the capacity parameter is zero, and true for a
+  --- nonzero capacity.
   op capacityFitsAttr : Set{TeeApiParam} -> Bool .
   eq capacityFitsAttr((capacity(dataSize(0)) , PARAMS)) = false .
   ---@dmc owise cond(not (N == 0))
   eq capacityFitsAttr((capacity(dataSize(N)) , PARAMS)) = true [owise] .
 
---- For TEE_GetObjectValueAttribute
-
+--- valueType(ID): true for the value attributes (valAttrIds).
   op valueType : AttrId -> Bool .
   eq valueType(ID) = ID in valAttrIds .
 
@@ -158,9 +161,8 @@ omod GENERIC-OBJECT-BEHAVIOR is
     < TK : TAKernel | api-call : return(apiCall(GetObjectInfo1 , (retCode(success) , info(INFO)))) >
   .
 
---- This rule returns TEE_ERROR_CORRUPT_OBJECT if the persistent object is corrupt.
---- This rule returns TEE_ERROR_STORAGE_NOT_AVAILABLE if the persistent object is stored in a storage area which is currently inaccessible.
-
+--- get-obj-info-abnormal-storage-err: returns TEE_ERROR_CORRUPT_OBJECT if the persistent object is
+--- corrupt, and TEE_ERROR_STORAGE_NOT_AVAILABLE if its storage area is inaccessible.
   crl [get-obj-info-abnormal-storage-err] :
     (msg retStatus[^ STATUS] from SI to TK)
     < TK : TAKernel | api-call : exec(apiCall(GetObjectInfo1 , PARAMS) , 1) >
@@ -176,11 +178,13 @@ omod GENERIC-OBJECT-BEHAVIOR is
 --- The 'TEE_RestrictObjectUsage1' restricts the object usage flags of an object handle to contain at most the flags passed in the 'objectUsage' parameter.
 --- See page 134 of the G.P. documentation for more details.
 
---- The following four rules restricts the usage of the (transient) object.
+--- The following rules restrict the usage of the (transient or persistent) object.
 
   op restrictUsage : -> ReqId [ctor] .
   op finishRestrictUsage : -> ReqId [ctor] .
 
+  --- restrict-object-usage-subroutine (request): sends reqAttribute to the handle and waits for its
+  --- attribute (step 0).
   rl [restrict-object-usage-subroutine] :
     < TK : TAKernel | api-call : init(apiCall(RestrictObjectUsage1 , (handle(HANDLE) , PARAMS))) >
     =>
@@ -188,6 +192,8 @@ omod GENERIC-OBJECT-BEHAVIOR is
     (msg reqAttribute[] from TK to HANDLE)
   .
 
+  --- restrict-object-usage-subroutine (transient reply): with the attributes of the transient handle,
+  --- sends restrictUsage with the updated usages (updateObjectUsage) to the handle.
   rl [restrict-object-usage-subroutine] :
     (msg retAttributeTr[^ ATTRS ^ OBJTYPE ^ OBJUSAGES] from HANDLE to TK)
     < TK : TAKernel | api-call : exec(apiCall(RestrictObjectUsage1 , (handle(HANDLE) , usages(OBJUSAGES') , PARAMS)) , 0) >
@@ -223,8 +229,9 @@ omod GENERIC-OBJECT-BEHAVIOR is
     < TK : TAKernel | api-call : return(apiCall(RestrictObjectUsage1 , retCode(noReturnCode))) >
   .
 
---- The following two rules check storage status before restricting the usage of the persistent object.
 
+  --- restrict-object-usage-subroutine (persistent reply): with the attributes of the persistent handle,
+  --- waits for the storage status (step 1).
   rl [restrict-object-usage-subroutine] :
     (msg retAttributePr[^ ATTRS ^ OBJTYPE ^ OBJUSAGES] from HANDLE to TK)
     < TK : TAKernel | api-call : exec(apiCall(RestrictObjectUsage1 , PARAMS) , 0) , storage : SI >
@@ -233,6 +240,8 @@ omod GENERIC-OBJECT-BEHAVIOR is
     (msg getStatus[] from TK to SI) 
   .
 
+  --- restrict-object-usage-subroutine (status reply): when the storage status is normal, sends
+  --- restrictUsage with the updated usages to the handle.
   rl [restrict-object-usage-subroutine] :
     (msg retStatus[^ (normal).StorageStatus] from SI to TK)
     < TK : TAKernel | api-call : exec(apiCall(RestrictObjectUsage1 ,
@@ -243,9 +252,8 @@ omod GENERIC-OBJECT-BEHAVIOR is
     (msg restrictUsage[^ updateObjectUsage(OBJUSAGES , OBJUSAGES')] from TK to HANDLE)
   .
 
---- This rule returns TEE_ERROR_CORRUPT_OBJECT if the persistent object is corrupt.
---- This rule returns TEE_ERROR_STORAGE_NOT_AVAILABLE if the persistent object is stored in a storage area which is currently inaccessible.
-
+--- restrict-object-usage-storage-err: returns TEE_ERROR_CORRUPT_OBJECT if the persistent object is
+--- corrupt, and TEE_ERROR_STORAGE_NOT_AVAILABLE if its storage area is inaccessible.
   crl [restrict-object-usage-storage-err] :
     (msg retStatus[^ STATUS] from SI to TK)
     < TK : TAKernel | api-call : exec(apiCall(RestrictObjectUsage1 , PARAMS) , 1) >
@@ -263,8 +271,10 @@ omod GENERIC-OBJECT-BEHAVIOR is
 --- Step numbers: 0 waits for the attribute, 1 waits for the storage status (persistent objects only),
 --- 2 has the attribute and usages in its parameters and returns.
 
---- The following three rules extract one buffer attribute from the (transient) object.
+--- The following rules extract one buffer attribute from the (transient) object.
 
+  --- get-object-buffer-attribute-subroutine (request): sends reqAttribute to the handle and waits for
+  --- the attribute (step 0).
   crl [get-object-buffer-attribute-subroutine] :
     < TK : TAKernel | api-call : init(apiCall(GetObjectBufferAttribute , (handle(HANDLE) , constId(ID)))) >
     =>
@@ -273,6 +283,8 @@ omod GENERIC-OBJECT-BEHAVIOR is
   if bufferType(ID)
   .
 
+  --- get-object-buffer-attribute-subroutine (transient reply): stores the attributes and usages in the
+  --- call and moves to step 2.
   rl [get-object-buffer-attribute-subroutine] :
     (msg retAttributeTr[^ ATTRS ^ OBJTYPE ^ OBJUSAGES] from HANDLE to TK)
     < TK : TAKernel | api-call : exec(apiCall(GetObjectBufferAttribute , PARAMS) , 0) >
@@ -312,8 +324,9 @@ omod GENERIC-OBJECT-BEHAVIOR is
      hasCapacity(PARAMS) /\ not capacityFitsAttr(PARAMS)
   .
 
---- The following two rules check storage status before extracting one buffer attribute from the persistent object.
 
+  --- get-object-buffer-attribute-subroutine (persistent reply): stores the attributes and usages, and
+  --- waits for the storage status (step 1).
   rl [get-object-buffer-attribute-subroutine] :
     (msg retAttributePr[^ ATTRS ^ OBJTYPE ^ OBJUSAGES] from HANDLE to TK)
     < TK : TAKernel | api-call : exec(apiCall(GetObjectBufferAttribute , PARAMS) , 0) , storage : SI >
@@ -323,6 +336,8 @@ omod GENERIC-OBJECT-BEHAVIOR is
     (msg getStatus[] from TK to SI) 
   .
 
+  --- get-object-buffer-attribute-subroutine (status reply): when the storage status is normal, moves to
+  --- step 2.
   rl [get-object-buffer-attribute-subroutine] :
     (msg retStatus[^ (normal).StorageStatus] from SI to TK)
     < TK : TAKernel | api-call : exec(apiCall(GetObjectBufferAttribute , PARAMS) , 1) >
@@ -330,9 +345,8 @@ omod GENERIC-OBJECT-BEHAVIOR is
     < TK : TAKernel | api-call : exec(apiCall(GetObjectBufferAttribute , PARAMS) , 2) >
   .
 
---- This rule returns TEE_ERROR_CORRUPT_OBJECT if the persistent object is corrupt.
---- This rule returns TEE_ERROR_STORAGE_NOT_AVAILABLE if the persistent object is stored in a storage area which is currently inaccessible.
-
+--- get-object-buffer-attribute-storage-err: returns TEE_ERROR_CORRUPT_OBJECT if the persistent object
+--- is corrupt, and TEE_ERROR_STORAGE_NOT_AVAILABLE if its storage area is inaccessible.
   crl [get-object-buffer-attribute-storage-err] :
     (msg retStatus[^ STATUS] from SI to TK)
     < TK : TAKernel | api-call : exec(apiCall(GetObjectBufferAttribute , PARAMS) , 1) >
@@ -341,8 +355,8 @@ omod GENERIC-OBJECT-BEHAVIOR is
   if abnormalStorage(STATUS) 
   .
 
---- This rule returns TEE_ERROR_ITEM_NOT_FOUND if the attribute is not found on this object.
-
+--- get-object-buffer-attribute-not-found-err: returns TEE_ERROR_ITEM_NOT_FOUND if the attribute is not
+--- found on this object.
   crl [get-object-buffer-attribute-not-found-err] :
     < TK : TAKernel | api-call : exec(apiCall(GetObjectBufferAttribute ,
                                   (constId(ID) , attrs(ATTRS) , PARAMS)) , 2) >
@@ -359,8 +373,10 @@ omod GENERIC-OBJECT-BEHAVIOR is
 --- See page 137 of the G.P. documentation for more details.
 --- Step numbers as for TEE_GetObjectBufferAttribute.
 
---- The following three rules extract one value attribute from the (transient) object.
+--- The following rules extract one value attribute from the (transient) object.
 
+  --- get-object-value-attribute-subroutine (request): sends reqAttribute to the handle and waits for
+  --- the attribute (step 0).
   crl [get-object-value-attribute-subroutine] :
     < TK : TAKernel | api-call : init(apiCall(GetObjectValueAttribute , (handle(HANDLE) , constId(ID)))) >
     =>
@@ -369,6 +385,8 @@ omod GENERIC-OBJECT-BEHAVIOR is
   if valueType(ID)
   .
 
+  --- get-object-value-attribute-subroutine (transient reply): stores the attributes and usages in the
+  --- call and moves to step 2.
   rl [get-object-value-attribute-subroutine] :
     (msg retAttributeTr[^ ATTRS ^ OBJTYPE ^ OBJUSAGES] from HANDLE to TK)
     < TK : TAKernel | api-call : exec(apiCall(GetObjectValueAttribute , PARAMS) , 0) >
@@ -386,8 +404,9 @@ omod GENERIC-OBJECT-BEHAVIOR is
   if ID in getAttrIds(ATTRS) /\ canAcquireAttr(ID , OBJUSAGES)
   .
 
---- The following two rules check storage status before extracting one value attribute from the persistent object.
 
+  --- get-object-value-attribute-subroutine (persistent reply): stores the attributes and usages, and
+  --- waits for the storage status (step 1).
   rl [get-object-value-attribute-subroutine] :
     (msg retAttributePr[^ ATTRS ^ OBJTYPE ^ OBJUSAGES] from HANDLE to TK)
     < TK : TAKernel | api-call : exec(apiCall(GetObjectValueAttribute , PARAMS) , 0) , storage : SI >
@@ -397,6 +416,8 @@ omod GENERIC-OBJECT-BEHAVIOR is
     (msg getStatus[] from TK to SI) 
   .
 
+  --- get-object-value-attribute-subroutine (status reply): when the storage status is normal, moves to
+  --- step 2.
   rl [get-object-value-attribute-subroutine] :
     (msg retStatus[^ (normal).StorageStatus] from SI to TK)
     < TK : TAKernel | api-call : exec(apiCall(GetObjectValueAttribute , PARAMS) , 1) >
@@ -404,9 +425,8 @@ omod GENERIC-OBJECT-BEHAVIOR is
     < TK : TAKernel | api-call : exec(apiCall(GetObjectValueAttribute , PARAMS) , 2) >
   .
 
---- This rule returns TEE_ERROR_CORRUPT_OBJECT if the persistent object is corrupt.
---- This rule returns TEE_ERROR_STORAGE_NOT_AVAILABLE if the persistent object is stored in a storage area which is currently inaccessible.
-
+--- get-object-value-attribute-storage-err: returns TEE_ERROR_CORRUPT_OBJECT if the persistent object
+--- is corrupt, and TEE_ERROR_STORAGE_NOT_AVAILABLE if its storage area is inaccessible.
   crl [get-object-value-attribute-storage-err] :
     (msg retStatus[^ STATUS] from SI to TK)
     < TK : TAKernel | api-call : exec(apiCall(GetObjectValueAttribute , PARAMS) , 1) >
@@ -415,8 +435,8 @@ omod GENERIC-OBJECT-BEHAVIOR is
   if abnormalStorage(STATUS) 
   .
 
---- This rule returns TEE_ERROR_ITEM_NOT_FOUND if the attribute is not found on this object.
-
+--- get-object-value-attribute-not-found-err: returns TEE_ERROR_ITEM_NOT_FOUND if the attribute is not
+--- found on this object.
   crl [get-object-value-attribute-not-found-err] :
     < TK : TAKernel | api-call : exec(apiCall(GetObjectValueAttribute ,
                                   (constId(ID) , attrs(ATTRS) , PARAMS)) , 2) >
@@ -432,7 +452,7 @@ omod GENERIC-OBJECT-BEHAVIOR is
 --- The 'TEE_CloseObject' function closes an opened object handle.
 --- See page 138 of the G.P. documentation for more details.
 
---- The following four rules close an object handle.
+--- The following rules close an object handle.
 
   op closeObject : -> ReqId [ctor] .
   op finishCloseObject : -> ReqId [ctor] .
@@ -469,8 +489,8 @@ omod GENERIC-OBJECT-BEHAVIOR is
     < TK : TAKernel | api-call : return(apiCall(CloseObject , retCode(noReturnCode))) >
   .
 
---- This rule does nothing when object handle is null (TEE_HANDLE_NULL).
-
+--- close-object-null-success: a null handle (TEE_HANDLE_NULL) is closed by doing nothing, and the call
+--- returns noReturnCode.
   crl [close-object-null-success] :
     < TK : TAKernel | api-call : init(apiCall(CloseObject , handle(HANDLE))) >
     => 

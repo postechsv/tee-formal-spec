@@ -1,7 +1,7 @@
 --- This file defines objects for the TEE storage/cryptographic operation APIs for the transient, persistent, and data stream objects.
 --- We define TrustedStorageObject, which is not specified in the G.P. documentation, for modeling purposes
 
---- This module defines the paper-level CryptoObj class and its implementation
+--- This module defines the abstract CryptoObj class and its implementation
 --- refinement TrustedStorageObject.
 
 omod TRUSTED-STORAGE-OBJECT is
@@ -26,7 +26,7 @@ fmod TRUSTED-STORAGE-OBJECT-AUX is
   vars OBJTYPE OBJTYPE1 OBJTYPE2 : Type .
   vars MAXOBJSIZE1 MAXOBJSIZE2 : Nat .
 
-  --- GP 5.6.1 and 5.6.3 define the initial/reset usage mask as
+  --- allObjectUsages: G.P. 5.6.1 and 5.6.3 define the initial/reset usage mask as
   --- 0xFFFFFFFF, i.e. every usage represented by this model.
   op allObjectUsages : -> Set{Usage} .
   eq allObjectUsages = (usageExtractable, usageEncrypt,
@@ -34,13 +34,15 @@ fmod TRUSTED-STORAGE-OBJECT-AUX is
                         usageSign, usageVerify,
                         usageDerive) .
 
---- GP 5.6.6: destination usage becomes the bitwise intersection with source.
+  --- updateObjectUsage(OBJUSAGES1, OBJUSAGES2): G.P. 5.6.6: the destination usage becomes the
+  --- intersection with the source usage.
   op updateObjectUsage : Set{Usage} Set{Usage} -> Set{Usage} .
   eq updateObjectUsage(OBJUSAGES1 , OBJUSAGES2) = intersection(OBJUSAGES1 , OBJUSAGES2) .
 
---- The source and destination objects SHALL have compatible types and sizes.
---- The type of destObject SHALL be a subtype of srcObject, i.e. one of the conditions listed in Table 5-11 SHALL be true.
---- The size of srcObject SHALL be less than or equal to the maximum size of destObject.
+  --- typeCompatible(OBJTYPE1, OBJTYPE2): the source and destination objects SHALL have compatible
+  --- types and sizes.  The type of destObject SHALL be a subtype of srcObject, i.e. one of the
+  --- conditions listed in Table 5-11 SHALL be true.  The size of srcObject SHALL be less than or equal
+  --- to the maximum size of destObject.
   op typeCompatible : Type Type -> Bool .
   eq typeCompatible(OBJTYPE , OBJTYPE) = true .
   eq typeCompatible(typeRsaKeypair , typeRsaPublicKey) = true .

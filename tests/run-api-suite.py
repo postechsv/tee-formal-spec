@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the paper-derived API-level black-box tests."""
+"""Run the API-level black-box tests."""
 
 from __future__ import annotations
 

@@ -1,37 +1,102 @@
 # TEE Formal Specification
 
-This repository contains an executable Maude specification of the GlobalPlatform TEE Internal Core API. Based on the object and handle model presented in the accompanying research paper, it models successful API calls, error returns, panics, storage conditions, and cryptographic operation state transitions.
+An executable [Maude](https://maude.cs.illinois.edu/) specification of the GlobalPlatform TEE Internal Core API. It models successful API calls, error returns, panics, storage conditions, and the state transitions of cryptographic operations, together with the trusted application (TA) kernel and the storage and OS services that the API calls depend on. `src/main.maude` is the entry point for the specification.
 
-## Reference Material
+## Features
 
-The specification and its tests are developed against the following sources:
+- Generic, transient, and persistent object APIs
+- Persistent data stream access and persistent object enumeration
+- Cryptographic operations (switchable with the `CRYPTO` feature)
+- Programmer errors and invalid handles, modeled as panics
+- Model programs (`src/imp.maude`) whose calls are translated into TEE API calls (`src/tee-imp.maude`)
+- Build variants that drop feature groups or individual modules
 
-- The TEE API formal model and class structure presented in the research paper
-- GlobalPlatform TEE Internal Core API Specification v1.3.1
-- The model and analysis wrapper from the original artifact
+## Requirements
 
-`src/main.maude` is the entry point for the active specification.
+- Maude 3
+- GNU Make
+- Python 3 (for the test runners and the DM-Check generator)
 
-## Repository Structure
+`make` reads the Maude path from `MAUDE` in a `config.mk` file at the repository root. This file is gitignored, so each user creates it:
+
+```make
+# config.mk
+MAUDE := /path/to/maude
+```
+
+Alternatively, set the `MAUDE_BIN` environment variable. The Python test runner looks for Maude in this order: `MAUDE_BIN`, a sibling `tee-formal-analysis/3rd_party` (or `zenodo/tee-formal-analysis/3rd_party`) binary, then `maude` on `PATH`.
+
+## Quick start
+
+Build the default configuration and run both test suites:
+
+```bash
+make            # build build/default/src and build/default/tests
+make test       # build, then run the API suite and the check suite
+make help       # list features, test selection, and current values
+```
+
+Build variants use a separate build directory selected with `NAME`:
+
+```bash
+make NAME=nocrypto CRYPTO=0 test   # without the cryptographic operation APIs
+make NAME=t WITHOUT=MODULE         # drop a module; MODULE must be a pr line in src/main.maude
+make DMC=1                         # DM-Check-compatible build (tools/gen-dmc.py)
+make V=1 test                      # stream the Maude output of each test file
+```
+
+Run one suite or clean up:
+
+```bash
+make test-api                # API-level black-box searches (tests/api)
+make test-checks             # completion and GlobalPlatform conformance checks
+make check-dmc               # regenerate the DM-Check build and run its ground checks
+make clean NAME=default      # remove build/default
+make distclean               # remove build/
+```
+
+Each build directory `build/$(NAME)/` holds a copy of the selected `src/` and `tests/` trees (or the DM-Check output with `DMC=1`) and the settings used for the build. Settings are cached in `build/$(NAME)/config.mk`.
+
+## Feature selection
+
+Features are defined in `mk/features.mk`. Each one is a variable set to `1` (on, the default) or `0` (off), for example `make CRYPTO=0`.
+
+| Feature | Covers | Requires |
+| --- | --- | --- |
+| `CRYPTO` | Cryptographic operation APIs | `TRANSIENT` |
+| `TRANSIENT` | Transient object API | |
+| `PERSISTENT` | Persistent object API and storage errors | |
+| `GENERIC` | Generic object API | |
+| `DATA_STREAM` | Persistent data stream access | `PERSISTENT` |
+| `ENUMERATOR` | Persistent object enumeration | `PERSISTENT` |
+
+When a feature is off, its files are dropped from `src/main.maude` and its tests are skipped.
+
+## Repository layout
 
 ```text
 tee-formal-spec/
-├── src/                  # Maude specification and executable semantics
+├── Makefile              # build driver and test targets
+├── mk/
+│   └── features.mk       # feature table
+├── src/                  # Maude specification
 ├── tests/
-│   ├── api/              # API-level black-box regression searches
-│   ├── cases/            # Existing test cases grouped by API area
-│   ├── completion/       # Completion regressions, one file per API group
+│   ├── api/              # API-level black-box searches (test-*.maude)
+│   ├── cases/            # API-specific test cases (not run by make)
+│   ├── completion/       # completion regressions, one file per API group
 │   ├── gp-conformance/   # GlobalPlatform conformance reductions, one file per module group
-│   ├── run-api-suite.py  # Runner for tests/api
-│   └── run-checks.py     # Runner for completion/ and gp-conformance/
-├── mk/features.mk        # Build features (e.g. CRYPTO) toggled by make
-├── tools/                # main.maude filter and the DMC generator (gen-dmc.py)
-├── Makefile
+│   ├── run-api-suite.py  # runner for tests/api
+│   └── run-checks.py     # runner for completion/ and gp-conformance/
+├── tools/
+│   ├── select-main.awk   # filter that builds src/main.maude for a feature selection
+│   └── gen-dmc.py        # DM-Check generator
 ├── LICENSE
 └── README.md
 ```
 
-### API Behavior Models
+`build/` is created by `make` and is not tracked.
+
+### API behavior models
 
 | File | Purpose |
 | --- | --- |
@@ -42,112 +107,57 @@ tee-formal-spec/
 | `enumerator.maude` | Persistent object enumeration |
 | `cryptographic.maude` | Cryptographic operations and related APIs |
 
-### Common Objects and TEE Infrastructure
+### Common objects and TEE infrastructure
 
 | File | Purpose |
 | --- | --- |
 | `objects.maude` | Common storage object classes and helper functions |
+| `transient-object.maude`, `persistent-object.maude` | Transient and persistent object classes, shared by the storage APIs |
 | `handle.maude` | Object, enumerator, operation, and session handles |
 | `constants.maude` | GlobalPlatform constants, types, key sizes, and usages |
 | `tee-data-type.maude` | Models of GlobalPlatform API data structures |
 | `tee-api.maude`, `tee-api-call.maude` | API identifiers, call parameters, and return values |
+| `tee-msg.maude` | Message layer of the TEE API models |
+| `session.maude` | Session handling |
 | `tee-kernel.maude` | TA kernel and API execution state |
-| `tee-panic.maude` | Programmer errors and invalid-handle panics (general rules; the persistent and data stream access rules are in `persistent-panic.maude` and `data-stream-panic.maude`) |
-| `transient-object.maude`, `persistent-object.maude` | Transient and persistent object classes, shared by the storage APIs |
+| `tee-panic.maude` | General programmer errors and invalid-handle panics |
+| `persistent-panic.maude`, `data-stream-panic.maude`, `crypto-panic.maude` | Panics of the storage and cryptographic APIs |
 | `os.maude`, `os-service.maude` | Trusted OS and storage services |
 | `app.maude`, `ree-app.maude`, `tee-app.maude`, `tee-client.maude` | REE/TEE applications and client behavior |
 
-### Program Execution Semantics
+### Program execution
 
 | File | Purpose |
 | --- | --- |
 | `k-prelude.maude` | Foundations for the K-style execution semantics |
-| `imp.maude` | Syntax, static type system (`wellTyped`), and semantics of model programs |
+| `imp.maude` | Syntax and semantics of model programs |
 | `tee-imp.maude` | Translation of program calls into TEE API calls |
 
-The semantics of `imp.maude` is in the style of the C semantics of Ellison and Rosu (POPL 2012), with these choices:
+## Core modeling principles
 
-- **Typing.** `mkConf` builds the initial configuration only if `wellTyped` accepts the program; an ill-typed program yields the error term `illTyped`. Dynamic rules carry no static type conditions: parameters and allocations are split by sort (`BType`, `RType`), not by a type test. Declarations are checked in sequence; a by-reference parameter takes an lvalue of its type; a struct is assigned only from a struct of the same type.
-- **Scoping.** A function body sees its parameters, its own locals and the globals declared before it. Each `if` and `while` body is a block: the environment is saved on entry (`$restoreEnv`) and restored on exit.
-- **Declarations are hoisted (C11 6.2.4p6).** On entry to a function body (after the parameters are bound), to an `if`/`while` body, and to the top level, every `T X ;` directly in that statement sequence (also after a label) is allocated and bound at once; a nested block hoists on its own entry. A declaration reached in the normal flow resets its object to undef and does not allocate again (`T X ::= E ;` is `T X ; X := E ;`). The top level is hoisted too, so a goto past a top-level declaration sees the object. Consequences: a use of a name before its declaration in the same block is rejected by the checker when that name is also a global or outer binding (it would name the outer one in C), because the hoisted local would capture it; a parameter is not a hoisted declaration, and a parameter may shadow a global. Reaching a declaration again (a backward goto) resets it to undef; in C a declaration without an initializer does not change the value, so this follows the chosen model rather than the standard's wording.
-- **Goto.** A label is a direct element of the top-level sequence or of a function body. It maps to the labelled statement followed by the rest of its sequence, so a goto continues with that rest, and a function's labels are its own. A goto may leave nested blocks (the environment of the outermost block left is restored), but it cannot enter a block: labels inside `if`/`while` bodies are rejected. A goto to an unknown label is rejected by the checker and is stuck at runtime.
-- **Internal items and the library trust boundary.** The computation items of the semantics (`zip`, `invoke`, `bind`, `alloc`, `$alloc`, `$reset`, `$waitSysCall`, `$in`, `$out`, ...) have their own sort `IStmt`, a subsort of `K` but not of `Stmt` or `Program`, so a user program cannot contain them (`IMP-INTERNAL` in `imp.maude`). A TEE API stub is a trusted library function `$libFun(FSIG, K)`, a `Stmt` whose body is internal K. The checker takes `$libFun` only for a TEE API name, and a user function cannot take such a name. Residual risk: a program that is not the syscall prefix can still write `$libFun` for a TEE API name, since the prefix and a program are both `Program`s; the sorts alone cannot tell them apart. The syscall prefix (`syscalls`, `tee-imp.maude`) is library code and a user program must not contain `$libFun`.
-- **Evaluation order.** Operands are evaluated left to right, and `&&`/`||` do not evaluate their right operand when the left one decides. A read of an uninitialized variable, division by zero and other undefined operations are stuck.
-- **Equations and rules.** Local, deterministic, terminating steps (expressions, assignment, declarations, blocks, sequencing, labels) are equations. Rules are kept for while unrolling (it can run forever), function call entry, argument binding and return (they change the frame stack), and every step that interacts with the TEE API (`tee-app.maude`, `tee-api-call.maude`, `$waitSysCall`, `$in`, `$out`).
-- **Configuration.** The configuration is a flat soup of cells, `k`, `env`, `genv`, `store`, `stack` and `fdecl` as in the paper, with `sdecl`, `labels` and `nextLoc` in the place of the paper's `...`; AC matching gives K-style cell locality.
-- **Function calls (paper Fig 4).** `fCall` evaluates the arguments by `zip` (a value parameter takes `e`, a reference parameter `lvalue(e)`). `fExec` pushes the caller's frame, resets `env` to `genv`, and runs the body after `bind`. `bindV` allocates a value parameter, `bindS` a struct parameter (copied), and `bindR` only adds the name to `env`. `fRetn` and `fQuit` pop the frame.
+### Handles
 
-## Core Modeling Principles
+Handles are top-level objects in the configuration rather than nested inside their owners. No object class has a handle-valued attribute, and the handle constructors create top-level objects.
 
-### Top-Level Handle Ownership
+- Each `Handle` has an `oid` that names the object it belongs to.
+- A persistent object may have several open handles. A new handle is added only when its sharing flags are compatible with the handles already open on the object.
+- Closing a handle removes only that handle. The object and its other handles remain.
+- Close-and-delete requires the handle to carry the write-meta access right. On success, all handles of the object are removed, the object is removed together with its embedded data stream, and the storage service is notified to delete the file. Otherwise the TA panics and the object is not deleted.
 
-Handles are represented as independent top-level objects in a configuration rather than being nested inside their owners.
+### Panic semantics
 
-- An `OpenableObject` records only the IDs of its handles in `handle-id-set`.
-- Each `Handle` refers to its owner through `oid`.
-- A handle is never represented as both a nested object and a top-level object.
-- A persistent object may own multiple handles.
-- A normal close removes only the specified handle.
-- Close-and-delete removes all handles and the stream before deleting the owning object.
+`tee-panic.maude` evaluates invalid handles and other GlobalPlatform programmer errors against the active `TAKernel` call state and top-level handle objects. A panic path converges to `status : panic` on the `TAKernel`, with the API call in a finished state.
 
-### Panic Semantics
+## Testing
 
-`tee-panic.maude` evaluates invalid handles and other GlobalPlatform programmer errors against the active `TAKernel` call state and top-level handle objects. A panic path must converge to `app-status: panic` with the API in a finished state.
+The test groups are:
 
-## Deviations from the Paper
+- `tests/api`: black-box searches that verify external API calls and returns (`make test-api`)
+- `tests/completion/<group>.maude`: checks that completed paths converge to final success, error, or panic states (`make test-checks`)
+- `tests/gp-conformance/<group>.maude`: focused reductions derived from GlobalPlatform tables and clauses (`make test-checks`)
+- `tests/cases`: API-specific test cases; not run by the make targets
 
-This section lists the places where the executable model departs from the paper, one line each. Later phases append to it.
-
-- **Typed parameters (Fig 4).** A parameter is `T x` (by value) or `U * x` / `U & x` (by reference). The `*` and `&` forms are the same in the semantics. The paper writes `x` and `&x`.
-- **Function declarations (Fig 1).** `fdecl` maps the full signature `T F(PARAMS)` to the body. The paper uses a triple `(f, pl, S)`.
-- **Call stack items (Fig 1).** A stack item also saves the caller's label table and `nextLoc`. The paper's item is `(ρ, κ)`.
-- **Extra cells (Fig 1).** `sdecl`, `labels`, `nextLoc` and `arrlen` are cells, in the place of the paper's `...`.
-- **Global environment.** `genv` is the environment after the top-level hoisting, so every top-level declaration is in `env` and `genv`.
-- **Hoisting (C11 6.2.4p6).** A function body is hoisted after its parameters are bound. This is an extension of the paper's model.
-- **Entry point.** The paper's `mkConf(P, FID, VL)` (App D) is `entryConf(P, FUNC, VL) = mkConf(P callFunc(P, FUNC, VL))`. `mkConf(P)` is the typing gate.
-- **By-value struct parameters.** A struct argument is copied into a new struct object: `bindS` allocates the parameter and assigns it the argument, and the member-wise copy of `[assign]` leaves the caller's members unchanged. The paper's `bindV` covers base types.
-- **Value-sort tests.** `[assign]` and `[reset-b]` test `not V :: SObj`, a test on the value stored, not on a static type. The `SObj` test is kept as it is; removing it needs a split of the `Value` sort. The other dynamic rules carry no type test: a declaration is split by its type (a base type, `auto`, a struct, or an array), and a parameter by its sort (`ConcBType`, `SType` or `RType`).
-- **Struct objects.** A struct object is allocated by `$allocObj`, so that `alloc` on base types needs no type test.
-- **Arrays (extension, not in the paper).** `C[N]` is an array of `N > 0` elements of a base type `C`; an array is not a struct member, a parameter, a return type, or the operand of `=`, `==` or an expression statement. An array takes `N` consecutive locations from `nextLoc`, and its length is kept in `arrlen`, keyed by its first location, so an access `a[E]` is checked at run time against `0 <= I < N` (stuck otherwise). The static check (`typeOfExp`) rejects a literal index outside the bounds; a non-literal index is not checked statically. Arrays of structs and arrays of arrays are not types.
-
-## Requirements
-
-- A Maude 3 executable
-- Python 3 for the API regression runner
-
-The API runner locates Maude in the following order:
-
-1. The `MAUDE_BIN` environment variable
-2. A sibling `tee-formal-analysis/3rd_party` artifact
-3. A sibling `zenodo/tee-formal-analysis/3rd_party` artifact
-4. A `maude` executable on `PATH`
-
-## Running the Tests
-
-Builds and tests are driven by `make` (GNU Make). Put the Maude path in a `config.mk` at the repository root (gitignored), for example `MAUDE := /path/to/maude`, or set `MAUDE_BIN`.
-
-```bash
-make test                  # build build/default and run every test suite
-make NAME=nocrypto CRYPTO=0 test   # same, without the cryptographic operation APIs
-make WITHOUT="M1 M2"       # drop modules (pr lines) from main.maude
-make DMC=1 test           # DM-Check-compatible build (gen-dmc output), then the test suites
-make V=1 test             # verbose: stream the Maude output of each test file as it runs
-make check-dmc             # regenerate the DMC build and run gen-dmc's ground checks
-make help                  # features, test selection, targets
-```
-
-`V=1` (or `VERBOSE=1`) shows the full Maude output of each API test file and each check file while it runs, and echoes the build commands. Without it, only the summary lines (`[test-suite] API-level: ...`, `[checks] FILE: ...`) are printed. `V` is a display option: it is not cached in `build/$(NAME)/config.mk` and does not trigger a rebuild. The runners also accept `-v` directly, e.g. `python3 tests/run-checks.py -v FILE...`.
-
-Each build lives in `build/$(NAME)/` with `src/` and `tests/` holding the final tree (a copy of the selected sources, or the DM-Check output with `DMC=1`), and its settings are remembered in `build/$(NAME)/config.mk`. With `DMC=1` the generator's bookkeeping (reflection cache and `manifest.json`) is kept in `build/$(NAME)/.dmc-cache/`, outside `src/`, and survives rebuilds until `make clean`. Features and the tests that need them are declared in `mk/features.mk`; tests of disabled features are skipped.
-
-With crypto enabled the suites run 92 API-level searches, 108 completion searches, and 169 conformance reductions.
-
-The test groups serve the following purposes:
-
-- `tests/api`: black-box searches that verify external API calls and returns
-- `tests/completion/`: checks that completed paths converge to final success, error, or panic states
-- `tests/gp-conformance/`: focused reductions derived from GlobalPlatform tables and clauses
-- `tests/cases`: API-specific test cases inherited from the original artifact
+`make test` runs the API suite and the check suite. Each runs even if the other fails, and the exit status is nonzero if either fails. Without `V=1`, only summary lines are printed, for example `[test-suite] API-level: ...` and `[checks] FILE: ...`.
 
 ## License
 

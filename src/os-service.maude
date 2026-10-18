@@ -1,6 +1,6 @@
 --- This file defines the behavior of TeeOS that provides OS services.
 
---- This module defines TeeOS services.
+--- This module defines the behavior of the TeeOS services.
 
 omod TEE-OS-BEHAVIOR is
   pr TEE-OS .
@@ -30,6 +30,8 @@ omod TEE-OS-BEHAVIOR is
   msg reqTrustedOS : List{Service} Oid -> Msg .
   msg retTrustedOS : List{ServiceReturn} Oid -> Msg .
 
+  --- service-receive: the TrustedOS takes the service list SIL of the request reqTrustedOS(SIL,
+  --- TK) when it has no pending services, and records TK as service-request-ta-inst.
   rl [service-receive] :
     reqTrustedOS(SIL , TK)
     < KI : TrustedOS | service-in : nil , service-out : nil ,
@@ -39,6 +41,8 @@ omod TEE-OS-BEHAVIOR is
                          service-request-ta-inst : TK >
   .
 
+  --- service-finish: once all services are done, the collected service-out values NESOL are
+  --- returned to TK as retTrustedOS, and service-request-ta-inst is cleared.
   rl [service-finish] :
     < KI : TrustedOS | service-in : nil , service-out : NESOL ,
                          service-request-ta-inst : TK >
@@ -48,56 +52,69 @@ omod TEE-OS-BEHAVIOR is
     retTrustedOS(NESOL , TK)
   .
 
+  --- abnormalStorage(STATUS): true when STATUS is not normal.
   op abnormalStorage : StorageStatus -> Bool .
   eq abnormalStorage(normal) = false .
   ---@dmc owise enumerate(STATUS)
   eq abnormalStorage(STATUS) = true [owise] .
 
+  --- storageErrCode(STATUS): the return code of the storage failure STATUS.
   op storageErrCode : StorageStatus -> ReturnCode .
   eq storageErrCode(corrupted) = errorCorruptObject .
   eq storageErrCode(notAvailable) = errorStorageNotAvailable .
   eq storageErrCode(outOfSpace) = errorStorageNoSpace .
 
-  --- TEE_SetOperationKey2 distinguishes failures of its second key object.
+  --- storageErrCode2(STATUS): the return code of the storage failure STATUS of the second key
+  --- object of TEE_SetOperationKey2.  It differs from storageErrCode for corrupted and
+  --- notAvailable only.
   op storageErrCode2 : StorageStatus -> ReturnCode .
   eq storageErrCode2(corrupted) = errorCorruptObject2 .
   eq storageErrCode2(notAvailable) = errorStorageNotAvailable2 .
   eq storageErrCode2(outOfSpace) = errorStorageNoSpace .
 
---- Storage side of the TA-Storage messages (Appendix B of the paper). The TA sends the request
---- to its storage SI; the storage answers. The TA-side rules are in the API modules.
+--- Storage side of the TA-Storage messages.  The TA sends the request to its storage SI;
+--- the storage answers.  The TA-side rules are in the API modules.
 
---- getStatus: the storage reports its status.
+--- return-storage-status: the storage answers getStatus with its status.
   rl [return-storage-status] :
     < SI : Storage | status : STATUS > (msg getStatus[] from TK to SI)
   => < SI : Storage | > (msg retStatus[^ STATUS] from SI to TK) .
 
---- checkFileExist: the storage reports whether the file is in its file set.
+--- return-file-exist: the storage answers checkFileExist with whether the file is in its
+--- file set.
   rl [return-file-exist] :
     < SI : Storage | files : FL > (msg checkFileExist[^ FILE] from TK to SI)
   => < SI : Storage | > (msg retFileExist[^ (FILE in FL)] from SI to TK) .
 
---- getPersistentList: the storage returns its file set (the TA decides whether it is empty).
+--- return-persistent-list: the storage answers getPersistentList with its file set (the TA
+--- decides whether it is empty).
   rl [return-persistent-list] :
     < SI : Storage | files : FL > (msg getPersistentList[] from TK to SI)
   => < SI : Storage | > (msg retPersistentList[^ FL] from SI to TK) .
 
---- notifyFileDeletion: the storage removes the file from its file set. Deleting an absent
---- file leaves the set unchanged. The TA waits for acceptNotification.
+--- notify-file-deletion: the storage removes the file FILE from its file set.  The TA waits
+--- for acceptNotification.
   rl [notify-file-deletion] :
     < SI : Storage | files : (FILE , FL) > (msg notifyFileDeletion[^ FILE] from TK to SI)
   => < SI : Storage | files : FL > (msg acceptNotification[] from SI to TK) .
 
+--- notify-file-deletion-absent: deleting a file that is not in the file set leaves the set
+--- unchanged, and the notification is accepted.
   crl [notify-file-deletion-absent] :
     < SI : Storage | files : FL > (msg notifyFileDeletion[^ FILE] from TK to SI)
   => < SI : Storage | > (msg acceptNotification[] from SI to TK)
   if not (FILE in FL) .
 
---- notifyFileRename: the storage replaces the old file name FILE' with the new name FILE.
+--- notify-file-rename: the storage replaces the old file name FILE' with the new name FILE
+--- in its file set, and the notification is accepted.
   rl [notify-file-rename] :
     < SI : Storage | files : (FILE' , FL) > (msg notifyFileRename[^ FILE' ^ FILE] from TK to SI)
   => < SI : Storage | files : (FILE , FL) > (msg acceptNotification[] from SI to TK) .
 
+--- open-ta-session: the TrustedOS serves openTASession(TN) by creating the TA oid(N, KI) with
+--- the program P of TN from ta-prog-map, its storage oid(0, oid(N, KI)) with no files, and
+--- the session sessionId(N) that refers to it.  openSessionSuccess(oid(N, KI)) is queued in
+--- service-out.
   rl [open-ta-session] :
     < KI : TrustedOS | service-in : (openTASession(TN) SIL) , service-out : SOL , ta-prog-map : (TN |-> [P] , PROGC) ,
                          sess : SESS , session-counter : N >

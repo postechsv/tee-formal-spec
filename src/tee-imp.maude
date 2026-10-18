@@ -25,10 +25,10 @@ fmod TEE-IMP-API is
 
   ---@dmc qid-subsort
   subsort Qid < Var .
-  --- See: (subsort TeeApi < FuncId is declared in IMP-INTERNAL, so the type checker can test it.)
+  --- The subsort TeeApi < FuncId is declared in IMP-INTERNAL, so that the type checker can test it.
 endfm
 
---- This module provides a set of aux functions to implement TEE syscall.
+--- This module provides a set of auxiliary functions to implement TEE syscalls.
 
 fmod TEE-API-IMP-PROG-AUX is
   pr IMP-PROGRAM .
@@ -52,8 +52,10 @@ fmod TEE-API-IMP-PROG-AUX is
   var S : Stmt .
 
   op defineSysCall : FuncSig SysAnnot SysAnnot SysAnnot SysAnnot -> Program .
-  --- A TEE API stub is a trusted library function: its body is internal K (see
-  --- $libFun in IMP-INTERNAL).
+  --- defineSysCall(T F(XL), @inArgs(IN), @outArgs(OUT), @body(S), @return(E)): a TEE API stub is a
+  --- trusted library function (see $libFun in IMP-INTERNAL).  Its body evaluates IN (heated by
+  --- $prep and collected by $in), waits for F, writes the out arguments OUT back with $out, runs S,
+  --- and returns E.
   eq defineSysCall(T F(XL), @inArgs(IN), @outArgs(OUT), @body(S), @return(E))
    = $libFun(T F(XL),
         $prep(mkEval(IN)) ~>
@@ -64,6 +66,7 @@ fmod TEE-API-IMP-PROG-AUX is
         return E ;
       ) .
  
+  --- The void form has no return expression, and it runs S before $out(OUT).
   eq defineSysCall(void F(XL), @inArgs(IN), @outArgs(OUT), @body(S), @noReturn)
    = $libFun(void F(XL),
         $prep(mkEval(IN)) ~>
@@ -183,7 +186,7 @@ endfm
 --- TEE Internal Client API IMP
 ------------------------------------------------------------
 
---- This module defines IMP values for cryptographic object.
+--- This module defines IMP values for the TEE internal client API.
 
 fmod TEE-INTERNAL-CLIENT-IMP-VALUE is
   pr IMP-VALUE .
@@ -262,6 +265,8 @@ mod TRANSIENT-OBJECT-TEE-CALL is
 --- 'TEE_AllocateTransientObject' Syscall
 ------------------------------------------------------------
 
+  --- AllocateTransientObject: the object type and the key size are passed as type and size.  On
+  --- success the new handle is stored in the out argument; an error returns no handle.
   eq makeCall(AllocateTransientObject , (# OBJTYPE , # KEYSIZE)) = apiCall(AllocateTransientObject , (type(OBJTYPE) , size(KEYSIZE))) .
   eq makeReturnStmt(AllocateTransientObject , success , handle(HANDLE) , E) = 
     auto 'ret := # success ;
@@ -309,8 +314,10 @@ mod TRANSIENT-OBJECT-TEE-CALL is
   eq makeCall(PopulateTransientObject , (# HANDLE , # ATTRS)) = apiCall(PopulateTransientObject , (handle(HANDLE) , attrs(ATTRS))) .
   eq makeReturnStmt(PopulateTransientObject , RET , empty , R) = $assign(# RET , R) .
 
+  --- InitRefAttribute: the attribute id and value are passed as constId and constVal.  A content
+  --- given as attrContentData(V) is passed as its value V.
   ceq makeCall(InitRefAttribute , (# REF , # V)) = apiCall(InitRefAttribute , (constId(REF) , constVal(V))) if REF in refAttrIds .
-  --- secretValue is an AttrId (paper App. A) that is a reference attribute (see refAttrIds).
+  --- secretValue is an AttrId that is a reference attribute (see refAttrIds).
   eq makeCall(InitRefAttribute , (# secretValue , # V)) = apiCall(InitRefAttribute , (constId(secretValue) , constVal(V))) .
   ceq makeCall(InitRefAttribute , (# REF , # attrContentData(V))) = apiCall(InitRefAttribute , (constId(REF) , constVal(V))) if REF in refAttrIds .
   eq makeReturnStmt(InitRefAttribute , noReturnCode , attrs(ATTRS) , E) = $assign(# ATTRS , E) .
@@ -466,6 +473,9 @@ mod GENERIC-OBJECT-TEE-CALL is
 --- 'TEE_GetObjectInfo1' Syscall
 ------------------------------------------------------------
 
+  --- GetObjectInfo1: on success the return code goes to the first out argument, and each field of the
+  --- teeObjectInfo is assigned to a member of the struct in the second.  On an error only the return
+  --- code is assigned.
   eq makeCall(GetObjectInfo1 , (# HANDLE)) = apiCall(GetObjectInfo1 , handle(HANDLE)) .
   eq makeReturnStmt(GetObjectInfo1 , success , info(teeObjectInfo(OBJTYPE , OBJSIZE , MAXOBJSIZE , OBJUSAGES , DATASIZE , DATAPOS , DATAFLAGS)) , (E , E')) 
   = $assign(# success , E) ~>
@@ -484,6 +494,7 @@ mod GENERIC-OBJECT-TEE-CALL is
 --- 'TEE_GetObjectBufferAttribute' Syscall
 ------------------------------------------------------------
 
+  --- GetObjectBufferAttribute: the call passes the id, and a call with a size also passes its capacity.
   eq makeCall(GetObjectBufferAttribute , (# HANDLE , # ID)) = apiCall(GetObjectBufferAttribute , (handle(HANDLE) , constId(ID))) .
   eq makeCall(GetObjectBufferAttribute , (# HANDLE , # ID , # DATASIZE)) = apiCall(GetObjectBufferAttribute , (handle(HANDLE) , constId(ID) , capacity(DATASIZE))) .
   eq makeReturnStmt(GetObjectBufferAttribute , RET , constVal(V) , EL) = $assign((# RET , # V) , EL) .
@@ -505,7 +516,7 @@ mod GENERIC-OBJECT-TEE-CALL is
   eq makeReturnStmt(CloseObject , noReturnCode , handle(null) , E) = skip .
 endm
 
---- This module defines IMP call and return for persistent object enumeration functions.
+--- This module defines IMP call and return for enumerator object functions.
 
 mod ENUMERATOR-OBJECT-TEE-CALL is
   pr TEE-API-IMP-CALL .
@@ -565,6 +576,8 @@ mod ENUMERATOR-OBJECT-TEE-CALL is
 --- 'TEE_GetNextPersistentObject' Syscall
 ------------------------------------------------------------
 
+  --- GetNextPersistentObject: on success the object info fields are assigned to the members of the
+  --- struct E, and the file id to E'.  On an error only the return code is assigned.
   eq makeCall(GetNextPersistentObject , (# HANDLE)) = apiCall(GetNextPersistentObject , handle(HANDLE)) .
   eq makeReturnStmt(GetNextPersistentObject , success , (info(teeObjectInfo(OBJTYPE , OBJSIZE , MAXOBJSIZE , OBJUSAGES , DATASIZE , DATAPOS , DATAFLAGS)) , fileId(FILE)) , (R , E , E'))
     = $assign(# success , R)
@@ -667,6 +680,8 @@ mod TEE-INTERNAL-CLIENT-CALL is
 --- 'TEE_InvokeTACommand' Syscall
 ------------------------------------------------------------
 
+  --- TeeInvokeTACommand: the returned values V go to the first out argument E1, and the return origin
+  --- is set to originTrustedApp in E2.
   eq makeCall(TeeInvokeTACommand , (# HANDLE , # FUNC , VL)) = apiCall(TeeInvokeTACommand , (handle(HANDLE) , funcId(FUNC) , values(VL))) .
   eq makeReturnStmt(TeeInvokeTACommand , RET , values(V) , (E1 , E2)) = 
     auto 'ret := # RET ;

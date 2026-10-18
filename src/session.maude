@@ -38,9 +38,9 @@ omod SESSION-BEHAVIOR is
   var VL : ValueList .
   var RET : ValueList .
 
---- A session request starts the service FUNC of the TA RK in the same way as an invkTa
---- request does (handle-invoke-ta): the TA runs mkConf and records {TK, FUNC} as its client
---- service.  This rule has no counterpart in the paper.
+  --- handle-session-req (request): starts the service FUNC of the TA RK for a session
+  --- request, the same way handle-invoke-ta does for an invkTa request.  The TA runs
+  --- mkConf(syscalls P, FUNC, VL) and records {TK, FUNC} as its client-service.
   rl [handle-session-req] :
     < OI : Session | req : {HANDLE, FUNC, VL, TK} , ta-id : RK >
     < RK : TrustedApp | proc : none , client-service : none , prog : P , status : (normal).AppStatus >
@@ -49,8 +49,9 @@ omod SESSION-BEHAVIOR is
     < RK : TrustedApp | proc : mkConf(syscalls P , FUNC , VL) , client-service : {TK , FUNC} >
   .
 
---- The service is finished (handle-invoke-ta-finish): its output values are stored in the
---- session as the return of the request.
+  --- handle-session-req (finish): once the TA RK has finished, its output values RET, read
+  --- from the final configuration KS, are stored as the return of the session request.  The
+  --- proc and client-service of the TA are cleared, and the request is reset to noReq.
   crl [handle-session-req] :
     < OI : Session | req : {HANDLE, FUNC, VL, TK} , ret : noRet , ta-id : RK >
     < RK : TrustedApp | proc : (k(.K) KS) , client-service : {TK , FUNC} , prog : P ,

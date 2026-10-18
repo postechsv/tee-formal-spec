@@ -20,7 +20,7 @@ MAUDE_RELATIVE = (
     Path("Darwin64/maude.darwin64") if platform.system() == "Darwin"
     else Path("Linux64/maude.linux64")
 )
-EXPECTED_API_TESTS = 92
+EXPECTED_API_TESTS = 95
 SEARCH_START = re.compile(r"^search\s+\[1\]\s+in\s+TEST-AUX\s*:", re.MULTILINE)
 TEST_ID = re.compile(r"---\s*\[([^]]+)]")
 
@@ -175,7 +175,7 @@ def main() -> int:
             "FILE arguments: paths to test-*.maude files, relative to the current "
             "directory or absolute. Each file must be a test file of this tree "
             "(its header loads src/main from the tree root). With no FILE, all "
-            "of tests/api is run and the total is checked against 92. With FILE, "
+            "of tests/api is run and the total is checked against 95. With FILE, "
             "only the listed files run and the total check is skipped. "
             "The runner uses MAUDE_BIN for the Maude binary."
         ),

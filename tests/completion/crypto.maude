@@ -59,21 +59,21 @@ search [1] in COMPLETION-TEST :
 =>*
   < testTa : TAKernel | api-call : return(apiCall(CipherUpdate , (retCode(errorShortBuffer) , size(dataSize(1))))) > .
 
---- CipherUpdate accepts insufficient (empty) input and produces no output.
---- In particular, an empty decrypt update must not be treated as malformed
---- ciphertext and panic the TA.
+--- CipherUpdate rejects insufficient (empty) decrypt input, as in the paper.
+--- Paper (Fig. 14, cipher-update): runOp(decrypt, nil) = failure, since nil is
+--- not an encrypted(...) term, so the handle sends failCipher and the TA goes
+--- to status : panic. The G.P. empty-input shortcut is intentionally absent.
 search [1] in COMPLETION-TEST :
-  (msg cipherUpdate[^ (nil).List{Data}] from testTa to oid(101, testTa))
+  (msg reqCipher[^ (nil).List{Data}] from testTa to oid(101, testTa))
+  < testTa : TAKernel | status : (normal).AppStatus,
+      api-call : final(apiCall(CipherUpdate , (handle(oid(101, testTa)), data((nil).List{Data})))) >
   < oid(1, testTa) : CryptoOperation |
-      mode : modeDecrypt, state : active >
+      mode : modeDecrypt, state : active, algorithm : algAesCtr ,
+      keys : key(attr(secretValue, sizedAttrVal(128, 1))) >
   < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       opclass : clsCipher, state : handleState((init, keySet)) >
 =>*
-  (msg finishCipherUpdate[^ (nil).List{Data}] from oid(101, testTa) to testTa)
-  < oid(1, testTa) : CryptoOperation |
-      mode : modeDecrypt, state : active >
-  < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
-      opclass : clsCipher, state : handleState((init, keySet)) > .
+  < testTa : TAKernel | status : panic, PANIC-ATTS:AttributeSet > C .
 
 --- GP permits exact in-place cipher buffers but panics on partial overlap.
 search [1] in COMPLETION-TEST :
@@ -91,7 +91,7 @@ search [1] in COMPLETION-TEST :
   < testTa : TAKernel | status : (normal).AppStatus, api-call : final(apiCall(CipherUpdate , (handle(oid(1, testTa)), data(randomData),
                         srcRegion(bufferRegion(100, 16)),
                         destRegion(bufferRegion(100, 16))))) >
-  (msg cipherUpdate[^ randomData] from testTa to oid(1, testTa)) .
+  (msg reqCipher[^ randomData] from testTa to oid(1, testTa)) .
 
 search [1] in COMPLETION-TEST :
   < testTa : TAKernel | api-call : init(apiCall(CipherDoFinal , (handle(oid(1, testTa)), data(randomData),
@@ -122,6 +122,8 @@ search [1] in COMPLETION-TEST :
       opclass : clsCipher, state : handleState(empty),
       key-material-set : false > C .
 
+--- ResetOperation (paper, reset-oper-try-reset-success) leaves the top-level
+--- handle unchanged, including its init flag.
 search [1] in COMPLETION-TEST :
   < testTa : TAKernel | api-call : init(apiCall(ResetOperation , handle(oid(101, testTa)))) >
   < oid(1, testTa) : CryptoOperation |
@@ -135,7 +137,7 @@ search [1] in COMPLETION-TEST :
       acc-data : nil, initialization-vector : nil,
       state : initial >
   < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
-      state : handleState(keySet) > .
+      state : handleState((init, keySet)) > .
 
 --- SetOperationKey updates a top-level operation handle and its owner object.
 search [1] in COMPLETION-TEST :
@@ -200,9 +202,10 @@ search [1] in COMPLETION-TEST :
       max-size : 2048 >
   < oid(101, testTa) : OperationHandle | state : handleState(empty) > C .
 
---- CipherInit updates the operation object and top-level handle in two steps.
+--- CipherInit (paper, Fig. 13) updates the operation object and the top-level
+--- handle in one step: the operation becomes active and the handle gains init.
 search [1] in COMPLETION-TEST :
-  (msg initOperation[^ randomData] from testTa to oid(101, testTa))
+  (msg reqCipherInit[^ randomData] from testTa to oid(101, testTa))
   < oid(1, testTa) : CryptoOperation |
       algorithm : algAesGcm,
       state : initial,
@@ -210,7 +213,7 @@ search [1] in COMPLETION-TEST :
   < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : handleState(keySet), opclass : clsCipher >
 =>*
-  (msg finishInitOperation[] from oid(101, testTa) to testTa)
+  (msg finishCipherInit[] from oid(101, testTa) to testTa)
   < oid(1, testTa) : CryptoOperation |
       algorithm : algAesGcm,
       state : active,
@@ -294,7 +297,7 @@ search [1] in COMPLETION-TEST :
 
 --- CipherDoFinal resets the operation and its top-level initialized flag.
 search [1] in COMPLETION-TEST :
-  (msg cipherDoFinal[^ randomData] from testTa to oid(101, testTa))
+  (msg reqCipherFinal[^ randomData] from testTa to oid(101, testTa))
   < oid(1, testTa) : CryptoOperation |
       attributes : attr(secretValue, randomAttrVal),
       keys : key(attr(secretValue, randomAttrVal)),
@@ -434,12 +437,12 @@ search [1] in COMPLETION-TEST :
 
 --- ResetOperation without configured key material is a programmer error.
 search [1] in COMPLETION-TEST :
-  (msg resetOperation[] from testTa to oid(101, testTa))
+  (msg resetOp[] from testTa to oid(101, testTa))
   < testTa : TAKernel | status : (normal).AppStatus, api-call : final(apiCall(ResetOperation , empty)) >
   < oid(1, testTa) : CryptoOperation | >
   < oid(101, testTa) : OperationHandle | oid : oid(1, testTa),
       state : handleState(empty) >
-=>1
+=>*
   < testTa : TAKernel | status : panic, RSA:AttributeSet > C .
 
 --- GP 6.2.6: TEE_HANDLE_NULL clears copied key material.

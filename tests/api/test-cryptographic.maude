@@ -14,19 +14,19 @@ set print color off .
 --- AllocateOperation
 --- ============================================================
 
---- [BB-C-AL-1] allocate-operation-success
+--- [BB-C-AL-1] alloc-oper-success
 search [1] in TEST-AUX :
   < ta : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(AllocateOperation , (alg(algAesCtr), mode(modeEncrypt), size(128)))), counter : 0 >
 =>*
   < ta : TAKernel | api-call : return(apiCall(AllocateOperation , (retCode(success) , handle(oid(1, ta))))) > .
 
---- [BB-C-AL-2] allocate-operation-not-supported
+--- [BB-C-AL-2] alloc-oper-params-err
 search [1] in TEST-AUX :
   < ta : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(AllocateOperation , (alg(algAesCtr), mode(modeSign), size(128)))), counter : 0 >
 =>*
   < ta : TAKernel | api-call : return(apiCall(AllocateOperation , retCode(errorNotSupported))) > .
 
---- [BB-C-AL-3] allocate-operation-out-of-memory
+--- [BB-C-AL-3] alloc-oper-mem-err
 search [1] in TEST-AUX :
   < ta : TAKernel | status : outOfMemory, api-call : init(apiCall(AllocateOperation , empty)), counter : 0 >
 =>*
@@ -109,12 +109,19 @@ search [1] in TEST-AUX :
 --- ResetOperation
 --- ============================================================
 
---- [BB-C-RS-1] reset-operation-success
+--- [BB-C-RS-1] reset-oper-success
 search [1] in TEST-AUX :
-  (msg finishResetOperation[] from oid(9, ta) to ta)
+  (msg finishResetOp[] from oid(9, ta) to ta)
   < ta : TAKernel | status : (normal).AppStatus, api-call : final(apiCall(ResetOperation , empty)), counter : 0 >
 =>*
   < ta : TAKernel | api-call : return(apiCall(ResetOperation , retCode(noReturnCode))) > .
+
+--- [BB-C-RS-2] reset-oper-fail: no key material set, so the TA panics
+search [1] in TEST-AUX :
+  (msg failResetOp[] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(apiCall(ResetOperation , empty)), counter : 0 >
+=>*
+  < ta : TAKernel | status : panic > .
 
 --- ============================================================
 --- SetOperationKey
@@ -174,23 +181,30 @@ search [1] in TEST-AUX :
 --- CipherInit / CipherUpdate / CipherDoFinal
 --- ============================================================
 
---- [BB-C-CI-1] cipher-init-success
+--- [BB-C-CI-1] cipher-init-initialize-success / cipher-init-success
 search [1] in TEST-AUX :
-  (msg finishInitOperation[] from oid(9, ta) to ta)
+  (msg finishCipherInit[] from oid(9, ta) to ta)
   < ta : TAKernel | status : (normal).AppStatus, api-call : final(apiCall(CipherInit , empty)), counter : 0 >
 =>*
   < ta : TAKernel | api-call : return(apiCall(CipherInit , retCode(noReturnCode))) > .
 
+--- [BB-C-CI-2] cipher-init-panic
+search [1] in TEST-AUX :
+  (msg failCipherInit[] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(apiCall(CipherInit , empty)), counter : 0 >
+=>*
+  < ta : TAKernel | status : panic > .
+
 --- [BB-C-CU-1] cipher-update-success
 search [1] in TEST-AUX :
-  (msg finishCipherUpdate[^ randomData] from oid(9, ta) to ta)
+  (msg finishCipher[^ randomData] from oid(9, ta) to ta)
   < ta : TAKernel | status : (normal).AppStatus, api-call : final(apiCall(CipherUpdate , empty)), counter : 0 >
 =>*
   < ta : TAKernel | api-call : return(apiCall(CipherUpdate , (retCode(success) , data(randomData)))) > .
 
---- [BB-C-CU-2] cipher-update-fail
+--- [BB-C-CU-2] cipher-update-panic
 search [1] in TEST-AUX :
-  (msg failCipherUpdate[] from oid(9, ta) to ta)
+  (msg failCipher[] from oid(9, ta) to ta)
   < ta : TAKernel | status : (normal).AppStatus, api-call : final(apiCall(CipherUpdate , empty)), counter : 0 >
 =>*
   < ta : TAKernel | status : panic > .
@@ -201,6 +215,13 @@ search [1] in TEST-AUX :
   < ta : TAKernel | status : (normal).AppStatus, api-call : final(apiCall(CipherDoFinal , empty)), counter : 0 >
 =>*
   < ta : TAKernel | api-call : return(apiCall(CipherDoFinal , (retCode(success) , data(randomData)))) > .
+
+--- [BB-C-CF-2] cipher-do-final-panic
+search [1] in TEST-AUX :
+  (msg failCipherDoFinal[] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(apiCall(CipherDoFinal , empty)), counter : 0 >
+=>*
+  < ta : TAKernel | status : panic > .
 
 --- ============================================================
 --- MACInit / MACUpdate / MACComputeFinal / MACCompareFinal

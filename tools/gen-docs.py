@@ -209,6 +209,8 @@ class SrcFile:
         self.stmts = []
         self.mod_defs = []
         self.summary = ''
+        self.banners = {}        # start line of a banner -> (end line, title)
+        self.banner_lines = set()  # every line of a banner (not prose, not a comment run)
 
 
 class Site:
@@ -354,6 +356,35 @@ def comment_kind(raw, body):
     return 'prose'
 
 
+TITLE_LINE_RE = re.compile(r'\s*---(?!-)(.*)$')
+
+
+def find_banners(f):
+    """Section banners: a dashes line, one `--- title` line and a dashes line (the layout of the
+    section headers in src/). Returns ({start line: (end line, title)}, set of the banner lines)."""
+    raw = f.raw
+    banners, lines = {}, set()
+    for i in range(len(raw) - 2):
+        if not (BANNER_RE.fullmatch(raw[i]) and BANNER_RE.fullmatch(raw[i + 2])):
+            continue
+        m = TITLE_LINE_RE.match(raw[i + 1])
+        if not m or ANNOT_RE.match(raw[i + 1]) or is_tag(raw[i + 1]) or i in lines:
+            continue
+        title = re.sub(r'^[=#]+\s*|\s*[=#]+$', '', m.group(1).strip())
+        if not title:
+            continue
+        banners[i] = (i + 2, title)
+        lines.update((i, i + 1, i + 2))
+    return banners, lines
+
+
+def line_kind(f, i):
+    """comment_kind of a comment line, with the lines of a banner as 'banner'."""
+    if i in f.banner_lines:
+        return 'banner'
+    return comment_kind(f.raw[i], comment_body(f.raw[i]))
+
+
 def is_code_line(b):
     """A comment body that is a Maude statement line: a keyword start with a code tail,
     or a module/closer line (omod ... is, endom, ...)."""
@@ -423,18 +454,16 @@ def commented_region_end(f, j):
 def prose_of_run(f, idxs):
     if run_is_code(f, idxs):
         return False
-    return any(comment_kind(f.raw[i], comment_body(f.raw[i])) == 'prose' for i in idxs)
+    return any(line_kind(f, i) == 'prose' for i in idxs)
 
 
 def plain_text(f, idxs):
     paras, cur = [], []
     for i in idxs:
-        raw = f.raw[i]
-        body = comment_body(raw)
-        k = comment_kind(raw, body)
+        k = line_kind(f, i)
         if k == 'prose':
-            cur.append(body.strip())
-        elif k == 'blank':
+            cur.append(comment_body(f.raw[i]).strip())
+        elif k in ('blank', 'banner'):
             if cur:
                 paras.append(' '.join(cur))
                 cur = []
@@ -449,6 +478,7 @@ def stmt_text(st):
 
 
 def scan_file(site, f):
+    f.banners, f.banner_lines = find_banners(f)
     toks = []
     for i, code in enumerate(f.codes):
         if code.strip():
@@ -635,6 +665,10 @@ def attach_docs(f):
         while j >= 0 and f.kinds[j] == 'comment':
             j -= 1
         start = j + 1
+        # a banner is a section heading, never part of the doc comment below it
+        for b in range(start, st.line0):
+            if b in f.banner_lines:
+                start = b + 1
         run = list(range(start, st.line0))
         if run and prose_of_run(f, run):
             st.doc_start = start
@@ -657,13 +691,22 @@ def doc_group_end(f, st):
     return end
 
 
+def comment_run_end(f, i):
+    """End of the comment run that starts at i. A banner line ends a run and is not part of one."""
+    j = i
+    while j < len(f.raw) and f.kinds[j] == 'comment' and j not in f.banner_lines:
+        j += 1
+    return j
+
+
 def first_summary(f):
     i, n = 0, len(f.raw)
     while i < n:
         if f.kinds[i] == 'comment':
-            j = i
-            while j < n and f.kinds[j] == 'comment':
-                j += 1
+            j = comment_run_end(f, i)
+            if j == i:
+                i += 1
+                continue
             if prose_of_run(f, range(i, j)):
                 text = plain_text(f, range(i, j))
                 return text.split('\n\n')[0]
@@ -1158,6 +1201,36 @@ def cmt_block_html(site, cur_dir, f, idxs, cur_mod):
             '<div class="cmtbody">%s</div></div>\n') % ''.join(rows)
 
 
+NEW_STATEMENT_RE = re.compile(r'(?:[A-Z]|[-*]\s|\d+[.)]?\s|[a-z][\w-]*:\s)')
+
+
+def para_html(site, cur_dir, lines, cur_mod):
+    """A paragraph from its source lines. A line that continues the sentence of the line before
+    is joined to it. After a sentence end (. : ; ! ?) a line that starts a new statement (a capital,
+    a list item, a `label:`) starts a new line of the paragraph."""
+    text = lines[0]
+    for prev, nxt in zip(lines, lines[1:]):
+        new = prev[-1:] in ('.', ':', ';', '!', '?') and NEW_STATEMENT_RE.match(nxt)
+        text += ('\n' if new else ' ') + nxt
+    return prose_html(site, cur_dir, text, cur_mod).replace('\n', '<br>')
+
+
+def section_title_html(title):
+    """Display form of a banner title: quotes dropped, GP API names (TEE_...) in monospace."""
+    plain = re.sub(r"'([^']*)'", r'\1', title)
+    parts = re.split(r'(TEE_\w+)', plain)
+    return ''.join(esc(p) if k % 2 == 0 else '<code>%s</code>' % esc(p) for k, p in enumerate(parts))
+
+
+def section_id(title, used):
+    """Anchor of a section heading: sect-<title>, numbered when the page already has that anchor."""
+    base = re.sub(r'\s+Syscall$', '', re.sub(r"'", '', title).strip())
+    base = 'sect-' + re.sub(r'[^A-Za-z0-9_-]', '', re.sub(r'\s+', '-', base))
+    n = used[base]
+    used[base] += 1
+    return base if n == 0 else '%s-%d' % (base, n + 1)
+
+
 def render_comment(site, cur_dir, f, idxs, cur_mod, drop_first=False):
     """Prose paragraphs and example code lines of a comment run that is not commented-out code."""
     out, para, ex = [], [], []
@@ -1168,7 +1241,7 @@ def render_comment(site, cur_dir, f, idxs, cur_mod, drop_first=False):
             if skip[0]:
                 skip[0] = False
             else:
-                out.append('<p>%s</p>\n' % prose_html(site, cur_dir, ' '.join(para), cur_mod))
+                out.append('<p>%s</p>\n' % para_html(site, cur_dir, para, cur_mod))
             del para[:]
 
     def flush_ex():
@@ -1179,7 +1252,7 @@ def render_comment(site, cur_dir, f, idxs, cur_mod, drop_first=False):
     for i in idxs:
         raw = f.raw[i]
         body = comment_body(raw)
-        k = comment_kind(raw, body)
+        k = line_kind(f, i)
         if k == 'tag':
             flush_para()
             flush_ex()
@@ -1529,13 +1602,21 @@ def render_file(site, f):
                 n_examples += 1
     cur_mod = None
     header_done = set()
+    sections = []                      # (anchor, heading html) of the banners, for the sidebar
+    sect_used = collections.Counter()
     i, n = 0, len(f.raw)
     while i < n:
         kind = f.kinds[i]
+        if kind == 'comment' and i in f.banners:
+            end, title = f.banners[i]
+            aid = section_id(title, sect_used)
+            heading = section_title_html(title)
+            sections.append((aid, heading))
+            out.append('<h3 class="sect" id="%s">%s</h3>\n' % (esc(aid), heading))
+            i = end + 1
+            continue
         if kind == 'comment':
-            j = i
-            while j < n and f.kinds[j] == 'comment':
-                j += 1
+            j = comment_run_end(f, i)
             if run_is_code(f, range(i, j)):
                 end = commented_region_end(f, j)
                 out.append(cmt_block_html(site, cur_dir, f, range(i, end), cur_mod))
@@ -1591,14 +1672,13 @@ def render_file(site, f):
     for d in f.mod_defs:
         sidebar.append('<li><a href="#%s">%s</a> %s</li>'
                        % (esc(d.anchor), esc(d.name), kind_badge(d.role)))
-    sidebar.append('</ul>\n<h3>Files</h3>\n<ul>')
-    for g in site.files:
-        cls = ' class="here"' if g.stem == f.stem else ''
-        sidebar.append('<li><a%s href="%s.html">%s</a></li>' % (cls, esc(g.stem), esc(g.stem)))
-    sidebar.append('</ul>\n<h3>Index</h3>\n<ul>')
-    for name, label in INDEX_LINKS:
-        sidebar.append('<li><a href="../%s">%s</a></li>' % (name, label))
-    sidebar.append('</ul>')
+    sidebar.append('</ul>\n')
+    if sections:
+        sidebar.append('<h3>Sections in this file</h3>\n<ul class="sects">')
+        for aid, heading in sections:
+            sidebar.append('<li><a href="#%s">%s</a></li>' % (esc(aid), heading))
+        sidebar.append('</ul>\n')
+    sidebar.append(side_lists(site, '', '../', f.stem))
     head = '<h1>%s.maude</h1>\n' % esc(f.stem)
     if f.summary:
         head += '<p class="lead">%s</p>\n' % esc(f.summary)
@@ -1612,6 +1692,19 @@ def render_file(site, f):
 INDEX_LINKS = [('index.html', 'Overview'), ('modules.html', 'Modules and views'),
                ('sorts.html', 'Sorts, classes and attributes'), ('ops.html', 'Operators'),
                ('rules.html', 'Rule and equation labels')]
+
+def side_lists(site, files_prefix, index_prefix, here=None):
+    """Files and Index sections of the left contents column, shared by every page that has one.
+    files_prefix leads to src/ and index_prefix to the root from the page's own folder."""
+    out = ['<h3>Files</h3>\n<ul>']
+    for g in site.files:
+        cls = ' class="here"' if g.stem == here else ''
+        out.append('<li><a%s href="%s%s.html">%s</a></li>' % (cls, files_prefix, esc(g.stem), esc(g.stem)))
+    out.append('</ul>\n<h3>Index</h3>\n<ul>')
+    for name, label in INDEX_LINKS:
+        out.append('<li><a href="%s%s">%s</a></li>' % (index_prefix, name, label))
+    out.append('</ul>')
+    return ''.join(out)
 
 
 def page(site, cur_dir, title, body, side=''):
@@ -1898,7 +1991,7 @@ def home_page(site, overview_html):
         overview_html,
         ''.join('<li><a href="%s">%s</a></li>' % (n, esc(lbl)) for n, lbl in INDEX_LINKS[1:]),
         files_table(site))
-    return page(site, '', 'Overview', body)
+    return page(site, '', 'Overview', body, side_lists(site, 'src/', ''))
 
 
 def first_prose_run(f):
@@ -1906,9 +1999,10 @@ def first_prose_run(f):
     i, n = 0, len(f.raw)
     while i < n:
         if f.kinds[i] == 'comment':
-            j = i
-            while j < n and f.kinds[j] == 'comment':
-                j += 1
+            j = comment_run_end(f, i)
+            if j == i:
+                i += 1
+                continue
             if prose_of_run(f, range(i, j)):
                 return i
             i = j
@@ -1985,6 +2079,12 @@ line-height:1.5;color:var(--fg);border-radius:5px 5px 0 0}
 .unit-doc p{margin:4px 0}
 .free{margin:10px 0;font-size:15px;line-height:1.5;color:var(--fg)}
 .free p{margin:6px 0}
+/* Section headings from banner comments (--- title between two dash lines), listed in the sidebar. */
+h3.sect{font-size:16px;margin:26px 0 8px;padding-bottom:3px;border-bottom:1px solid var(--line)}
+h3.sect code{font-size:15px}
+.side ul.sects{max-height:16em;overflow-y:auto;padding-right:4px}
+.side ul.sects li{line-height:1.35;margin:3px 0}
+.side ul.sects code{font-size:12px;overflow-wrap:anywhere}
 .exlines{margin:6px 0;font-size:13px}
 .dmc{font:12px ui-monospace,monospace;color:var(--muted);margin:4px 0 2px}
 .dmc .tagname{display:inline-block;padding:0 5px;margin-right:4px;border:1px solid var(--line);border-radius:4px;font-size:11px}

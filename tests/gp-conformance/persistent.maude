@@ -1,0 +1,33 @@
+load ../../src/main
+
+--- Focused checks derived from GlobalPlatform TEE Internal Core API v1.3.1.
+
+--- An additional reader requires SHARE_READ on every handle.
+red in PERSISTENT-OBJECT-BEHAVIOR :
+  accessRightCheckingAux(
+    (accessRead, shareRead),
+    (accessRead, shareRead)) .
+
+red in PERSISTENT-OBJECT-BEHAVIOR :
+  not accessRightCheckingAux(
+    (accessRead, shareRead),
+    accessRead) .
+
+red in PERSISTENT-OBJECT-BEHAVIOR :
+  not accessRightCheckingAux(accessWriteMeta, empty) .
+
+--- create-persistent-determine-case: the method is pure when the handle is NULL,
+--- transform when the optional handle is NULL, and persist otherwise. The file name is a variable.
+mod CHOOSE-METHOD-CHECK is
+  pr PERSISTENT-OBJECT-BEHAVIOR .
+  var F : FileName .
+endm
+
+red in CHOOSE-METHOD-CHECK :
+  chooseMethod((# F # (empty).Set{DataAccessFlag} # null # (nil).List{Data}), null) == pure .
+
+red in CHOOSE-METHOD-CHECK :
+  chooseMethod((# F # (empty).Set{DataAccessFlag} # oid(1, null) # (nil).List{Data}), null) == transform .
+
+red in CHOOSE-METHOD-CHECK :
+  chooseMethod((# F # (empty).Set{DataAccessFlag} # oid(1, null) # (nil).List{Data}), oid(2, null)) == persist .

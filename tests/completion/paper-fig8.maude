@@ -1,0 +1,40 @@
+--- An example TEE configuration in which the TA tk executes the first
+--- step of TEE_ReadObjectData. Where the
+--- call is written as F[ARGS] (the Maude call term) and the step as exec(call, 0); the
+--- F[# args] form is noted in the "Phase 3" comment.
+--- Check: the term parses, and it has sort Configuration (wellSorted accepts it).
+load ../../src/main
+
+mod PAPER-FIG8 is
+  pr TEE-BEHAVIOR .
+  ops tk so po ph co ch to th : -> Oid .
+  op fig8 : -> Configuration .
+  op wellSorted : Configuration -> Bool .
+  var C : Configuration .
+  eq wellSorted(C) = true .
+
+  --- Maude needs (c).Sort for the constant normal, which is declared for both AppStatus and
+  --- StorageStatus.
+  eq fig8
+  = < tk : TAKernel | status : (normal).AppStatus, storage : so, --- Phase 3 : api-call : init(readObjData[# ph]) (CallStatus).
+                      --- Current equivalent: api-call exec(readObjData, 0) after the first step of readObjData.
+                      api-call : exec(readObjData[# ph # dataSize(1)] , 0) >
+    --- Storage attributes. The example has no api-call of its own, so
+    --- nothing else is added.
+    < so : Storage | status : (normal).StorageStatus , files : fileName('file1) , counter : 1 >
+    --- The storage status request: the TA tk sends getStatus to its storage so.
+    (msg getStatus[] from tk to so)
+    < po : PersistObj | file-name : fileName('file1) , data-stream : data(13) data(1) ,
+                        type : pureData , usages : empty , attributes : empty , max-size : 0 >
+    --- pos : 1 is a Nat.
+    < ph : ObjHandle | oid : po , pos : 1 , flags : accessRead >
+    < co : CryptoOp | algorithm : algAesCtr , state : initial , mode : modeEncrypt ,
+                      acc-data : nil , attributes : attr(secretValue, attrValue(3)) >
+    < to : TransObj | usages : usageEncrypt , type : typeAes , attributes : empty ,
+                      max-size : 128 , initialized : false >
+    < th : ObjHandle | oid : to , pos : 0 , flags : empty >
+    < ch : OpHandle | oid : co , state : handleState(keySet) , opclass : clsCipher ,
+                      key-material-set : true > .
+endm
+
+red wellSorted(fig8) .

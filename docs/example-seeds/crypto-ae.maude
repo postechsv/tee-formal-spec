@@ -1,0 +1,119 @@
+--- Authenticated encryption operations (TEE_AEInit, TEE_AEUpdateAAD, TEE_AEUpdate,
+--- TEE_AEEncryptFinal, TEE_AEDecryptFinal) driven from the TA-level API call through the
+--- operation handle. Each search is a bounded example driver.
+
+load ./src/main
+load ./tests/api/aux
+
+set show command off .
+set print attribute off .
+set print color off .
+
+mod SEED-AE is
+  pr TEST-AUX .
+  var ZsAE : List{Data} .
+  var ZsEnc : Data .
+  var ZsTag : List{Data} .
+  var ZsSize : DataSize .
+endm
+
+--- [SEED-AE-INIT] ae-init moves the call to final and sends initOperation
+search [1] in SEED-AE :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(AEInit[# oid(1, ta) # randomData]), counter : 0 >
+  < oid(1, ta) : OpHandle | oid : oid(0, ta), state : handleState(keySet), opclass : clsAE >
+  < oid(0, ta) : CryptoOp | state : initial, algorithm : algAesGcm, mode : modeEncrypt,
+                                   attributes : attr(secretValue, sizedAttrVal(128, 1)) >
+=>*
+  < ta : TAKernel | api-call : final(AEInit[# oid(1, ta) # randomData]) > .
+
+--- [SEED-AE-UPDATE-AAD-CALL] ae-update-aad moves the call to final
+search [1] in SEED-AE :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(AEUpdateAAD[# oid(1, ta) # randomData]), counter : 0 >
+  < oid(1, ta) : OpHandle | oid : oid(0, ta), state : handleState((init, keySet)), opclass : clsAE >
+  < oid(0, ta) : CryptoOp | state : initial, algorithm : algAesGcm, mode : modeEncrypt,
+                                   attributes : attr(secretValue, sizedAttrVal(128, 1)) >
+=>*
+  < ta : TAKernel | api-call : final(AEUpdateAAD[# oid(1, ta) # randomData]) > .
+
+--- [SEED-AE-UPDATE-AAD] ae-update-aad appends the AAD and returns noReturnCode
+search [1] in SEED-AE :
+  (msg reqAEUpdateAAD[# randomData] from ta to oid(1, ta))
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(AEUpdateAAD[# oid(1, ta) # randomData]), counter : 0 >
+  < oid(1, ta) : OpHandle | oid : oid(0, ta), state : handleState((init, keySet)), opclass : clsAE >
+  < oid(0, ta) : CryptoOp | state : initial, acc-data : nil, algorithm : algAesGcm, mode : modeEncrypt,
+                                   attributes : attr(secretValue, sizedAttrVal(128, 1)) >
+=>*
+  < ta : TAKernel | api-call : return(AEUpdateAAD[# noReturnCode]) > .
+
+--- [SEED-AE-UPDATE-CALL] ae-update moves the call to final and sends reqAEUpdate
+search [1] in SEED-AE :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(AEUpdate[# oid(1, ta) # randomData]), counter : 0 >
+  < oid(1, ta) : OpHandle | oid : oid(0, ta), state : handleState((init, keySet)), opclass : clsAE >
+  < oid(0, ta) : CryptoOp | state : active, acc-data : nil, algorithm : algAesGcm, mode : modeEncrypt,
+                                   attributes : attr(secretValue, sizedAttrVal(128, 1)) >
+=>*
+  < ta : TAKernel | api-call : final(AEUpdate[# oid(1, ta) # randomData]) > .
+
+--- [SEED-AE-UPDATE] ae-update returns the output of the update
+search [1] in SEED-AE :
+  (msg reqAEUpdate[# randomData] from ta to oid(1, ta))
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(AEUpdate[# oid(1, ta) # randomData]), counter : 0 >
+  < oid(1, ta) : OpHandle | oid : oid(0, ta), state : handleState((init, keySet)), opclass : clsAE >
+  < oid(0, ta) : CryptoOp | state : active, acc-data : nil, algorithm : algAesGcm, mode : modeEncrypt,
+                                   attributes : attr(secretValue, sizedAttrVal(128, 1)) >
+=>*
+  < ta : TAKernel | api-call : return(AEUpdate[# success # ZsAE]) > .
+
+--- [SEED-AE-UPDATE-CAP] ae-update with an output capacity that fits
+search [1] in SEED-AE :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(AEUpdate[# oid(1, ta) # randomData # dataSize(1024)]), counter : 0 >
+  < oid(1, ta) : OpHandle | oid : oid(0, ta), state : handleState((init, keySet)), opclass : clsAE >
+  < oid(0, ta) : CryptoOp | state : active, acc-data : nil, algorithm : algAesGcm, mode : modeEncrypt,
+                                   attributes : attr(secretValue, sizedAttrVal(128, 1)) >
+=>*
+  < ta : TAKernel | api-call : return(AEUpdate[# success # ZsAE]) > .
+
+--- [SEED-AE-UPDATE-SHORT] ae-update with an output capacity that is too small
+search [1] in SEED-AE :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(AEUpdate[# oid(1, ta) # randomData # dataSize(0)]), counter : 0 >
+  < oid(1, ta) : OpHandle | oid : oid(0, ta), state : handleState((init, keySet)), opclass : clsAE >
+  < oid(0, ta) : CryptoOp | state : active, acc-data : nil, algorithm : algAesGcm, mode : modeEncrypt,
+                                   attributes : attr(secretValue, sizedAttrVal(128, 1)) >
+=>*
+  < ta : TAKernel | api-call : return(AEUpdate[# errorShortBuffer # ZsSize]) > .
+
+--- [SEED-AE-ENCRYPT-FINAL-CALL] ae-encrypt-final without capacities
+search [1] in SEED-AE :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(AEEncryptFinal[# oid(1, ta) # randomData]), counter : 0 >
+  < oid(1, ta) : OpHandle | oid : oid(0, ta), state : handleState((init, keySet)), opclass : clsAE >
+  < oid(0, ta) : CryptoOp | state : active, acc-data : randomData, algorithm : algAesGcm, mode : modeEncrypt,
+                                   attributes : attr(secretValue, sizedAttrVal(128, 1)) >
+=>*
+  < ta : TAKernel | api-call : return(AEEncryptFinal[# success # ZsEnc # ZsTag]) > .
+
+--- [SEED-AE-ENCRYPT-FINAL-CAP] ae-encrypt-final with output and tag capacities that fit
+search [1] in SEED-AE :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(AEEncryptFinal[# oid(1, ta) # randomData # dataSize(1024) # dataSize(1024)]), counter : 0 >
+  < oid(1, ta) : OpHandle | oid : oid(0, ta), state : handleState((init, keySet)), opclass : clsAE >
+  < oid(0, ta) : CryptoOp | state : active, acc-data : randomData, algorithm : algAesGcm, mode : modeEncrypt,
+                                   attributes : attr(secretValue, sizedAttrVal(128, 1)) >
+=>*
+  < ta : TAKernel | api-call : return(AEEncryptFinal[# success # ZsEnc # ZsTag]) > .
+
+--- [SEED-AE-ENCRYPT-FINAL-SHORT] ae-encrypt-final with capacities that are too small
+search [1] in SEED-AE :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(AEEncryptFinal[# oid(1, ta) # randomData # dataSize(0) # dataSize(0)]), counter : 0 >
+  < oid(1, ta) : OpHandle | oid : oid(0, ta), state : handleState((init, keySet)), opclass : clsAE >
+  < oid(0, ta) : CryptoOp | state : active, acc-data : randomData, algorithm : algAesGcm, mode : modeEncrypt,
+                                   attributes : attr(secretValue, sizedAttrVal(128, 1)) >
+=>*
+  < ta : TAKernel | api-call : return(AEEncryptFinal[# errorShortBuffer # ZsSize # ZsSize]) > .
+
+--- [SEED-AE-DECRYPT-FINAL-CALL] ae-decrypt-final with a MAC that does not match
+search [1] in SEED-AE :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(AEDecryptFinal[# oid(1, ta) # encrypted(randomData, algAesGcm, attr(secretValue, sizedAttrVal(128, 1))) # randomData]), counter : 0 >
+  < oid(1, ta) : OpHandle | oid : oid(0, ta), state : handleState((init, keySet)), opclass : clsAE >
+  < oid(0, ta) : CryptoOp | state : active, acc-data : randomData, algorithm : algAesGcm, mode : modeDecrypt,
+                                   attributes : attr(secretValue, sizedAttrVal(128, 1)) >
+=>*
+  < ta : TAKernel | api-call : return(AEDecryptFinal[# errorMacInvalid]) > .

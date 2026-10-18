@@ -1,0 +1,45 @@
+--- Panic conditions for the data stream access APIs.
+--- The nullHandlePanics equations of these APIs are in GENERAL-PANIC.
+
+--- @kind panic
+--- @related DATA-STREAM-OBJECT-BEHAVIOR
+--- @feature data-stream
+omod DATA-STREAM-PANIC is
+  vars ZsReadObjectData1 ZsTruncateObjectData1 ZsWriteObjectData1 : Value .
+  vars ZrReadObjectData ZrTruncateObjectData ZrWriteObjectData : ArgList .
+  inc GENERAL-PANIC .
+
+  var TK : Oid .
+  var HANDLE : Oid .
+  var PARAMS : ArgList .
+  var DATAFLAGS : Set{DataAccessFlag} .
+
+  --- Persistent data-stream access rights are preconditions.  Violating them
+  --- panics before the normal storage request can be issued.
+  --- read-access-panic: readObjData on a handle without accessRead panics the TA.
+  crl [read-access-panic] :
+    < TK : TAKernel | status : (normal).AppStatus, api-call : init(readObjData[# HANDLE ZsReadObjectData1 ZrReadObjectData]) >
+    < HANDLE : ObjHandle | flags : DATAFLAGS >
+    =>
+    < TK : TAKernel | status : panic >
+    < HANDLE : ObjHandle | >
+  if not (accessRead in DATAFLAGS) .
+
+  --- write-access-panic: WriteObjectData on a handle without accessWrite panics the TA.
+  crl [write-access-panic] :
+    < TK : TAKernel | status : (normal).AppStatus, api-call : init(WriteObjectData[# HANDLE ZsWriteObjectData1 ZrWriteObjectData]) >
+    < HANDLE : ObjHandle | flags : DATAFLAGS >
+    =>
+    < TK : TAKernel | status : panic >
+    < HANDLE : ObjHandle | >
+  if not (accessWrite in DATAFLAGS) .
+
+  --- truncate-access-panic: TruncateObjectData on a handle without accessWrite panics the TA.
+  crl [truncate-access-panic] :
+    < TK : TAKernel | status : (normal).AppStatus, api-call : init(TruncateObjectData[# HANDLE ZsTruncateObjectData1 ZrTruncateObjectData]) >
+    < HANDLE : ObjHandle | flags : DATAFLAGS >
+    =>
+    < TK : TAKernel | status : panic >
+    < HANDLE : ObjHandle | >
+  if not (accessWrite in DATAFLAGS) .
+endom

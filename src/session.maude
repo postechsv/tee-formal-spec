@@ -1,60 +1,69 @@
 --- This file defines objects for the TEE internal client API, related to session.
 
-fmod SESSION-REQ is
-  pr HANDLE-ID .
+--- @kind messages
+--- @feature ta-session
+mod SESSION-REQ is
+  pr OBJECT-ID .
   pr IMP-FUNC-SIG .
-  pr TA-INSTANCE-ID .
   pr IMP-EXP-LIST .
 
   sorts SessionReq SessionRet .
 
-  op {_,_,_,_} : HandleId FuncId ValueList TaInstId -> SessionReq [ctor] .
-  op {_,_,_,_} : HandleId FuncId TaInstId ValueList -> SessionRet [ctor] .
+  op {_,_,_,_} : Oid FuncId ArgList Oid -> SessionReq [ctor] .
+  op {_,_,_,_} : Oid FuncId Oid ArgList -> SessionRet [ctor] .
 
   op noReq : -> SessionReq [ctor] .
   op noRet : -> SessionRet [ctor] .
-endfm
+endm
 
 --- This module defines an abstracted object class for session.
 
+--- @kind state
+--- @feature ta-session
 omod SESSION is
   pr SESSION-REQ .
-  pr OPENABLE-OBJECT .
 
-  class Session | req : SessionReq , ret : SessionRet , ta-id : TaInstId .
-  subclass Session < OpenableObject .
+  class Session | req : SessionReq , ret : SessionRet , ta-id : Oid .
 endom
 
 
+--- @kind behavior
+--- @feature ta-session
 omod SESSION-BEHAVIOR is
   pr SESSION .
   pr TRUST-APP .
   pr TEE-API-IMP-PROGRAM .
   pr PROGRAM-APP-AUX .
 
-  var OI : TaObjectId .
-  var TI : TaInstId .
+  var OI : Oid .
+  var RK TK : Oid .
   var P : Program .
-  var HANDLE : HandleId .
+  var HANDLE : Oid .
   var FUNC : FuncId .
-  vars TK RK : TaInstId .
   var KS : KConfig .
-  var VL : ValueList .
+  var VL : ArgList .
+  var RET : ArgList .
 
-
+  --- handle-session-req (request): starts the service FUNC of the TA RK for a session
+  --- request, the same way handle-invoke-ta does for an invkTa request.  The TA runs
+  --- mkConf(syscalls P, FUNC, VL) and records {TK, FUNC} as its client-service.
   rl [handle-session-req] :
     < OI : Session | req : {HANDLE, FUNC, VL, TK} , ta-id : RK >
-    < RK : TrustApp | task : noTask , prog : P , proc : none , running : false >
+    < RK : TrustedApp | proc : none , client-service : none , prog : P , status : (normal).AppStatus >
     =>
-    < OI : Session | >
-    < RK : TrustApp | proc : run(syscalls P, FUNC, VL) , running : true >
+    < OI : Session | req : {HANDLE, FUNC, VL, TK} , ta-id : RK >
+    < RK : TrustedApp | proc : mkConf(syscalls P , FUNC , VL) , client-service : {TK , FUNC} >
   .
 
-  rl [handle-session-req] :
+  --- handle-session-req (finish): once the TA RK has finished, its output values RET, read
+  --- from the final configuration KS, are stored as the return of the session request.  The
+  --- proc and client-service of the TA are cleared, and the request is reset to noReq.
+  crl [handle-session-req] :
     < OI : Session | req : {HANDLE, FUNC, VL, TK} , ret : noRet , ta-id : RK >
-    < RK : TrustApp | task : noTask , proc : (k(.K) KS) , running : true >
+    < RK : TrustedApp | proc : (k(.K) KS) , client-service : {TK , FUNC} , prog : P ,
+                      status : (normal).AppStatus >
     =>
-    < OI : Session | req : noReq , ret : {HANDLE, FUNC, TK, readReturn(FUNC, KS)}  >
-    < RK : TrustApp | proc : none , running : false >
-  .
+    < OI : Session | req : noReq , ret : {HANDLE, FUNC, TK, RET} >
+    < RK : TrustedApp | proc : none , client-service : none >
+  if RET := getVals(getOutVars(getFuncParams(P , FUNC)) , KS) .
 endom

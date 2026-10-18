@@ -1,82 +1,58 @@
 --- This file defines objects for the TEE storage/cryptographic operation APIs for the transient, persistent, and data stream objects.
---- We define TrustedStorageObject and DataStreamObject which are not specified in the G.P. documentation for modeling purposes
 
---- This module defines an abstracted object class that belongs to TAs.
+--- This module defines the abstract CryptoObj class.
 
-omod TA-OBJECT is
-  pr TA-OBJECT-ID .
-  pr APP-ID .
-
-  subsort TaObjectId < Oid .
-  class TaObject | trust-app-id : AppId .
-endom
-
---- This module defines an openable object class.
-
-omod OPENABLE-OBJECT is
-
-  class OpenableObject | handle-set : Configuration .
-endom
-
---- This module defines a TrustedStorageObject class that is not defined in the G.P. documentation.
---- This class is a superclass of the TransientObject class (transient.maude) and the PersistentObject class (persistent.maude)
-
+--- @kind state
+--- @feature core
 omod TRUSTED-STORAGE-OBJECT is
   pr OBJECT-TYPE .
-  pr SET{ObjectUsage} .
+  pr SET{Usage} .
   pr CRYPTO-KEY-SIZE .
 
---- Version In Paper
-  --- class CryptoObj | type : Type, max-size : Nat, usages : Set{Usage}, attributes : Set{CryptoAttribute} .
-
---- Model/Implementation Specific Version
-  class TrustedStorageObject | object-type : ObjectType, object-usage-set : Set{ObjectUsage},
-                               max-object-size : CryptoKeySize, attribute-set : Set{TeeAttribute} . 
+  class CryptoObj | type : Type, usages : Set{Usage},
+                    max-size : Nat, attributes : Set{CryptoAttribute} .
 endom
 
---- This module defines DataStreamObject class which corresponds to a data stream object.
-
-omod DATA-STREAM-OBJECT is
-  pr TA-OBJECT .
-  pr DEVICE-ID .
-  pr DATA-STREAM-OPERATOR .
-
-  class DataStreamObject | data-size : DataSize?,
-                           content : Map{DataPosition,Data},
-                           persistent-owner-id : TaObjectId,
-                           device-owner-id : DeviceId .
-  subclass DataStreamObject < TaObject .
-endom
-
+--- @kind data
+--- @feature core
 fmod TRUSTED-STORAGE-OBJECT-AUX is
   pr OBJECT-TYPE .
   pr CRYPTO-KEY-SIZE .
-  pr SET{ObjectUsage} .
+  pr SET{Usage} .
 
-  vars OBJUSAGES1 OBJUSAGES2 : Set{ObjectUsage} .
-  vars OBJTYPE OBJTYPE1 OBJTYPE2 : ObjectType .
-  vars MAXOBJSIZE1 MAXOBJSIZE2 : CryptoKeySize .
+  vars OBJUSAGES1 OBJUSAGES2 : Set{Usage} .
+  vars OBJTYPE OBJTYPE1 OBJTYPE2 : Type .
+  vars MAXOBJSIZE1 MAXOBJSIZE2 : Nat .
 
---- TODO: NEED TO CHECK
-  op updateObjectUsage : Set{ObjectUsage} Set{ObjectUsage} -> Set{ObjectUsage} .
-  eq updateObjectUsage(empty , OBJUSAGES2) = OBJUSAGES2 .
-  eq updateObjectUsage(OBJUSAGES1 , OBJUSAGES2) = intersection(OBJUSAGES1 , OBJUSAGES2) [owise] .
+  --- allObjectUsages: G.P. 5.6.1 and 5.6.3 define the initial/reset usage mask as
+  --- 0xFFFFFFFF, i.e. every usage represented by this model.
+  op allObjectUsages : -> Set{Usage} .
+  eq allObjectUsages = (usageExtractable, usageEncrypt,
+                        usageDecrypt, usageMac,
+                        usageSign, usageVerify,
+                        usageDerive) .
 
---- The source and destination objects SHALL have compatible types and sizes.
---- The type of destObject SHALL be a subtype of srcObject, i.e. one of the conditions listed in Table 5-11 SHALL be true.
---- The size of srcObject SHALL be less than or equal to the maximum size of destObject.
---- TODO: NEED TO UPDATE TO COVER WHOLE TABLE 5-11.
-  op typeCompatible : ObjectType ObjectType -> Bool .
+  --- updateObjectUsage(OBJUSAGES1, OBJUSAGES2): G.P. 5.6.6: the destination usage becomes the
+  --- intersection with the source usage.
+  op updateObjectUsage : Set{Usage} Set{Usage} -> Set{Usage} .
+  eq updateObjectUsage(OBJUSAGES1 , OBJUSAGES2) = intersection(OBJUSAGES1 , OBJUSAGES2) .
+
+  --- typeCompatible(OBJTYPE1, OBJTYPE2): the source and destination objects SHALL have compatible
+  --- types and sizes.  The type of destObject SHALL be a subtype of srcObject, i.e. one of the
+  --- conditions listed in Table 5-11 SHALL be true.  The size of srcObject SHALL be less than or equal
+  --- to the maximum size of destObject.
+  op typeCompatible : Type Type -> Bool .
   eq typeCompatible(OBJTYPE , OBJTYPE) = true .
-  eq typeCompatible(TEE-TYPE-RSA-KEYPAIR , TEE-TYPE-RSA-PUBLIC-KEY) = true .
-  eq typeCompatible(TEE-TYPE-DSA-KEYPAIR , TEE-TYPE-DSA-PUBLIC-KEY) = true .
+  eq typeCompatible(rsaKeyPair , rsaPubKey) = true .
+  eq typeCompatible(dsaKeypair , dsaPubKey) = true .
+  eq typeCompatible(typeEcdsaKeypair , typeEcdsaPublicKey) = true .
+  eq typeCompatible(typeEcdhKeypair , typeEcdhPublicKey) = true .
+  eq typeCompatible(typeEd25519Keypair , typeEd25519PublicKey) = true .
+  eq typeCompatible(typeX25519Keypair , typeX25519PublicKey) = true .
+  eq typeCompatible(typeSm2DsaKeypair , typeSm2DsaPublicKey) = true .
+  eq typeCompatible(typeSm2KepKeypair , typeSm2KepPublicKey) = true .
+  eq typeCompatible(typeSm2PkeKeypair , typeSm2PkePublicKey) = true .
+  ---@dmc owise cond(not (OBJTYPE1 == OBJTYPE2) and not ((OBJTYPE1 == rsaKeyPair and OBJTYPE2 == rsaPubKey) or (OBJTYPE1 == dsaKeypair and OBJTYPE2 == dsaPubKey) or (OBJTYPE1 == typeEcdsaKeypair and OBJTYPE2 == typeEcdsaPublicKey) or (OBJTYPE1 == typeEcdhKeypair and OBJTYPE2 == typeEcdhPublicKey) or (OBJTYPE1 == typeEd25519Keypair and OBJTYPE2 == typeEd25519PublicKey) or (OBJTYPE1 == typeX25519Keypair and OBJTYPE2 == typeX25519PublicKey) or (OBJTYPE1 == typeSm2DsaKeypair and OBJTYPE2 == typeSm2DsaPublicKey) or (OBJTYPE1 == typeSm2KepKeypair and OBJTYPE2 == typeSm2KepPublicKey) or (OBJTYPE1 == typeSm2PkeKeypair and OBJTYPE2 == typeSm2PkePublicKey)))
   eq typeCompatible(OBJTYPE1 , OBJTYPE2) = false [owise] .
-
-  --- op sizeCompatible : CryptoKeySize CryptoKeySize -> Bool .
-  --- eq sizeCompatible(MAXOBJSIZE1, MAXOBJSIZE2) = true .
-
-  --- op typeAndSizeCompatiable : ObjectType ObjectType CryptoKeySize CryptoKeySize -> Bool .
-  --- eq typeAndSizeCompatiable(OBJTYPE1 , OBJTYPE2 , MAXOBJSIZE1 , MAXOBJSIZE2) 
-  ---  = typeCompatible(OBJTYPE1 , OBJTYPE2) and sizeCompatible(MAXOBJSIZE1, MAXOBJSIZE2) .
 
 endfm

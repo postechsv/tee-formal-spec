@@ -1,0 +1,212 @@
+--- Owise-free replacements for the prelude SET{X} and MAP{X,Y} modules.
+--- The prelude versions use owise equations, which DM-Check rejects.
+--- Equality on elements and keys is supplied by the parameter operation eq?,
+--- so every equation here is ordinary and has no owise attribute.
+--- Views instantiating these modules are defined next to the sorts they name.
+
+fth TRIV-EQ is
+  protecting BOOL .
+  sort Elt .
+  op eq? : Elt Elt -> Bool .
+endfth
+
+fmod SET-DM{X :: TRIV-EQ} is
+  protecting EXT-BOOL .
+  protecting NAT .
+  sorts NeSet{X} Set{X} .
+  subsort X$Elt < NeSet{X} < Set{X} .
+
+  op empty : -> Set{X} [ctor] .
+  op _,_ : Set{X} Set{X} -> Set{X} [ctor assoc comm id: empty prec 121 format (d r os d)] .
+  op _,_ : NeSet{X} Set{X} -> NeSet{X} [ctor ditto] .
+
+  var E E' : X$Elt .
+  var N : NeSet{X} .
+  vars A S S' : Set{X} .
+  var C : Nat .
+
+  eq N, N = N .
+
+  op insert : X$Elt Set{X} -> Set{X} .
+  eq insert(E, S) = E, S .
+
+  op delete : X$Elt Set{X} -> Set{X} .
+  eq delete(E, empty) = empty .
+  eq delete(E, (E', S)) = if eq?(E, E') then delete(E, S) else (E', delete(E, S)) fi .
+
+  op _in_ : X$Elt Set{X} -> Bool .
+  eq E in empty = false .
+  eq E in (E', S) = if eq?(E, E') then true else E in S fi .
+
+  op |_| : Set{X} -> Nat .
+  op |_| : NeSet{X} -> NzNat .
+  eq | S | = $card(S, 0) .
+
+  op $card : Set{X} Nat -> Nat .
+  eq $card(empty, C) = C .
+  eq $card((E, S), C) = if E in S then $card(S, C) else $card(S, C + 1) fi .
+
+  op union : Set{X} Set{X} -> Set{X} .
+  op union : NeSet{X} Set{X} -> NeSet{X} .
+  op union : Set{X} NeSet{X} -> NeSet{X} .
+  eq union(S, S') = S, S' .
+
+  op intersection : Set{X} Set{X} -> Set{X} .
+  eq intersection(S, empty) = empty .
+  eq intersection(S, N) = $intersect(S, N, empty) .
+
+  op $intersect : Set{X} Set{X} Set{X} -> Set{X} .
+  eq $intersect(empty, S', A) = A .
+  eq $intersect((E, S), S', A) = $intersect(S, S', if E in S' then E, A else A fi) .
+
+  op _\_ : Set{X} Set{X} -> Set{X}  [gather (E e)] .
+  eq S \ empty = S .
+  eq S \ N = $diff(S, N, empty) .
+
+  op $diff : Set{X} Set{X} Set{X} -> Set{X} .
+  eq $diff(empty, S', A) = A .
+  eq $diff((E, S), S', A) = $diff(S, S', if E in S' then A else E, A fi) .
+
+  op _subset_ : Set{X} Set{X} -> Bool .
+  eq empty subset S' = true .
+  eq (E, S) subset S' = E in S' and-then S subset S' .
+
+  op _psubset_ : Set{X} Set{X} -> Bool .
+  eq S psubset S' = S subset S' and-then not (S' subset S) .
+endfm
+
+fmod MAP-DM{X :: TRIV-EQ, Y :: TRIV} is
+  protecting BOOL .
+  sorts Entry{X,Y} Map{X,Y} .
+  subsort Entry{X,Y} < Map{X,Y} .
+
+  op _|->_ : X$Elt Y$Elt -> Entry{X,Y} [ctor] .
+  op empty : -> Map{X,Y} [ctor] .
+  op _,_ : Map{X,Y} Map{X,Y} -> Map{X,Y} [ctor assoc comm id: empty prec 121 format (d r os d)] .
+  op undefined : -> [Y$Elt] [ctor] .
+
+  var D D' : X$Elt .
+  vars R R' : Y$Elt .
+  var M : Map{X,Y} .
+
+  op insert : X$Elt Y$Elt Map{X,Y} -> Map{X,Y} .
+  eq insert(D, R, empty) = (D |-> R) .
+  eq insert(D, R, (D' |-> R', M)) =
+     if eq?(D, D') then (M, D |-> R)
+     else ((D' |-> R'), insert(D, R, M))
+     fi .
+
+  op _[_] : Map{X,Y} X$Elt -> [Y$Elt] [prec 23] .
+  eq empty[D] = undefined .
+  eq (D' |-> R', M)[D] =
+     if eq?(D', D) then R'
+     else M[D]
+     fi .
+
+  op $hasMapping : Map{X,Y} X$Elt -> Bool .
+  eq $hasMapping(empty, D) = false .
+  eq $hasMapping((D' |-> R', M), D) =
+     if eq?(D', D) then true else $hasMapping(M, D) fi .
+endfm
+
+--- Owise-free copy of the prelude LIST{X} without occurs (which uses built-in ==).
+--- Sort names are List{X}/NeList{X}, so existing uses of List{Data} etc. are unchanged.
+fmod LIST-DM{X :: TRIV} is
+  protecting NAT .
+  sorts NeList{X} List{X} .
+  subsort X$Elt < NeList{X} < List{X} .
+
+  op nil : -> List{X} [ctor] .
+  op __ : List{X} List{X} -> List{X} [ctor assoc id: nil prec 25] .
+  op __ : NeList{X} List{X} -> NeList{X} [ctor ditto] .
+  op __ : List{X} NeList{X} -> NeList{X} [ctor ditto] .
+
+  var E E' : X$Elt .
+  vars A L : List{X} .
+  var C : Nat .
+
+  op append : List{X} List{X} -> List{X} .
+  op append : NeList{X} List{X} -> NeList{X} .
+  op append : List{X} NeList{X} -> NeList{X} .
+  eq append(A, L) = A L .
+
+  op head : NeList{X} -> X$Elt .
+  eq head(E L) = E .
+
+  op tail : NeList{X} -> List{X} .
+  eq tail(E L) = L .
+
+  op last : NeList{X} -> X$Elt .
+  eq last(L E) = E .
+
+  op front : NeList{X} -> List{X} .
+  eq front(L E) = L .
+
+
+  op reverse : List{X} -> List{X} .
+  op reverse : NeList{X} -> NeList{X} .
+  eq reverse(L) = $reverse(L, nil) .
+
+  op $reverse : List{X} List{X} -> List{X} .
+  eq $reverse(nil, A) = A .
+  eq $reverse(E L, A) = $reverse(L, E A).
+
+  op size : List{X} -> Nat .
+  op size : NeList{X} -> NzNat .
+  eq size(L) = $size(L, 0) .
+
+  op $size : List{X} Nat -> Nat .
+  eq $size(nil, C) = C .
+  eq $size(E L, C) = $size(L, C + 1) .
+endfm
+
+--- DM-Check bridge: variant equations return the constants True and False of sort Bool.
+--- Ground equations map them to the prelude true and false so existing users keep working.
+fmod DM-BOOL is
+  protecting BOOL .
+  op True : -> Bool .
+  op False : -> Bool .
+  eq True = true .
+  eq False = false .
+  op boolEq : Bool Bool -> Bool .
+  eq boolEq(true, true) = true .
+  eq boolEq(true, false) = false .
+  eq boolEq(false, true) = false .
+  eq boolEq(false, false) = true .
+endfm
+
+--- Constructor tags: compare constructor-enumerable sorts without built-in equality.
+fmod DM-TAG is
+  protecting BOOL .
+  sort Tag .
+  op z : -> Tag [ctor] .
+  op s : Tag -> Tag [ctor] .
+  op tagEq : Tag Tag -> Bool .
+  vars T1 T2 : Tag .
+  eq tagEq(z, z) = true .
+  eq tagEq(s(T1), s(T2)) = tagEq(T1, T2) .
+  eq tagEq(z, s(T2)) = false .
+  eq tagEq(s(T1), z) = false .
+endfm
+
+--- Owise-free numeric equality for Nat and Int, from the order predicates only.
+fmod DM-INT is
+  protecting INT .
+  var I J : Int .
+  op numEq : Int Int -> Bool .
+  eq numEq(I, J) = (I <= J) and (J <= I) .
+endfm
+
+--- Nat keys: the prelude view Nat is from TRIV, so a TRIV-EQ view needs its own name.
+--- Map{NatEq,_} is renamed back to Map{Nat,_} at the instantiation site.
+fmod EQ-NAT is
+  protecting NAT .
+  op eqNat : Nat Nat -> Bool .
+  pr DM-INT .
+  eq eqNat(A:Nat, B:Nat) = numEq(A:Nat, B:Nat) .
+endfm
+
+view NatEq from TRIV-EQ to EQ-NAT is
+  sort Elt to Nat .
+  op eq? to eqNat .
+endv

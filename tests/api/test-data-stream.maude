@@ -1,0 +1,119 @@
+--- ============================================================
+--- Blackbox tests for data stream API rules
+--- Modules: data-stream.maude
+--- ============================================================
+
+load ./src/main
+load ./tests/api/aux
+
+set show command off .
+set print attribute off .
+set print color off .
+
+--- ============================================================
+--- readObjData
+--- ============================================================
+
+--- [BB-D-RD-1] read-object-data-success
+search [1] in TEST-AUX :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(readObjData[# oid(101, ta) # dataSize(1)]), counter : 0, storage : oid(0, ta) >
+  < oid(0, ta) : Storage | status : (normal).StorageStatus, files : empty, counter : 0 >
+  < oid(101, ta) : ObjHandle | oid : oid(1, oid(0, ta)),
+                                           flags : accessRead,
+                                           pos : 0 >
+  < oid(1, oid(0, ta)) : PersistObj | data-stream : randomData,
+                           type : typeAes,
+                           max-size : 128,
+                           attributes : empty,
+                           usages : empty,
+                           file-name : testFileId >
+=>*
+  < ta : TAKernel | api-call : return(readObjData[# success # randomData]) > .
+
+--- [BB-D-RD-2] read-object-data-storage-error
+search [1] in TEST-AUX :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(readObjData[# oid(1, ta) # dataSize(1)]), counter : 0, storage : oid(0, ta) >
+  < oid(0, ta) : Storage | status : (corrupted).StorageStatus, files : empty, counter : 0 >
+=>*
+  < ta : TAKernel | api-call : return(readObjData[# errorCorruptObject]) > .
+
+--- ============================================================
+--- WriteObjectData
+--- ============================================================
+
+--- [BB-D-WR-1] write-object-data-success
+search [1] in TEST-AUX :
+  (msg retStatus[# (normal).StorageStatus] from oid(0, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(WriteObjectData[# oid(102, ta) # randomData] , 0), counter : 0, storage : oid(0, ta) >
+  < oid(102, ta) : ObjHandle | oid : oid(1, oid(0, ta)),
+                                           flags : accessWrite,
+                                           pos : 0 >
+  < oid(1, oid(0, ta)) : PersistObj | data-stream : randomData,
+                           type : typeAes,
+                           max-size : 128,
+                           attributes : empty,
+                           usages : empty,
+                           file-name : testFileId >
+=>*
+  < ta : TAKernel | api-call : return(WriteObjectData[# success]) > .
+
+--- [BB-D-WR-2] write-object-data-storage-not-available
+search [1] in TEST-AUX :
+  (msg retStatus[# (notAvailable).StorageStatus] from oid(0, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(WriteObjectData[# oid(2, ta) # randomData]), counter : 0, storage : oid(0, ta) >
+=>*
+  < ta : TAKernel | api-call : return(WriteObjectData[# errorStorageNotAvailable]) > .
+
+--- ============================================================
+--- TruncateObjectData
+--- ============================================================
+
+--- [BB-D-TR-1] truncate-object-data-success
+search [1] in TEST-AUX :
+  (msg retStatus[# (normal).StorageStatus] from oid(0, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(TruncateObjectData[# oid(103, ta) # dataSize(0)] , 0), counter : 0, storage : oid(0, ta) >
+  < oid(103, ta) : ObjHandle | oid : oid(1, oid(0, ta)),
+                                           flags : accessWrite,
+                                           pos : 0 >
+  < oid(1, oid(0, ta)) : PersistObj | data-stream : randomData,
+                           type : typeAes,
+                           max-size : 128,
+                           attributes : empty,
+                           usages : empty,
+                           file-name : testFileId >
+=>*
+  < ta : TAKernel | api-call : return(TruncateObjectData[# success]) > .
+
+--- [BB-D-TR-2] truncate-object-data-storage-error
+search [1] in TEST-AUX :
+  (msg retStatus[# (corrupted).StorageStatus] from oid(0, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(TruncateObjectData[# oid(3, ta) # dataSize(0)]), counter : 0, storage : oid(0, ta) >
+=>*
+  < ta : TAKernel | api-call : return(TruncateObjectData[# errorCorruptObject]) > .
+
+--- ============================================================
+--- SeekObjectData
+--- ============================================================
+
+--- [BB-D-SK-1] seek-object-data-success
+search [1] in TEST-AUX :
+  (msg retStatus[# (normal).StorageStatus] from oid(0, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(SeekObjectData[# oid(104, ta) # 0 # seekSet] , 0), counter : 0, storage : oid(0, ta) >
+  < oid(104, ta) : ObjHandle | oid : oid(1, oid(0, ta)),
+                                           flags : accessRead,
+                                           pos : 0 >
+  < oid(1, oid(0, ta)) : PersistObj | data-stream : randomData,
+                           type : typeAes,
+                           max-size : 128,
+                           attributes : empty,
+                           usages : empty,
+                           file-name : testFileId >
+=>*
+  < ta : TAKernel | api-call : return(SeekObjectData[# success]) > .
+
+--- [BB-D-SK-2] seek-object-data-storage-not-available
+search [1] in TEST-AUX :
+  (msg retStatus[# (notAvailable).StorageStatus] from oid(0, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(SeekObjectData[# oid(4, ta) # 0 # seekSet]), counter : 0, storage : oid(0, ta) >
+=>*
+  < ta : TAKernel | api-call : return(SeekObjectData[# errorStorageNotAvailable]) > .

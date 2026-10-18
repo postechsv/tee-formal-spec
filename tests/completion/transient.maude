@@ -1,0 +1,140 @@
+--- Regression checks for API paths completed from GlobalPlatform v1.3.1.
+load ../../src/main
+load ../cases/aux
+
+mod COMPLETION-TEST is
+  var ZvAttrs : Set{CryptoAttribute} .
+  var ZvHandle : Oid .
+  var ZvSize : Nat .
+  var ZvSrcHandle : Oid .
+  var ZvTrgHandle : Oid .
+  pr TEE-BEHAVIOR .
+  pr TEST-AUX .
+  var C : Configuration .
+  var TESTDIGEST : List{Data} .
+  var CIPHERRESULT : List{Data} .
+  var TESTMAC : List{Data} .
+  var P : Program .
+endm
+
+--- Handles are top-level objects referenced by the reverse ID index.
+search [1] in COMPLETION-TEST :
+  < testTa : TAKernel | api-call : init(ResetTransientObject[# oid(101, testTa)]) >
+  < oid(1, testTa) : TransObj | initialized : true,
+      attributes : attr(secretValue, randomAttrVal),
+      usages : usageEncrypt >
+  < oid(101, testTa) : ObjHandle | oid : oid(1, testTa) >
+=>*
+  < testTa : TAKernel | api-call : return(ResetTransientObject[# noReturnCode]) >
+  < oid(1, testTa) : TransObj | initialized : false,
+      attributes : empty,
+      usages : (usageExtractable, usageEncrypt,
+                          usageDecrypt, usageMac,
+                          usageSign, usageVerify, usageDerive) >
+  < oid(101, testTa) : ObjHandle | oid : oid(1, testTa) > .
+
+--- copyObjAttrs1 programmer errors must panic instead
+--- of leaving an unmatched intermediate request.
+search [1] in COMPLETION-TEST :
+  (msg getAttrs[] from testTa to oid(101, testTa))
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : exec(copyObjAttrs1[# oid(102, testTa) # oid(101, testTa)] , 0) >
+  < oid(1, testTa) : TransObj | initialized : false, type : typeAes, attributes : empty, usages : usageEncrypt >
+  < oid(101, testTa) : ObjHandle | oid : oid(1, testTa) >
+  < oid(102, testTa) : ObjHandle | oid : oid(2, testTa) >
+  < oid(2, testTa) : TransObj | initialized : false, type : typeAes, attributes : empty, usages : usageEncrypt >
+=>*
+  < testTa : TAKernel | status : panic, api-call : exec(copyObjAttrs1[# oid(102, testTa) # oid(101, testTa)] , 0) > C .
+
+search [1] in COMPLETION-TEST :
+  (msg setAttrs[# typeAes # (empty).Set{CryptoAttribute} # (empty).Set{Usage}] from testTa to oid(101, testTa))
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(copyObjAttrs1[# ZvTrgHandle # ZvSrcHandle]) >
+  < oid(1, testTa) : TransObj | initialized : true >
+  < oid(101, testTa) : ObjHandle | oid : oid(1, testTa) >
+=>*
+  < testTa : TAKernel | status : panic, api-call : final(copyObjAttrs1[# ZvTrgHandle # ZvSrcHandle]) > C .
+
+search [1] in COMPLETION-TEST :
+  (msg setAttrs[# rsaPubKey # (empty).Set{CryptoAttribute} # (empty).Set{Usage}] from testTa to oid(101, testTa))
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(copyObjAttrs1[# ZvTrgHandle # ZvSrcHandle]) >
+  < oid(1, testTa) : TransObj | initialized : false,
+      type : typeAes, attributes : empty, usages : usageEncrypt >
+  < oid(101, testTa) : ObjHandle | oid : oid(1, testTa) >
+=>*
+  < testTa : TAKernel | status : panic, api-call : final(copyObjAttrs1[# ZvTrgHandle # ZvSrcHandle]) > C .
+
+--- Table 5-11 direction: the source may be a keypair and the destination its public key (typeCompatible(source, destination)).
+search [1] in COMPLETION-TEST :
+  (msg setAttrs[# rsaKeyPair # (empty).Set{CryptoAttribute} # (empty).Set{Usage}] from testTa to oid(101, testTa))
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(copyObjAttrs1[# ZvTrgHandle # ZvSrcHandle]) >
+  < oid(1, testTa) : TransObj | initialized : false,
+      type : rsaPubKey, attributes : empty, usages : usageEncrypt >
+  < oid(101, testTa) : ObjHandle | oid : oid(1, testTa) >
+=>*
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : return(copyObjAttrs1[# success]) > C .
+
+--- The reverse direction (a public key cannot populate a keypair) panics.
+search [1] in COMPLETION-TEST :
+  (msg setAttrs[# rsaPubKey # (empty).Set{CryptoAttribute} # (empty).Set{Usage}] from testTa to oid(101, testTa))
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(copyObjAttrs1[# ZvTrgHandle # ZvSrcHandle]) >
+  < oid(1, testTa) : TransObj | initialized : false,
+      type : rsaKeyPair, attributes : empty, usages : usageEncrypt >
+  < oid(101, testTa) : ObjHandle | oid : oid(1, testTa) >
+=>*
+  < testTa : TAKernel | status : panic, api-call : final(copyObjAttrs1[# ZvTrgHandle # ZvSrcHandle]) > C .
+
+--- GP 5.6.4: missing or unsupported attributes are programmer errors.
+search [1] in COMPLETION-TEST :
+  (msg reqPopulateTransient[# (empty).Set{CryptoAttribute}] from testTa to oid(101, testTa))
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(PopulateTransientObject[# ZvHandle # ZvAttrs]) >
+  < oid(1, testTa) : TransObj | type : typeAes >
+  < oid(101, testTa) : ObjHandle | oid : oid(1, testTa) >
+=>1
+  < testTa : TAKernel | status : panic, api-call : final(PopulateTransientObject[# ZvHandle # ZvAttrs]) > C .
+
+--- GP 5.6.4: the destination object must be uninitialized.
+search [1] in COMPLETION-TEST :
+  (msg reqPopulateTransient[# (attr(secretValue, randomAttrVal)).Set{CryptoAttribute}] from testTa to oid(101, testTa))
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(PopulateTransientObject[# ZvHandle # ZvAttrs]) >
+  < oid(1, testTa) : TransObj | type : typeAes >
+  < oid(101, testTa) : ObjHandle | oid : oid(1, testTa) >
+=>1
+  < testTa : TAKernel | status : panic, api-call : final(PopulateTransientObject[# ZvHandle # ZvAttrs]) > C .
+
+--- GP 5.6.7: an oversized key or missing mandatory generation parameters panic.
+search [1] in COMPLETION-TEST :
+  (msg reqGenerateKey[# 256 # (empty).Set{CryptoAttribute}] from testTa to oid(101, testTa))
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(GenerateKey[# ZvHandle # ZvSize # ZvAttrs]) >
+  < oid(1, testTa) : TransObj | type : typeAes,
+      max-size : 128 >
+  < oid(101, testTa) : ObjHandle | oid : oid(1, testTa) >
+=>1
+  < testTa : TAKernel | status : panic, api-call : final(GenerateKey[# ZvHandle # ZvSize # ZvAttrs]) > C .
+
+search [1] in COMPLETION-TEST :
+  (msg reqGenerateKey[# 0 # (empty).Set{CryptoAttribute}] from testTa to oid(101, testTa))
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(GenerateKey[# ZvHandle # ZvSize # ZvAttrs]) >
+  < oid(1, testTa) : TransObj | type : typeDhKeypair,
+      max-size : 256 >
+  < oid(101, testTa) : ObjHandle | oid : oid(1, testTa) >
+=>1
+  < testTa : TAKernel | status : panic, api-call : final(GenerateKey[# ZvHandle # ZvSize # ZvAttrs]) > C .
+
+--- GP 5.6.7: a Table 5-9-unsupported key size is a programmer error.
+search [1] in COMPLETION-TEST :
+  (msg reqGenerateKey[# 64 # (empty).Set{CryptoAttribute}] from testTa to oid(101, testTa))
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(GenerateKey[# ZvHandle # ZvSize # ZvAttrs]) >
+  < oid(1, testTa) : TransObj | type : typeAes,
+      max-size : 128 >
+  < oid(101, testTa) : ObjHandle | oid : oid(1, testTa) >
+=>1
+  < testTa : TAKernel | status : panic, api-call : final(GenerateKey[# ZvHandle # ZvSize # ZvAttrs]) > C .
+
+--- GP 5.6.7: key generation requires an uninitialized transient object.
+search [1] in COMPLETION-TEST :
+  (msg reqGenerateKey[# 128 # (empty).Set{CryptoAttribute}] from testTa to oid(101, testTa))
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(GenerateKey[# ZvHandle # ZvSize # ZvAttrs]) >
+  < oid(1, testTa) : TransObj | type : typeAes,
+      max-size : 128 >
+  < oid(101, testTa) : ObjHandle | oid : oid(1, testTa) >
+=>1
+  < testTa : TAKernel | status : panic, api-call : final(GenerateKey[# ZvHandle # ZvSize # ZvAttrs]) > C .

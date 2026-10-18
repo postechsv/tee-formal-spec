@@ -1,0 +1,66 @@
+--- Regression checks for API paths completed from GlobalPlatform v1.3.1.
+load ../../src/main
+load ../cases/aux
+
+mod COMPLETION-TEST is
+  var ZvHandle : Oid .
+  pr TEE-BEHAVIOR .
+  pr TEST-AUX .
+  var C : Configuration .
+  var TESTDIGEST : List{Data} .
+  var CIPHERRESULT : List{Data} .
+  var TESTMAC : List{Data} .
+  var P : Program .
+endm
+
+search [1] in COMPLETION-TEST :
+  < testTa : TAKernel | api-call : exec(GetObjectBufferAttribute[# ZvHandle # rsaModulus # dataSize(0) # attr(rsaModulus, randomAttrVal) # usageExtractable] , 2) >
+=>*
+  < testTa : TAKernel | api-call : return(GetObjectBufferAttribute[# errorShortBuffer # dataSize(1)]) > .
+
+search [1] in COMPLETION-TEST :
+  < testTa : TAKernel | api-call : exec(GetObjectBufferAttribute[# ZvHandle # rsaModulus # dataSize(1) # attr(rsaModulus, randomAttrVal) # usageExtractable] , 2) >
+=>*
+  < testTa : TAKernel | api-call : return(GetObjectBufferAttribute[# success # randomAttrVal # dataSize(1)]) > .
+
+--- Closing one persistent handle removes only that ID and its top-level object.
+search [1] in COMPLETION-TEST :
+  (msg closeObject[] from testTa to oid(101, testTa))
+  < oid(1, testTa) : PersistObj | >
+  < oid(101, testTa) : ObjHandle | oid : oid(1, testTa) >
+  < oid(2, testTa) : ObjHandle | oid : oid(1, testTa) >
+=>1
+  (msg finishCloseObject[] from oid(1, testTa) to testTa)
+  < oid(1, testTa) : PersistObj | >
+  < oid(2, testTa) : ObjHandle | oid : oid(1, testTa) > .
+
+--- GetObjectInfo1 combines a persistent owner, top-level handle, and stream.
+search [1] in COMPLETION-TEST :
+  (msg reqObjectInfo[# oid(0, testTa)] from testTa to oid(101, testTa))
+  < oid(1, oid(0, testTa)) : PersistObj |
+      type : typeAes, max-size : 256,
+      attributes : attr(secretValue, randomAttrVal),
+      usages : usageExtractable,
+      data-stream : (randomData zeroData zeroData zeroData zeroData) >
+  < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
+      flags : accessRead,
+      pos : 2 >
+=>1
+  (msg retObjectInfoPr[# typeAes # keySize(
+      attr(secretValue, randomAttrVal)) # 256 # usageExtractable # dataSize(5) # pos(2) # accessRead] from oid(101, testTa) to testTa)
+  C .
+
+--- RestrictObjectUsage1 updates a persistent owner through its top-level handle.
+search [1] in COMPLETION-TEST :
+  (msg restrictUsage[# usageEncrypt] from testTa to oid(101, testTa))
+  < oid(1, testTa) : PersistObj |
+      usages : (usageEncrypt, usageDecrypt) >
+  < oid(101, testTa) : ObjHandle | oid : oid(1, testTa) >
+=>1
+  (msg finishRestrictUsage[] from oid(101, testTa) to testTa)
+  C .
+
+search [1] in COMPLETION-TEST :
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(GetObjectInfo1[# null]) >
+=>1
+  < testTa : TAKernel | status : panic, api-call : init(GetObjectInfo1[# null]) > .

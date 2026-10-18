@@ -1,0 +1,39 @@
+# Build the documentation site (tools/gen-docs.py) and deploy it to GitHub Pages.
+name: Docs
+
+on:
+  push:
+    branches: [tee-formal-spec-refactoring]
+    paths: [src/**, docs/**, tools/gen-docs.py, .github/workflows/docs.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate site
+        run: python3 tools/gen-docs.py --src src --out build/docs --overview docs/overview.html --examples docs/examples.json --check
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/docs
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

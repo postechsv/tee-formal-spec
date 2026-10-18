@@ -1,0 +1,314 @@
+--- ============================================================
+--- Blackbox tests for cryptographic operation API rules
+--- Modules: cryptographic.maude
+--- ============================================================
+
+load ./src/main
+load ./tests/api/aux
+
+set show command off .
+set print attribute off .
+set print color off .
+
+--- ============================================================
+--- allocOperation
+--- ============================================================
+
+--- [BB-C-AL-1] alloc-oper-success
+search [1] in TEST-AUX :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(allocOperation[# algAesCtr # modeEncrypt # 128]), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : return(allocOperation[# success # oid(1, ta)]) > .
+
+--- [BB-C-AL-2] alloc-oper-params-err
+search [1] in TEST-AUX :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(allocOperation[# algAesCtr # modeSign # 128]), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : return(allocOperation[# errorNotSupported]) > .
+
+--- [BB-C-AL-3] alloc-oper-mem-err
+search [1] in TEST-AUX :
+  < ta : TAKernel | status : outOfMemory, api-call : init(allocOperation[ZsAllocateOperation0 ZsAllocateOperation1 ZsAllocateOperation2]), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : return(allocOperation[# errorOutOfMemory]) > .
+
+--- ============================================================
+--- FreeOperation
+--- ============================================================
+
+--- [BB-C-FR-1] free-operation-success
+search [1] in TEST-AUX :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(FreeOperation[# oid(1, ta)]), counter : 0 >
+  < oid(1, ta) : OpHandle | oid : co, state : handleState(empty) >
+  < co : CryptoOp |
+                            keys : nil, max-size : 128,
+                            acc-data : nil, algorithm : algAesCtr,
+                            mode : modeEncrypt,
+                            state : initial >
+=>*
+  < ta : TAKernel | api-call : return(FreeOperation[# noReturnCode]) > .
+
+--- [BB-C-FR-2] free-operation-null
+search [1] in TEST-AUX :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(FreeOperation[# null]), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : return(FreeOperation[# noReturnCode # null]) > .
+
+--- ============================================================
+--- GetOperationInfo
+--- ============================================================
+
+--- [BB-C-GI-1] get-operation-info-success
+search [1] in TEST-AUX :
+  (msg retOperationInfoMultiple[# teeOperationInfoMultiple(algAesCtr,
+    clsCipher, modeEncrypt, dataSize(0), 128,
+    false, true, true, false, active, 1,
+    teeOperationInfoKey(128, usageEncrypt) ; noKeyInformation)] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(GetOperationInfo[ZsGetOperationInfo0] , 0), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : return(GetOperationInfo[# noReturnCode # teeOperationInfo(algAesCtr, clsCipher, modeEncrypt, dataSize(0), 128, 128, usageEncrypt, false, true, true, false)]) > .
+
+--- [BB-C-GIM-1] get-operation-info-multiple reports both configured XTS keys
+search [1] in TEST-AUX :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(GetOperationInfoMultiple[# oid(1, ta)]), counter : 0 >
+  < co : CryptoOp |
+                           keys :
+                             key(attr(secretValue, sizedAttrVal(128, 1)))
+                             key(attr(secretValue, sizedAttrVal(128, 2))),
+                           max-size : 256, acc-data : nil,
+                           algorithm : algAesXts,
+                           mode : modeEncrypt,
+                           state : initial >
+  < oid(1, ta) : OpHandle | oid : co,
+                                         state : handleState(keySet), key-material-set : true,
+                                         opclass : clsCipher >
+=>*
+  < ta : TAKernel | api-call : return(GetOperationInfoMultiple[# success # teeOperationInfoMultiple(algAesXts, clsCipher, modeEncrypt, dataSize(0), 256, true, true, false, false, initial, 2, teeOperationInfoKey(128, usageEncrypt) ; teeOperationInfoKey(128, usageEncrypt) ; noKeyInformation)]) > .
+
+--- [BB-C-GIM-2] get-operation-info-multiple reports required key slots
+search [1] in TEST-AUX :
+  (msg retOperationInfoMultiple[# teeOperationInfoMultiple(algAesXts,
+    clsCipher, modeEncrypt, dataSize(0), 256,
+    true, true, false, false, initial, 2,
+    teeOperationInfoKey(128, usageEncrypt) ;
+    teeOperationInfoKey(128, usageEncrypt) ; noKeyInformation)] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(GetOperationInfoMultiple[# oid(1, ta) # dataSize(1)] , 0), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : return(GetOperationInfoMultiple[# errorShortBuffer # dataSize(2)]) > .
+
+--- ============================================================
+--- resetOperation
+--- ============================================================
+
+--- [BB-C-RS-1] reset-oper-success
+search [1] in TEST-AUX :
+  (msg finishResetOp[] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(resetOperation[ZsResetOperation0]), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : return(resetOperation[# noReturnCode]) > .
+
+--- [BB-C-RS-2] reset-oper-fail: no key material set, so the TA panics
+search [1] in TEST-AUX :
+  (msg failResetOp[] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(resetOperation[ZsResetOperation0]), counter : 0 >
+=>*
+  < ta : TAKernel | status : panic > .
+
+--- ============================================================
+--- SetOperationKey
+--- ============================================================
+
+--- [BB-C-SK-1] set-operation-key-success
+search [1] in TEST-AUX :
+  (msg finishSetOperationKey[] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(SetOperationKey[ZsSetOperationKey0 ZsSetOperationKey1]), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : return(SetOperationKey[# success]) > .
+
+--- [BB-C-SK-2] set-operation-key-storage-error
+search [1] in TEST-AUX :
+  (msg retStatus[# (corrupted).StorageStatus] from oid(0, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(SetOperationKey[ZsSetOperationKey0 ZsSetOperationKey1] , 1), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : return(SetOperationKey[# errorCorruptObject]) > .
+
+--- ============================================================
+--- CopyOperation
+--- ============================================================
+
+--- [BB-C-CP-1] copy-operation-success
+search [1] in TEST-AUX :
+  (msg finishCopyOperation[] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(CopyOperation[ZsCopyOperation0 ZsCopyOperation1]), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : return(CopyOperation[# noReturnCode]) > .
+
+--- ============================================================
+--- Digest Update / DoFinal / Extract
+--- ============================================================
+
+--- [BB-C-DU-1] digest-update-success
+search [1] in TEST-AUX :
+  (msg finishDigestUpdate[] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(DigestUpdate[ZsDigestUpdate0 ZsDigestUpdate1]), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : return(DigestUpdate[# noReturnCode]) > .
+
+--- [BB-C-DF-1] digest-do-final-success
+search [1] in TEST-AUX :
+  (msg finishDigestDoFinal[# randomData] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(DigestDoFinal[ZsDigestDoFinal0 ZsDigestDoFinal1]), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : return(DigestDoFinal[# success # randomData]) > .
+
+--- [BB-C-DX-1] digest-extract-success
+search [1] in TEST-AUX :
+  (msg finishDigestExtract[# (nil).List{Data}] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(DigestExtract[ZsDigestExtract0]), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : return(DigestExtract[# success # (nil).List{Data}]) > .
+
+--- ============================================================
+--- cipherInit / cipherUpdate / cipherDoFinal
+--- ============================================================
+
+--- [BB-C-CI-1] cipher-init-initialize-success / cipher-init-success
+search [1] in TEST-AUX :
+  (msg finishCipherInit[] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(cipherInit[ZsCipherInit0]), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : return(cipherInit[# noReturnCode]) > .
+
+--- [BB-C-CI-2] cipher-init-panic
+search [1] in TEST-AUX :
+  (msg failCipherInit[] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(cipherInit[ZsCipherInit0]), counter : 0 >
+=>*
+  < ta : TAKernel | status : panic > .
+
+--- [BB-C-CU-1] cipher-update-success
+search [1] in TEST-AUX :
+  (msg finishCipher[# randomData] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(cipherUpdate[ZsCipherUpdate0 ZsCipherUpdate1]), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : return(cipherUpdate[# success # randomData]) > .
+
+--- [BB-C-CU-2] cipher-update-panic
+search [1] in TEST-AUX :
+  (msg failCipher[] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(cipherUpdate[ZsCipherUpdate0 ZsCipherUpdate1]), counter : 0 >
+=>*
+  < ta : TAKernel | status : panic > .
+
+--- [BB-C-CF-1] cipher-do-final-success
+search [1] in TEST-AUX :
+  (msg finishCipherDoFinal[# randomData] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(cipherDoFinal[ZsCipherDoFinal0 ZsCipherDoFinal1]), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : return(cipherDoFinal[# success # randomData]) > .
+
+--- [BB-C-CF-2] cipher-do-final-panic
+search [1] in TEST-AUX :
+  (msg failCipherDoFinal[] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(cipherDoFinal[ZsCipherDoFinal0 ZsCipherDoFinal1]), counter : 0 >
+=>*
+  < ta : TAKernel | status : panic > .
+
+--- ============================================================
+--- MACInit / MACUpdate / MACComputeFinal / MACCompareFinal
+--- ============================================================
+
+--- [BB-C-MI-1] mac-init-success
+search [1] in TEST-AUX :
+  (msg finishInitOperation[] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(MACInit[ZsMACInit0 ZsMACInit1]), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : return(MACInit[# noReturnCode]) > .
+
+--- [BB-C-MU-1] mac-update-success
+search [1] in TEST-AUX :
+  (msg finishMacUpdate[] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(MACUpdate[ZsMACUpdate0 ZsMACUpdate1]), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : return(MACUpdate[# noReturnCode]) > .
+
+--- [BB-C-MF-1] mac-compute-final-success
+search [1] in TEST-AUX :
+  (msg finishMacComputeFinal[# randomData] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(MACComputeFinal[ZsMACComputeFinal0 ZsMACComputeFinal1]), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : return(MACComputeFinal[# success # randomData]) > .
+
+--- [BB-C-MC-1] mac-compare-final-success
+search [1] in TEST-AUX :
+  (msg finishMacComputeFinal[# randomData] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(MACCompareFinal[ZsMACCompareFinal0 ZsMACCompareFinal1 # randomData]), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : return(MACCompareFinal[# success]) > .
+
+--- ============================================================
+--- AEInit / AEUpdateAAD / AEUpdate
+--- ============================================================
+
+--- [BB-C-AI-1] ae-init-success
+search [1] in TEST-AUX :
+  (msg finishInitOperation[] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(AEInit[ZsAEInit0 ZsAEInit1]), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : return(AEInit[# success]) > .
+
+--- [BB-C-AA-1] ae-update-aad-success
+search [1] in TEST-AUX :
+  (msg finishAEUpdateAAD[] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(AEUpdateAAD[ZsAEUpdateAAD0 ZsAEUpdateAAD1]), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : return(AEUpdateAAD[# noReturnCode]) > .
+
+--- [BB-C-AU-1] ae-update-success
+search [1] in TEST-AUX :
+  (msg finishAEUpdate[# randomData] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(AEUpdate[ZsAEUpdate0 ZsAEUpdate1]), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : return(AEUpdate[# success # randomData]) > .
+
+--- ============================================================
+--- Asymmetric Encrypt/Decrypt/Sign/Verify
+--- ============================================================
+
+--- [BB-C-AE-1] asymmetric-encrypt-success
+search [1] in TEST-AUX :
+  (msg finishAsymEncrypt[# randomData] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(AsymmetricEncrypt[ZsAsymmetricEncrypt0 ZsAsymmetricEncrypt1]), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : return(AsymmetricEncrypt[# success # randomData]) > .
+
+--- [BB-C-AD-1] asymmetric-decrypt-success
+search [1] in TEST-AUX :
+  (msg finishAsymDecrypt[# randomData] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(AsymmetricDecrypt[ZsAsymmetricDecrypt0 ZsAsymmetricDecrypt1]), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : return(AsymmetricDecrypt[# success # randomData]) > .
+
+--- [BB-C-AS-1] asymmetric-sign-digest-success
+search [1] in TEST-AUX :
+  (msg finishAsymSignDigest[# randomData] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(AsymmetricSignDigest[ZsAsymmetricSignDigest0 ZsAsymmetricSignDigest1]), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : return(AsymmetricSignDigest[# success # randomData]) > .
+
+--- [BB-C-AV-1] asymmetric-verify-digest-success
+search [1] in TEST-AUX :
+  (msg finishAsymVerifyDigest[# randomData] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(AsymmetricVerifyDigest[ZsAsymmetricVerifyDigest0 ZsAsymmetricVerifyDigest1 # randomData]), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : return(AsymmetricVerifyDigest[# success]) > .
+
+--- ============================================================
+--- GenerateRandom
+--- ============================================================
+
+--- [BB-C-GR-1] generate-random-success
+search [1] in TEST-AUX :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(GenerateRandom[argNil]), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : return(GenerateRandom[# noReturnCode # randomData]) > .

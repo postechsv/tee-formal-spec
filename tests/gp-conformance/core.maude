@@ -1,0 +1,126 @@
+load ../../src/main
+
+--- Focused checks derived from GlobalPlatform TEE Internal Core API v1.3.1.
+
+--- null is a constructor of Oid distinct from every generated oid.
+red in HANDLE : not (null == oid(0, null)) .
+
+--- A TA instance oid(N, KI) owns its Storage oid(0, TA instance); distinct TA instances
+--- own distinct Storages.
+red in HANDLE :
+  not (oid(0, oid(0, null)) == oid(0, oid(1, null))) .
+
+--- The Storage oid(0, TA) never equals a TA-owned object oid(N, TA) with N >= 1.
+red in HANDLE :
+  not (oid(0, oid(0, null)) == oid(1, oid(0, null))) .
+
+--- newOid(N, O) is the generator for oid(N, O).
+red in HANDLE : newOid(2, oid(0, null)) == oid(2, oid(0, null)) .
+
+--- typeCompatible(source, target) holds for a key pair as source and its public key as target.
+red in TRUSTED-STORAGE-OBJECT-AUX :
+  typeCompatible(typeEcdsaKeypair, typeEcdsaPublicKey) .
+
+red in TRUSTED-STORAGE-OBJECT-AUX :
+  not typeCompatible(typeEcdsaPublicKey, typeEcdsaKeypair) .
+
+--- GP Table 5-2: PRIVATE is implemented; optional and illegal storage IDs are unavailable.
+red in STORAGE-IDENTIFER : supportedStorage(storagePrivate) .
+
+red in STORAGE-IDENTIFER : not supportedStorage(storagePerso) .
+
+red in STORAGE-IDENTIFER : not supportedStorage(storageProtected) .
+
+red in STORAGE-IDENTIFER : not supportedStorage(storageIllegalValue) .
+
+--- Operation handle state membership is independent of the
+--- compatibility Boolean fields retained by OpHandle.
+red in HANDLE-STATE : hasInit(handleState((init, keySet))) .
+
+red in HANDLE-STATE : hasKeySet(handleState((init, keySet))) .
+
+red in HANDLE-STATE : not hasExtract(handleState((init, keySet))) .
+
+--- GP 5.6.3: resetting TEE_HANDLE_NULL is a permitted no-op.
+red in GENERAL-PANIC : not nullHandlePanics(ResetTransientObject) .
+
+--- GP 5.7.3: deleting TEE_HANDLE_NULL is also a permitted no-op.
+red in GENERAL-PANIC : not nullHandlePanics(CloseAndDeletePersistentObject1) .
+
+--- GP 5.6.1/5.6.3: allocated and reset containers allow every modeled usage.
+red in TRUSTED-STORAGE-OBJECT-AUX : usageExtractable in allObjectUsages .
+
+red in TRUSTED-STORAGE-OBJECT-AUX : usageEncrypt in allObjectUsages .
+
+red in TRUSTED-STORAGE-OBJECT-AUX : usageDecrypt in allObjectUsages .
+
+red in TRUSTED-STORAGE-OBJECT-AUX : usageMac in allObjectUsages .
+
+red in TRUSTED-STORAGE-OBJECT-AUX : usageSign in allObjectUsages .
+
+red in TRUSTED-STORAGE-OBJECT-AUX : usageVerify in allObjectUsages .
+
+red in TRUSTED-STORAGE-OBJECT-AUX : usageDerive in allObjectUsages .
+
+--- GP 5.4.3/5.6.6: usage restriction and copying can only remove rights.
+red in TRUSTED-STORAGE-OBJECT-AUX :
+  updateObjectUsage(allObjectUsages, usageEncrypt) == usageEncrypt .
+
+red in TRUSTED-STORAGE-OBJECT-AUX :
+  updateObjectUsage(empty, usageEncrypt) == empty .
+
+red in TRUSTED-STORAGE-OBJECT-AUX :
+  updateObjectUsage((usageEncrypt, usageDecrypt),
+                    (usageDecrypt, usageSign)) == usageDecrypt .
+
+--- GP Table 5-9 mandatory transient object sizes and boundaries.
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeDes3, 192) .
+
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeHmacSha1, 80) .
+
+red in POSSIBLE-CRYPTO-KEY-SIZE : not supported(typeHmacSha1, 81) .
+
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeHmacSha512, 1024) .
+
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(rsaKeyPair, 4096) .
+
+red in POSSIBLE-CRYPTO-KEY-SIZE : not supported(rsaKeyPair, 255) .
+
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(dsaPubKey, 960) .
+
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(dsaKeypair, 3072) .
+
+red in POSSIBLE-CRYPTO-KEY-SIZE : not supported(dsaKeypair, 1088) .
+
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeDhKeypair, 2048) .
+
+red in POSSIBLE-CRYPTO-KEY-SIZE : not supported(typeDhKeypair, 2056) .
+
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeEcdsaKeypair, 521) .
+
+red in POSSIBLE-CRYPTO-KEY-SIZE : not supported(typeEcdhPublicKey, 159) .
+
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeEd25519Keypair, 256) .
+
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeX25519PublicKey, 256) .
+
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeSm2PkeKeypair, 256) .
+
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeSm4, 128) .
+
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeHmacSm3, 80) .
+
+red in POSSIBLE-CRYPTO-KEY-SIZE : not supported(typeHmacSm3, 81) .
+
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeGenericSecret, 4096) .
+
+--- GP Tables 5-9/5-10 v1.3.1 object types added for SHA-3 and Curve448.
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeHmacSha3224, 192) .
+
+red in POSSIBLE-CRYPTO-KEY-SIZE : not supported(typeHmacSha3224, 184) .
+
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeHmacSha3512, 1024) .
+
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeEd448Keypair, 448) .
+
+red in POSSIBLE-CRYPTO-KEY-SIZE : supported(typeX448PublicKey, 448) .

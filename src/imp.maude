@@ -320,7 +320,12 @@ fmod IMP-INTERNAL is
   op $setLoc : Var Nat -> IStmt [ctor] .
   op $wait : TeeApi -> IStmt [ctor] .
   op $assign : ExpList ExpList -> IStmt [ctor] .
-  op $prep(_) : ExpList -> IStmt [ctor] .
+  --- $sig(IN, OUT): the signature of a TEE API stub (the input and output parameter names).  It
+  --- is the first item of the stub body and does nothing when run (see getFuncParams).
+  op $sig : ExpList ExpList -> IStmt [ctor] .
+  --- $inH(VL, EL): the input parameters EL of a TEE API stub, heated one by one; the values
+  --- collected so far are VL.  Each value is cooled into VL, and $in(VL) is the finished task.
+  op $inH : ValueList ExpList -> IStmt [ctor] .
   op $in(_) : ValueList -> IStmt [ctor] .
   op $out(_) : ExpList -> IStmt [ctor] .
   op $out(_|_) : ExpList ExpList -> IStmt [ctor] .
@@ -709,7 +714,7 @@ fmod IMP-EVAL-CONTEXT is
   ops `{_+`[`]`} `{_-`[`]`} `{_*`[`]`} `{_/`[`]`} `{_<=`[`]`} `{_&&`[`]`} `{_||`[`]`} `{_==`[`]`} : Value -> KLabel [ctor] .
   op `{!`[`]`} : -> KLabel [ctor] .
   ops `{`[`]._`} `{_.`[`]`} : Exp -> KLabel [ctor] .
-  op $prep(`[`],_) : ExpList -> KLabel [ctor] .
+  op $inC : ValueList ExpList -> KLabel [ctor] .
   --- Array index: the array operand (a location) is heated, then the index.
   op $idxA : Exp -> KLabel [ctor] .
   op $idxI : Value -> KLabel [ctor] .
@@ -884,10 +889,16 @@ fmod IMP-STRICTNESS is
   ceq k({ elemAt(V1, E2) } ~> K)        = k({ E2 } ~> $idxI(V1) ~> K) if not E2 :: Value .
    eq k({ V2 } ~> $idxI(V1) ~> K)       = k({ elemAt(V1, V2) } ~> K) .
 
---- Argument evaluation of a TEE syscall: $prep heats each argument to a value and
---- $in collects the values (see defineSysCall in tee-imp.maude).
-  ceq k($prep(E , EL) ~> K) = k({ E } ~> $prep([], EL) ~> K) if not E :: Value .
-   eq k({ V } ~> $prep([], EL) ~> $in(VL) ~> K) = k($prep(EL) ~> $in(VL, V) ~> K) .
+--- Input parameters of a TEE API stub: $inH heats each input name to its value and cools
+--- the value into the list of values (see defineSysCall in tee-imp.maude).
+  var IVL : ValueList .
+  var IE : Exp .
+  var IEL : ExpList .
+  var IOUT : ExpList .
+  eq k($inH(IVL, (IE, IEL)) ~> K) = k({ IE } ~> $inC(IVL, IEL) ~> K) .
+  eq k({ VA } ~> $inC(IVL, IEL) ~> K) = k($inH((IVL, VA), IEL) ~> K) .
+  eq k($inH(IVL, nil) ~> K) = k($in(IVL) ~> K) .
+  eq k($sig(IEL, IOUT) ~> K) = k(K) .
 
 endfm
 
@@ -1258,8 +1269,9 @@ mod IMP-SEMANTICS is
 --- IMP-STRICTNESS).  Parameters are typed: T x is passed by value, and U * x or U & x
 --- by reference (the two are the same in the semantics).
 
-  rl [fCall]: k({ F(EL) } ~> K) fdecl(((T F(PARAMS) |-> BODY) , FDCL))
-  => k(zip(nil, zipL(PARAMS, EL)) ~> invoke(BODY) ~> K) fdecl(((T F(PARAMS) |-> BODY) , FDCL)) .
+  crl [fCall]: k({ F(EL) } ~> K) fdecl(((T F(PARAMS) |-> BODY) , FDCL))
+  => k(zip(nil, zipL(PARAMS, EL)) ~> invoke(BODY) ~> K) fdecl(((T F(PARAMS) |-> BODY) , FDCL))
+  if not F :: TeeApi .
 
 --- fExec: all arguments are evaluated.  The caller's environment and continuation are
 --- pushed (with its label table and location counter), the environment is reset to the
@@ -1296,9 +1308,6 @@ mod IMP-SEMANTICS is
 
   rl [fQuit]: k(.K) env(ENV) stack(item(ENV',LM',K',L') |> STACK) nextLoc(L) labels(LM)
   => k(K') env(ENV') stack(STACK) nextLoc(L') labels(LM') . --- for void return
-
---- End of the argument preparation of a syscall.
-  eq k($prep(nil) ~> K) = k(K) .
 
 --- $assign(EL, EL'): stores the values of EL pairwise into the lvalues of EL' (the first list holds
 --- the values, the second the lvalues).  It is how the output arguments of a TEE syscall are

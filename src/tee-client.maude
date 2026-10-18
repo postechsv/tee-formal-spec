@@ -107,6 +107,8 @@ omod TEE-CLIENT-API-BEHAVIOR is
 endom
 
 omod TEE-INTERNAL-CLIENT-API-BEHAVIOR is
+  vars ZsTeeInvokeTACommand1 ZsTeeInvokeTACommand2 ZsTeeOpenTASession1 : Value .
+  vars ZrTeeInvokeTACommand ZrTeeOpenTASession : ArgList .
   pr SESSION .
   pr TEE-OS-BEHAVIOR .
   pr TRUST-APP .
@@ -115,8 +117,8 @@ omod TEE-INTERNAL-CLIENT-API-BEHAVIOR is
   pr TEE-INTERNAL-CLIENT-FUNC .
   pr TEE-MSG .
 
-  op ^_ : FuncId -> Arg [ctor] .
-  op ^_ : ValueList -> Arg [ctor] .
+  op #_ : FuncId -> Value [ctor] .
+  op #_ : ValueList -> Value [ctor] .
 
   var N : Nat .
   var TK RK : Oid .
@@ -126,7 +128,7 @@ omod TEE-INTERNAL-CLIENT-API-BEHAVIOR is
   var OI : Oid .
   var VL : ValueList .
   --- var TEEID : TeeUUID .
-  var PARAMS : Set{TeeApiParam} .
+  var PARAMS : ArgList .
   var RET : ReturnCode .
 
 ------------------------------------------------------------
@@ -140,9 +142,9 @@ omod TEE-INTERNAL-CLIENT-API-BEHAVIOR is
   --- TrustedOS is asked to open a session with the TA TA.
   rl [open-session-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus ,
-                      api-call : init(apiCall(TeeOpenTASession , (uuid(TA) , PARAMS))) >
+                      api-call : init(TeeOpenTASession[# TA ZsTeeOpenTASession1 ZrTeeOpenTASession]) >
     =>
-    < TK : TAKernel | api-call : final(apiCall(TeeOpenTASession , (uuid(TA) , PARAMS))) >
+    < TK : TAKernel | api-call : final(TeeOpenTASession[# TA ZsTeeOpenTASession1 ZrTeeOpenTASession]) >
     reqTrustedOS(openTASession(TA) , TK)
   .
 
@@ -152,10 +154,9 @@ omod TEE-INTERNAL-CLIENT-API-BEHAVIOR is
   --- two.
   rl [open-session-success] :
     retTrustedOS(openSessionSuccess(RK), TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-call : final(apiCall(TeeOpenTASession , PARAMS)) , counter : N >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(TeeOpenTASession[PARAMS]) , counter : N >
     =>
-    < TK : TAKernel | api-call : return(apiCall(TeeOpenTASession , (retCode(success) , handle(oid(N + 1, TK)) ,
-                                  returnOrig(originTrustedApp)))) ,
+    < TK : TAKernel | api-call : return(TeeOpenTASession[# success # oid(N + 1, TK) # originTrustedApp]) ,
                       counter : N + 2 >
     < oid(N , TK) : Session |
       req : noReq , ret : noRet , ta-id : RK >
@@ -177,17 +178,17 @@ omod TEE-INTERNAL-CLIENT-API-BEHAVIOR is
   --- final, and the reqInvoke message with FUNC and VL is sent to the session handle HANDLE.
   rl [invoke-ta-command-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus ,
-                      api-call : init(apiCall(TeeInvokeTACommand , (handle(HANDLE) , funcId(FUNC) , values(VL) , PARAMS))) >
+                      api-call : init(TeeInvokeTACommand[# HANDLE # FUNC # VL ZrTeeInvokeTACommand]) >
     =>
-    < TK : TAKernel | api-call : final(apiCall(TeeInvokeTACommand , (handle(HANDLE) , funcId(FUNC) , values(VL) , PARAMS))) >
-    (msg reqInvoke[^ FUNC ^ VL] from TK to HANDLE)
+    < TK : TAKernel | api-call : final(TeeInvokeTACommand[# HANDLE # FUNC # VL ZrTeeInvokeTACommand]) >
+    (msg reqInvoke[# FUNC # VL] from TK to HANDLE)
   .
 
   --- invoke-ta-command-top-level-handle: the reqInvoke message reaches the session handle
   --- HANDLE of the idle session OI (req : noReq), and the request {HANDLE, FUNC, VL, TK} is
   --- stored in the session.
   rl [invoke-ta-command-top-level-handle] :
-    (msg reqInvoke[^ FUNC ^ VL] from TK to HANDLE)
+    (msg reqInvoke[# FUNC # VL] from TK to HANDLE)
     < OI : Session | req : noReq >
     < HANDLE : TaSessionHandle | oid : OI >
     =>
@@ -203,16 +204,16 @@ omod TEE-INTERNAL-CLIENT-API-BEHAVIOR is
     =>
     < OI : Session | ret : noRet >
     < HANDLE : TaSessionHandle | >
-    (msg finishReqInvoke[^ FUNC ^ VL] from HANDLE to TK)
+    (msg finishReqInvoke[# FUNC # VL] from HANDLE to TK)
   .
 
   --- invoke-ta-command-subroutine (finish): the finishReqInvoke message gives the return code
   --- RET and the values VL to the final call of TeeInvokeTACommand, which becomes return.
   rl [invoke-ta-command-subroutine] :
-    (msg finishReqInvoke[^ FUNC ^ (# RET , VL)] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(TeeInvokeTACommand , (handle(HANDLE) , PARAMS))) >
+    (msg finishReqInvoke[# FUNC # (# RET , VL)] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(TeeInvokeTACommand[# HANDLE ZsTeeInvokeTACommand1 ZsTeeInvokeTACommand2 ZrTeeInvokeTACommand]) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(TeeInvokeTACommand , (retCode(RET) , values(VL)))) >
+    < TK : TAKernel | api-call : return(TeeInvokeTACommand[# RET # VL]) >
   .
 
 endom

@@ -2,13 +2,15 @@
 --- The nullHandlePanics equations of these APIs are in GENERAL-PANIC.
 
 omod PERSISTENT-PANIC is
+  vars ZsRenamePersistentObject1 : Value .
+  vars ZrCloseAndDeletePersistentObject1 ZrRenamePersistentObject : ArgList .
   inc GENERAL-PANIC .
   pr TEE-MSG .
   pr TEE-OS-BEHAVIOR .
 
   var TK : Oid .
   var HANDLE : Oid .
-  var PARAMS : Set{TeeApiParam} .
+  var PARAMS : ArgList .
   var DATAFLAGS : Set{DataAccessFlag} .
 
   --- Persistent object access rights are preconditions.  Violating them
@@ -16,7 +18,7 @@ omod PERSISTENT-PANIC is
   --- delete-access-panic: deleting a handle without accessWriteMeta panics the TA.
   crl [delete-access-panic] :
     < TK : TAKernel | status : (normal).AppStatus,
-                      api-call : init(apiCall(CloseAndDeletePersistentObject1 , (handle(HANDLE), PARAMS))) >
+                      api-call : init(CloseAndDeletePersistentObject1[# HANDLE ZrCloseAndDeletePersistentObject1]) >
     < HANDLE : ObjectHandle | flags : DATAFLAGS >
     =>
     < TK : TAKernel | status : panic >
@@ -26,7 +28,7 @@ omod PERSISTENT-PANIC is
   --- rename-access-panic: renaming through a handle without accessWriteMeta panics the TA.
   crl [rename-access-panic] :
     < TK : TAKernel | status : (normal).AppStatus,
-                      api-call : init(apiCall(RenamePersistentObject , (handle(HANDLE), PARAMS))) >
+                      api-call : init(RenamePersistentObject[# HANDLE ZsRenamePersistentObject1 ZrRenamePersistentObject]) >
     < HANDLE : ObjectHandle | flags : DATAFLAGS >
     =>
     < TK : TAKernel | status : panic >
@@ -39,7 +41,7 @@ omod PERSISTENT-PANIC is
   var STATUS : StorageStatus .
 
   --- create-persistent-abnormal-storage-panic: the G.P. documentation gives no result for
-  --- CreatePersistentObject when the storage status is abnormal, so the TA panics as in the other
+  --- createPersistent when the storage status is abnormal, so the TA panics as in the other
   --- failure cases.
   crl [create-persistent-abnormal-storage-panic] :
     (msg create[ARGS] from TK to SI)

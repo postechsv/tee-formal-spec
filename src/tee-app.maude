@@ -95,11 +95,28 @@ omod TRUST-APP-IMP-BEHAVIOR is
   var EL : ExpList .
   var KS : KConfig .
   var RET : ReturnCode? .
-  var PARAMS : Set{TeeApiParam} .
+  var PARAMS : ArgList .
+  var TF : TeeApi .
+  var PL : ExpList .
+  var IN : ExpList .
+  var OUT : ExpList .
 
 ------------------------------------------------------------
 --- IMP Semantics
 ------------------------------------------------------------
+
+  --- tee-api-call: a call of a TEE API TF, made by a TA that is normal and has no call in
+  --- progress, runs the stub of TF as a function call: its parameters PL are zipped with the
+  --- arguments EL, and the stub body (signature, $inH, $wait, $out, return) is invoked.  The
+  --- signature PL | IN | OUT is read from the stub (getFuncParams). The rule needs a stub for TF:
+  --- getStub gives skip for a name with no stub.
+  ---@dmc keep-builtin
+  crl [tee-api-call] :
+    < TI : TrustedApp | proc : (k({ TF(EL) } ~> K) KS) ,
+                        api-call : noCall , status : (normal).AppStatus >
+    =>
+    < TI : TrustedApp | proc : (k(zip(nil, zipL(PL, EL)) ~> invoke(getStub(TF)) ~> K) KS) >
+  if pSig(PL, IN, OUT) := getFuncParams(TF) /\ getStub(TF) =/= skip .
 
   --- tee-api-call-accept: the $in task of a TEE API call, with the TA in normal status and
   --- no call in progress, accepts the call and sets its api-call to init.  The call itself
@@ -117,9 +134,9 @@ omod TRUST-APP-IMP-BEHAVIOR is
   --- the output parameters, and the api-call is set to noCall.
   rl [tee-api-call-return] :
     < TI : TrustedApp | proc : (k($wait(TEEAPI) ~> $out(EL) ~> K) KS) ,
-                        api-call : return(apiCall(TEEAPI , (retCode(RET) , PARAMS))) >
+                        api-call : return(TEEAPI[# RET PARAMS]) >
     =>
-    < TI : TrustedApp | proc : (k(makeReturnStmt(TEEAPI , RET , PARAMS , EL) ~> K) KS) ,
+    < TI : TrustedApp | proc : (k(makeReturnStmt(TEEAPI, RET, PARAMS, EL) ~> K) KS) ,
                         api-call : noCall >
   .
 

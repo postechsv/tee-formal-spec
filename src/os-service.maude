@@ -10,7 +10,7 @@ omod TEE-OS-BEHAVIOR is
   pr TEE-OS-SERVICE .
   pr RETURN-CODE .
 
-  op ^_ : StorageStatus -> Arg [ctor] .
+  op #_ : StorageStatus -> Value [ctor] .
 
   var KI : Oid .
   var SIL : List{Service} .
@@ -78,37 +78,37 @@ omod TEE-OS-BEHAVIOR is
 --- return-storage-status: the storage answers getStatus with its status.
   rl [return-storage-status] :
     < SI : Storage | status : STATUS > (msg getStatus[] from TK to SI)
-  => < SI : Storage | > (msg retStatus[^ STATUS] from SI to TK) .
+  => < SI : Storage | > (msg retStatus[# STATUS] from SI to TK) .
 
 --- return-file-exist: the storage answers checkFileExist with whether the file is in its
 --- file set.
   rl [return-file-exist] :
-    < SI : Storage | files : FL > (msg checkFileExist[^ FILE] from TK to SI)
-  => < SI : Storage | > (msg retFileExist[^ (FILE in FL)] from SI to TK) .
+    < SI : Storage | files : FL > (msg checkFileExist[# FILE] from TK to SI)
+  => < SI : Storage | > (msg retFileExist[# (FILE in FL)] from SI to TK) .
 
 --- return-persistent-list: the storage answers getPersistentList with its file set (the TA
 --- decides whether it is empty).
   rl [return-persistent-list] :
     < SI : Storage | files : FL > (msg getPersistentList[] from TK to SI)
-  => < SI : Storage | > (msg retPersistentList[^ FL] from SI to TK) .
+  => < SI : Storage | > (msg retPersistentList[# FL] from SI to TK) .
 
 --- notify-file-deletion: the storage removes the file FILE from its file set.  The TA waits
 --- for acceptNotification.
   rl [notify-file-deletion] :
-    < SI : Storage | files : (FILE , FL) > (msg notifyFileDeletion[^ FILE] from TK to SI)
+    < SI : Storage | files : (FILE , FL) > (msg notifyFileDeletion[# FILE] from TK to SI)
   => < SI : Storage | files : FL > (msg acceptNotification[] from SI to TK) .
 
 --- notify-file-deletion-absent: deleting a file that is not in the file set leaves the set
 --- unchanged, and the notification is accepted.
   crl [notify-file-deletion-absent] :
-    < SI : Storage | files : FL > (msg notifyFileDeletion[^ FILE] from TK to SI)
+    < SI : Storage | files : FL > (msg notifyFileDeletion[# FILE] from TK to SI)
   => < SI : Storage | > (msg acceptNotification[] from SI to TK)
   if not (FILE in FL) .
 
 --- notify-file-rename: the storage replaces the old file name FILE' with the new name FILE
 --- in its file set, and the notification is accepted.
   rl [notify-file-rename] :
-    < SI : Storage | files : (FILE' , FL) > (msg notifyFileRename[^ FILE' ^ FILE] from TK to SI)
+    < SI : Storage | files : (FILE' , FL) > (msg notifyFileRename[# FILE' # FILE] from TK to SI)
   => < SI : Storage | files : (FILE , FL) > (msg acceptNotification[] from SI to TK) .
 
 --- open-ta-session: the TrustedOS serves openTASession(TN) by creating the TA oid(N, KI) with

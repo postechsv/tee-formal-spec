@@ -11,12 +11,12 @@ set print attribute off .
 set print color off .
 
 --- ============================================================
---- ReadObjectData
+--- readObjData
 --- ============================================================
 
 --- [BB-D-RD-1] read-object-data-success
 search [1] in TEST-AUX :
-  < ta : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(ReadObjectData , (handle(oid(101, ta)), size(dataSize(1))))), counter : 0, storage : oid(0, ta) >
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(readObjData[# oid(101, ta) # dataSize(1)]), counter : 0, storage : oid(0, ta) >
   < oid(0, ta) : Storage | status : (normal).StorageStatus, files : empty, counter : 0 >
   < oid(101, ta) : ObjectHandle | oid : oid(1, oid(0, ta)),
                                            flags : accessRead,
@@ -28,14 +28,14 @@ search [1] in TEST-AUX :
                            usages : empty,
                            file-name : testFileId >
 =>*
-  < ta : TAKernel | api-call : return(apiCall(ReadObjectData , (retCode(success) , data(randomData)))) > .
+  < ta : TAKernel | api-call : return(readObjData[# success # randomData]) > .
 
 --- [BB-D-RD-2] read-object-data-storage-error
 search [1] in TEST-AUX :
-  < ta : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(ReadObjectData , (handle(oid(1, ta)), size(dataSize(1))))), counter : 0, storage : oid(0, ta) >
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(readObjData[# oid(1, ta) # dataSize(1)]), counter : 0, storage : oid(0, ta) >
   < oid(0, ta) : Storage | status : (corrupted).StorageStatus, files : empty, counter : 0 >
 =>*
-  < ta : TAKernel | api-call : return(apiCall(ReadObjectData , retCode(errorCorruptObject))) > .
+  < ta : TAKernel | api-call : return(readObjData[# errorCorruptObject]) > .
 
 --- ============================================================
 --- WriteObjectData
@@ -43,8 +43,8 @@ search [1] in TEST-AUX :
 
 --- [BB-D-WR-1] write-object-data-success
 search [1] in TEST-AUX :
-  (msg retStatus[^ (normal).StorageStatus] from oid(0, ta) to ta)
-  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(apiCall(WriteObjectData , (handle(oid(102, ta)), data(randomData))) , 0), counter : 0, storage : oid(0, ta) >
+  (msg retStatus[# (normal).StorageStatus] from oid(0, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(WriteObjectData[# oid(102, ta) # randomData] , 0), counter : 0, storage : oid(0, ta) >
   < oid(102, ta) : ObjectHandle | oid : oid(1, oid(0, ta)),
                                            flags : accessWrite,
                                            pos : 0 >
@@ -55,14 +55,14 @@ search [1] in TEST-AUX :
                            usages : empty,
                            file-name : testFileId >
 =>*
-  < ta : TAKernel | api-call : return(apiCall(WriteObjectData , retCode(success))) > .
+  < ta : TAKernel | api-call : return(WriteObjectData[# success]) > .
 
 --- [BB-D-WR-2] write-object-data-storage-not-available
 search [1] in TEST-AUX :
-  (msg retStatus[^ (notAvailable).StorageStatus] from oid(0, ta) to ta)
-  < ta : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(WriteObjectData , (handle(oid(2, ta)), data(randomData)))), counter : 0, storage : oid(0, ta) >
+  (msg retStatus[# (notAvailable).StorageStatus] from oid(0, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(WriteObjectData[# oid(2, ta) # randomData]), counter : 0, storage : oid(0, ta) >
 =>*
-  < ta : TAKernel | api-call : return(apiCall(WriteObjectData , retCode(errorStorageNotAvailable))) > .
+  < ta : TAKernel | api-call : return(WriteObjectData[# errorStorageNotAvailable]) > .
 
 --- ============================================================
 --- TruncateObjectData
@@ -70,8 +70,8 @@ search [1] in TEST-AUX :
 
 --- [BB-D-TR-1] truncate-object-data-success
 search [1] in TEST-AUX :
-  (msg retStatus[^ (normal).StorageStatus] from oid(0, ta) to ta)
-  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(apiCall(TruncateObjectData , (handle(oid(103, ta)), size(dataSize(0)))) , 0), counter : 0, storage : oid(0, ta) >
+  (msg retStatus[# (normal).StorageStatus] from oid(0, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(TruncateObjectData[# oid(103, ta) # dataSize(0)] , 0), counter : 0, storage : oid(0, ta) >
   < oid(103, ta) : ObjectHandle | oid : oid(1, oid(0, ta)),
                                            flags : accessWrite,
                                            pos : 0 >
@@ -82,14 +82,14 @@ search [1] in TEST-AUX :
                            usages : empty,
                            file-name : testFileId >
 =>*
-  < ta : TAKernel | api-call : return(apiCall(TruncateObjectData , retCode(success))) > .
+  < ta : TAKernel | api-call : return(TruncateObjectData[# success]) > .
 
 --- [BB-D-TR-2] truncate-object-data-storage-error
 search [1] in TEST-AUX :
-  (msg retStatus[^ (corrupted).StorageStatus] from oid(0, ta) to ta)
-  < ta : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(TruncateObjectData , (handle(oid(3, ta)), size(dataSize(0))))), counter : 0, storage : oid(0, ta) >
+  (msg retStatus[# (corrupted).StorageStatus] from oid(0, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(TruncateObjectData[# oid(3, ta) # dataSize(0)]), counter : 0, storage : oid(0, ta) >
 =>*
-  < ta : TAKernel | api-call : return(apiCall(TruncateObjectData , retCode(errorCorruptObject))) > .
+  < ta : TAKernel | api-call : return(TruncateObjectData[# errorCorruptObject]) > .
 
 --- ============================================================
 --- SeekObjectData
@@ -97,8 +97,8 @@ search [1] in TEST-AUX :
 
 --- [BB-D-SK-1] seek-object-data-success
 search [1] in TEST-AUX :
-  (msg retStatus[^ (normal).StorageStatus] from oid(0, ta) to ta)
-  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(apiCall(SeekObjectData , (handle(oid(104, ta)), offset(0), type(seekSet))) , 0), counter : 0, storage : oid(0, ta) >
+  (msg retStatus[# (normal).StorageStatus] from oid(0, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(SeekObjectData[# oid(104, ta) # 0 # seekSet] , 0), counter : 0, storage : oid(0, ta) >
   < oid(104, ta) : ObjectHandle | oid : oid(1, oid(0, ta)),
                                            flags : accessRead,
                                            pos : 0 >
@@ -109,11 +109,11 @@ search [1] in TEST-AUX :
                            usages : empty,
                            file-name : testFileId >
 =>*
-  < ta : TAKernel | api-call : return(apiCall(SeekObjectData , retCode(success))) > .
+  < ta : TAKernel | api-call : return(SeekObjectData[# success]) > .
 
 --- [BB-D-SK-2] seek-object-data-storage-not-available
 search [1] in TEST-AUX :
-  (msg retStatus[^ (notAvailable).StorageStatus] from oid(0, ta) to ta)
-  < ta : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(SeekObjectData , (handle(oid(4, ta)), offset(0), type(seekSet)))), counter : 0, storage : oid(0, ta) >
+  (msg retStatus[# (notAvailable).StorageStatus] from oid(0, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(SeekObjectData[# oid(4, ta) # 0 # seekSet]), counter : 0, storage : oid(0, ta) >
 =>*
-  < ta : TAKernel | api-call : return(apiCall(SeekObjectData , retCode(errorStorageNotAvailable))) > .
+  < ta : TAKernel | api-call : return(SeekObjectData[# errorStorageNotAvailable]) > .

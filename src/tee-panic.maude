@@ -26,14 +26,16 @@ omod GENERAL-PANIC is
   var TK : Oid .
   var API : TeeApi .
   var HANDLE : Oid .
-  var PARAMS : Set{TeeApiParam} .
+  var PARAMS : ArgList .
 
   --- nullHandlePanics(API): true for the APIs for which TEE_HANDLE_NULL is a programmer error.
+  --- The rule null-handle-panic matches the first argument, so only APIs whose first argument is
+  --- the handle are listed.  copyObjAttrs1 and CopyOperation take a target handle first and
+  --- never panic on it, as before.
   --- Free-style APIs explicitly accept NULL and are intentionally excluded, so they map to
   --- false.
   op nullHandlePanics : TeeApi -> Bool .
   eq nullHandlePanics(PopulateTransientObject) = true .
-  eq nullHandlePanics(CopyObjectAttributes1) = true .
   eq nullHandlePanics(GenerateKey) = true .
   eq nullHandlePanics(RenamePersistentObject) = true .
   eq nullHandlePanics(GetObjectInfo1) = true .
@@ -43,22 +45,21 @@ omod GENERAL-PANIC is
   eq nullHandlePanics(ResetPersistentObjectEnumerator) = true .
   eq nullHandlePanics(StartPersistentObjectEnumerator) = true .
   eq nullHandlePanics(GetNextPersistentObject) = true .
-  eq nullHandlePanics(ReadObjectData) = true .
+  eq nullHandlePanics(readObjData) = true .
   eq nullHandlePanics(WriteObjectData) = true .
   eq nullHandlePanics(TruncateObjectData) = true .
   eq nullHandlePanics(SeekObjectData) = true .
   eq nullHandlePanics(GetOperationInfo) = true .
   eq nullHandlePanics(GetOperationInfoMultiple) = true .
-  eq nullHandlePanics(ResetOperation) = true .
+  eq nullHandlePanics(resetOperation) = true .
   eq nullHandlePanics(SetOperationKey) = true .
   eq nullHandlePanics(SetOperationKey2) = true .
-  eq nullHandlePanics(CopyOperation) = true .
   eq nullHandlePanics(DigestUpdate) = true .
   eq nullHandlePanics(DigestDoFinal) = true .
   eq nullHandlePanics(DigestExtract) = true .
-  eq nullHandlePanics(CipherInit) = true .
-  eq nullHandlePanics(CipherUpdate) = true .
-  eq nullHandlePanics(CipherDoFinal) = true .
+  eq nullHandlePanics(cipherInit) = true .
+  eq nullHandlePanics(cipherUpdate) = true .
+  eq nullHandlePanics(cipherDoFinal) = true .
   eq nullHandlePanics(MACInit) = true .
   eq nullHandlePanics(MACUpdate) = true .
   eq nullHandlePanics(MACComputeFinal) = true .
@@ -81,7 +82,7 @@ omod GENERAL-PANIC is
   --- api-call is left unchanged.
   crl [null-handle-panic] :
     < TK : TAKernel | status : (normal).AppStatus,
-                      api-call : init(apiCall(API , (handle(HANDLE) , PARAMS))) >
+                      api-call : init(API[# HANDLE PARAMS]) >
     =>
     < TK : TAKernel | status : panic >
   if nullHandle(HANDLE) and nullHandlePanics(API) .

@@ -40,17 +40,14 @@ mod CRYPTO-API-PARAM is
   pr ALGORITHM-IDENTIFIER .
   pr OPERATION-MODE .
   pr CRYPTO-ELEMENT .
+  pr OPERATION-CLASS .
 
-  op alg : Algorithm -> TeeApiParam [ctor] .
-  op mode : Mode -> TeeApiParam [ctor] .
-  op teeOpInfo : TeeOperationInfo -> TeeApiParam [ctor] .
-  op teeOpInfoMultiple : TeeOperationInfoMultiple -> TeeApiParam [ctor] .
-  op keyHandle : Oid -> TeeApiParam [ctor] .
-  op secondKeyHandle : Oid -> TeeApiParam [ctor] .
-  op cryptoElement : CryptoElement -> TeeApiParam [ctor] .
-  op iv : List{Data} -> TeeApiParam [ctor] .
-  op mac : List{Data} -> TeeApiParam [ctor] .
-  op digest : List{Data} -> TeeApiParam [ctor] .
+  op #_ : Algorithm -> Value [ctor] .
+  op #_ : OpClass -> Value [ctor] .
+  op #_ : Mode -> Value [ctor] .
+  op #_ : CryptoElement -> Value [ctor] .
+  op #_ : BufferRegion -> Value [ctor] .
+  op #_ : TeeOperationInfo -> Value [ctor] .
 endm
 
 --- This module defines CryptoOperation class, modeling the cryptographic operation of the G.P.
@@ -189,6 +186,8 @@ endfm
 --- documentation.
 
 omod CRYPTO-OPERATION-BEHAVIOR is
+  vars ZsAsymmetricVerifyDigest0 ZsAsymmetricVerifyDigest1 ZsAsymmetricVerifyDigest2 ZsCopyOperation0 ZsGetOperationInfoMultiple0 ZsMACCompareFinal0 ZsMACCompareFinal1 ZsMACCompareFinal2 ZsSetOperationKey0 ZsSetOperationKey21 ZsSetOperationKey22 : Value .
+  vars ZrAEDecryptFinal ZrAEEncryptFinal ZrAEUpdate ZrAsymmetricDecrypt ZrAsymmetricEncrypt ZrAsymmetricSignDigest ZrAsymmetricVerifyDigest ZrCopyOperation ZrDigestDoFinal ZrDigestExtract ZrGetOperationInfoMultiple ZrMACCompareFinal ZrMACComputeFinal ZrSetOperationKey ZrSetOperationKey2 : ArgList .
   pr ID-GEN .
   pr CRYPTO-API-PARAM .
   pr TA-KERNEL .
@@ -224,10 +223,10 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   var OPOBJATTR : OpObjectAttr .
   var OPHANDLEATTR : OpHandleAttr .
   var OPINFOMULTI : TeeOperationInfoMultiple .
-  var PARAMS : Set{TeeApiParam} .
-  op ^_ : OpObjectAttr -> Arg [ctor] .
-  op ^_ : OpHandleAttr -> Arg [ctor] .
-  op ^_ : TeeOperationInfoMultiple -> Arg [ctor] .
+  var PARAMS : ArgList .
+  op #_ : OpObjectAttr -> Value [ctor] .
+  op #_ : OpHandleAttr -> Value [ctor] .
+  op #_ : TeeOperationInfoMultiple -> Value [ctor] .
   vars KEYSIZE : Nat .
   vars OBJTYPE OBJTYPE2 : Type .
   vars OBJUSAGES OBJUSAGES2 : Set{Usage} .
@@ -243,24 +242,32 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   var OPRESULT : List{Data} .
   var CSTATE : State .
   var KATTRS : Set{CryptoAttribute} .
-  op ^_ : List{CryptoKey} -> Arg [ctor] .
+  op #_ : List{CryptoKey} -> Value [ctor] .
 
 ------------------------------------------------------------
 --- Auxiliary Functions
 ------------------------------------------------------------
 
-  --- hasOutputCapacity(PARAMS): true when PARAMS contains a capacity(DATASIZE) parameter.
-  op hasOutputCapacity : Set{TeeApiParam} -> Bool .
-  eq hasOutputCapacity((capacity(DATASIZE) , PARAMS)) = true .
-  ---@dmc owise recurse(sep=_,_, empty=empty)
-  eq hasOutputCapacity(PARAMS) = false [owise] .
+  --- The capacity helpers below read the argument items that follow the inputs of a call.  The
+  --- output capacity is the first such item when the call has one; the tag capacity is the second
+  --- item of AEEncryptFinal (after the output capacity).  The source and destination regions are
+  --- the last two items of a call with regions.
+  vars AL AL2 : ArgList .
+  vars A A' : Arg .
+  vars CAP CAP2 DS2 : DataSize .
+  vars RGN RGN2 : BufferRegion .
+  vars NB MB PB QB : Nat .
 
-  --- outputCapacityFits(PARAMS, DATA): true when PARAMS has a capacity parameter and the output
+  --- hasOutputCapacity(PARAMS): true when PARAMS starts with an output capacity.
+  op hasOutputCapacity : ArgList -> Bool .
+  eq hasOutputCapacity(argNil) = false .
+  eq hasOutputCapacity(A AL) = true .
+
+  --- outputCapacityFits(PARAMS, DATA): true when PARAMS has an output capacity and the output
   --- size of DATA fits it, as checked by dataSizeFits.
-  op outputCapacityFits : Set{TeeApiParam} List{Data} -> Bool .
-  eq outputCapacityFits((capacity(DATASIZE) , PARAMS) , DATA) = dataSizeFits(DATASIZE , outputSize(DATA)) .
-  ---@dmc owise cond(not hasOutputCapacity(PARAMS))
-  eq outputCapacityFits(PARAMS , DATA) = false [owise] .
+  op outputCapacityFits : ArgList List{Data} -> Bool .
+  eq outputCapacityFits(argNil , DATA) = false .
+  eq outputCapacityFits(# CAP AL , DATA) = dataSizeFits(CAP , outputSize(DATA)) .
 
   --- dataSizeFits(N, M): true when the size M does not exceed the capacity N.
   op dataSizeFits : DataSize DataSize -> Bool .
@@ -272,40 +279,42 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   ---@dmc owise enumerate(DATA)
   eq outputSize(DATA) = dataSize(size(DATA)) [owise] .
 
-  --- hasTagCapacity(PARAMS): true when PARAMS contains a tagCapacity(DATASIZE) parameter.
-  op hasTagCapacity : Set{TeeApiParam} -> Bool .
-  eq hasTagCapacity((tagCapacity(DATASIZE) , PARAMS)) = true .
-  ---@dmc owise recurse(sep=_,_, empty=empty)
-  eq hasTagCapacity(PARAMS) = false [owise] .
+  --- hasTagCapacity(PARAMS): true when PARAMS has a tag capacity, the second capacity item.
+  op hasTagCapacity : ArgList -> Bool .
+  eq hasTagCapacity(argNil) = false .
+  eq hasTagCapacity(A) = false .
+  eq hasTagCapacity(A A' AL) = true .
 
-  --- tagCapacityFits(PARAMS, DATA): true when PARAMS has no tagCapacity parameter, or when the
+  --- tagCapacityFits(PARAMS, DATA): true when PARAMS has no tag capacity, or when the
   --- output size of DATA fits its tag capacity.
-  op tagCapacityFits : Set{TeeApiParam} List{Data} -> Bool .
-  eq tagCapacityFits((tagCapacity(DATASIZE) , PARAMS) , DATA) = dataSizeFits(DATASIZE , outputSize(DATA)) .
-  ---@dmc owise cond(not hasTagCapacity(PARAMS))
-  eq tagCapacityFits(PARAMS , DATA) = true [owise] .
+  op tagCapacityFits : ArgList List{Data} -> Bool .
+  eq tagCapacityFits(argNil , DATA) = true .
+  eq tagCapacityFits(A , DATA) = true .
+  eq tagCapacityFits(# CAP # CAP2 AL , DATA) = dataSizeFits(CAP2 , outputSize(DATA)) .
 
   --- signatureSize(N): the signature size of a key of N bits, as dataSize(N quo 8).
   op signatureSize : Nat -> DataSize .
   eq signatureSize(N) = dataSize(N quo 8) .
 
-  --- outputCapacityFitsSize(PARAMS, DATASIZE2): true when PARAMS has a capacity parameter that
+  --- outputCapacityFitsSize(PARAMS, DATASIZE2): true when PARAMS has an output capacity that
   --- fits DATASIZE2.  The size is given directly instead of being computed from data.
-  op outputCapacityFitsSize : Set{TeeApiParam} DataSize -> Bool .
-  eq outputCapacityFitsSize((capacity(DATASIZE) , PARAMS) , DATASIZE2) =
-    dataSizeFits(DATASIZE , DATASIZE2) .
-  ---@dmc owise cond(not hasOutputCapacity(PARAMS))
-  eq outputCapacityFitsSize(PARAMS , DATASIZE) = false [owise] .
+  op outputCapacityFitsSize : ArgList DataSize -> Bool .
+  eq outputCapacityFitsSize(argNil , DS2) = false .
+  eq outputCapacityFitsSize(# CAP AL , DS2) = dataSizeFits(CAP , DS2) .
 
   --- invalidBufferOverlap(PARAMS): true when the source region bufferRegion(N, M) and the
   --- destination region bufferRegion(P, Q) of PARAMS overlap, that is N =/= P, N < P + Q and
-  --- P < N + M.
-  op invalidBufferOverlap : Set{TeeApiParam} -> Bool .
-  eq invalidBufferOverlap((srcRegion(bufferRegion(N , M)),
-                           destRegion(bufferRegion(P , Q)), PARAMS)) =
-    N =/= P and N < P + Q and P < N + M .
-  ---@dmc owise recurse(sep=_,_, empty=empty)
-  eq invalidBufferOverlap(PARAMS) = false [owise] .
+  --- P < N + M.  The regions are the last two items of PARAMS.
+  op invalidBufferOverlap : ArgList -> Bool .
+  eq invalidBufferOverlap(argNil) = false .
+  eq invalidBufferOverlap(A) = false .
+  eq invalidBufferOverlap(AL A A') = regionsOverlapBadly(A , A') .
+
+  op regionsOverlapBadly : Arg Arg -> Bool .
+  eq regionsOverlapBadly(# bufferRegion(NB , MB) , # bufferRegion(PB , QB)) =
+    NB =/= PB and NB < PB + QB and PB < NB + MB .
+  ---@dmc owise enumerate(arg1, arg2)
+  eq regionsOverlapBadly(A , A') = false [owise] .
 
   --- overlapSensitive(API): true for AEUpdate, AEEncryptFinal and AEDecryptFinal, whose source and
   --- destination buffers must not overlap.
@@ -319,7 +328,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- overlapping-buffer-panic: an overlap-sensitive call whose buffers overlap sets the kernel
   --- status to panic.
   crl [overlapping-buffer-panic] :
-    < TK : TAKernel | api-call : init(apiCall(API , PARAMS)) >
+    < TK : TAKernel | api-call : init(API[PARAMS]) >
     =>
     < TK : TAKernel | status : panic >
   if overlapSensitive(API) and invalidBufferOverlap(PARAMS)
@@ -365,23 +374,23 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     runOp(ALGO , modeDecrypt , KATTRS , DATA) =/= failure .
 
 --- For TEE_AllocateOperation
---- determineOpClass(ALGO): the operation class of ALGO, as in Table 6-1.
-  op determineOpClass : Algorithm -> OpClass .
-  eq determineOpClass(algAesEcbNopad) = clsCipher .
-  eq determineOpClass(algAesCbcNopad) = clsCipher .
-  eq determineOpClass(algAesCtr) = clsCipher .
-  eq determineOpClass(algAesCts) = clsCipher .
-  eq determineOpClass(algAesXts) = clsCipher .
-  eq determineOpClass(algHmacSha256) = clsMAC .
-  eq determineOpClass(algSha256) = clsDigest .
-  eq determineOpClass(algRsassaPkcs1V15Sha256) = clsAsymmetricSignature .
-  eq determineOpClass(algAesCcm) = clsAE .
-  eq determineOpClass(algAesGcm) = clsAE .
-  eq determineOpClass(algRsaesPkcs1OaepMgf1Sha1) = clsAsymmetricCipher .
-  eq determineOpClass(algRsaesPkcs1OaepMgf1Sha224) = clsAsymmetricCipher .
-  eq determineOpClass(algRsaNopad) = clsAsymmetricCipher .
-  eq determineOpClass(algDhDeriveSharedSecret) = clsKeyDerivation .
-  eq determineOpClass(algSm2Kep) = clsKeyDerivation .
+--- getClass(ALGO): the operation class of ALGO, as in Table 6-1.
+  op getClass : Algorithm -> OpClass .
+  eq getClass(algAesEcbNopad) = clsCipher .
+  eq getClass(algAesCbcNopad) = clsCipher .
+  eq getClass(algAesCtr) = clsCipher .
+  eq getClass(algAesCts) = clsCipher .
+  eq getClass(algAesXts) = clsCipher .
+  eq getClass(algHmacSha256) = clsMAC .
+  eq getClass(algSha256) = clsDigest .
+  eq getClass(algRsassaPkcs1V15Sha256) = clsAsymmetricSignature .
+  eq getClass(algAesCcm) = clsAE .
+  eq getClass(algAesGcm) = clsAE .
+  eq getClass(algRsaesPkcs1OaepMgf1Sha1) = clsAsymmetricCipher .
+  eq getClass(algRsaesPkcs1OaepMgf1Sha224) = clsAsymmetricCipher .
+  eq getClass(algRsaNopad) = clsAsymmetricCipher .
+  eq getClass(algDhDeriveSharedSecret) = clsKeyDerivation .
+  eq getClass(algSm2Kep) = clsKeyDerivation .
 
   --- compatibleMode(ALGO, MODE): MODE SHALL be compatible with ALGO as defined by Table 6-4.
   op compatibleMode : Algorithm Mode -> Bool .
@@ -444,13 +453,13 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     supported(typeHmacSha256 , KEYSIZE) .
   eq validKeySize(algSha256 , 0) = true .
   eq validKeySize(algRsassaPkcs1V15Sha256 , KEYSIZE) =
-    supported(typeRsaPublicKey , KEYSIZE) .
+    supported(rsaPubKey , KEYSIZE) .
   eq validKeySize(algRsaNopad , KEYSIZE) =
-    supported(typeRsaPublicKey , KEYSIZE) .
+    supported(rsaPubKey , KEYSIZE) .
   eq validKeySize(algRsaesPkcs1OaepMgf1Sha1 , KEYSIZE) =
-    supported(typeRsaPublicKey , KEYSIZE) .
+    supported(rsaPubKey , KEYSIZE) .
   eq validKeySize(algRsaesPkcs1OaepMgf1Sha224 , KEYSIZE) =
-    supported(typeRsaPublicKey , KEYSIZE) .
+    supported(rsaPubKey , KEYSIZE) .
   ---@dmc owise enumerate(arg1, arg2)
   eq validKeySize(ALGO , KEYSIZE) = false [owise] .
 
@@ -464,8 +473,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- For TEE_SetOperationKey
 --- Table 6-5
   --- op publicKey : Type -> Bool .
-  --- eq publicKey(typeRsaPublicKey) = true .
-  --- eq publicKey(typeDsaPublicKey) = true .
+  --- eq publicKey(rsaPubKey) = true .
+  --- eq publicKey(dsaPubKey) = true .
   --- eq publicKey(OBJTYPE) = false [owise] .
 
 --- TODO: NEED TO UPDATE.
@@ -620,9 +629,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   eq typeModeCompatible(typeDes3 , modeDecrypt) = true .
   eq typeModeCompatible(typeSm4 , modeEncrypt) = true .
   eq typeModeCompatible(typeSm4 , modeDecrypt) = true .
-  eq typeModeCompatible(typeRsaPublicKey , modeVerify) = true .
-  eq typeModeCompatible(typeRsaPublicKey , modeEncrypt) = true .
-  eq typeModeCompatible(typeDsaPublicKey , modeVerify) = true .
+  eq typeModeCompatible(rsaPubKey , modeVerify) = true .
+  eq typeModeCompatible(rsaPubKey , modeEncrypt) = true .
+  eq typeModeCompatible(dsaPubKey , modeVerify) = true .
   eq typeModeCompatible(typeHmacSha256 , modeMac) = true .
   eq typeModeCompatible(typeHmacMd5 , modeMac) = true .
   eq typeModeCompatible(typeHmacSha1 , modeMac) = true .
@@ -635,12 +644,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   eq typeModeCompatible(typeHmacSha3512 , modeMac) = true .
   eq typeModeCompatible(typeHmacSm3 , modeMac) = true .
   eq typeModeCompatible(typeGenericSecret , modeDerive) = true .
-  eq typeModeCompatible(typeRsaKeypair , modeEncrypt) = true .
-  eq typeModeCompatible(typeRsaKeypair , modeDecrypt) = true .
-  eq typeModeCompatible(typeRsaKeypair , modeSign) = true .
-  eq typeModeCompatible(typeRsaKeypair , modeVerify) = true .
-  eq typeModeCompatible(typeDsaKeypair , modeSign) = true .
-  eq typeModeCompatible(typeDsaKeypair , modeVerify) = true .
+  eq typeModeCompatible(rsaKeyPair , modeEncrypt) = true .
+  eq typeModeCompatible(rsaKeyPair , modeDecrypt) = true .
+  eq typeModeCompatible(rsaKeyPair , modeSign) = true .
+  eq typeModeCompatible(rsaKeyPair , modeVerify) = true .
+  eq typeModeCompatible(dsaKeypair , modeSign) = true .
+  eq typeModeCompatible(dsaKeypair , modeVerify) = true .
   eq typeModeCompatible(typeDhKeypair , modeDerive) = true .
   eq typeModeCompatible(typeEcdsaPublicKey , modeVerify) = true .
   eq typeModeCompatible(typeEcdsaKeypair , modeSign) = true .
@@ -686,21 +695,21 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   eq algorithmObjectTypeCompatible(algSm2Kep,
                                    typeSm2KepKeypair) = true .
   eq algorithmObjectTypeCompatible(algRsaesPkcs1OaepMgf1Sha1,
-                                   typeRsaPublicKey) = true .
+                                   rsaPubKey) = true .
   eq algorithmObjectTypeCompatible(algRsaesPkcs1OaepMgf1Sha1,
-                                   typeRsaKeypair) = true .
+                                   rsaKeyPair) = true .
   eq algorithmObjectTypeCompatible(algRsaesPkcs1OaepMgf1Sha224,
-                                   typeRsaPublicKey) = true .
+                                   rsaPubKey) = true .
   eq algorithmObjectTypeCompatible(algRsaesPkcs1OaepMgf1Sha224,
-                                   typeRsaKeypair) = true .
+                                   rsaKeyPair) = true .
   eq algorithmObjectTypeCompatible(algRsaNopad,
-                                   typeRsaPublicKey) = true .
+                                   rsaPubKey) = true .
   eq algorithmObjectTypeCompatible(algRsaNopad,
-                                   typeRsaKeypair) = true .
+                                   rsaKeyPair) = true .
   eq algorithmObjectTypeCompatible(algRsassaPkcs1V15Sha256,
-                                   typeRsaPublicKey) = true .
+                                   rsaPubKey) = true .
   eq algorithmObjectTypeCompatible(algRsassaPkcs1V15Sha256,
-                                   typeRsaKeypair) = true .
+                                   rsaKeyPair) = true .
   ---@dmc owise enumerate(arg1, arg2)
   eq algorithmObjectTypeCompatible(ALGO , OBJTYPE) = false [owise] .
 
@@ -843,10 +852,10 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- returns a new handle to it.
   crl [alloc-oper-success] :
     < TK : TAKernel | status : (normal).AppStatus ,
-                      api-call : init(apiCall(AllocateOperation , (alg(ALGO) , mode(MODE) , size(KEYSIZE)))) ,
+                      api-call : init(allocOperation[# ALGO # MODE # KEYSIZE]) ,
                       counter : N >
     =>
-    < TK : TAKernel | api-call : return(apiCall(AllocateOperation , (retCode(success) , handle(newOid(N + 1 , TK))))) ,
+    < TK : TAKernel | api-call : return(allocOperation[# success # newOid(N + 1 , TK)]) ,
                       counter : N + 2 >
     < newOid(N , TK) : CryptoOperation |
                                         attributes : empty , keys : nil , max-size : KEYSIZE ,
@@ -854,7 +863,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                                         algorithm : ALGO , mode : MODE ,
                                         initialization-vector : nil ,
                                         state : initial >
-    freshOperationHandle(N + 1 , TK , newOid(N , TK), determineOpClass(ALGO))
+    freshOperationHandle(N + 1 , TK , newOid(N , TK), getClass(ALGO))
   if algoCompatible(ALGO , MODE)
   .
 
@@ -862,9 +871,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- errorNotSupported.  KEYSIZE is not checked by this rule.
   crl [alloc-oper-params-err] :
     < TK : TAKernel | status : (normal).AppStatus ,
-                      api-call : init(apiCall(AllocateOperation , (alg(ALGO) , mode(MODE) , size(KEYSIZE)))) >
+                      api-call : init(allocOperation[# ALGO # MODE # KEYSIZE]) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(AllocateOperation , retCode(errorNotSupported))) >
+    < TK : TAKernel | api-call : return(allocOperation[# errorNotSupported]) >
   if not algoCompatible(ALGO , MODE)
   .
 
@@ -872,9 +881,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- errorOutOfMemory.
   rl [alloc-oper-mem-err] :
     < TK : TAKernel | status : outOfMemory ,
-                      api-call : init(apiCall(AllocateOperation , PARAMS)) >
+                      api-call : init(allocOperation[PARAMS]) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(AllocateOperation , retCode(errorOutOfMemory))) >
+    < TK : TAKernel | api-call : return(allocOperation[# errorOutOfMemory]) >
   .
 
 ------------------------------------------------------------
@@ -892,9 +901,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- free-operation-not-null-subroutine: for a non-null handle, the call moves to final and
   --- deleteOperationObject is sent to HANDLE.
   crl [free-operation-not-null-subroutine] :
-    < TK : TAKernel | api-call : init(apiCall(FreeOperation , handle(HANDLE))) >
+    < TK : TAKernel | api-call : init(FreeOperation[# HANDLE]) >
     =>
-    < TK : TAKernel | api-call : final(apiCall(FreeOperation , handle(HANDLE))) >
+    < TK : TAKernel | api-call : final(FreeOperation[# HANDLE]) >
     (msg deleteOperationObject[] from TK to HANDLE)
   if not nullHandle(HANDLE)
   .
@@ -912,17 +921,17 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- free-operation-not-null-success: finishDeleteOperationObject returns noReturnCode.
   rl [free-operation-not-null-success] :
     (msg finishDeleteOperationObject[] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(FreeOperation , PARAMS)) >
+    < TK : TAKernel | api-call : final(FreeOperation[PARAMS]) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(FreeOperation , retCode(noReturnCode))) >
+    < TK : TAKernel | api-call : return(FreeOperation[# noReturnCode]) >
   .
 
   --- free-operation-null-success: a null handle (TEE_HANDLE_NULL) is accepted.  The call returns
   --- noReturnCode and the handle, and no operation is deleted.
   crl [free-operation-null-success] :
-    < TK : TAKernel | api-call : init(apiCall(FreeOperation , handle(HANDLE))) >
+    < TK : TAKernel | api-call : init(FreeOperation[# HANDLE]) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(FreeOperation , (retCode(noReturnCode) , handle(HANDLE)))) >
+    < TK : TAKernel | api-call : return(FreeOperation[# noReturnCode # HANDLE]) >
   if nullHandle(HANDLE)
   .
 
@@ -941,9 +950,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- get-operation-info-subroutine: GetOperationInfo with a handle moves to exec and requests the
   --- multiple operation info from HANDLE with reqOperationInfoMultiple.
   rl [get-operation-info-subroutine] :
-    < TK : TAKernel | api-call : init(apiCall(GetOperationInfo , handle(HANDLE))) >
+    < TK : TAKernel | api-call : init(GetOperationInfo[# HANDLE]) >
     =>
-    < TK : TAKernel | api-call : exec(apiCall(GetOperationInfo , handle(HANDLE)) , 0) >
+    < TK : TAKernel | api-call : exec(GetOperationInfo[# HANDLE] , 0) >
     (msg reqOperationInfoMultiple[] from TK to HANDLE)
   .
 
@@ -959,18 +968,17 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     =>
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-    (msg retOperationAttr[^ opObjectAttr(ALGO , MODE , OS , KATTRS) ^
-                          opHandleAttr(hasInit(HS) , B2 , hasExtract(HS)) ^ KEYS] from HANDLE to TK)
+    (msg retOperationAttr[# opObjectAttr(ALGO , MODE , OS , KATTRS) #
+                          opHandleAttr(hasInit(HS) , B2 , hasExtract(HS)) # KEYS] from HANDLE to TK)
   .
 
   --- get-operation-info-success: the single-key operation info from singleOperationInfo is returned
   --- with noReturnCode.
   rl [get-operation-info-success] :
-    (msg retOperationInfoMultiple[^ OPINFOMULTI] from HANDLE to TK)
-    < TK : TAKernel | api-call : exec(apiCall(GetOperationInfo , PARAMS) , 0) >
+    (msg retOperationInfoMultiple[# OPINFOMULTI] from HANDLE to TK)
+    < TK : TAKernel | api-call : exec(GetOperationInfo[PARAMS] , 0) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(GetOperationInfo ,
-                                  (retCode(noReturnCode) , teeOpInfo(singleOperationInfo(OPINFOMULTI))))) >
+    < TK : TAKernel | api-call : return(GetOperationInfo[# noReturnCode # singleOperationInfo(OPINFOMULTI)]) >
   .
 
 ------------------------------------------------------------
@@ -980,9 +988,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- get-operation-info-multiple-subroutine: GetOperationInfoMultiple moves to exec and requests
   --- the multiple operation info from HANDLE with reqOperationInfoMultiple.
   rl [get-operation-info-multiple-subroutine] :
-    < TK : TAKernel | api-call : init(apiCall(GetOperationInfoMultiple , (handle(HANDLE) , PARAMS))) >
+    < TK : TAKernel | api-call : init(GetOperationInfoMultiple[# HANDLE ZrGetOperationInfoMultiple]) >
     =>
-    < TK : TAKernel | api-call : exec(apiCall(GetOperationInfoMultiple , (handle(HANDLE) , PARAMS)) , 0) >
+    < TK : TAKernel | api-call : exec(GetOperationInfoMultiple[# HANDLE ZrGetOperationInfoMultiple] , 0) >
     (msg reqOperationInfoMultiple[] from TK to HANDLE)
   .
 
@@ -999,7 +1007,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     =>
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-    (msg retOperationInfoMultiple[^ teeOperationInfoMultiple(ALGO , OC , MODE , operationDigestLength(ALGO) ,
+    (msg retOperationInfoMultiple[# teeOperationInfoMultiple(ALGO , OC , MODE , operationDigestLength(ALGO) ,
         KEYSIZE , expectsTwoKeys(ALGO) , operationInfoKeySet(OC , B2) ,
         operationInfoInitialized(OC , hasInit(HS)) , hasExtract(HS) , OS , operationKeyCount(ALGO , OC) ,
         operationKeyInformation(KEYS , requiredOperationUsage(ALGO , MODE) ,
@@ -1019,7 +1027,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     =>
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-    (msg retOperationInfoMultiple[^ teeOperationInfoMultiple(ALGO , OC , MODE , operationDigestLength(ALGO) ,
+    (msg retOperationInfoMultiple[# teeOperationInfoMultiple(ALGO , OC , MODE , operationDigestLength(ALGO) ,
         KEYSIZE , expectsTwoKeys(ALGO) , operationInfoKeySet(OC , B2) ,
         operationInfoInitialized(OC , hasInit(HS)) , hasExtract(HS) , OS , operationKeyCount(ALGO , OC) ,
         operationAttrKeyInformation(KATTRS , requiredOperationUsage(ALGO , MODE) ,
@@ -1029,23 +1037,20 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- get-operation-info-multiple-success: when there is no capacity or the capacity fits the
   --- required size, the multiple operation info is returned with success.
   crl [get-operation-info-multiple-success] :
-    (msg retOperationInfoMultiple[^ OPINFOMULTI] from HANDLE to TK)
-    < TK : TAKernel | api-call : exec(apiCall(GetOperationInfoMultiple , PARAMS) , 0) >
-    => < TK : TAKernel | api-call : return(apiCall(GetOperationInfoMultiple ,
-                                  (retCode(success) , teeOpInfoMultiple(OPINFOMULTI)))) >
-    if not hasOutputCapacity(PARAMS) or
-       outputCapacityFitsSize(PARAMS , operationInfoRequiredSize(OPINFOMULTI)) .
+    (msg retOperationInfoMultiple[# OPINFOMULTI] from HANDLE to TK)
+    < TK : TAKernel | api-call : exec(GetOperationInfoMultiple[ZsGetOperationInfoMultiple0 ZrGetOperationInfoMultiple] , 0) >
+    => < TK : TAKernel | api-call : return(GetOperationInfoMultiple[# success # OPINFOMULTI]) >
+    if not hasOutputCapacity(ZrGetOperationInfoMultiple) or
+       outputCapacityFitsSize(ZrGetOperationInfoMultiple , operationInfoRequiredSize(OPINFOMULTI)) .
 
   --- get-operation-info-multiple-short-buffer: when the capacity does not fit, errorShortBuffer is
   --- returned with the required size.
   crl [get-operation-info-multiple-short-buffer] :
-    (msg retOperationInfoMultiple[^ OPINFOMULTI] from HANDLE to TK)
-    < TK : TAKernel | api-call : exec(apiCall(GetOperationInfoMultiple , PARAMS) , 0) >
-    => < TK : TAKernel | api-call : return(apiCall(GetOperationInfoMultiple ,
-                        (retCode(errorShortBuffer) ,
-                         size(operationInfoRequiredSize(OPINFOMULTI))))) >
-    if hasOutputCapacity(PARAMS) and
-       not outputCapacityFitsSize(PARAMS , operationInfoRequiredSize(OPINFOMULTI)) .
+    (msg retOperationInfoMultiple[# OPINFOMULTI] from HANDLE to TK)
+    < TK : TAKernel | api-call : exec(GetOperationInfoMultiple[ZsGetOperationInfoMultiple0 ZrGetOperationInfoMultiple] , 0) >
+    => < TK : TAKernel | api-call : return(GetOperationInfoMultiple[# errorShortBuffer # operationInfoRequiredSize(OPINFOMULTI)]) >
+    if hasOutputCapacity(ZrGetOperationInfoMultiple) and
+       not outputCapacityFitsSize(ZrGetOperationInfoMultiple , operationInfoRequiredSize(OPINFOMULTI)) .
 
 ------------------------------------------------------------
 --- TEE_ResetOperation
@@ -1062,17 +1067,17 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- reset-oper-req-reset: the call moves to final and resetOp is sent to HANDLE.
   rl [reset-oper-req-reset] :
-    < TK : TAKernel | api-call : init(apiCall(ResetOperation , handle(HANDLE))) , status : (normal).AppStatus >
+    < TK : TAKernel | api-call : init(resetOperation[# HANDLE]) , status : (normal).AppStatus >
     =>
-    < TK : TAKernel | api-call : final(apiCall(ResetOperation , handle(HANDLE))) >
-    (msg resetOp[^ HANDLE] from TK to HANDLE) .
+    < TK : TAKernel | api-call : final(resetOperation[# HANDLE]) >
+    (msg resetOp[# HANDLE] from TK to HANDLE) .
 
   --- reset-oper-try-reset-success: when the handle has keySet, an active operation returns to
   --- initial and its acc-data is cleared, and finishResetOp is sent to TK.
   rl [reset-oper-try-reset-success] :
     < CI : CryptoOp | state : CSTATE >
     < HANDLE : OpHandle | oid : CI , state : handleState((keySet, HSF)) >
-    (msg resetOp[^ HANDLE] from TK to HANDLE)
+    (msg resetOp[# HANDLE] from TK to HANDLE)
   => < CI : CryptoOp | state : (if CSTATE == active then initial else CSTATE fi) ,
                        acc-data : nil >
      < HANDLE : OpHandle | >
@@ -1082,7 +1087,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   crl [reset-oper-try-reset-fail] :
     < CI : CryptoOp | >
     < HANDLE : OpHandle | oid : CI , state : handleState(HSF) >
-    (msg resetOp[^ HANDLE] from TK to HANDLE)
+    (msg resetOp[# HANDLE] from TK to HANDLE)
   => < CI : CryptoOp | >
      < HANDLE : OpHandle | >
      (msg failResetOp[] from HANDLE to TK)
@@ -1091,14 +1096,14 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- reset-oper-success: finishResetOp returns noReturnCode.
   rl [reset-oper-success] :
     (msg finishResetOp[] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(ResetOperation , PARAMS)) , status : (normal).AppStatus >
+    < TK : TAKernel | api-call : final(resetOperation[PARAMS]) , status : (normal).AppStatus >
     =>
-    < TK : TAKernel | api-call : return(apiCall(ResetOperation , retCode(noReturnCode))) > .
+    < TK : TAKernel | api-call : return(resetOperation[# noReturnCode]) > .
 
   --- reset-oper-fail: failResetOp sets the kernel status to panic.
   rl [reset-oper-fail] :
     (msg failResetOp[] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(ResetOperation , PARAMS)) , status : (normal).AppStatus >
+    < TK : TAKernel | api-call : final(resetOperation[PARAMS]) , status : (normal).AppStatus >
     =>
     < TK : TAKernel | status : panic > .
 
@@ -1120,9 +1125,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- Step numbers: 0 waits for the key attributes (reqAttribute) or for the key's storage status,
   --- 1 waits for the storage status of a persistent key (retAttributePr path).
   crl [set-operation-key-subroutine] :
-    < TK : TAKernel | api-call : init(apiCall(SetOperationKey , (keyHandle(KEY) , PARAMS))) >
+    < TK : TAKernel | api-call : init(SetOperationKey[ZsSetOperationKey0 # KEY ZrSetOperationKey]) >
     =>
-    < TK : TAKernel | api-call : exec(apiCall(SetOperationKey , (keyHandle(KEY) , PARAMS)) , 0) >
+    < TK : TAKernel | api-call : exec(SetOperationKey[ZsSetOperationKey0 # KEY ZrSetOperationKey] , 0) >
     (msg reqAttribute[] from TK to KEY)
   if not nullHandle(KEY)
   .
@@ -1131,11 +1136,11 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- HANDLE. The CryptoOperation CI is reset to empty attributes, nil keys and the initial state,
   --- the handle gets an empty handleState and key-material-set false, and success is returned.
   rl [set-operation-key-clear] :
-    < TK : TAKernel | api-call : init(apiCall(SetOperationKey , (handle(HANDLE) , keyHandle(null) , PARAMS))) >
+    < TK : TAKernel | api-call : init(SetOperationKey[# HANDLE # null ZrSetOperationKey]) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | oid : CI , state : HS >
     =>
-    < TK : TAKernel | api-call : return(apiCall(SetOperationKey , retCode(success))) >
+    < TK : TAKernel | api-call : return(SetOperationKey[# success]) >
     < CI : CryptoOperation | attributes : empty , keys : nil ,
                              state : initial >
     < HANDLE : OperationHandle | state : handleState(empty),
@@ -1145,11 +1150,11 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- set-operation-key-subroutine-1: the attributes ATTRS, OBJTYPE and OBJUSAGES of the key are
   --- received.  The call moves to final and reqSetOperationKey is sent to HANDLE.
   rl [set-operation-key-subroutine-1] :
-    (msg retAttributeTr[^ ATTRS ^ OBJTYPE ^ OBJUSAGES] from KEY to TK)
-    < TK : TAKernel | api-call : exec(apiCall(SetOperationKey , (keyHandle(KEY) , handle(HANDLE) , PARAMS)) , 0) >
+    (msg retAttributeTr[# ATTRS # OBJTYPE # OBJUSAGES] from KEY to TK)
+    < TK : TAKernel | api-call : exec(SetOperationKey[# HANDLE # KEY ZrSetOperationKey] , 0) >
     =>
-    < TK : TAKernel | api-call : final(apiCall(SetOperationKey , (keyHandle(KEY) , handle(HANDLE) , PARAMS))) >
-    (msg reqSetOperationKey[^ OBJTYPE ^ ATTRS ^ OBJUSAGES] from TK to HANDLE)
+    < TK : TAKernel | api-call : final(SetOperationKey[# HANDLE # KEY ZrSetOperationKey]) >
+    (msg reqSetOperationKey[# OBJTYPE # ATTRS # OBJUSAGES] from TK to HANDLE)
   .
 
   --- set-operation-key-uninitialized-key-panic: a key whose transient object is not initialized
@@ -1157,7 +1162,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   rl [set-operation-key-uninitialized-key-panic] :
     (msg reqAttribute[] from TK to KEY)
     < TK : TAKernel | status : (normal).AppStatus ,
-                      api-call : exec(apiCall(SetOperationKey , PARAMS) , 0) >
+                      api-call : exec(SetOperationKey[PARAMS] , 0) >
     < OI : TransientObject | initialized : false >
     < KEY : ObjectHandle | oid : OI >
     =>
@@ -1170,13 +1175,13 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- OBJUSAGES and ATTRS are compatible with ALGO, MODE and KEYSIZE, the CryptoOperation takes
   --- ATTRS and the initial state, and installTopOperationKey is sent to HANDLE.
   crl [set-operation-key-top-level-handle-success] :
-    (msg reqSetOperationKey[^ OBJTYPE ^ ATTRS ^ OBJUSAGES] from TK to HANDLE)
+    (msg reqSetOperationKey[# OBJTYPE # ATTRS # OBJUSAGES] from TK to HANDLE)
     < CI : CryptoOperation | algorithm : ALGO , mode : MODE,
                              max-size : KEYSIZE, state : OS >
     =>
     < CI : CryptoOperation | attributes : ATTRS ,
                              state : initial >
-    (msg installTopOperationKey[^ CI ^ ATTRS] from TK to HANDLE)
+    (msg installTopOperationKey[# CI # ATTRS] from TK to HANDLE)
   if not expectsTwoKeys(ALGO) /\ algorithmObjectTypeCompatible(ALGO , OBJTYPE) /\
      typeModeCompatible(OBJTYPE , MODE) /\
      operationUsageCompatible(ALGO , OBJUSAGES , MODE) /\
@@ -1186,7 +1191,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- install-operation-key-top-level-handle: the handle moves to keySet with key-material-set true,
   --- and finishSetOperationKey is sent to TK.
   rl [install-operation-key-top-level-handle] :
-    (msg installTopOperationKey[^ CI ^ ATTRS] from TK to HANDLE)
+    (msg installTopOperationKey[# CI # ATTRS] from TK to HANDLE)
     < HANDLE : OperationHandle | state : HS >
     =>
     < HANDLE : OperationHandle | state : handleState(keySet),
@@ -1196,7 +1201,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- set-operation-key-top-level-handle-fail: when one of the checks of
   --- set-operation-key-top-level-handle-success fails, rejectTopOperationKey is sent to HANDLE.
   crl [set-operation-key-top-level-handle-fail] :
-    (msg reqSetOperationKey[^ OBJTYPE ^ ATTRS ^ OBJUSAGES] from TK to HANDLE)
+    (msg reqSetOperationKey[# OBJTYPE # ATTRS # OBJUSAGES] from TK to HANDLE)
     < CI : CryptoOperation | algorithm : ALGO,
                              mode : MODE, max-size : KEYSIZE >
     =>
@@ -1219,15 +1224,15 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- set-operation-key-success: finishSetOperationKey returns success.
   rl [set-operation-key-success] :
     (msg finishSetOperationKey[] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(SetOperationKey , PARAMS)) >
+    < TK : TAKernel | api-call : final(SetOperationKey[PARAMS]) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(SetOperationKey , retCode(success))) >
+    < TK : TAKernel | api-call : return(SetOperationKey[# success]) >
   .
 
   --- set-operation-key-panic: failSetOperationKey sets the kernel status to panic.
   rl [set-operation-key-panic] :
     (msg failSetOperationKey[] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(SetOperationKey , PARAMS)) >
+    < TK : TAKernel | api-call : final(SetOperationKey[PARAMS]) >
     =>
     < TK : TAKernel | status : panic >
   .
@@ -1236,24 +1241,21 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- before the key is set.  The handle, attributes and type are kept in the parameters, so that the
   --- storage check and reqSetOperationKey can match.
   rl [set-operation-key-subroutine-2] :
-    (msg retAttributePr[^ ATTRS ^ OBJTYPE ^ OBJUSAGES] from KEY to TK)
-    < TK : TAKernel | api-call : exec(apiCall(SetOperationKey , (keyHandle(KEY) , handle(HANDLE) , PARAMS)) , 0) , storage : SI >
+    (msg retAttributePr[# ATTRS # OBJTYPE # OBJUSAGES] from KEY to TK)
+    < TK : TAKernel | api-call : exec(SetOperationKey[# HANDLE # KEY ZrSetOperationKey] , 0) , storage : SI >
     =>
-    < TK : TAKernel | api-call : exec(apiCall(SetOperationKey ,
-                                  (keyHandle(KEY) , handle(HANDLE) , attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) , PARAMS)) , 1) >
+    < TK : TAKernel | api-call : exec(SetOperationKey[# HANDLE # KEY # ATTRS # OBJTYPE # OBJUSAGES ZrSetOperationKey] , 1) >
     (msg getStatus[] from TK to SI)
   .
 
   --- set-operation-key-subroutine-2 (finish): once the storage status is returned, the call moves
   --- to final and reqSetOperationKey is sent to HANDLE.
   rl [set-operation-key-subroutine-2] :
-    (msg retStatus[^ (normal).StorageStatus] from SI to TK)
-    < TK : TAKernel | api-call : exec(apiCall(SetOperationKey ,
-                                  (keyHandle(KEY) , handle(HANDLE) , attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) , PARAMS)) , 1) >
+    (msg retStatus[# (normal).StorageStatus] from SI to TK)
+    < TK : TAKernel | api-call : exec(SetOperationKey[# HANDLE # KEY # ATTRS # OBJTYPE # OBJUSAGES ZrSetOperationKey] , 1) >
     =>
-    < TK : TAKernel | api-call : final(apiCall(SetOperationKey ,
-                                  (keyHandle(KEY) , handle(HANDLE) , attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES) , PARAMS))) >
-    (msg reqSetOperationKey[^ OBJTYPE ^ ATTRS ^ OBJUSAGES] from TK to HANDLE)
+    < TK : TAKernel | api-call : final(SetOperationKey[# HANDLE # KEY # ATTRS # OBJTYPE # OBJUSAGES ZrSetOperationKey]) >
+    (msg reqSetOperationKey[# OBJTYPE # ATTRS # OBJUSAGES] from TK to HANDLE)
   .
 
 --- TODO: For symmetric cipher, MAC, and AE
@@ -1264,10 +1266,10 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- set-operation-key-storage-err: when the storage status STATUS is abnormal, TEE_SetOperationKey
   --- returns storageErrCode(STATUS).
   crl [set-operation-key-storage-err] :
-    (msg retStatus[^ STATUS] from SI to TK)
-    < TK : TAKernel | api-call : exec(apiCall(SetOperationKey , PARAMS) , 1) >
+    (msg retStatus[# STATUS] from SI to TK)
+    < TK : TAKernel | api-call : exec(SetOperationKey[PARAMS] , 1) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(SetOperationKey , retCode(storageErrCode(STATUS)))) >
+    < TK : TAKernel | api-call : return(SetOperationKey[# storageErrCode(STATUS)]) >
   if abnormalStorage(STATUS)
   .
 
@@ -1290,10 +1292,10 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- algorithm, when the handle is not initialized, the call moves to exec and reqAttribute is sent
   --- to KEY1.
   crl [set-operation-key2-subroutine] :
-    < TK : TAKernel | api-call : init(apiCall(SetOperationKey2 , (handle(HANDLE) , keyHandle(KEY1) , secondKeyHandle(KEY2)))) >
+    < TK : TAKernel | api-call : init(SetOperationKey2[# HANDLE # KEY1 # KEY2]) >
     < HANDLE : OperationHandle | state : HS >
     < CI : CryptoOperation | algorithm : ALGO >
-    => < TK : TAKernel | api-call : exec(apiCall(SetOperationKey2 , (handle(HANDLE) , keyHandle(KEY1) , secondKeyHandle(KEY2))) , 0) >
+    => < TK : TAKernel | api-call : exec(SetOperationKey2[# HANDLE # KEY1 # KEY2] , 0) >
        < HANDLE : OperationHandle | >
        < CI : CryptoOperation | >
        (msg reqAttribute[] from TK to KEY1)
@@ -1304,7 +1306,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- expect two keys, the kernel status is set to panic.
   crl [set-operation-key2-wrong-algorithm-panic] :
     < TK : TAKernel | status : (normal).AppStatus,
-                      api-call : init(apiCall(SetOperationKey2 , (handle(HANDLE) , PARAMS))) >
+                      api-call : init(SetOperationKey2[# HANDLE ZsSetOperationKey21 ZsSetOperationKey22 ZrSetOperationKey2]) >
     < HANDLE : OperationHandle | oid : CI, state : HS >
     < CI : CryptoOperation | algorithm : ALGO >
     => < TK : TAKernel | status : panic >
@@ -1316,11 +1318,10 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- CryptoOperation is reset to empty attributes, nil keys and the initial state, the handle gets
   --- an empty handleState and key-material-set false, and success is returned.
   crl [set-operation-key2-clear] :
-    < TK : TAKernel | api-call : init(apiCall(SetOperationKey2 ,
-                                  (handle(HANDLE) , keyHandle(null) , secondKeyHandle(null)))) >
+    < TK : TAKernel | api-call : init(SetOperationKey2[# HANDLE # null # null]) >
     < CI : CryptoOperation | algorithm : ALGO >
     < HANDLE : OperationHandle | oid : CI , state : HS >
-    => < TK : TAKernel | api-call : return(apiCall(SetOperationKey2 , retCode(success))) >
+    => < TK : TAKernel | api-call : return(SetOperationKey2[# success]) >
        < CI : CryptoOperation | attributes : empty , keys : nil ,
                               state : initial >
        < HANDLE : OperationHandle | state : handleState(empty),
@@ -1331,8 +1332,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- kernel status to panic.
   crl [set-operation-key2-mixed-null-panic] :
     < TK : TAKernel | status : (normal).AppStatus ,
-                      api-call : init(apiCall(SetOperationKey2 ,
-                                  (handle(HANDLE) , keyHandle(KEY1) , secondKeyHandle(KEY2)))) >
+                      api-call : init(SetOperationKey2[# HANDLE # KEY1 # KEY2]) >
     => < TK : TAKernel | status : panic >
   if (nullHandle(KEY1) and not nullHandle(KEY2)) or
      (not nullHandle(KEY1) and nullHandle(KEY2)) .
@@ -1340,11 +1340,10 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- set-operation-key2-same-key-security-error: for a two-key algorithm, when both key handles are
   --- the same, errorSecurity is returned.
   crl [set-operation-key2-same-key-security-error] :
-    < TK : TAKernel | api-call : init(apiCall(SetOperationKey2 ,
-                                  (handle(HANDLE) , keyHandle(KEY1) , secondKeyHandle(KEY1)))) >
+    < TK : TAKernel | api-call : init(SetOperationKey2[# HANDLE # KEY1 # KEY1]) >
     < HANDLE : OperationHandle | oid : CI, state : HS >
     < CI : CryptoOperation | algorithm : ALGO >
-    => < TK : TAKernel | api-call : return(apiCall(SetOperationKey2 , retCode(errorSecurity))) >
+    => < TK : TAKernel | api-call : return(SetOperationKey2[# errorSecurity]) >
        < HANDLE : OperationHandle | >
        < CI : CryptoOperation | >
   if not hasInit(HS) /\ expectsTwoKeys(ALGO) /\ not nullHandle(KEY1) .
@@ -1353,95 +1352,79 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- attributes ATTRS, OBJTYPE and OBJUSAGES are kept in the parameters and reqAttribute is sent to
   --- KEY2.
   rl [set-operation-key2-subroutine] :
-    (msg retAttributeTr[^ ATTRS ^ OBJTYPE ^ OBJUSAGES] from KEY1 to TK)
-    < TK : TAKernel | api-call : exec(apiCall(SetOperationKey2 ,
-                                  (handle(HANDLE) , keyHandle(KEY1) , secondKeyHandle(KEY2))) , 0) >
-    => < TK : TAKernel | api-call : exec(apiCall(SetOperationKey2 ,
-                                  (handle(HANDLE) , keyHandle(KEY1) , secondKeyHandle(KEY2) ,
-                                   attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES))) , 2) >
+    (msg retAttributeTr[# ATTRS # OBJTYPE # OBJUSAGES] from KEY1 to TK)
+    < TK : TAKernel | api-call : exec(SetOperationKey2[# HANDLE # KEY1 # KEY2] , 0) >
+    => < TK : TAKernel | api-call : exec(SetOperationKey2[# HANDLE # KEY1 # KEY2 # ATTRS # OBJTYPE # OBJUSAGES] , 2) >
        (msg reqAttribute[] from TK to KEY2) .
 
   --- set-operation-key2-first-persistent-key: the first key is persistent, so its storage status is
   --- requested with getStatus before the second key is requested.
   rl [set-operation-key2-first-persistent-key] :
-    (msg retAttributePr[^ ATTRS ^ OBJTYPE ^ OBJUSAGES] from KEY1 to TK)
-    < TK : TAKernel | api-call : exec(apiCall(SetOperationKey2 ,
-                                  (handle(HANDLE) , keyHandle(KEY1) , secondKeyHandle(KEY2))) , 0) , storage : SI >
-    => < TK : TAKernel | api-call : exec(apiCall(SetOperationKey2 ,
-                                  (handle(HANDLE) , keyHandle(KEY1) , secondKeyHandle(KEY2))) , 1) >
-       (msg resumeSetOperationKey2[^ KEY2 ^ OBJTYPE ^ OBJUSAGES ^ ATTRS] from TK to TK)
+    (msg retAttributePr[# ATTRS # OBJTYPE # OBJUSAGES] from KEY1 to TK)
+    < TK : TAKernel | api-call : exec(SetOperationKey2[# HANDLE # KEY1 # KEY2] , 0) , storage : SI >
+    => < TK : TAKernel | api-call : exec(SetOperationKey2[# HANDLE # KEY1 # KEY2] , 1) >
+       (msg resumeSetOperationKey2[# KEY2 # OBJTYPE # OBJUSAGES # ATTRS] from TK to TK)
        (msg getStatus[] from TK to SI) .
 
   --- set-operation-key2-first-persistent-key-ready: when the storage status of the first key is
   --- normal, the second key is requested with reqAttribute.
   rl [set-operation-key2-first-persistent-key-ready] :
-    (msg retStatus[^ (normal).StorageStatus] from SI to TK)
-    (msg resumeSetOperationKey2[^ KEY2 ^ OBJTYPE ^ OBJUSAGES ^ ATTRS] from TK to TK)
-    < TK : TAKernel | api-call : exec(apiCall(SetOperationKey2 ,
-                                  (handle(HANDLE) , keyHandle(KEY1) , secondKeyHandle(KEY2))) , 1) >
-    => < TK : TAKernel | api-call : exec(apiCall(SetOperationKey2 ,
-                                  (handle(HANDLE) , keyHandle(KEY1) , secondKeyHandle(KEY2) ,
-                                   attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES))) , 2) >
+    (msg retStatus[# (normal).StorageStatus] from SI to TK)
+    (msg resumeSetOperationKey2[# KEY2 # OBJTYPE # OBJUSAGES # ATTRS] from TK to TK)
+    < TK : TAKernel | api-call : exec(SetOperationKey2[# HANDLE # KEY1 # KEY2] , 1) >
+    => < TK : TAKernel | api-call : exec(SetOperationKey2[# HANDLE # KEY1 # KEY2 # ATTRS # OBJTYPE # OBJUSAGES] , 2) >
        (msg reqAttribute[] from TK to KEY2) .
 
   --- set-operation-key2-first-persistent-storage-error: an abnormal storage status of the first key
   --- returns storageErrCode(STATUS).
   crl [set-operation-key2-first-persistent-storage-error] :
-    (msg retStatus[^ STATUS] from SI to TK)
-    (msg resumeSetOperationKey2[^ KEY2 ^ OBJTYPE ^ OBJUSAGES ^ ATTRS] from TK to TK)
-    < TK : TAKernel | api-call : exec(apiCall(SetOperationKey2 , PARAMS) , 1) >
-    => < TK : TAKernel | api-call : return(apiCall(SetOperationKey2 , retCode(storageErrCode(STATUS)))) >
+    (msg retStatus[# STATUS] from SI to TK)
+    (msg resumeSetOperationKey2[# KEY2 # OBJTYPE # OBJUSAGES # ATTRS] from TK to TK)
+    < TK : TAKernel | api-call : exec(SetOperationKey2[PARAMS] , 1) >
+    => < TK : TAKernel | api-call : return(SetOperationKey2[# storageErrCode(STATUS)]) >
   if abnormalStorage(STATUS) .
 
   --- set-operation-key2-subroutine (second-key): when the second key is a transient object, its
   --- attributes ATTRS2, OBJTYPE2 and OBJUSAGES2 are received, the call moves to final, and
   --- installOperationKeys is sent to HANDLE.
   rl [set-operation-key2-subroutine] :
-    (msg retAttributeTr[^ ATTRS2 ^ OBJTYPE2 ^ OBJUSAGES2] from KEY2 to TK)
-    < TK : TAKernel | api-call : exec(apiCall(SetOperationKey2 ,
-                                  (handle(HANDLE) , keyHandle(KEY1) , secondKeyHandle(KEY2) ,
-                                   attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES))) , 2) >
-    => < TK : TAKernel | api-call : final(apiCall(SetOperationKey2 ,
-                                  (handle(HANDLE) , keyHandle(KEY1) , secondKeyHandle(KEY2) ,
-                                   attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES)))) >
-       (msg installOperationKeys[^ OBJTYPE ^ OBJUSAGES ^ ATTRS ^ OBJTYPE2 ^ OBJUSAGES2 ^ ATTRS2] from TK to HANDLE) .
+    (msg retAttributeTr[# ATTRS2 # OBJTYPE2 # OBJUSAGES2] from KEY2 to TK)
+    < TK : TAKernel | api-call : exec(SetOperationKey2[# HANDLE # KEY1 # KEY2 # ATTRS # OBJTYPE # OBJUSAGES] , 2) >
+    => < TK : TAKernel | api-call : final(SetOperationKey2[# HANDLE # KEY1 # KEY2 # ATTRS # OBJTYPE # OBJUSAGES]) >
+       (msg installOperationKeys[# OBJTYPE # OBJUSAGES # ATTRS # OBJTYPE2 # OBJUSAGES2 # ATTRS2] from TK to HANDLE) .
 
   --- set-operation-key2-second-persistent-key: the second key is persistent, so its storage status
   --- is requested with getStatus before both keys are installed.
   rl [set-operation-key2-second-persistent-key] :
-    (msg retAttributePr[^ ATTRS2 ^ OBJTYPE2 ^ OBJUSAGES2] from KEY2 to TK)
-    < TK : TAKernel | api-call : exec(apiCall(SetOperationKey2 ,
-                                  (handle(HANDLE) , keyHandle(KEY1) , secondKeyHandle(KEY2) ,
-                                   attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES))) , 2) , storage : SI >
-    => < TK : TAKernel | api-call : exec(apiCall(SetOperationKey2 ,
-                                  (handle(HANDLE) , keyHandle(KEY1) , secondKeyHandle(KEY2) ,
-                                   attrs(ATTRS) , type(OBJTYPE) , usages(OBJUSAGES))) , 3) >
-       (msg installStoredOperationKeys[^ HANDLE ^ OBJTYPE ^ OBJUSAGES ^ ATTRS ^ OBJTYPE2 ^ OBJUSAGES2 ^ ATTRS2] from TK to TK)
+    (msg retAttributePr[# ATTRS2 # OBJTYPE2 # OBJUSAGES2] from KEY2 to TK)
+    < TK : TAKernel | api-call : exec(SetOperationKey2[# HANDLE # KEY1 # KEY2 # ATTRS # OBJTYPE # OBJUSAGES] , 2) , storage : SI >
+    => < TK : TAKernel | api-call : exec(SetOperationKey2[# HANDLE # KEY1 # KEY2 # ATTRS # OBJTYPE # OBJUSAGES] , 3) >
+       (msg installStoredOperationKeys[# HANDLE # OBJTYPE # OBJUSAGES # ATTRS # OBJTYPE2 # OBJUSAGES2 # ATTRS2] from TK to TK)
        (msg getStatus[] from TK to SI) .
 
   --- set-operation-key2-second-persistent-key-ready: when the storage status of the second key is
   --- normal, installOperationKeys is sent to HANDLE and the call moves to final.
   rl [set-operation-key2-second-persistent-key-ready] :
-    (msg retStatus[^ (normal).StorageStatus] from SI to TK)
-    (msg installStoredOperationKeys[^ HANDLE ^ OBJTYPE ^ OBJUSAGES ^ ATTRS ^ OBJTYPE2 ^ OBJUSAGES2 ^ ATTRS2] from TK to TK)
-    < TK : TAKernel | api-call : exec(apiCall(SetOperationKey2 , PARAMS) , 3) >
-    => < TK : TAKernel | api-call : final(apiCall(SetOperationKey2 , PARAMS)) >
-       (msg installOperationKeys[^ OBJTYPE ^ OBJUSAGES ^ ATTRS ^ OBJTYPE2 ^ OBJUSAGES2 ^ ATTRS2] from TK to HANDLE) .
+    (msg retStatus[# (normal).StorageStatus] from SI to TK)
+    (msg installStoredOperationKeys[# HANDLE # OBJTYPE # OBJUSAGES # ATTRS # OBJTYPE2 # OBJUSAGES2 # ATTRS2] from TK to TK)
+    < TK : TAKernel | api-call : exec(SetOperationKey2[PARAMS] , 3) >
+    => < TK : TAKernel | api-call : final(SetOperationKey2[PARAMS]) >
+       (msg installOperationKeys[# OBJTYPE # OBJUSAGES # ATTRS # OBJTYPE2 # OBJUSAGES2 # ATTRS2] from TK to HANDLE) .
 
   --- set-operation-key2-second-persistent-storage-error: an abnormal storage status of the second
   --- key returns storageErrCode2(STATUS).
   crl [set-operation-key2-second-persistent-storage-error] :
-    (msg retStatus[^ STATUS] from SI to TK)
-    (msg installStoredOperationKeys[^ HANDLE ^ OBJTYPE ^ OBJUSAGES ^ ATTRS ^ OBJTYPE2 ^ OBJUSAGES2 ^ ATTRS2] from TK to TK)
-    < TK : TAKernel | api-call : exec(apiCall(SetOperationKey2 , PARAMS) , 3) >
-    => < TK : TAKernel | api-call : return(apiCall(SetOperationKey2 , retCode(storageErrCode2(STATUS)))) >
+    (msg retStatus[# STATUS] from SI to TK)
+    (msg installStoredOperationKeys[# HANDLE # OBJTYPE # OBJUSAGES # ATTRS # OBJTYPE2 # OBJUSAGES2 # ATTRS2] from TK to TK)
+    < TK : TAKernel | api-call : exec(SetOperationKey2[PARAMS] , 3) >
+    => < TK : TAKernel | api-call : return(SetOperationKey2[# storageErrCode2(STATUS)]) >
   if abnormalStorage(STATUS) .
 
   --- set-operation-key2-uninitialized-key-panic: a key whose transient object is not initialized
   --- sets the kernel status to panic.
   rl [set-operation-key2-uninitialized-key-panic] :
     (msg reqAttribute[] from TK to KEY)
-    < TK : TAKernel | status : (normal).AppStatus , api-call : exec(apiCall(SetOperationKey2 , PARAMS) , N) >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : exec(SetOperationKey2[PARAMS] , N) >
     < OI : TransientObject | initialized : false >
     < KEY : ObjectHandle | oid : OI >
     => < TK : TAKernel | status : panic >
@@ -1451,7 +1434,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- twoKeyOperationSizeCompatible all hold, the CryptoOperation takes both attribute sets and the
   --- keys, and finishInstallTopOperationKeys is sent to HANDLE.
   crl [set-operation-key2-top-level-handle] :
-    (msg installOperationKeys[^ OBJTYPE ^ OBJUSAGES ^ ATTRS ^ OBJTYPE2 ^ OBJUSAGES2 ^ ATTRS2] from TK to HANDLE)
+    (msg installOperationKeys[# OBJTYPE # OBJUSAGES # ATTRS # OBJTYPE2 # OBJUSAGES2 # ATTRS2] from TK to HANDLE)
     < CI : CryptoOperation |
                              algorithm : ALGO, mode : MODE,
                              max-size : KEYSIZE >
@@ -1466,7 +1449,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- set-operation-key2-top-level-handle fails, the CryptoOperation is cleared and
   --- failSetOperationKey2 is sent from TK to HANDLE.
   crl [set-operation-key2-incompatible-key-panic] :
-    (msg installOperationKeys[^ OBJTYPE ^ OBJUSAGES ^ ATTRS ^ OBJTYPE2 ^ OBJUSAGES2 ^ ATTRS2] from TK to HANDLE)
+    (msg installOperationKeys[# OBJTYPE # OBJUSAGES # ATTRS # OBJTYPE2 # OBJUSAGES2 # ATTRS2] from TK to HANDLE)
     < CI : CryptoOperation |
                              algorithm : ALGO, mode : MODE,
                              max-size : KEYSIZE >
@@ -1489,13 +1472,13 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- set-operation-key2-success: finishSetOperationKey2 returns success.
   rl [set-operation-key2-success] :
     (msg finishSetOperationKey2[] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(SetOperationKey2 , PARAMS)) >
-    => < TK : TAKernel | api-call : return(apiCall(SetOperationKey2 , retCode(success))) > .
+    < TK : TAKernel | api-call : final(SetOperationKey2[PARAMS]) >
+    => < TK : TAKernel | api-call : return(SetOperationKey2[# success]) > .
 
   --- set-operation-key2-panic: failSetOperationKey2 sets the kernel status to panic.
   rl [set-operation-key2-panic] :
     (msg failSetOperationKey2[] from TK to HANDLE)
-    < TK : TAKernel | api-call : final(apiCall(SetOperationKey2 , PARAMS)) >
+    < TK : TAKernel | api-call : final(SetOperationKey2[PARAMS]) >
     => < TK : TAKernel | status : panic > .
 
 ------------------------------------------------------------
@@ -1513,27 +1496,27 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- copy-operation-subroutine (request): CopyOperation with a source handle moves to exec and
   --- requests the source attributes with reqOperationAttr.
   rl [copy-operation-subroutine] :
-    < TK : TAKernel | api-call : init(apiCall(CopyOperation , (srcHandle(HANDLE) , PARAMS))) >
+    < TK : TAKernel | api-call : init(CopyOperation[ZsCopyOperation0 # HANDLE ZrCopyOperation]) >
     =>
-    < TK : TAKernel | api-call : exec(apiCall(CopyOperation , (srcHandle(HANDLE) , PARAMS)) , 0) >
+    < TK : TAKernel | api-call : exec(CopyOperation[ZsCopyOperation0 # HANDLE ZrCopyOperation] , 0) >
     (msg reqOperationAttr[] from TK to HANDLE)
   .
 
   --- copy-operation-subroutine (finish): the source attributes and keys are received, the call
   --- moves to final, and reqCopyOperation is sent to the target HANDLE.
   rl [copy-operation-subroutine] :
-    (msg retOperationAttr[^ OPOBJATTR ^ OPHANDLEATTR ^ KEYS] from SRC to TK)
-    < TK : TAKernel | api-call : exec(apiCall(CopyOperation , (srcHandle(SRC) , trgHandle(HANDLE) , PARAMS)) , 0) >
+    (msg retOperationAttr[# OPOBJATTR # OPHANDLEATTR # KEYS] from SRC to TK)
+    < TK : TAKernel | api-call : exec(CopyOperation[# HANDLE # SRC ZrCopyOperation] , 0) >
     =>
-    < TK : TAKernel | api-call : final(apiCall(CopyOperation , (srcHandle(SRC) , trgHandle(HANDLE) , PARAMS))) >
-    (msg reqCopyOperation[^ OPOBJATTR ^ OPHANDLEATTR ^ KEYS] from TK to HANDLE)
+    < TK : TAKernel | api-call : final(CopyOperation[# HANDLE # SRC ZrCopyOperation]) >
+    (msg reqCopyOperation[# OPOBJATTR # OPHANDLEATTR # KEYS] from TK to HANDLE)
   .
 
   --- copy-operation-top-level-object: when copyFits holds for KATTRS and KEYS at KEYSIZE, the
   --- target CryptoOperation takes KATTRS, KEYS and the state OS, and applyCopiedOperationHandle is
   --- sent to HANDLE.
   crl [copy-operation-top-level-object] :
-    (msg reqCopyOperation[^ opObjectAttr(ALGO , MODE , OS , KATTRS) ^ opHandleAttr(B1 , B2 , B3) ^ KEYS] from TK to HANDLE)
+    (msg reqCopyOperation[# opObjectAttr(ALGO , MODE , OS , KATTRS) # opHandleAttr(B1 , B2 , B3) # KEYS] from TK to HANDLE)
     < CI : CryptoOperation |
                              algorithm : ALGO , mode : MODE ,
                              max-size : KEYSIZE ,
@@ -1541,7 +1524,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     =>
     < CI : CryptoOperation | attributes : KATTRS ,
                              keys : KEYS , state : OS >
-    (msg applyCopiedOperationHandle[^ B1 ^ B2 ^ B3] from TK to HANDLE)
+    (msg applyCopiedOperationHandle[# B1 # B2 # B3] from TK to HANDLE)
   if copyFits(KATTRS , KEYS , KEYSIZE)
   .
 
@@ -1549,7 +1532,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- mode, or copyFits fails, the target is cleared and failCopyOperation is sent from HANDLE to
   --- TK.
   crl [copy-operation-incompatible-panic] :
-    (msg reqCopyOperation[^ opObjectAttr(ALGO , MODE , OS , KATTRS) ^ opHandleAttr(B1 , B2 , B3) ^ KEYS] from TK to HANDLE)
+    (msg reqCopyOperation[# opObjectAttr(ALGO , MODE , OS , KATTRS) # opHandleAttr(B1 , B2 , B3) # KEYS] from TK to HANDLE)
     < CI : CryptoOperation |
                              algorithm : ALGO2 , mode : MODE2 ,
                              max-size : KEYSIZE >
@@ -1561,7 +1544,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- copy-operation-top-level-handle: the handle takes the handle flags B1, B2 and B3 and the
   --- key-material-set value B2 from the copied operation, and finishCopyOperation is sent to TK.
   rl [copy-operation-top-level-handle] :
-    (msg applyCopiedOperationHandle[^ B1 ^ B2 ^ B3] from TK to HANDLE)
+    (msg applyCopiedOperationHandle[# B1 # B2 # B3] from TK to HANDLE)
     < HANDLE : OperationHandle | state : HS, key-material-set : B2' >
     =>
     < HANDLE : OperationHandle | state : handleState(handleFlags(B1, B2, B3)),
@@ -1572,15 +1555,15 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- copy-operation-success: finishCopyOperation returns noReturnCode.
   rl [copy-operation-success] :
     (msg finishCopyOperation[] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(CopyOperation , PARAMS)) >
+    < TK : TAKernel | api-call : final(CopyOperation[PARAMS]) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(CopyOperation , retCode(noReturnCode))) >
+    < TK : TAKernel | api-call : return(CopyOperation[# noReturnCode]) >
   .
 
   --- copy-operation-panic: failCopyOperation sets the kernel status to panic.
   rl [copy-operation-panic] :
     (msg failCopyOperation[] from HANDLE to TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-call : final(apiCall(CopyOperation , PARAMS)) >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(CopyOperation[PARAMS]) >
     =>
     < TK : TAKernel | status : panic > .
 
@@ -1597,14 +1580,14 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- is-algorithm-supported-success: when supportsElement holds, success is returned.
   crl [is-algorithm-supported-success] :
-    < TK : TAKernel | api-call : init(apiCall(IsAlgorithmSupported , (alg(ALGO) , cryptoElement(ELEM)))) >
-    => < TK : TAKernel | api-call : return(apiCall(IsAlgorithmSupported , retCode(success))) >
+    < TK : TAKernel | api-call : init(IsAlgorithmSupported[# ALGO # ELEM]) >
+    => < TK : TAKernel | api-call : return(IsAlgorithmSupported[# success]) >
   if supportsElement(ALGO , ELEM) .
 
   --- is-algorithm-supported-fail: otherwise errorNotSupported is returned.
   crl [is-algorithm-supported-fail] :
-    < TK : TAKernel | api-call : init(apiCall(IsAlgorithmSupported , (alg(ALGO) , cryptoElement(ELEM)))) >
-    => < TK : TAKernel | api-call : return(apiCall(IsAlgorithmSupported , retCode(errorNotSupported))) >
+    < TK : TAKernel | api-call : init(IsAlgorithmSupported[# ALGO # ELEM]) >
+    => < TK : TAKernel | api-call : return(IsAlgorithmSupported[# errorNotSupported]) >
   if not supportsElement(ALGO , ELEM) .
 
 ------------------------------------------------------------
@@ -1621,16 +1604,16 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- digest-update-subroutine: TEE_DigestUpdate moves to final and sends digestUpdate with DATA to
   --- HANDLE.
   rl [digest-update-subroutine] :
-    < TK : TAKernel | api-call : init(apiCall(DigestUpdate , (handle(HANDLE) , data(DATA)))) >
+    < TK : TAKernel | api-call : init(DigestUpdate[# HANDLE # DATA]) >
     =>
-    < TK : TAKernel | api-call : final(apiCall(DigestUpdate , (handle(HANDLE) , data(DATA)))) >
-    (msg digestUpdate[^ DATA] from TK to HANDLE)
+    < TK : TAKernel | api-call : final(DigestUpdate[# HANDLE # DATA]) >
+    (msg digestUpdate[# DATA] from TK to HANDLE)
   .
 
   --- digest-update-top-level-object: when the state is not extract, DATA is appended to acc-data
   --- and the state becomes active, and finishTopDigestUpdate is sent to HANDLE.
   crl [digest-update-top-level-object] :
-    (msg digestUpdate[^ DATA] from TK to HANDLE)
+    (msg digestUpdate[# DATA] from TK to HANDLE)
     < CI : CryptoOperation |
                              acc-data : DL ,
                              state : OS >
@@ -1657,9 +1640,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- digest-update-success: finishDigestUpdate returns noReturnCode.
   rl [digest-update-success] :
     (msg finishDigestUpdate[] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(DigestUpdate , PARAMS)) >
+    < TK : TAKernel | api-call : final(DigestUpdate[PARAMS]) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(DigestUpdate , retCode(noReturnCode))) >
+    < TK : TAKernel | api-call : return(DigestUpdate[# noReturnCode]) >
   .
 
 ------------------------------------------------------------
@@ -1676,46 +1659,45 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- digest-do-final-subroutine: TEE_DigestDoFinal moves to final and sends digestDoFinal with DATA
   --- to HANDLE.
   rl [digest-do-final-subroutine] :
-    < TK : TAKernel | api-call : init(apiCall(DigestDoFinal , (handle(HANDLE) , data(DATA)))) >
+    < TK : TAKernel | api-call : init(DigestDoFinal[# HANDLE # DATA]) >
     =>
-    < TK : TAKernel | api-call : final(apiCall(DigestDoFinal , (handle(HANDLE) , data(DATA)))) >
-    (msg digestDoFinal[^ DATA] from TK to HANDLE)
+    < TK : TAKernel | api-call : final(DigestDoFinal[# HANDLE # DATA]) >
+    (msg digestDoFinal[# DATA] from TK to HANDLE)
   .
 
   --- digest-do-final-top-level-capacity: when the output capacity fits digestResult of acc-data and
   --- DATA, the call moves to final and digestDoFinal is sent to HANDLE.
   crl [digest-do-final-top-level-capacity] :
-    < TK : TAKernel | api-call : init(apiCall(DigestDoFinal , (handle(HANDLE) , data(DATA) , PARAMS))) >
+    < TK : TAKernel | api-call : init(DigestDoFinal[# HANDLE # DATA ZrDigestDoFinal]) >
     < CI : CryptoOperation |
                              acc-data : DL , algorithm : ALGO >
     < HANDLE : OperationHandle | oid : CI, opclass : clsDigest >
     =>
-    < TK : TAKernel | api-call : final(apiCall(DigestDoFinal , (handle(HANDLE) , data(DATA) , PARAMS))) >
+    < TK : TAKernel | api-call : final(DigestDoFinal[# HANDLE # DATA ZrDigestDoFinal]) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-    (msg digestDoFinal[^ DATA] from TK to HANDLE)
-  if hasOutputCapacity(PARAMS) /\ outputCapacityFits(PARAMS , digestResult(ALGO , DL DATA))
+    (msg digestDoFinal[# DATA] from TK to HANDLE)
+  if hasOutputCapacity(ZrDigestDoFinal) /\ outputCapacityFits(ZrDigestDoFinal , digestResult(ALGO , DL DATA))
   .
 
   --- digest-do-final-top-level-short-buffer: when the capacity does not fit, errorShortBuffer is
   --- returned with the size of digestResult.
   crl [digest-do-final-top-level-short-buffer] :
-    < TK : TAKernel | api-call : init(apiCall(DigestDoFinal , (handle(HANDLE) , data(DATA) , PARAMS))) >
+    < TK : TAKernel | api-call : init(DigestDoFinal[# HANDLE # DATA ZrDigestDoFinal]) >
     < CI : CryptoOperation |
                              acc-data : DL , algorithm : ALGO >
     < HANDLE : OperationHandle | oid : CI, opclass : clsDigest >
     =>
-    < TK : TAKernel | api-call : return(apiCall(DigestDoFinal , (retCode(errorShortBuffer) ,
-                                  size(outputSize(digestResult(ALGO , DL DATA)))))) >
+    < TK : TAKernel | api-call : return(DigestDoFinal[# errorShortBuffer # outputSize(digestResult(ALGO , DL DATA))]) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-  if hasOutputCapacity(PARAMS) /\ not outputCapacityFits(PARAMS , digestResult(ALGO , DL DATA))
+  if hasOutputCapacity(ZrDigestDoFinal) /\ not outputCapacityFits(ZrDigestDoFinal , digestResult(ALGO , DL DATA))
   .
 
   --- digest-do-final-top-level-object: acc-data is reset to nil and the state to initial, and
   --- resetTopDigestHandle with digestResult of acc-data and DATA is sent to HANDLE.
   rl [digest-do-final-top-level-object] :
-    (msg digestDoFinal[^ DATA] from TK to HANDLE)
+    (msg digestDoFinal[# DATA] from TK to HANDLE)
     < CI : CryptoOperation |
                              acc-data : DL , algorithm : ALGO ,
                              state : OS >
@@ -1724,25 +1706,25 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < CI : CryptoOperation | acc-data : nil ,
                              state : initial >
     < HANDLE : OperationHandle | >
-    (msg resetTopDigestHandle[^ digestResult(ALGO , DL DATA)] from TK to HANDLE)
+    (msg resetTopDigestHandle[# digestResult(ALGO , DL DATA)] from TK to HANDLE)
   .
 
   --- digest-do-final-top-level-handle: the handle moves to empty handleState, and
   --- finishDigestDoFinal is sent to TK.
   rl [digest-do-final-top-level-handle] :
-    (msg resetTopDigestHandle[^ DATA] from TK to HANDLE)
+    (msg resetTopDigestHandle[# DATA] from TK to HANDLE)
     < HANDLE : OperationHandle | state : HS >
     =>
     < HANDLE : OperationHandle | state : handleState(empty) >
-    (msg finishDigestDoFinal[^ DATA] from HANDLE to TK)
+    (msg finishDigestDoFinal[# DATA] from HANDLE to TK)
   .
 
   --- digest-do-final-success: finishDigestDoFinal returns success with the digest DATA.
   rl [digest-do-final-success] :
-    (msg finishDigestDoFinal[^ DATA] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(DigestDoFinal , PARAMS)) >
+    (msg finishDigestDoFinal[# DATA] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(DigestDoFinal[PARAMS]) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(DigestDoFinal , (retCode(success) , data(DATA)))) >
+    < TK : TAKernel | api-call : return(DigestDoFinal[# success # DATA]) >
   .
 
 ------------------------------------------------------------
@@ -1758,40 +1740,39 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- digest-extract-subroutine: TEE_DigestExtract moves to final and sends digestExtract to HANDLE.
   rl [digest-extract-subroutine] :
-    < TK : TAKernel | api-call : init(apiCall(DigestExtract , handle(HANDLE))) >
+    < TK : TAKernel | api-call : init(DigestExtract[# HANDLE]) >
     =>
-    < TK : TAKernel | api-call : final(apiCall(DigestExtract , handle(HANDLE))) >
+    < TK : TAKernel | api-call : final(DigestExtract[# HANDLE]) >
     (msg digestExtract[] from TK to HANDLE)
   .
 
   --- digest-extract-top-level-capacity: when the output capacity fits digestResult of acc-data, the
   --- call moves to final and digestExtract is sent to HANDLE.
   crl [digest-extract-top-level-capacity] :
-    < TK : TAKernel | api-call : init(apiCall(DigestExtract , (handle(HANDLE) , PARAMS))) >
+    < TK : TAKernel | api-call : init(DigestExtract[# HANDLE ZrDigestExtract]) >
     < CI : CryptoOperation |
                              acc-data : DL , algorithm : ALGO >
     < HANDLE : OperationHandle | oid : CI, opclass : clsDigest >
     =>
-    < TK : TAKernel | api-call : final(apiCall(DigestExtract , (handle(HANDLE) , PARAMS))) >
+    < TK : TAKernel | api-call : final(DigestExtract[# HANDLE ZrDigestExtract]) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
     (msg digestExtract[] from TK to HANDLE)
-  if hasOutputCapacity(PARAMS) /\ outputCapacityFits(PARAMS , digestResult(ALGO , DL))
+  if hasOutputCapacity(ZrDigestExtract) /\ outputCapacityFits(ZrDigestExtract , digestResult(ALGO , DL))
   .
 
   --- digest-extract-top-level-short-buffer: when the capacity does not fit, errorShortBuffer is
   --- returned with the size of digestResult.
   crl [digest-extract-top-level-short-buffer] :
-    < TK : TAKernel | api-call : init(apiCall(DigestExtract , (handle(HANDLE) , PARAMS))) >
+    < TK : TAKernel | api-call : init(DigestExtract[# HANDLE ZrDigestExtract]) >
     < CI : CryptoOperation |
                              acc-data : DL , algorithm : ALGO >
     < HANDLE : OperationHandle | oid : CI, opclass : clsDigest >
     =>
-    < TK : TAKernel | api-call : return(apiCall(DigestExtract , (retCode(errorShortBuffer) ,
-                                  size(outputSize(digestResult(ALGO , DL)))))) >
+    < TK : TAKernel | api-call : return(DigestExtract[# errorShortBuffer # outputSize(digestResult(ALGO , DL))]) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-  if hasOutputCapacity(PARAMS) /\ not outputCapacityFits(PARAMS , digestResult(ALGO , DL))
+  if hasOutputCapacity(ZrDigestExtract) /\ not outputCapacityFits(ZrDigestExtract , digestResult(ALGO , DL))
   .
 
   --- digest-extract-top-level-object: acc-data is reset to nil and the state to extract, and
@@ -1806,25 +1787,25 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < CI : CryptoOperation | acc-data : nil ,
                              state : extract >
     < HANDLE : OperationHandle | >
-    (msg extractTopDigestHandle[^ digestResult(ALGO , DL)] from TK to HANDLE)
+    (msg extractTopDigestHandle[# digestResult(ALGO , DL)] from TK to HANDLE)
   .
 
   --- digest-extract-top-level-handle: the handle adds keySet, init and extract to its handleState,
   --- and finishDigestExtract is sent to TK.
   rl [digest-extract-top-level-handle] :
-    (msg extractTopDigestHandle[^ DATA] from TK to HANDLE)
+    (msg extractTopDigestHandle[# DATA] from TK to HANDLE)
     < HANDLE : OperationHandle | state : handleState(HSF) >
     =>
     < HANDLE : OperationHandle | state : handleState((keySet , init , extract , HSF)) >
-    (msg finishDigestExtract[^ DATA] from HANDLE to TK)
+    (msg finishDigestExtract[# DATA] from HANDLE to TK)
   .
 
   --- digest-extract-success: finishDigestExtract returns success with the extracted data DATA.
   rl [digest-extract-success] :
-    (msg finishDigestExtract[^ DATA] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(DigestExtract , PARAMS)) >
+    (msg finishDigestExtract[# DATA] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(DigestExtract[PARAMS]) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(DigestExtract , (retCode(success) , data(DATA)))) >
+    < TK : TAKernel | api-call : return(DigestExtract[# success # DATA]) >
   .
 
 ------------------------------------------------------------
@@ -1842,9 +1823,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- cipher-init-req-cipher-init: the call moves to final and reqCipherInit is sent to HANDLE.
   rl [cipher-init-req-cipher-init] :
-    < TK : TAKernel | api-call : init(apiCall(CipherInit , handle(HANDLE))) , status : (normal).AppStatus >
+    < TK : TAKernel | api-call : init(cipherInit[# HANDLE]) , status : (normal).AppStatus >
     =>
-    < TK : TAKernel | api-call : final(apiCall(CipherInit , handle(HANDLE))) >
+    < TK : TAKernel | api-call : final(cipherInit[# HANDLE]) >
     (msg reqCipherInit[] from TK to HANDLE) .
 
   --- cipher-init-initialize-success: when the handle has keySet and is of class clsCipher, the handle gains
@@ -1874,14 +1855,14 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- cipher-init-success: finishCipherInit returns noReturnCode.
   rl [cipher-init-success] :
     (msg finishCipherInit[] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(CipherInit , PARAMS)) , status : (normal).AppStatus >
+    < TK : TAKernel | api-call : final(cipherInit[PARAMS]) , status : (normal).AppStatus >
     =>
-    < TK : TAKernel | api-call : return(apiCall(CipherInit , retCode(noReturnCode))) > .
+    < TK : TAKernel | api-call : return(cipherInit[# noReturnCode]) > .
 
   --- cipher-init-panic: failCipherInit sets the kernel status to panic.
   rl [cipher-init-panic] :
     (msg failCipherInit[] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(CipherInit , PARAMS)) , status : (normal).AppStatus >
+    < TK : TAKernel | api-call : final(cipherInit[PARAMS]) , status : (normal).AppStatus >
     =>
     < TK : TAKernel | status : panic > .
 
@@ -1898,10 +1879,10 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- cipher-update-req-cipher: the call moves to final and reqCipher with DATA is sent to HANDLE.
   rl [cipher-update-req-cipher] :
-    < TK : TAKernel | api-call : init(apiCall(CipherUpdate , (handle(HANDLE) , data(DATA)))) , status : (normal).AppStatus >
+    < TK : TAKernel | api-call : init(cipherUpdate[# HANDLE # DATA]) , status : (normal).AppStatus >
     =>
-    < TK : TAKernel | api-call : final(apiCall(CipherUpdate , (handle(HANDLE) , data(DATA)))) >
-    (msg reqCipher[^ HANDLE ^ DATA] from TK to HANDLE) .
+    < TK : TAKernel | api-call : final(cipherUpdate[# HANDLE # DATA]) >
+    (msg reqCipher[# HANDLE # DATA] from TK to HANDLE) .
 
   --- cipher-update-try-cipher-success: when the operation is active, the handle has init and
   --- keySet, and runOp succeeds on DATA, the CryptoOperation and the handle are cleared, and
@@ -1911,10 +1892,10 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       algorithm : ALGO , mode : MODE >
     < HANDLE : OpHandle | oid : CI , opclass : clsCipher ,
                           state : handleState((init , keySet , HSF)) >
-    (msg reqCipher[^ HANDLE ^ DATA] from TK to HANDLE)
+    (msg reqCipher[# HANDLE # DATA] from TK to HANDLE)
   => < CI : CryptoOp | >
      < HANDLE : OpHandle | >
-     (msg finishCipher[^ OPRESULT] from HANDLE to TK)
+     (msg finishCipher[# OPRESULT] from HANDLE to TK)
   if [OPRESULT] := runOp(ALGO , MODE , ATTRS , DATA) .
 
   --- cipher-update-try-cipher-fail: when the handle lacks init or keySet, the operation is not active, the
@@ -1924,7 +1905,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       algorithm : ALGO , mode : MODE >
     < HANDLE : OpHandle | oid : CI , opclass : OC ,
                           state : handleState(HSF) >
-    (msg reqCipher[^ HANDLE ^ DATA] from TK to HANDLE)
+    (msg reqCipher[# HANDLE # DATA] from TK to HANDLE)
   => < CI : CryptoOp | >
      < HANDLE : OpHandle | >
      (msg failCipher[] from HANDLE to TK)
@@ -1933,15 +1914,15 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- cipher-update-success: finishCipher returns success with the output data.
   rl [cipher-update-success] :
-    (msg finishCipher[^ OPRESULT] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(CipherUpdate , PARAMS)) , status : (normal).AppStatus >
+    (msg finishCipher[# OPRESULT] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(cipherUpdate[PARAMS]) , status : (normal).AppStatus >
     =>
-    < TK : TAKernel | api-call : return(apiCall(CipherUpdate , (retCode(success) , data(OPRESULT)))) > .
+    < TK : TAKernel | api-call : return(cipherUpdate[# success # OPRESULT]) > .
 
   --- cipher-update-panic: failCipher sets the kernel status to panic.
   rl [cipher-update-panic] :
     (msg failCipher[] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(CipherUpdate , PARAMS)) , status : (normal).AppStatus >
+    < TK : TAKernel | api-call : final(cipherUpdate[PARAMS]) , status : (normal).AppStatus >
     =>
     < TK : TAKernel | status : panic > .
 
@@ -1959,10 +1940,10 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- cipher-do-final-req-cipher-final: the call moves to final and reqCipherFinal with DATA is sent
   --- to HANDLE.
   rl [cipher-do-final-req-cipher-final] :
-    < TK : TAKernel | api-call : init(apiCall(CipherDoFinal , (handle(HANDLE) , data(DATA)))) , status : (normal).AppStatus >
+    < TK : TAKernel | api-call : init(cipherDoFinal[# HANDLE # DATA]) , status : (normal).AppStatus >
     =>
-    < TK : TAKernel | api-call : final(apiCall(CipherDoFinal , (handle(HANDLE) , data(DATA)))) >
-    (msg reqCipherFinal[^ DATA] from TK to HANDLE) .
+    < TK : TAKernel | api-call : final(cipherDoFinal[# HANDLE # DATA]) >
+    (msg reqCipherFinal[# DATA] from TK to HANDLE) .
 
   --- cipher-do-final-try-cipher-final-success: under the same conditions as
   --- cipher-update-try-cipher-success, the operation becomes initial, the handle loses init, and
@@ -1972,10 +1953,10 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       algorithm : ALGO , mode : MODE >
     < HANDLE : OpHandle | oid : CI , opclass : clsCipher ,
                           state : handleState((init , keySet , HSF)) >
-    (msg reqCipherFinal[^ DATA] from TK to HANDLE)
+    (msg reqCipherFinal[# DATA] from TK to HANDLE)
   => < CI : CryptoOp | state : initial >
      < HANDLE : OpHandle | state : handleState((keySet , HSF)) >
-     (msg finishCipherDoFinal[^ OPRESULT] from HANDLE to TK)
+     (msg finishCipherDoFinal[# OPRESULT] from HANDLE to TK)
   if [OPRESULT] := runOp(ALGO , MODE , ATTRS , DATA) .
 
   --- cipher-do-final-try-cipher-final-fail: under the same conditions as
@@ -1985,7 +1966,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                       algorithm : ALGO , mode : MODE >
     < HANDLE : OpHandle | oid : CI , opclass : OC ,
                           state : handleState(HSF) >
-    (msg reqCipherFinal[^ DATA] from TK to HANDLE)
+    (msg reqCipherFinal[# DATA] from TK to HANDLE)
   => < CI : CryptoOp | >
      < HANDLE : OpHandle | >
      (msg failCipherDoFinal[] from HANDLE to TK)
@@ -1994,15 +1975,15 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- cipher-do-final-success: finishCipherDoFinal returns success with the output data.
   rl [cipher-do-final-success] :
-    (msg finishCipherDoFinal[^ OPRESULT] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(CipherDoFinal , PARAMS)) , status : (normal).AppStatus >
+    (msg finishCipherDoFinal[# OPRESULT] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(cipherDoFinal[PARAMS]) , status : (normal).AppStatus >
     =>
-    < TK : TAKernel | api-call : return(apiCall(CipherDoFinal , (retCode(success) , data(OPRESULT)))) > .
+    < TK : TAKernel | api-call : return(cipherDoFinal[# success # OPRESULT]) > .
 
   --- cipher-do-final-panic: failCipherDoFinal sets the kernel status to panic.
   rl [cipher-do-final-panic] :
     (msg failCipherDoFinal[] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(CipherDoFinal , PARAMS)) , status : (normal).AppStatus >
+    < TK : TAKernel | api-call : final(cipherDoFinal[PARAMS]) , status : (normal).AppStatus >
     =>
     < TK : TAKernel | status : panic > .
 
@@ -2016,18 +1997,18 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- mac-init-subroutine: TEE_MACInit moves to final and sends initOperation with IV to HANDLE.
   rl [mac-init-subroutine] :
-    < TK : TAKernel | api-call : init(apiCall(MACInit , (handle(HANDLE) , iv(IV)))) >
+    < TK : TAKernel | api-call : init(MACInit[# HANDLE # IV]) >
     =>
-    < TK : TAKernel | api-call : final(apiCall(MACInit , (handle(HANDLE) , iv(IV)))) >
-    (msg initOperation[^ IV] from TK to HANDLE)
+    < TK : TAKernel | api-call : final(MACInit[# HANDLE # IV]) >
+    (msg initOperation[# IV] from TK to HANDLE)
   .
 
   --- mac-init-success: finishInitOperation returns noReturnCode.
   rl [mac-init-success] :
     (msg finishInitOperation[] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(MACInit , PARAMS)) >
+    < TK : TAKernel | api-call : final(MACInit[PARAMS]) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(MACInit , retCode(noReturnCode))) >
+    < TK : TAKernel | api-call : return(MACInit[# noReturnCode]) >
   .
 
 ------------------------------------------------------------
@@ -2040,16 +2021,16 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- mac-update-subroutine: TEE_MACUpdate moves to final and sends macUpdate with DATA to HANDLE.
   rl [mac-update-subroutine] :
-    < TK : TAKernel | api-call : init(apiCall(MACUpdate , (handle(HANDLE) , data(DATA)))) >
+    < TK : TAKernel | api-call : init(MACUpdate[# HANDLE # DATA]) >
     =>
-    < TK : TAKernel | api-call : final(apiCall(MACUpdate , (handle(HANDLE) , data(DATA)))) >
-    (msg macUpdate[^ DATA] from TK to HANDLE)
+    < TK : TAKernel | api-call : final(MACUpdate[# HANDLE # DATA]) >
+    (msg macUpdate[# DATA] from TK to HANDLE)
   .
 
   --- mac-update-top-level-object: when the operation is active, DATA is appended to acc-data, and
   --- finishTopMacUpdate is sent to HANDLE.
   rl [mac-update-top-level-object] :
-    (msg macUpdate[^ DATA] from TK to HANDLE)
+    (msg macUpdate[# DATA] from TK to HANDLE)
     < CI : CryptoOperation |
                              acc-data : DL ,
                              state : active >
@@ -2072,9 +2053,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- mac-update-success: finishMacUpdate returns noReturnCode.
   rl [mac-update-success] :
     (msg finishMacUpdate[] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(MACUpdate , PARAMS)) >
+    < TK : TAKernel | api-call : final(MACUpdate[PARAMS]) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(MACUpdate , retCode(noReturnCode))) >
+    < TK : TAKernel | api-call : return(MACUpdate[# noReturnCode]) >
   .
 
 ------------------------------------------------------------
@@ -2088,49 +2069,48 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- mac-compute-final-subroutine: TEE_MACComputeFinal moves to final and sends macComputeFinal
   --- with DATA to HANDLE.
   rl [mac-compute-final-subroutine] :
-    < TK : TAKernel | api-call : init(apiCall(MACComputeFinal , (handle(HANDLE) , data(DATA)))) >
+    < TK : TAKernel | api-call : init(MACComputeFinal[# HANDLE # DATA]) >
     =>
-    < TK : TAKernel | api-call : final(apiCall(MACComputeFinal , (handle(HANDLE) , data(DATA)))) >
-    (msg macComputeFinal[^ DATA] from TK to HANDLE)
+    < TK : TAKernel | api-call : final(MACComputeFinal[# HANDLE # DATA]) >
+    (msg macComputeFinal[# DATA] from TK to HANDLE)
   .
 
   --- mac-compute-final-top-level-capacity: when the operation is active and the output capacity
   --- fits computeMAC of acc-data and DATA, the call moves to final and macComputeFinal is sent to
   --- HANDLE.
   crl [mac-compute-final-top-level-capacity] :
-    < TK : TAKernel | api-call : init(apiCall(MACComputeFinal , (handle(HANDLE) , data(DATA) , PARAMS))) >
+    < TK : TAKernel | api-call : init(MACComputeFinal[# HANDLE # DATA ZrMACComputeFinal]) >
     < CI : CryptoOperation |
                              attributes : KATTRS , acc-data : DL , algorithm : ALGO,
                              state : active >
     < HANDLE : OperationHandle | oid : CI, opclass : clsMAC >
     =>
-    < TK : TAKernel | api-call : final(apiCall(MACComputeFinal , (handle(HANDLE) , data(DATA) , PARAMS))) >
+    < TK : TAKernel | api-call : final(MACComputeFinal[# HANDLE # DATA ZrMACComputeFinal]) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-    (msg macComputeFinal[^ DATA] from TK to HANDLE)
-  if hasOutputCapacity(PARAMS) /\ outputCapacityFits(PARAMS , computeMAC(ALGO , KATTRS , DL DATA))
+    (msg macComputeFinal[# DATA] from TK to HANDLE)
+  if hasOutputCapacity(ZrMACComputeFinal) /\ outputCapacityFits(ZrMACComputeFinal , computeMAC(ALGO , KATTRS , DL DATA))
   .
 
   --- mac-compute-final-top-level-short-buffer: when the capacity does not fit, errorShortBuffer is
   --- returned with the size of computeMAC.
   crl [mac-compute-final-top-level-short-buffer] :
-    < TK : TAKernel | api-call : init(apiCall(MACComputeFinal , (handle(HANDLE) , data(DATA) , PARAMS))) >
+    < TK : TAKernel | api-call : init(MACComputeFinal[# HANDLE # DATA ZrMACComputeFinal]) >
     < CI : CryptoOperation |
                              attributes : KATTRS , acc-data : DL , algorithm : ALGO,
                              state : active >
     < HANDLE : OperationHandle | oid : CI, opclass : clsMAC >
     =>
-    < TK : TAKernel | api-call : return(apiCall(MACComputeFinal , (retCode(errorShortBuffer) ,
-                                  size(outputSize(computeMAC(ALGO , KATTRS , DL DATA)))))) >
+    < TK : TAKernel | api-call : return(MACComputeFinal[# errorShortBuffer # outputSize(computeMAC(ALGO , KATTRS , DL DATA))]) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-  if hasOutputCapacity(PARAMS) /\ not outputCapacityFits(PARAMS , computeMAC(ALGO , KATTRS , DL DATA))
+  if hasOutputCapacity(ZrMACComputeFinal) /\ not outputCapacityFits(ZrMACComputeFinal , computeMAC(ALGO , KATTRS , DL DATA))
   .
 
   --- mac-compute-final-top-level-object: acc-data is reset to nil and the state to initial, and
   --- finishTopMacFinal carries computeMAC of acc-data and DATA to HANDLE.
   rl [mac-compute-final-top-level-object] :
-    (msg macComputeFinal[^ DATA] from TK to HANDLE)
+    (msg macComputeFinal[# DATA] from TK to HANDLE)
     < CI : CryptoOperation |
                              attributes : KATTRS , acc-data : DL ,
                              algorithm : ALGO ,
@@ -2140,25 +2120,25 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < CI : CryptoOperation | acc-data : nil ,
                              state : initial >
     < HANDLE : OperationHandle | >
-    (msg finishTopMacFinal[^ computeMAC(ALGO , KATTRS , DL DATA)] from TK to HANDLE)
+    (msg finishTopMacFinal[# computeMAC(ALGO , KATTRS , DL DATA)] from TK to HANDLE)
   .
 
   --- mac-compute-final-top-level-handle: the handle with init moves to keySet, and
   --- finishMacComputeFinal is sent to TK.
   rl [mac-compute-final-top-level-handle] :
-    (msg finishTopMacFinal[^ DATA] from TK to HANDLE)
+    (msg finishTopMacFinal[# DATA] from TK to HANDLE)
     < HANDLE : OperationHandle | state : handleState((init, HSF)) >
     =>
     < HANDLE : OperationHandle | state : handleState(keySet) >
-    (msg finishMacComputeFinal[^ DATA] from HANDLE to TK)
+    (msg finishMacComputeFinal[# DATA] from HANDLE to TK)
   .
 
   --- mac-compute-final-success: finishMacComputeFinal returns success with the MAC DATA.
   rl [mac-compute-final-success] :
-    (msg finishMacComputeFinal[^ DATA] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(MACComputeFinal , PARAMS)) >
+    (msg finishMacComputeFinal[# DATA] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(MACComputeFinal[PARAMS]) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(MACComputeFinal , (retCode(success) , data(DATA)))) >
+    < TK : TAKernel | api-call : return(MACComputeFinal[# success # DATA]) >
   .
 
 ------------------------------------------------------------
@@ -2168,19 +2148,19 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- mac-compare-final-subroutine: TEE_MACCompareFinal moves to final and sends macComputeFinal
   --- with DATA to HANDLE, so that the MAC of DATA is computed.
   rl [mac-compare-final-subroutine] :
-    < TK : TAKernel | api-call : init(apiCall(MACCompareFinal , (handle(HANDLE) , data(DATA) , PARAMS))) >
+    < TK : TAKernel | api-call : init(MACCompareFinal[# HANDLE # DATA ZsMACCompareFinal2 ZrMACCompareFinal]) >
     =>
-    < TK : TAKernel | api-call : final(apiCall(MACCompareFinal , (handle(HANDLE) , data(DATA) , PARAMS))) >
-    (msg macComputeFinal[^ DATA] from TK to HANDLE)
+    < TK : TAKernel | api-call : final(MACCompareFinal[# HANDLE # DATA ZsMACCompareFinal2 ZrMACCompareFinal]) >
+    (msg macComputeFinal[# DATA] from TK to HANDLE)
   .
 
   --- mac-compare-final-success: the computed MAC DATA is compared with MAC through getReturnCode,
   --- and the result is returned.
   rl [mac-compare-final-success] :
-    (msg finishMacComputeFinal[^ DATA] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(MACCompareFinal , (mac(MAC) , PARAMS))) >
+    (msg finishMacComputeFinal[# DATA] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(MACCompareFinal[ZsMACCompareFinal0 ZsMACCompareFinal1 # MAC ZrMACCompareFinal]) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(MACCompareFinal , retCode(getReturnCode(DATA , MAC)))) >
+    < TK : TAKernel | api-call : return(MACCompareFinal[# getReturnCode(DATA , MAC)]) >
   .
 
 ------------------------------------------------------------
@@ -2189,18 +2169,18 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- ae-init-subroutine: TEE_AEInit moves to final and sends initOperation with IV to HANDLE.
   rl [ae-init-subroutine] :
-    < TK : TAKernel | api-call : init(apiCall(AEInit , (handle(HANDLE) , iv(IV)))) >
+    < TK : TAKernel | api-call : init(AEInit[# HANDLE # IV]) >
     =>
-    < TK : TAKernel | api-call : final(apiCall(AEInit , (handle(HANDLE) , iv(IV)))) >
-    (msg initOperation[^ IV] from TK to HANDLE)
+    < TK : TAKernel | api-call : final(AEInit[# HANDLE # IV]) >
+    (msg initOperation[# IV] from TK to HANDLE)
   .
 
   --- ae-init-success: finishInitOperation returns success.
   rl [ae-init-success] :
     (msg finishInitOperation[] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(AEInit , PARAMS)) >
+    < TK : TAKernel | api-call : final(AEInit[PARAMS]) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(AEInit , retCode(success))) >
+    < TK : TAKernel | api-call : return(AEInit[# success]) >
   .
 
 ------------------------------------------------------------
@@ -2214,16 +2194,16 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- ae-update-aad-subroutine: TEE_AEUpdateAAD moves to final and sends reqAEUpdateAAD with DATA to
   --- HANDLE.
   rl [ae-update-aad-subroutine] :
-    < TK : TAKernel | api-call : init(apiCall(AEUpdateAAD , (handle(HANDLE) , data(DATA)))) >
+    < TK : TAKernel | api-call : init(AEUpdateAAD[# HANDLE # DATA]) >
     =>
-    < TK : TAKernel | api-call : final(apiCall(AEUpdateAAD , (handle(HANDLE) , data(DATA)))) >
-    (msg reqAEUpdateAAD[^ DATA] from TK to HANDLE)
+    < TK : TAKernel | api-call : final(AEUpdateAAD[# HANDLE # DATA]) >
+    (msg reqAEUpdateAAD[# DATA] from TK to HANDLE)
   .
 
   --- ae-update-aad-top-level-object: when the operation is initial, DATA is appended to acc-data,
   --- and finishTopAEUpdateAAD is sent to HANDLE.
   rl [ae-update-aad-top-level-object] :
-    (msg reqAEUpdateAAD[^ DATA] from TK to HANDLE)
+    (msg reqAEUpdateAAD[# DATA] from TK to HANDLE)
     < CI : CryptoOperation |
                              acc-data : DL ,
                              state : initial >
@@ -2246,9 +2226,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- ae-update-aad-success: finishAEUpdateAAD returns noReturnCode.
   rl [ae-update-aad-success] :
     (msg finishAEUpdateAAD[] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(AEUpdateAAD , PARAMS)) >
+    < TK : TAKernel | api-call : final(AEUpdateAAD[PARAMS]) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(AEUpdateAAD , retCode(noReturnCode))) >
+    < TK : TAKernel | api-call : return(AEUpdateAAD[# noReturnCode]) >
   .
 
 ------------------------------------------------------------
@@ -2261,53 +2241,52 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- ae-update-subroutine: TEE_AEUpdate moves to final and sends reqAEUpdate with DATA to HANDLE.
   rl [ae-update-subroutine] :
-    < TK : TAKernel | api-call : init(apiCall(AEUpdate , (handle(HANDLE) , data(DATA)))) >
+    < TK : TAKernel | api-call : init(AEUpdate[# HANDLE # DATA]) >
     =>
-    < TK : TAKernel | api-call : final(apiCall(AEUpdate , (handle(HANDLE) , data(DATA)))) >
-    (msg reqAEUpdate[^ DATA] from TK to HANDLE)
+    < TK : TAKernel | api-call : final(AEUpdate[# HANDLE # DATA]) >
+    (msg reqAEUpdate[# DATA] from TK to HANDLE)
   .
 
   --- ae-update-top-level-capacity: when runOp succeeds on KATTRS and DL DATA, the output capacity
   --- fits OPRESULT and the buffers do not overlap, the call moves to final and reqAEUpdate is sent
   --- to HANDLE.
   crl [ae-update-top-level-capacity] :
-    < TK : TAKernel | api-call : init(apiCall(AEUpdate , (handle(HANDLE) , data(DATA) , PARAMS))) >
+    < TK : TAKernel | api-call : init(AEUpdate[# HANDLE # DATA ZrAEUpdate]) >
     < CI : CryptoOperation |
                              attributes : KATTRS , acc-data : DL, algorithm : ALGO,
                              mode : MODE >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAE >
     =>
-    < TK : TAKernel | api-call : final(apiCall(AEUpdate , (handle(HANDLE) , data(DATA) , PARAMS))) >
+    < TK : TAKernel | api-call : final(AEUpdate[# HANDLE # DATA ZrAEUpdate]) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-    (msg reqAEUpdate[^ DATA] from TK to HANDLE)
-  if [OPRESULT] := runOp(ALGO , MODE , KATTRS , DL DATA) /\ hasOutputCapacity(PARAMS) /\
-     outputCapacityFits(PARAMS , OPRESULT) /\
-     not invalidBufferOverlap(PARAMS)
+    (msg reqAEUpdate[# DATA] from TK to HANDLE)
+  if [OPRESULT] := runOp(ALGO , MODE , KATTRS , DL DATA) /\ hasOutputCapacity(ZrAEUpdate) /\
+     outputCapacityFits(ZrAEUpdate , OPRESULT) /\
+     not invalidBufferOverlap(ZrAEUpdate)
   .
 
   --- ae-update-top-level-short-buffer: when the output capacity does not fit OPRESULT,
   --- errorShortBuffer is returned with the size of OPRESULT.
   crl [ae-update-top-level-short-buffer] :
-    < TK : TAKernel | api-call : init(apiCall(AEUpdate , (handle(HANDLE) , data(DATA) , PARAMS))) >
+    < TK : TAKernel | api-call : init(AEUpdate[# HANDLE # DATA ZrAEUpdate]) >
     < CI : CryptoOperation |
                              attributes : KATTRS , acc-data : DL, algorithm : ALGO,
                              mode : MODE >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAE >
     =>
-    < TK : TAKernel | api-call : return(apiCall(AEUpdate , (retCode(errorShortBuffer) ,
-                        size(outputSize(OPRESULT))))) >
+    < TK : TAKernel | api-call : return(AEUpdate[# errorShortBuffer # outputSize(OPRESULT)]) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-  if [OPRESULT] := runOp(ALGO , MODE , KATTRS , DL DATA) /\ hasOutputCapacity(PARAMS) /\
-     not outputCapacityFits(PARAMS , OPRESULT) /\
-     not invalidBufferOverlap(PARAMS)
+  if [OPRESULT] := runOp(ALGO , MODE , KATTRS , DL DATA) /\ hasOutputCapacity(ZrAEUpdate) /\
+     not outputCapacityFits(ZrAEUpdate , OPRESULT) /\
+     not invalidBufferOverlap(ZrAEUpdate)
   .
 
   --- ae-update-top-level-object: when runOp succeeds, DL DATA is appended to acc-data and the state
   --- becomes active, and finishTopAEUpdate carrying OPRESULT is sent to HANDLE.
   crl [ae-update-top-level-object] :
-    (msg reqAEUpdate[^ DATA] from TK to HANDLE)
+    (msg reqAEUpdate[# DATA] from TK to HANDLE)
     < CI : CryptoOperation |
                              attributes : KATTRS , acc-data : DL , algorithm : ALGO ,
                              mode : MODE ,
@@ -2317,25 +2296,25 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < CI : CryptoOperation | acc-data : DL DATA ,
                              state : active >
     < HANDLE : OperationHandle | >
-    (msg finishTopAEUpdate[^ OPRESULT] from TK to HANDLE)
+    (msg finishTopAEUpdate[# OPRESULT] from TK to HANDLE)
   if [OPRESULT] := runOp(ALGO , MODE , KATTRS , DL DATA)
   .
 
   --- ae-update-top-level-handle: when the handle has init, finishAEUpdate is sent to TK.
   rl [ae-update-top-level-handle] :
-    (msg finishTopAEUpdate[^ DATA] from TK to HANDLE)
+    (msg finishTopAEUpdate[# DATA] from TK to HANDLE)
     < HANDLE : OperationHandle | state : handleState((init, HSF)) >
     =>
     < HANDLE : OperationHandle | >
-    (msg finishAEUpdate[^ DATA] from HANDLE to TK)
+    (msg finishAEUpdate[# DATA] from HANDLE to TK)
   .
 
   --- ae-update-success: finishAEUpdate returns success with the output data.
   rl [ae-update-success] :
-    (msg finishAEUpdate[^ DATA] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(AEUpdate , PARAMS)) >
+    (msg finishAEUpdate[# DATA] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(AEUpdate[PARAMS]) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(AEUpdate , (retCode(success) , data(DATA)))) >
+    < TK : TAKernel | api-call : return(AEUpdate[# success # DATA]) >
   .
 
 ------------------------------------------------------------
@@ -2349,57 +2328,55 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- ae-encrypt-final-subroutine: TEE_AEEncryptFinal moves to final and sends aeEncryptFinal with
   --- DATA to HANDLE.
   rl [ae-encrypt-final-subroutine] :
-    < TK : TAKernel | api-call : init(apiCall(AEEncryptFinal , (handle(HANDLE) , data(DATA)))) >
-    => < TK : TAKernel | api-call : final(apiCall(AEEncryptFinal , (handle(HANDLE) , data(DATA)))) >
-    (msg aeEncryptFinal[^ DATA] from TK to HANDLE) .
+    < TK : TAKernel | api-call : init(AEEncryptFinal[# HANDLE # DATA]) >
+    => < TK : TAKernel | api-call : final(AEEncryptFinal[# HANDLE # DATA]) >
+    (msg aeEncryptFinal[# DATA] from TK to HANDLE) .
 
   --- ae-encrypt-final-top-level-capacity: for an encrypting operation, the output capacity (if any)
   --- must fit OPRESULT and the tag capacity (if any) must fit computeMAC of acc-data and DATA. When
   --- the buffers do not overlap, the call moves to final and aeEncryptFinal is sent to HANDLE.
   crl [ae-encrypt-final-top-level-capacity] :
-    < TK : TAKernel | api-call : init(apiCall(AEEncryptFinal , (handle(HANDLE) , data(DATA) , PARAMS))) >
+    < TK : TAKernel | api-call : init(AEEncryptFinal[# HANDLE # DATA ZrAEEncryptFinal]) >
     < CI : CryptoOperation |
                              attributes : KATTRS , acc-data : DL , algorithm : ALGO,
                              mode : modeEncrypt >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAE >
     =>
-    < TK : TAKernel | api-call : final(apiCall(AEEncryptFinal , (handle(HANDLE) , data(DATA) , PARAMS))) >
+    < TK : TAKernel | api-call : final(AEEncryptFinal[# HANDLE # DATA ZrAEEncryptFinal]) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-    (msg aeEncryptFinal[^ DATA] from TK to HANDLE)
-  if [OPRESULT] := runOp(ALGO , modeEncrypt , KATTRS , DL DATA) /\ (hasOutputCapacity(PARAMS) or hasTagCapacity(PARAMS)) /\
-     (not hasOutputCapacity(PARAMS) or
-       outputCapacityFits(PARAMS , OPRESULT)) /\
-     tagCapacityFits(PARAMS , computeMAC(ALGO , KATTRS , DL DATA)) /\
-     not invalidBufferOverlap(PARAMS)
+    (msg aeEncryptFinal[# DATA] from TK to HANDLE)
+  if [OPRESULT] := runOp(ALGO , modeEncrypt , KATTRS , DL DATA) /\ (hasOutputCapacity(ZrAEEncryptFinal) or hasTagCapacity(ZrAEEncryptFinal)) /\
+     (not hasOutputCapacity(ZrAEEncryptFinal) or
+       outputCapacityFits(ZrAEEncryptFinal , OPRESULT)) /\
+     tagCapacityFits(ZrAEEncryptFinal , computeMAC(ALGO , KATTRS , DL DATA)) /\
+     not invalidBufferOverlap(ZrAEEncryptFinal)
   .
 
   --- ae-encrypt-final-top-level-short-buffer: when the output or the tag capacity does not fit,
   --- errorShortBuffer is returned with the output size and the tag size.
   crl [ae-encrypt-final-top-level-short-buffer] :
-    < TK : TAKernel | api-call : init(apiCall(AEEncryptFinal , (handle(HANDLE) , data(DATA) , PARAMS))) >
+    < TK : TAKernel | api-call : init(AEEncryptFinal[# HANDLE # DATA ZrAEEncryptFinal]) >
     < CI : CryptoOperation |
                              attributes : KATTRS , acc-data : DL , algorithm : ALGO,
                              mode : modeEncrypt >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAE >
     =>
-    < TK : TAKernel | api-call : return(apiCall(AEEncryptFinal , (retCode(errorShortBuffer) ,
-                        (size(outputSize(OPRESULT)) ,
-                         tagSize(outputSize(computeMAC(ALGO , KATTRS , DL DATA))))))) >
+    < TK : TAKernel | api-call : return(AEEncryptFinal[# errorShortBuffer # outputSize(OPRESULT) # outputSize(computeMAC(ALGO , KATTRS , DL DATA))]) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-  if [OPRESULT] := runOp(ALGO , modeEncrypt , KATTRS , DL DATA) /\ (hasOutputCapacity(PARAMS) or hasTagCapacity(PARAMS)) /\
-     ((hasOutputCapacity(PARAMS) and
-       not outputCapacityFits(PARAMS , OPRESULT)) or
-      (hasTagCapacity(PARAMS) and
-       not tagCapacityFits(PARAMS , computeMAC(ALGO , KATTRS , DL DATA)))) /\
-     not invalidBufferOverlap(PARAMS)
+  if [OPRESULT] := runOp(ALGO , modeEncrypt , KATTRS , DL DATA) /\ (hasOutputCapacity(ZrAEEncryptFinal) or hasTagCapacity(ZrAEEncryptFinal)) /\
+     ((hasOutputCapacity(ZrAEEncryptFinal) and
+       not outputCapacityFits(ZrAEEncryptFinal , OPRESULT)) or
+      (hasTagCapacity(ZrAEEncryptFinal) and
+       not tagCapacityFits(ZrAEEncryptFinal , computeMAC(ALGO , KATTRS , DL DATA)))) /\
+     not invalidBufferOverlap(ZrAEEncryptFinal)
   .
 
   --- ae-encrypt-final-top-level-object: acc-data is reset to nil and the state to initial, and
   --- finishTopAEEncryptFinal carries OPRESULT and computeMAC of acc-data and DATA to HANDLE.
   crl [ae-encrypt-final-top-level-object] :
-    (msg aeEncryptFinal[^ DATA] from TK to HANDLE)
+    (msg aeEncryptFinal[# DATA] from TK to HANDLE)
     < CI : CryptoOperation |
                              attributes : KATTRS , acc-data : DL , algorithm : ALGO ,
                              mode : modeEncrypt ,
@@ -2408,24 +2385,24 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     => < CI : CryptoOperation | acc-data : nil ,
                               state : initial >
        < HANDLE : OperationHandle | >
-       (msg finishTopAEEncryptFinal[^ OPRESULT ^
+       (msg finishTopAEEncryptFinal[# OPRESULT #
                                      computeMAC(ALGO , KATTRS , DL DATA)] from TK to HANDLE)
   if [OPRESULT] := runOp(ALGO , modeEncrypt , KATTRS , DL DATA) .
 
   --- ae-encrypt-final-top-level-handle: the handle with init moves to keySet, and
   --- finishAEEncryptFinal is sent to TK.
   rl [ae-encrypt-final-top-level-handle] :
-    (msg finishTopAEEncryptFinal[^ DATA ^ MAC] from TK to HANDLE)
+    (msg finishTopAEEncryptFinal[# DATA # MAC] from TK to HANDLE)
     < HANDLE : OperationHandle | state : handleState((init, HSF)) >
     => < HANDLE : OperationHandle | state : handleState(keySet) >
-       (msg finishAEEncryptFinal[^ DATA ^ MAC] from HANDLE to TK) .
+       (msg finishAEEncryptFinal[# DATA # MAC] from HANDLE to TK) .
 
   --- ae-encrypt-final-success: finishAEEncryptFinal returns success with the output data and the
   --- MAC.
   rl [ae-encrypt-final-success] :
-    (msg finishAEEncryptFinal[^ DATA ^ MAC] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(AEEncryptFinal , PARAMS)) >
-    => < TK : TAKernel | api-call : return(apiCall(AEEncryptFinal , (retCode(success) , data(DATA) , mac(MAC)))) > .
+    (msg finishAEEncryptFinal[# DATA # MAC] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(AEEncryptFinal[PARAMS]) >
+    => < TK : TAKernel | api-call : return(AEEncryptFinal[# success # DATA # MAC]) > .
 
 ------------------------------------------------------------
 --- TEE_AEDecryptFinal
@@ -2438,50 +2415,49 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- ae-decrypt-final-subroutine: TEE_AEDecryptFinal moves to final and sends aeDecryptFinal with
   --- DATA and MAC to HANDLE.
   rl [ae-decrypt-final-subroutine] :
-    < TK : TAKernel | api-call : init(apiCall(AEDecryptFinal , (handle(HANDLE) , data(DATA) , mac(MAC)))) >
-    => < TK : TAKernel | api-call : final(apiCall(AEDecryptFinal , (handle(HANDLE) , data(DATA) , mac(MAC)))) >
-    (msg aeDecryptFinal[^ DATA ^ MAC] from TK to HANDLE) .
+    < TK : TAKernel | api-call : init(AEDecryptFinal[# HANDLE # DATA # MAC]) >
+    => < TK : TAKernel | api-call : final(AEDecryptFinal[# HANDLE # DATA # MAC]) >
+    (msg aeDecryptFinal[# DATA # MAC] from TK to HANDLE) .
 
   --- ae-decrypt-final-top-level-capacity: when runOp succeeds in modeDecrypt and the output
   --- capacity fits OPRESULT, the call moves to final and aeDecryptFinal is sent to HANDLE.
   crl [ae-decrypt-final-top-level-capacity] :
-    < TK : TAKernel | api-call : init(apiCall(AEDecryptFinal , (handle(HANDLE) , data(DATA) , mac(MAC) , PARAMS))) >
+    < TK : TAKernel | api-call : init(AEDecryptFinal[# HANDLE # DATA # MAC ZrAEDecryptFinal]) >
     < CI : CryptoOperation |
                              attributes : KATTRS , algorithm : ALGO,
                              mode : modeDecrypt >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAE >
     =>
-    < TK : TAKernel | api-call : final(apiCall(AEDecryptFinal , (handle(HANDLE) , data(DATA) , mac(MAC) , PARAMS))) >
+    < TK : TAKernel | api-call : final(AEDecryptFinal[# HANDLE # DATA # MAC ZrAEDecryptFinal]) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-    (msg aeDecryptFinal[^ DATA ^ MAC] from TK to HANDLE)
-  if [OPRESULT] := runOp(ALGO , modeDecrypt , KATTRS , DATA) /\ hasOutputCapacity(PARAMS) /\
-     outputCapacityFits(PARAMS , OPRESULT) /\
-     not invalidBufferOverlap(PARAMS)
+    (msg aeDecryptFinal[# DATA # MAC] from TK to HANDLE)
+  if [OPRESULT] := runOp(ALGO , modeDecrypt , KATTRS , DATA) /\ hasOutputCapacity(ZrAEDecryptFinal) /\
+     outputCapacityFits(ZrAEDecryptFinal , OPRESULT) /\
+     not invalidBufferOverlap(ZrAEDecryptFinal)
   .
 
   --- ae-decrypt-final-top-level-short-buffer: when the output capacity does not fit OPRESULT,
   --- errorShortBuffer is returned with the output size.
   crl [ae-decrypt-final-top-level-short-buffer] :
-    < TK : TAKernel | api-call : init(apiCall(AEDecryptFinal , (handle(HANDLE) , data(DATA) , mac(MAC) , PARAMS))) >
+    < TK : TAKernel | api-call : init(AEDecryptFinal[# HANDLE # DATA # MAC ZrAEDecryptFinal]) >
     < CI : CryptoOperation |
                              attributes : KATTRS , algorithm : ALGO,
                              mode : modeDecrypt >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAE >
     =>
-    < TK : TAKernel | api-call : return(apiCall(AEDecryptFinal , (retCode(errorShortBuffer) ,
-                        size(outputSize(OPRESULT))))) >
+    < TK : TAKernel | api-call : return(AEDecryptFinal[# errorShortBuffer # outputSize(OPRESULT)]) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-  if [OPRESULT] := runOp(ALGO , modeDecrypt , KATTRS , DATA) /\ hasOutputCapacity(PARAMS) /\
-     not outputCapacityFits(PARAMS , OPRESULT) /\
-     not invalidBufferOverlap(PARAMS)
+  if [OPRESULT] := runOp(ALGO , modeDecrypt , KATTRS , DATA) /\ hasOutputCapacity(ZrAEDecryptFinal) /\
+     not outputCapacityFits(ZrAEDecryptFinal , OPRESULT) /\
+     not invalidBufferOverlap(ZrAEDecryptFinal)
   .
 
   --- ae-decrypt-final-top-level-object: acc-data is reset to nil and the state to initial, and
   --- finishTopAEDecryptFinal carries OPRESULT, the computed MAC and MAC to HANDLE.
   crl [ae-decrypt-final-top-level-object] :
-    (msg aeDecryptFinal[^ DATA ^ MAC] from TK to HANDLE)
+    (msg aeDecryptFinal[# DATA # MAC] from TK to HANDLE)
     < CI : CryptoOperation |
                              attributes : KATTRS , acc-data : DL , algorithm : ALGO ,
                              mode : modeDecrypt ,
@@ -2490,31 +2466,31 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     => < CI : CryptoOperation | acc-data : nil ,
                               state : initial >
        < HANDLE : OperationHandle | >
-       (msg finishTopAEDecryptFinal[^ OPRESULT ^
-                                     computeMAC(ALGO , KATTRS , DL DATA) ^ MAC] from TK to HANDLE)
+       (msg finishTopAEDecryptFinal[# OPRESULT #
+                                     computeMAC(ALGO , KATTRS , DL DATA) # MAC] from TK to HANDLE)
   if [OPRESULT] := runOp(ALGO , modeDecrypt , KATTRS , DATA) .
 
   --- ae-decrypt-final-top-level-handle: the handle with init moves to keySet, and
   --- finishAEDecryptFinal is sent to TK.
   rl [ae-decrypt-final-top-level-handle] :
-    (msg finishTopAEDecryptFinal[^ DATA ^ MAC ^ DL] from TK to HANDLE)
+    (msg finishTopAEDecryptFinal[# DATA # MAC # DL] from TK to HANDLE)
     < HANDLE : OperationHandle | state : handleState((init, HSF)) >
     => < HANDLE : OperationHandle | state : handleState(keySet) >
-       (msg finishAEDecryptFinal[^ DATA ^ MAC ^ DL] from HANDLE to TK) .
+       (msg finishAEDecryptFinal[# DATA # MAC # DL] from HANDLE to TK) .
 
   --- ae-decrypt-final-success: when the computed MAC equals MAC, the call returns success with the
   --- output data.
   rl [ae-decrypt-final-success] :
-    (msg finishAEDecryptFinal[^ DATA ^ MAC ^ MAC] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(AEDecryptFinal , PARAMS)) >
-    => < TK : TAKernel | api-call : return(apiCall(AEDecryptFinal , (retCode(success) , data(DATA)))) > .
+    (msg finishAEDecryptFinal[# DATA # MAC # MAC] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(AEDecryptFinal[PARAMS]) >
+    => < TK : TAKernel | api-call : return(AEDecryptFinal[# success # DATA]) > .
 
   --- ae-decrypt-final-mac-invalid: when the computed MAC differs from MAC, errorMacInvalid is
   --- returned.
   crl [ae-decrypt-final-mac-invalid] :
-    (msg finishAEDecryptFinal[^ DATA ^ MAC ^ DL] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(AEDecryptFinal , PARAMS)) >
-    => < TK : TAKernel | api-call : return(apiCall(AEDecryptFinal , retCode(errorMacInvalid))) >
+    (msg finishAEDecryptFinal[# DATA # MAC # DL] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(AEDecryptFinal[PARAMS]) >
+    => < TK : TAKernel | api-call : return(AEDecryptFinal[# errorMacInvalid]) >
   if MAC =/= DL .
 
 ------------------------------------------------------------
@@ -2528,59 +2504,58 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- asymmetric-encrypt-subroutine: TEE_AsymmetricEncrypt moves to final and sends asymEncrypt with
   --- DATA to HANDLE.
   rl [asymmetric-encrypt-subroutine] :
-    < TK : TAKernel | api-call : init(apiCall(AsymmetricEncrypt , (handle(HANDLE) , data(DATA)))) >
+    < TK : TAKernel | api-call : init(AsymmetricEncrypt[# HANDLE # DATA]) >
     =>
-    < TK : TAKernel | api-call : final(apiCall(AsymmetricEncrypt , (handle(HANDLE) , data(DATA)))) >
-    (msg asymEncrypt[^ DATA] from TK to HANDLE)
+    < TK : TAKernel | api-call : final(AsymmetricEncrypt[# HANDLE # DATA]) >
+    (msg asymEncrypt[# DATA] from TK to HANDLE)
   .
 
   --- asymmetric-encrypt-top-level-capacity: when the output capacity fits the RSA key size in bytes
   --- and DATA is a valid encryption input, the call moves to final and asymEncrypt is sent to
   --- HANDLE.
   crl [asymmetric-encrypt-top-level-capacity] :
-    < TK : TAKernel | api-call : init(apiCall(AsymmetricEncrypt , (handle(HANDLE) , data(DATA) , PARAMS))) >
+    < TK : TAKernel | api-call : init(AsymmetricEncrypt[# HANDLE # DATA ZrAsymmetricEncrypt]) >
     < CI : CryptoOperation |
                              attributes : KATTRS , algorithm : ALGO, max-size : KEYSIZE,
                              mode : modeEncrypt >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAsymmetricCipher >
     =>
-    < TK : TAKernel | api-call : final(apiCall(AsymmetricEncrypt , (handle(HANDLE) , data(DATA) , PARAMS))) >
+    < TK : TAKernel | api-call : final(AsymmetricEncrypt[# HANDLE # DATA ZrAsymmetricEncrypt]) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-    (msg asymEncrypt[^ DATA] from TK to HANDLE)
-  if hasOutputCapacity(PARAMS) /\
+    (msg asymEncrypt[# DATA] from TK to HANDLE)
+  if hasOutputCapacity(ZrAsymmetricEncrypt) /\
      validRsaEncryptInput(ALGO , KEYSIZE , DATA) /\
-     outputCapacityFitsSize(PARAMS , dataSize(rsaKeyBytes(KEYSIZE)))
+     outputCapacityFitsSize(ZrAsymmetricEncrypt , dataSize(rsaKeyBytes(KEYSIZE)))
   .
 
   --- asymmetric-encrypt-top-level-short-buffer: when DATA is a valid input but the capacity is
   --- smaller than the RSA key size in bytes, errorShortBuffer is returned with that size.
   crl [asymmetric-encrypt-top-level-short-buffer] :
-    < TK : TAKernel | api-call : init(apiCall(AsymmetricEncrypt , (handle(HANDLE) , data(DATA) , PARAMS))) >
+    < TK : TAKernel | api-call : init(AsymmetricEncrypt[# HANDLE # DATA ZrAsymmetricEncrypt]) >
     < CI : CryptoOperation |
                              attributes : KATTRS , algorithm : ALGO, max-size : KEYSIZE,
                              mode : modeEncrypt >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAsymmetricCipher >
     =>
-    < TK : TAKernel | api-call : return(apiCall(AsymmetricEncrypt , (retCode(errorShortBuffer) ,
-                        size(dataSize(rsaKeyBytes(KEYSIZE)))))) >
+    < TK : TAKernel | api-call : return(AsymmetricEncrypt[# errorShortBuffer # dataSize(rsaKeyBytes(KEYSIZE))]) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-  if hasOutputCapacity(PARAMS) /\
+  if hasOutputCapacity(ZrAsymmetricEncrypt) /\
      validRsaEncryptInput(ALGO , KEYSIZE , DATA) /\
-     not outputCapacityFitsSize(PARAMS , dataSize(rsaKeyBytes(KEYSIZE)))
+     not outputCapacityFitsSize(ZrAsymmetricEncrypt , dataSize(rsaKeyBytes(KEYSIZE)))
   .
 
   --- asymmetric-encrypt-top-level-bad-parameters: when DATA is not a valid encryption input,
   --- errorBadParameters is returned.
   crl [asymmetric-encrypt-top-level-bad-parameters] :
-    < TK : TAKernel | api-call : init(apiCall(AsymmetricEncrypt , (handle(HANDLE) , data(DATA) , PARAMS))) >
+    < TK : TAKernel | api-call : init(AsymmetricEncrypt[# HANDLE # DATA ZrAsymmetricEncrypt]) >
     < CI : CryptoOperation |
                              algorithm : ALGO , max-size : KEYSIZE,
                              mode : modeEncrypt >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAsymmetricCipher >
     =>
-    < TK : TAKernel | api-call : return(apiCall(AsymmetricEncrypt , retCode(errorBadParameters))) >
+    < TK : TAKernel | api-call : return(AsymmetricEncrypt[# errorBadParameters]) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
   if not validRsaEncryptInput(ALGO , KEYSIZE , DATA)
@@ -2590,7 +2565,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- encryption input, the CryptoOperation and the handle are cleared, and finishTopAsymEncrypt
   --- carrying OPRESULT is sent to HANDLE.
   crl [asymmetric-encrypt-top-level-object] :
-    (msg asymEncrypt[^ DATA] from TK to HANDLE)
+    (msg asymEncrypt[# DATA] from TK to HANDLE)
     < CI : CryptoOperation |
                              attributes : KATTRS , algorithm : ALGO , max-size : KEYSIZE,
                              mode : modeEncrypt >
@@ -2598,32 +2573,32 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     =>
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-    (msg finishTopAsymEncrypt[^ OPRESULT] from TK to HANDLE)
+    (msg finishTopAsymEncrypt[# OPRESULT] from TK to HANDLE)
   if [OPRESULT] := runOp(ALGO , modeEncrypt , KATTRS , DATA) /\ validRsaEncryptInput(ALGO , KEYSIZE , DATA)
   .
 
   --- asymmetric-encrypt-top-level-handle: when the handle has keySet, finishAsymEncrypt is sent to
   --- TK.
   crl [asymmetric-encrypt-top-level-handle] :
-    (msg finishTopAsymEncrypt[^ DATA] from TK to HANDLE)
+    (msg finishTopAsymEncrypt[# DATA] from TK to HANDLE)
     < HANDLE : OperationHandle | state : HS >
     =>
     < HANDLE : OperationHandle | >
-    (msg finishAsymEncrypt[^ DATA] from HANDLE to TK)
+    (msg finishAsymEncrypt[# DATA] from HANDLE to TK)
   if hasKeySet(HS)
   .
 
   --- asymmetric-encrypt-top-level-message-bad-parameters: when DATA is not a valid encryption
   --- input, errorBadParameters is returned to the call in its final state.
   crl [asymmetric-encrypt-top-level-message-bad-parameters] :
-    (msg asymEncrypt[^ DATA] from TK to HANDLE)
-    < TK : TAKernel | api-call : final(apiCall(AsymmetricEncrypt , PARAMS)) >
+    (msg asymEncrypt[# DATA] from TK to HANDLE)
+    < TK : TAKernel | api-call : final(AsymmetricEncrypt[PARAMS]) >
     < CI : CryptoOperation |
                              algorithm : ALGO , max-size : KEYSIZE,
                              mode : modeEncrypt >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAsymmetricCipher >
     =>
-    < TK : TAKernel | api-call : return(apiCall(AsymmetricEncrypt , retCode(errorBadParameters))) >
+    < TK : TAKernel | api-call : return(AsymmetricEncrypt[# errorBadParameters]) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
   if not validRsaEncryptInput(ALGO , KEYSIZE , DATA)
@@ -2631,10 +2606,10 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- asymmetric-encrypt-success: finishAsymEncrypt returns success with the output data.
   rl [asymmetric-encrypt-success] :
-    (msg finishAsymEncrypt[^ DATA] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(AsymmetricEncrypt , PARAMS)) >
+    (msg finishAsymEncrypt[# DATA] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(AsymmetricEncrypt[PARAMS]) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(AsymmetricEncrypt , (retCode(success) , data(DATA)))) >
+    < TK : TAKernel | api-call : return(AsymmetricEncrypt[# success # DATA]) >
   .
 
   op asymDecrypt : -> ReqId [ctor] .
@@ -2644,58 +2619,57 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- asymmetric-decrypt-subroutine: TEE_AsymmetricDecrypt moves to final and sends asymDecrypt with
   --- DATA to HANDLE.
   rl [asymmetric-decrypt-subroutine] :
-    < TK : TAKernel | api-call : init(apiCall(AsymmetricDecrypt , (handle(HANDLE) , data(DATA)))) >
+    < TK : TAKernel | api-call : init(AsymmetricDecrypt[# HANDLE # DATA]) >
     =>
-    < TK : TAKernel | api-call : final(apiCall(AsymmetricDecrypt , (handle(HANDLE) , data(DATA)))) >
-    (msg asymDecrypt[^ DATA] from TK to HANDLE)
+    < TK : TAKernel | api-call : final(AsymmetricDecrypt[# HANDLE # DATA]) >
+    (msg asymDecrypt[# DATA] from TK to HANDLE)
   .
 
   --- asymmetric-decrypt-top-level-capacity: when runOp succeeds in modeDecrypt, the ciphertext has
   --- the RSA key size and is valid for ALGO, and the output capacity fits OPRESULT, the call moves
   --- to final and asymDecrypt is sent to HANDLE.
   crl [asymmetric-decrypt-top-level-capacity] :
-    < TK : TAKernel | api-call : init(apiCall(AsymmetricDecrypt , (handle(HANDLE) , data(DATA) , PARAMS))) >
+    < TK : TAKernel | api-call : init(AsymmetricDecrypt[# HANDLE # DATA ZrAsymmetricDecrypt]) >
     < CI : CryptoOperation |
                              attributes : KATTRS , algorithm : ALGO, max-size : KEYSIZE,
                              mode : modeDecrypt >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAsymmetricCipher >
     =>
-    < TK : TAKernel | api-call : final(apiCall(AsymmetricDecrypt , (handle(HANDLE) , data(DATA) , PARAMS))) >
+    < TK : TAKernel | api-call : final(AsymmetricDecrypt[# HANDLE # DATA ZrAsymmetricDecrypt]) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-    (msg asymDecrypt[^ DATA] from TK to HANDLE)
-  if [OPRESULT] := runOp(ALGO , modeDecrypt , KATTRS , DATA) /\ hasOutputCapacity(PARAMS) /\
+    (msg asymDecrypt[# DATA] from TK to HANDLE)
+  if [OPRESULT] := runOp(ALGO , modeDecrypt , KATTRS , DATA) /\ hasOutputCapacity(ZrAsymmetricDecrypt) /\
      validRsaCiphertextSize(KEYSIZE , DATA) /\ validRsaCiphertext(ALGO , KATTRS , DATA) /\
-     outputCapacityFits(PARAMS , OPRESULT)
+     outputCapacityFits(ZrAsymmetricDecrypt , OPRESULT)
   .
 
   --- asymmetric-decrypt-top-level-short-buffer: under the same conditions, when the output capacity
   --- does not fit OPRESULT, errorShortBuffer is returned with the size of OPRESULT.
   crl [asymmetric-decrypt-top-level-short-buffer] :
-    < TK : TAKernel | api-call : init(apiCall(AsymmetricDecrypt , (handle(HANDLE) , data(DATA) , PARAMS))) >
+    < TK : TAKernel | api-call : init(AsymmetricDecrypt[# HANDLE # DATA ZrAsymmetricDecrypt]) >
     < CI : CryptoOperation |
                              attributes : KATTRS , algorithm : ALGO, max-size : KEYSIZE,
                              mode : modeDecrypt >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAsymmetricCipher >
     =>
-    < TK : TAKernel | api-call : return(apiCall(AsymmetricDecrypt , (retCode(errorShortBuffer) ,
-                        size(outputSize(OPRESULT))))) >
+    < TK : TAKernel | api-call : return(AsymmetricDecrypt[# errorShortBuffer # outputSize(OPRESULT)]) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-  if [OPRESULT] := runOp(ALGO , modeDecrypt , KATTRS , DATA) /\ hasOutputCapacity(PARAMS) /\
+  if [OPRESULT] := runOp(ALGO , modeDecrypt , KATTRS , DATA) /\ hasOutputCapacity(ZrAsymmetricDecrypt) /\
      validRsaCiphertextSize(KEYSIZE , DATA) /\ validRsaCiphertext(ALGO , KATTRS , DATA) /\
-     not outputCapacityFits(PARAMS , OPRESULT)
+     not outputCapacityFits(ZrAsymmetricDecrypt , OPRESULT)
   .
 
   --- asymmetric-decrypt-top-level-bad-parameters: when the ciphertext size is not valid for
   --- KEYSIZE, errorBadParameters is returned.
   crl [asymmetric-decrypt-top-level-bad-parameters] :
-    < TK : TAKernel | api-call : init(apiCall(AsymmetricDecrypt , (handle(HANDLE) , data(DATA) , PARAMS))) >
+    < TK : TAKernel | api-call : init(AsymmetricDecrypt[# HANDLE # DATA ZrAsymmetricDecrypt]) >
     < CI : CryptoOperation |
                              max-size : KEYSIZE , mode : modeDecrypt >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAsymmetricCipher >
     =>
-    < TK : TAKernel | api-call : return(apiCall(AsymmetricDecrypt , retCode(errorBadParameters))) >
+    < TK : TAKernel | api-call : return(AsymmetricDecrypt[# errorBadParameters]) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
   if not validRsaCiphertextSize(KEYSIZE , DATA)
@@ -2704,13 +2678,13 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- asymmetric-decrypt-top-level-invalid-ciphertext: when the size is valid but validRsaCiphertext
   --- fails, errorCiphertextInvalid is returned.
   crl [asymmetric-decrypt-top-level-invalid-ciphertext] :
-    < TK : TAKernel | api-call : init(apiCall(AsymmetricDecrypt , (handle(HANDLE) , data(DATA) , PARAMS))) >
+    < TK : TAKernel | api-call : init(AsymmetricDecrypt[# HANDLE # DATA ZrAsymmetricDecrypt]) >
     < CI : CryptoOperation |
                              attributes : KATTRS , algorithm : ALGO, max-size : KEYSIZE,
                              mode : modeDecrypt >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAsymmetricCipher >
     =>
-    < TK : TAKernel | api-call : return(apiCall(AsymmetricDecrypt , retCode(errorCiphertextInvalid))) >
+    < TK : TAKernel | api-call : return(AsymmetricDecrypt[# errorCiphertextInvalid]) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
   if validRsaCiphertextSize(KEYSIZE , DATA) /\ not validRsaCiphertext(ALGO , KATTRS , DATA)
@@ -2720,7 +2694,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- CryptoOperation and the handle are cleared, and finishTopAsymDecrypt carrying OPRESULT is sent
   --- to HANDLE.
   crl [asymmetric-decrypt-top-level-object] :
-    (msg asymDecrypt[^ DATA] from TK to HANDLE)
+    (msg asymDecrypt[# DATA] from TK to HANDLE)
     < CI : CryptoOperation |
                              attributes : KATTRS , algorithm : ALGO , max-size : KEYSIZE,
                              mode : modeDecrypt >
@@ -2728,31 +2702,31 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     =>
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-    (msg finishTopAsymDecrypt[^ OPRESULT] from TK to HANDLE)
+    (msg finishTopAsymDecrypt[# OPRESULT] from TK to HANDLE)
   if [OPRESULT] := runOp(ALGO , modeDecrypt , KATTRS , DATA) /\ validRsaCiphertextSize(KEYSIZE , DATA) /\ validRsaCiphertext(ALGO , KATTRS , DATA)
   .
 
   --- asymmetric-decrypt-top-level-handle: when the handle has keySet, finishAsymDecrypt is sent to
   --- TK.
   crl [asymmetric-decrypt-top-level-handle] :
-    (msg finishTopAsymDecrypt[^ DATA] from TK to HANDLE)
+    (msg finishTopAsymDecrypt[# DATA] from TK to HANDLE)
     < HANDLE : OperationHandle | state : HS >
     =>
     < HANDLE : OperationHandle | >
-    (msg finishAsymDecrypt[^ DATA] from HANDLE to TK)
+    (msg finishAsymDecrypt[# DATA] from HANDLE to TK)
   if hasKeySet(HS)
   .
 
   --- asymmetric-decrypt-top-level-message-bad-parameters: when the ciphertext size is not valid for
   --- KEYSIZE, errorBadParameters is returned to the call in its final state.
   crl [asymmetric-decrypt-top-level-message-bad-parameters] :
-    (msg asymDecrypt[^ DATA] from TK to HANDLE)
-    < TK : TAKernel | api-call : final(apiCall(AsymmetricDecrypt , PARAMS)) >
+    (msg asymDecrypt[# DATA] from TK to HANDLE)
+    < TK : TAKernel | api-call : final(AsymmetricDecrypt[PARAMS]) >
     < CI : CryptoOperation |
                              max-size : KEYSIZE , mode : modeDecrypt >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAsymmetricCipher >
     =>
-    < TK : TAKernel | api-call : return(apiCall(AsymmetricDecrypt , retCode(errorBadParameters))) >
+    < TK : TAKernel | api-call : return(AsymmetricDecrypt[# errorBadParameters]) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
   if not validRsaCiphertextSize(KEYSIZE , DATA)
@@ -2761,14 +2735,14 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- asymmetric-decrypt-top-level-message-invalid-ciphertext: when the size is valid but the
   --- ciphertext is not, errorCiphertextInvalid is returned to the call in its final state.
   crl [asymmetric-decrypt-top-level-message-invalid-ciphertext] :
-    (msg asymDecrypt[^ DATA] from TK to HANDLE)
-    < TK : TAKernel | api-call : final(apiCall(AsymmetricDecrypt , PARAMS)) >
+    (msg asymDecrypt[# DATA] from TK to HANDLE)
+    < TK : TAKernel | api-call : final(AsymmetricDecrypt[PARAMS]) >
     < CI : CryptoOperation |
                              attributes : KATTRS , algorithm : ALGO , max-size : KEYSIZE,
                              mode : modeDecrypt >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAsymmetricCipher >
     =>
-    < TK : TAKernel | api-call : return(apiCall(AsymmetricDecrypt , retCode(errorCiphertextInvalid))) >
+    < TK : TAKernel | api-call : return(AsymmetricDecrypt[# errorCiphertextInvalid]) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
   if validRsaCiphertextSize(KEYSIZE , DATA) /\ not validRsaCiphertext(ALGO , KATTRS , DATA)
@@ -2776,10 +2750,10 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- asymmetric-decrypt-success: finishAsymDecrypt returns success with the output data.
   rl [asymmetric-decrypt-success] :
-    (msg finishAsymDecrypt[^ DATA] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(AsymmetricDecrypt , PARAMS)) >
+    (msg finishAsymDecrypt[# DATA] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(AsymmetricDecrypt[PARAMS]) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(AsymmetricDecrypt , (retCode(success) , data(DATA)))) >
+    < TK : TAKernel | api-call : return(AsymmetricDecrypt[# success # DATA]) >
   .
 
 ------------------------------------------------------------
@@ -2793,47 +2767,46 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- asymmetric-sign-digest-subroutine: TEE_AsymmetricSignDigest moves to final and sends
   --- asymSignDigest with DATA to HANDLE.
   rl [asymmetric-sign-digest-subroutine] :
-    < TK : TAKernel | api-call : init(apiCall(AsymmetricSignDigest , (handle(HANDLE) , data(DATA)))) >
+    < TK : TAKernel | api-call : init(AsymmetricSignDigest[# HANDLE # DATA]) >
     =>
-    < TK : TAKernel | api-call : final(apiCall(AsymmetricSignDigest , (handle(HANDLE) , data(DATA)))) >
-    (msg asymSignDigest[^ DATA] from TK to HANDLE)
+    < TK : TAKernel | api-call : final(AsymmetricSignDigest[# HANDLE # DATA]) >
+    (msg asymSignDigest[# DATA] from TK to HANDLE)
   .
 
   --- asymmetric-sign-digest-top-level-capacity: when the output capacity fits
   --- signatureSize(KEYSIZE), the call moves to final and asymSignDigest is sent to HANDLE.
   crl [asymmetric-sign-digest-top-level-capacity] :
-    < TK : TAKernel | api-call : init(apiCall(AsymmetricSignDigest , (handle(HANDLE) , data(DATA) , PARAMS))) >
+    < TK : TAKernel | api-call : init(AsymmetricSignDigest[# HANDLE # DATA ZrAsymmetricSignDigest]) >
     < CI : CryptoOperation |
                              max-size : KEYSIZE , mode : modeSign >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAsymmetricSignature >
     =>
-    < TK : TAKernel | api-call : final(apiCall(AsymmetricSignDigest , (handle(HANDLE) , data(DATA) , PARAMS))) >
+    < TK : TAKernel | api-call : final(AsymmetricSignDigest[# HANDLE # DATA ZrAsymmetricSignDigest]) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-    (msg asymSignDigest[^ DATA] from TK to HANDLE)
-  if hasOutputCapacity(PARAMS) /\ outputCapacityFitsSize(PARAMS , signatureSize(KEYSIZE))
+    (msg asymSignDigest[# DATA] from TK to HANDLE)
+  if hasOutputCapacity(ZrAsymmetricSignDigest) /\ outputCapacityFitsSize(ZrAsymmetricSignDigest , signatureSize(KEYSIZE))
   .
 
   --- asymmetric-sign-digest-top-level-short-buffer: when the capacity does not fit
   --- signatureSize(KEYSIZE), errorShortBuffer is returned with that size.
   crl [asymmetric-sign-digest-top-level-short-buffer] :
-    < TK : TAKernel | api-call : init(apiCall(AsymmetricSignDigest , (handle(HANDLE) , data(DATA) , PARAMS))) >
+    < TK : TAKernel | api-call : init(AsymmetricSignDigest[# HANDLE # DATA ZrAsymmetricSignDigest]) >
     < CI : CryptoOperation |
                              max-size : KEYSIZE , mode : modeSign >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAsymmetricSignature >
     =>
-    < TK : TAKernel | api-call : return(apiCall(AsymmetricSignDigest , (retCode(errorShortBuffer) ,
-                                  size(signatureSize(KEYSIZE))))) >
+    < TK : TAKernel | api-call : return(AsymmetricSignDigest[# errorShortBuffer # signatureSize(KEYSIZE)]) >
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-  if hasOutputCapacity(PARAMS) /\ not outputCapacityFitsSize(PARAMS , signatureSize(KEYSIZE))
+  if hasOutputCapacity(ZrAsymmetricSignDigest) /\ not outputCapacityFitsSize(ZrAsymmetricSignDigest , signatureSize(KEYSIZE))
   .
 
   --- asymmetric-sign-digest-top-level-object: when DATA has a valid digest length for ALGO, the
   --- CryptoOperation and the handle are cleared, and finishTopAsymSignDigest carries
   --- signDigest(ALGO, KATTRS, DATA) to HANDLE.
   crl [asymmetric-sign-digest-top-level-object] :
-    (msg asymSignDigest[^ DATA] from TK to HANDLE)
+    (msg asymSignDigest[# DATA] from TK to HANDLE)
     < CI : CryptoOperation |
                              attributes : KATTRS , algorithm : ALGO ,
                              mode : modeSign >
@@ -2841,26 +2814,26 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     =>
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-    (msg finishTopAsymSignDigest[^ signDigest(ALGO , KATTRS , DATA)] from TK to HANDLE)
+    (msg finishTopAsymSignDigest[# signDigest(ALGO , KATTRS , DATA)] from TK to HANDLE)
   if validSignatureDigestLength(ALGO , DATA)
   .
 
   --- asymmetric-sign-digest-top-level-handle: when the handle has keySet, finishAsymSignDigest is
   --- sent to TK.
   crl [asymmetric-sign-digest-top-level-handle] :
-    (msg finishTopAsymSignDigest[^ DATA] from TK to HANDLE)
+    (msg finishTopAsymSignDigest[# DATA] from TK to HANDLE)
     < HANDLE : OperationHandle | state : HS >
     =>
     < HANDLE : OperationHandle | >
-    (msg finishAsymSignDigest[^ DATA] from HANDLE to TK)
+    (msg finishAsymSignDigest[# DATA] from HANDLE to TK)
   if hasKeySet(HS)
   .
 
   --- asymmetric-sign-digest-top-level-length-panic: when the digest length is not valid for ALGO,
   --- the kernel status is set to panic.
   crl [asymmetric-sign-digest-top-level-length-panic] :
-    (msg asymSignDigest[^ DATA] from TK to HANDLE)
-    < TK : TAKernel | api-call : final(apiCall(AsymmetricSignDigest , PARAMS)) >
+    (msg asymSignDigest[# DATA] from TK to HANDLE)
+    < TK : TAKernel | api-call : final(AsymmetricSignDigest[PARAMS]) >
     < CI : CryptoOperation |
                              algorithm : ALGO , mode : modeSign >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAsymmetricSignature >
@@ -2873,10 +2846,10 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- asymmetric-sign-digest-success: finishAsymSignDigest returns success with the signature DATA.
   rl [asymmetric-sign-digest-success] :
-    (msg finishAsymSignDigest[^ DATA] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(AsymmetricSignDigest , PARAMS)) >
+    (msg finishAsymSignDigest[# DATA] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(AsymmetricSignDigest[PARAMS]) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(AsymmetricSignDigest , (retCode(success) , data(DATA)))) >
+    < TK : TAKernel | api-call : return(AsymmetricSignDigest[# success # DATA]) >
   .
 
 ------------------------------------------------------------
@@ -2890,17 +2863,17 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- asymmetric-verify-digest-subroutine: TEE_AsymmetricVerifyDigest moves to final and sends
   --- asymVerifyDigest with DATA to HANDLE.
   rl [asymmetric-verify-digest-subroutine] :
-    < TK : TAKernel | api-call : init(apiCall(AsymmetricVerifyDigest , (handle(HANDLE) , data(DATA) , PARAMS))) >
+    < TK : TAKernel | api-call : init(AsymmetricVerifyDigest[# HANDLE # DATA ZsAsymmetricVerifyDigest2 ZrAsymmetricVerifyDigest]) >
     =>
-    < TK : TAKernel | api-call : final(apiCall(AsymmetricVerifyDigest , (handle(HANDLE) , data(DATA) , PARAMS))) >
-    (msg asymVerifyDigest[^ DATA] from TK to HANDLE)
+    < TK : TAKernel | api-call : final(AsymmetricVerifyDigest[# HANDLE # DATA ZsAsymmetricVerifyDigest2 ZrAsymmetricVerifyDigest]) >
+    (msg asymVerifyDigest[# DATA] from TK to HANDLE)
   .
 
   --- asymmetric-verify-digest-top-level-object: in modeVerify, when DATA has a valid digest length
   --- for ALGO, the CryptoOperation and the handle are cleared, and finishTopAsymVerifyDigest
   --- carries signDigest(ALGO, KATTRS, DATA) to HANDLE.
   crl [asymmetric-verify-digest-top-level-object] :
-    (msg asymVerifyDigest[^ DATA] from TK to HANDLE)
+    (msg asymVerifyDigest[# DATA] from TK to HANDLE)
     < CI : CryptoOperation |
                              attributes : KATTRS , algorithm : ALGO ,
                              mode : modeVerify >
@@ -2908,26 +2881,26 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     =>
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-    (msg finishTopAsymVerifyDigest[^ signDigest(ALGO , KATTRS , DATA)] from TK to HANDLE)
+    (msg finishTopAsymVerifyDigest[# signDigest(ALGO , KATTRS , DATA)] from TK to HANDLE)
   if validSignatureDigestLength(ALGO , DATA)
   .
 
   --- asymmetric-verify-digest-top-level-handle: when the handle has keySet, finishAsymVerifyDigest
   --- is sent to TK.
   crl [asymmetric-verify-digest-top-level-handle] :
-    (msg finishTopAsymVerifyDigest[^ DATA] from TK to HANDLE)
+    (msg finishTopAsymVerifyDigest[# DATA] from TK to HANDLE)
     < HANDLE : OperationHandle | state : HS >
     =>
     < HANDLE : OperationHandle | >
-    (msg finishAsymVerifyDigest[^ DATA] from HANDLE to TK)
+    (msg finishAsymVerifyDigest[# DATA] from HANDLE to TK)
   if hasKeySet(HS)
   .
 
   --- asymmetric-verify-digest-top-level-length-panic: when the digest length is not valid for ALGO,
   --- the kernel status is set to panic.
   crl [asymmetric-verify-digest-top-level-length-panic] :
-    (msg asymVerifyDigest[^ DATA] from TK to HANDLE)
-    < TK : TAKernel | api-call : final(apiCall(AsymmetricVerifyDigest , PARAMS)) >
+    (msg asymVerifyDigest[# DATA] from TK to HANDLE)
+    < TK : TAKernel | api-call : final(AsymmetricVerifyDigest[PARAMS]) >
     < CI : CryptoOperation |
                              algorithm : ALGO , mode : modeVerify >
     < HANDLE : OperationHandle | oid : CI, opclass : clsAsymmetricSignature >
@@ -2941,11 +2914,10 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- asymmetric-verify-digest-success: the digest DIGEST is compared with the computed signature
   --- DATA through getReturnCodeOfDigest, and the result is returned.
   rl [asymmetric-verify-digest-success] :
-    (msg finishAsymVerifyDigest[^ DATA] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(AsymmetricVerifyDigest , (digest(DIGEST) , PARAMS))) >
+    (msg finishAsymVerifyDigest[# DATA] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(AsymmetricVerifyDigest[ZsAsymmetricVerifyDigest0 ZsAsymmetricVerifyDigest1 # DIGEST ZrAsymmetricVerifyDigest]) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(AsymmetricVerifyDigest ,
-                                  retCode(getReturnCodeOfDigest(DATA , DIGEST)))) >
+    < TK : TAKernel | api-call : return(AsymmetricVerifyDigest[# getReturnCodeOfDigest(DATA , DIGEST)]) >
   .
 
 ------------------------------------------------------------
@@ -2961,26 +2933,26 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- derive-key-subroutine: TEE_DeriveKey moves to final and sends deriveKey with ATTRS and DERIVED
   --- to HANDLE.
   rl [derive-key-subroutine] :
-    < TK : TAKernel | api-call : init(apiCall(DeriveKey , (handle(HANDLE) , attrs(ATTRS) , trgHandle(DERIVED)))) >
-    => < TK : TAKernel | api-call : final(apiCall(DeriveKey , (handle(HANDLE) , attrs(ATTRS) , trgHandle(DERIVED)))) >
-       (msg deriveKey[^ ATTRS ^ DERIVED] from TK to HANDLE) .
+    < TK : TAKernel | api-call : init(DeriveKey[# HANDLE # ATTRS # DERIVED]) >
+    => < TK : TAKernel | api-call : final(DeriveKey[# HANDLE # ATTRS # DERIVED]) >
+       (msg deriveKey[# ATTRS # DERIVED] from TK to HANDLE) .
 
   --- derive-key-top-level-operation: when the operation mode is modeDerive, the CryptoOperation is
   --- cleared, and deriveTopTransient with DERIVED is sent to HANDLE.
   rl [derive-key-top-level-operation] :
-    (msg deriveKey[^ ATTRS ^ DERIVED] from TK to HANDLE)
+    (msg deriveKey[# ATTRS # DERIVED] from TK to HANDLE)
     < CI : CryptoOperation | mode : modeDerive >
     < HANDLE : OperationHandle | oid : CI, opclass : clsKeyDerivation >
     =>
     < CI : CryptoOperation | >
     < HANDLE : OperationHandle | >
-    (msg deriveTopTransient[^ DERIVED] from TK to HANDLE) .
+    (msg deriveTopTransient[# DERIVED] from TK to HANDLE) .
 
   --- derive-key-top-level-transient: an uninitialized transient object OI of type typeGenericSecret
   --- is initialized with a random secretValue, and validateTopDeriveHandle with DERIVED is sent to
   --- HANDLE.
   rl [derive-key-top-level-transient] :
-    (msg deriveTopTransient[^ DERIVED] from TK to HANDLE)
+    (msg deriveTopTransient[# DERIVED] from TK to HANDLE)
     < OI : TransientObject |
                              initialized : false ,
                              type : typeGenericSecret ,
@@ -2988,22 +2960,22 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     =>
     < OI : TransientObject | initialized : true,
                              attributes : attr(secretValue , randomAttrVal) >
-    (msg validateTopDeriveHandle[^ DERIVED] from TK to HANDLE) .
+    (msg validateTopDeriveHandle[# DERIVED] from TK to HANDLE) .
 
   --- derive-key-top-level-operation-handle: when the handle has keySet, finishTopDerivedHandle is
   --- sent to TK.
   crl [derive-key-top-level-operation-handle] :
-    (msg validateTopDeriveHandle[^ DERIVED] from TK to HANDLE)
+    (msg validateTopDeriveHandle[# DERIVED] from TK to HANDLE)
     < HANDLE : OperationHandle | state : HS >
     =>
     < HANDLE : OperationHandle | >
-    (msg finishTopDerivedHandle[^ DERIVED] from HANDLE to TK)
+    (msg finishTopDerivedHandle[# DERIVED] from HANDLE to TK)
   if hasKeySet(HS)
   .
 
   --- derive-key-top-level-derived-handle: the derived handle DERIVED passes finishDeriveKey to TK.
   rl [derive-key-top-level-derived-handle] :
-    (msg finishTopDerivedHandle[^ DERIVED] from HANDLE to TK)
+    (msg finishTopDerivedHandle[# DERIVED] from HANDLE to TK)
     < DERIVED : ObjectHandle | >
     =>
     < DERIVED : ObjectHandle | >
@@ -3012,8 +2984,8 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- derive-key-success: finishDeriveKey returns noReturnCode.
   rl [derive-key-success] :
     (msg finishDeriveKey[] from DERIVED to TK)
-    < TK : TAKernel | api-call : final(apiCall(DeriveKey , PARAMS)) >
-    => < TK : TAKernel | api-call : return(apiCall(DeriveKey , retCode(noReturnCode))) > .
+    < TK : TAKernel | api-call : final(DeriveKey[PARAMS]) >
+    => < TK : TAKernel | api-call : return(DeriveKey[# noReturnCode]) > .
 
 ------------------------------------------------------------
 --- TEE_GenerateRandom
@@ -3021,9 +2993,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- generate-random-success: the call returns noReturnCode with the random data randomData.
   rl [generate-random-success] :
-    < TK : TAKernel | api-call : init(apiCall(GenerateRandom , PARAMS)) >
+    < TK : TAKernel | api-call : init(GenerateRandom[PARAMS]) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(GenerateRandom , (retCode(noReturnCode) , data(randomData)))) >
+    < TK : TAKernel | api-call : return(GenerateRandom[# noReturnCode # randomData]) >
   .
 
 endom
@@ -3083,129 +3055,129 @@ mod CRYPTO-OPERATION-TEE-CALL is
   var EL : ExpList .
 
 --- Generic
-  eq makeCall(AllocateOperation , (# ALGO , # OM , # KEYSIZE)) = apiCall(AllocateOperation , (alg(ALGO) , mode(OM) , size(KEYSIZE))) .
-  eq makeReturnStmt(AllocateOperation , RET , handle(HANDLE) , EL) = $assign((# RET , # HANDLE) , EL) .
-  eq makeReturnStmt(AllocateOperation , RET , empty , (E , E')) = $assign(# RET , E) .
+  eq makeCall(allocOperation , (# ALGO , # OM , # KEYSIZE)) = allocOperation[# ALGO # OM # KEYSIZE] .
+  eq makeReturnStmt(allocOperation, RET, # HANDLE, EL) = $assign((# RET , # HANDLE) , EL) .
+  eq makeReturnStmt(allocOperation, RET, argNil, (E , E')) = $assign(# RET , E) .
   
-  eq makeCall(FreeOperation , (# HANDLE)) = apiCall(FreeOperation , handle(HANDLE)) .
-  eq makeReturnStmt(FreeOperation , noReturnCode , empty , E) = skip .
-  eq makeReturnStmt(FreeOperation , noReturnCode , handle(null) , E) = skip .
+  eq makeCall(FreeOperation , (# HANDLE)) = FreeOperation[# HANDLE] .
+  eq makeReturnStmt(FreeOperation, noReturnCode, argNil, E) = skip .
+  eq makeReturnStmt(FreeOperation, noReturnCode, # null, E) = skip .
   
-  eq makeCall(ResetOperation , (# HANDLE)) = apiCall(ResetOperation , handle(HANDLE)) .
-  eq makeReturnStmt(ResetOperation , noReturnCode , empty , nil) = skip .
+  eq makeCall(resetOperation , (# HANDLE)) = resetOperation[# HANDLE] .
+  eq makeReturnStmt(resetOperation, noReturnCode, argNil, nil) = skip .
 
-  eq makeCall(SetOperationKey , (# HANDLE1 , # HANDLE2)) = apiCall(SetOperationKey , (handle(HANDLE1) , keyHandle(HANDLE2))) .
-  eq makeReturnStmt(SetOperationKey , RET , empty , E) = $assign(# RET , E) .
+  eq makeCall(SetOperationKey , (# HANDLE1 , # HANDLE2)) = SetOperationKey[# HANDLE1 # HANDLE2] .
+  eq makeReturnStmt(SetOperationKey, RET, argNil, E) = $assign(# RET , E) .
 
 --- TODO: NEED TO UPDATE RETURN
-  eq makeCall(GetOperationInfo , (# HANDLE)) = apiCall(GetOperationInfo , handle(HANDLE)) .
+  eq makeCall(GetOperationInfo , (# HANDLE)) = GetOperationInfo[# HANDLE] .
 
-  eq makeCall(GetOperationInfoMultiple , (# HANDLE)) = apiCall(GetOperationInfoMultiple , handle(HANDLE)) .
+  eq makeCall(GetOperationInfoMultiple , (# HANDLE)) = GetOperationInfoMultiple[# HANDLE] .
   eq makeCall(GetOperationInfoMultiple , (# HANDLE , # DATASIZE)) =
-    apiCall(GetOperationInfoMultiple , (handle(HANDLE) , capacity(DATASIZE))) .
+    GetOperationInfoMultiple[# HANDLE # DATASIZE] .
 
-  eq makeCall(SetOperationKey2 , (# HANDLE , # HANDLE1 , # HANDLE2)) = apiCall(SetOperationKey2 , (handle(HANDLE) , keyHandle(HANDLE1) , secondKeyHandle(HANDLE2))) .
-  eq makeReturnStmt(SetOperationKey2 , RET , empty , E) = $assign(# RET , E) .
+  eq makeCall(SetOperationKey2 , (# HANDLE , # HANDLE1 , # HANDLE2)) = SetOperationKey2[# HANDLE # HANDLE1 # HANDLE2] .
+  eq makeReturnStmt(SetOperationKey2, RET, argNil, E) = $assign(# RET , E) .
 
-  eq makeCall(CopyOperation , (# HANDLE1 , # HANDLE2)) = apiCall(CopyOperation , (trgHandle(HANDLE1) , srcHandle(HANDLE2))) .
-  eq makeReturnStmt(CopyOperation , noReturnCode , empty , nil) = skip .
+  eq makeCall(CopyOperation , (# HANDLE1 , # HANDLE2)) = CopyOperation[# HANDLE1 # HANDLE2] .
+  eq makeReturnStmt(CopyOperation, noReturnCode, argNil, nil) = skip .
 
-  eq makeCall(IsAlgorithmSupported , (# ALGO , # ELEM)) = apiCall(IsAlgorithmSupported , (alg(ALGO) , cryptoElement(ELEM))) .
-  eq makeReturnStmt(IsAlgorithmSupported , RET , empty , E) = $assign(# RET , E) .
+  eq makeCall(IsAlgorithmSupported , (# ALGO , # ELEM)) = IsAlgorithmSupported[# ALGO # ELEM] .
+  eq makeReturnStmt(IsAlgorithmSupported, RET, argNil, E) = $assign(# RET , E) .
 
 --- Message Digest
-  eq makeCall(DigestUpdate , (# HANDLE , # DATA)) = apiCall(DigestUpdate , (handle(HANDLE) , data(DATA))) .
-  eq makeReturnStmt(DigestUpdate , noReturnCode , empty , nil) = skip .
+  eq makeCall(DigestUpdate , (# HANDLE , # DATA)) = DigestUpdate[# HANDLE # DATA] .
+  eq makeReturnStmt(DigestUpdate, noReturnCode, argNil, nil) = skip .
   
-  eq makeCall(DigestDoFinal , (# HANDLE , # DATA)) = apiCall(DigestDoFinal , (handle(HANDLE) , data(DATA))) .
-  eq makeCall(DigestDoFinal , (# HANDLE , # DATA , # DATASIZE)) = apiCall(DigestDoFinal , (handle(HANDLE) , data(DATA) , capacity(DATASIZE))) .
-  eq makeReturnStmt(DigestDoFinal , success , data(DATA) , EL) = $assign((# success , # DATA) , EL) .
-  eq makeReturnStmt(DigestDoFinal , RET , size(DATASIZE) , (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
-  eq makeReturnStmt(DigestDoFinal , RET , empty , (E , E')) = $assign(# RET , E) .
+  eq makeCall(DigestDoFinal , (# HANDLE , # DATA)) = DigestDoFinal[# HANDLE # DATA] .
+  eq makeCall(DigestDoFinal , (# HANDLE , # DATA , # DATASIZE)) = DigestDoFinal[# HANDLE # DATA # DATASIZE] .
+  eq makeReturnStmt(DigestDoFinal, success, # DATA, EL) = $assign((# success , # DATA) , EL) .
+  eq makeReturnStmt(DigestDoFinal, RET, # DATASIZE, (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
+  eq makeReturnStmt(DigestDoFinal, RET, argNil, (E , E')) = $assign(# RET , E) .
   
-  eq makeCall(DigestExtract , (# HANDLE)) = apiCall(DigestExtract , handle(HANDLE)) .
-  eq makeCall(DigestExtract , (# HANDLE , # DATASIZE)) = apiCall(DigestExtract , (handle(HANDLE) , capacity(DATASIZE))) .
-  eq makeReturnStmt(DigestExtract , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
-  eq makeReturnStmt(DigestExtract , RET , size(DATASIZE) , (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
+  eq makeCall(DigestExtract , (# HANDLE)) = DigestExtract[# HANDLE] .
+  eq makeCall(DigestExtract , (# HANDLE , # DATASIZE)) = DigestExtract[# HANDLE # DATASIZE] .
+  eq makeReturnStmt(DigestExtract, RET, # DL, EL) = $assign((# RET , # DL) , EL) .
+  eq makeReturnStmt(DigestExtract, RET, # DATASIZE, (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
 
 --- Symmetric Cipher
-  eq makeCall(CipherInit , (# HANDLE)) = apiCall(CipherInit , handle(HANDLE)) .
-  eq makeReturnStmt(CipherInit , noReturnCode , empty , nil) = skip .
+  eq makeCall(cipherInit , (# HANDLE)) = cipherInit[# HANDLE] .
+  eq makeReturnStmt(cipherInit, noReturnCode, argNil, nil) = skip .
 
-  eq makeCall(CipherUpdate , (# HANDLE , # DL)) = apiCall(CipherUpdate , (handle(HANDLE) , data(DL))) .
-  eq makeReturnStmt(CipherUpdate , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
-  eq makeReturnStmt(CipherUpdate , RET , empty , (E, E')) = $assign(# RET , E) .
+  eq makeCall(cipherUpdate , (# HANDLE , # DL)) = cipherUpdate[# HANDLE # DL] .
+  eq makeReturnStmt(cipherUpdate, RET, # DL, EL) = $assign((# RET , # DL) , EL) .
+  eq makeReturnStmt(cipherUpdate, RET, argNil, (E, E')) = $assign(# RET , E) .
   
-  eq makeCall(CipherDoFinal , (# HANDLE , # DL)) = apiCall(CipherDoFinal , (handle(HANDLE) , data(DL))) .
-  eq makeReturnStmt(CipherDoFinal , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
+  eq makeCall(cipherDoFinal , (# HANDLE , # DL)) = cipherDoFinal[# HANDLE # DL] .
+  eq makeReturnStmt(cipherDoFinal, RET, # DL, EL) = $assign((# RET , # DL) , EL) .
 
 --- MAC
-  eq makeCall(MACInit , (# HANDLE , # IV)) = apiCall(MACInit , (handle(HANDLE) , iv(IV))) .
-  eq makeReturnStmt(MACInit , noReturnCode , empty , nil) = skip .
+  eq makeCall(MACInit , (# HANDLE , # IV)) = MACInit[# HANDLE # IV] .
+  eq makeReturnStmt(MACInit, noReturnCode, argNil, nil) = skip .
 
-  eq makeCall(MACUpdate , (# HANDLE , # DL)) = apiCall(MACUpdate , (handle(HANDLE) , data(DL))) .
-  eq makeReturnStmt(MACUpdate , noReturnCode , empty , nil) = skip .
+  eq makeCall(MACUpdate , (# HANDLE , # DL)) = MACUpdate[# HANDLE # DL] .
+  eq makeReturnStmt(MACUpdate, noReturnCode, argNil, nil) = skip .
 
-  eq makeCall(MACComputeFinal , (# HANDLE , # DL)) = apiCall(MACComputeFinal , (handle(HANDLE) , data(DL))) .
-  eq makeCall(MACComputeFinal , (# HANDLE , # DL , # DATASIZE)) = apiCall(MACComputeFinal , (handle(HANDLE) , data(DL) , capacity(DATASIZE))) .
-  eq makeReturnStmt(MACComputeFinal , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
-  eq makeReturnStmt(MACComputeFinal , RET , size(DATASIZE) , (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
+  eq makeCall(MACComputeFinal , (# HANDLE , # DL)) = MACComputeFinal[# HANDLE # DL] .
+  eq makeCall(MACComputeFinal , (# HANDLE , # DL , # DATASIZE)) = MACComputeFinal[# HANDLE # DL # DATASIZE] .
+  eq makeReturnStmt(MACComputeFinal, RET, # DL, EL) = $assign((# RET , # DL) , EL) .
+  eq makeReturnStmt(MACComputeFinal, RET, # DATASIZE, (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
 
-  eq makeCall(MACCompareFinal , (# HANDLE , # DL , # MAC)) = apiCall(MACCompareFinal , (handle(HANDLE) , data(DL) , mac(MAC))) .
-  eq makeReturnStmt(MACCompareFinal , RET , empty , E) = $assign(# RET , E) .
+  eq makeCall(MACCompareFinal , (# HANDLE , # DL , # MAC)) = MACCompareFinal[# HANDLE # DL # MAC] .
+  eq makeReturnStmt(MACCompareFinal, RET, argNil, E) = $assign(# RET , E) .
 
 --- AE
-  eq makeCall(AEInit , (# HANDLE , # IV)) = apiCall(AEInit , (handle(HANDLE) , iv(IV))) .
-  eq makeReturnStmt(AEInit , RET , empty , E) = $assign(# RET , E) .
+  eq makeCall(AEInit , (# HANDLE , # IV)) = AEInit[# HANDLE # IV] .
+  eq makeReturnStmt(AEInit, RET, argNil, E) = $assign(# RET , E) .
 
-  eq makeCall(AEUpdateAAD , (# HANDLE , # DL)) = apiCall(AEUpdateAAD , (handle(HANDLE) , data(DL))) .
-  eq makeReturnStmt(AEUpdateAAD , noReturnCode , empty , E) = skip .
+  eq makeCall(AEUpdateAAD , (# HANDLE , # DL)) = AEUpdateAAD[# HANDLE # DL] .
+  eq makeReturnStmt(AEUpdateAAD, noReturnCode, argNil, E) = skip .
 
-  eq makeCall(AEUpdate , (# HANDLE , # DL)) = apiCall(AEUpdate , (handle(HANDLE) , data(DL))) .
-  eq makeCall(AEUpdate , (# HANDLE , # DL , # DATASIZE)) = apiCall(AEUpdate , (handle(HANDLE) , data(DL) , capacity(DATASIZE))) .
-  eq makeCall(AEUpdate , (# HANDLE , # DL , # DATASIZE , # SRC , # DEST)) = apiCall(AEUpdate , (handle(HANDLE) , data(DL) , capacity(DATASIZE) , srcRegion(SRC) , destRegion(DEST))) .
-  eq makeReturnStmt(AEUpdate , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
-  eq makeReturnStmt(AEUpdate , RET , size(DATASIZE) , (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
+  eq makeCall(AEUpdate , (# HANDLE , # DL)) = AEUpdate[# HANDLE # DL] .
+  eq makeCall(AEUpdate , (# HANDLE , # DL , # DATASIZE)) = AEUpdate[# HANDLE # DL # DATASIZE] .
+  eq makeCall(AEUpdate , (# HANDLE , # DL , # DATASIZE , # SRC , # DEST)) = AEUpdate[# HANDLE # DL # DATASIZE # SRC # DEST] .
+  eq makeReturnStmt(AEUpdate, RET, # DL, EL) = $assign((# RET , # DL) , EL) .
+  eq makeReturnStmt(AEUpdate, RET, # DATASIZE, (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
 
-  eq makeCall(AEEncryptFinal , (# HANDLE , # DL)) = apiCall(AEEncryptFinal , (handle(HANDLE) , data(DL))) .
-  eq makeCall(AEEncryptFinal , (# HANDLE , # DL , # DATASIZE , # DATASIZE2)) = apiCall(AEEncryptFinal , (handle(HANDLE) , data(DL) , capacity(DATASIZE) , tagCapacity(DATASIZE2))) .
-  eq makeCall(AEEncryptFinal , (# HANDLE , # DL , # DATASIZE , # DATASIZE2 , # SRC , # DEST)) = apiCall(AEEncryptFinal , (handle(HANDLE) , data(DL) , capacity(DATASIZE) , tagCapacity(DATASIZE2) , srcRegion(SRC) , destRegion(DEST))) .
-  eq makeReturnStmt(AEEncryptFinal , RET , (data(DL) , mac(MAC)) , EL) = $assign((# RET , # DL , # MAC) , EL) .
-  eq makeReturnStmt(AEEncryptFinal , RET , (size(DATASIZE) , tagSize(DATASIZE2)) , (E , E')) = $assign((# RET , # DATASIZE , # DATASIZE2) , (E , E')) .
-  eq makeCall(AEDecryptFinal , (# HANDLE , # DL , # MAC)) = apiCall(AEDecryptFinal , (handle(HANDLE) , data(DL) , mac(MAC))) .
-  eq makeCall(AEDecryptFinal , (# HANDLE , # DL , # MAC , # DATASIZE)) = apiCall(AEDecryptFinal , (handle(HANDLE) , data(DL) , mac(MAC) , capacity(DATASIZE))) .
-  eq makeCall(AEDecryptFinal , (# HANDLE , # DL , # MAC , # DATASIZE , # SRC , # DEST)) = apiCall(AEDecryptFinal , (handle(HANDLE) , data(DL) , mac(MAC) , capacity(DATASIZE) , srcRegion(SRC) , destRegion(DEST))) .
-  eq makeReturnStmt(AEDecryptFinal , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
-  eq makeReturnStmt(AEDecryptFinal , RET , size(DATASIZE) , (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
-  eq makeReturnStmt(AEDecryptFinal , RET , empty , (E , E')) = $assign(# RET , E) .
+  eq makeCall(AEEncryptFinal , (# HANDLE , # DL)) = AEEncryptFinal[# HANDLE # DL] .
+  eq makeCall(AEEncryptFinal , (# HANDLE , # DL , # DATASIZE , # DATASIZE2)) = AEEncryptFinal[# HANDLE # DL # DATASIZE # DATASIZE2] .
+  eq makeCall(AEEncryptFinal , (# HANDLE , # DL , # DATASIZE , # DATASIZE2 , # SRC , # DEST)) = AEEncryptFinal[# HANDLE # DL # DATASIZE # DATASIZE2 # SRC # DEST] .
+  eq makeReturnStmt(AEEncryptFinal, RET, # DL # MAC, EL) = $assign((# RET , # DL , # MAC) , EL) .
+  eq makeReturnStmt(AEEncryptFinal, RET, # DATASIZE # DATASIZE2, (E , E')) = $assign((# RET , # DATASIZE , # DATASIZE2) , (E , E')) .
+  eq makeCall(AEDecryptFinal , (# HANDLE , # DL , # MAC)) = AEDecryptFinal[# HANDLE # DL # MAC] .
+  eq makeCall(AEDecryptFinal , (# HANDLE , # DL , # MAC , # DATASIZE)) = AEDecryptFinal[# HANDLE # DL # MAC # DATASIZE] .
+  eq makeCall(AEDecryptFinal , (# HANDLE , # DL , # MAC , # DATASIZE , # SRC , # DEST)) = AEDecryptFinal[# HANDLE # DL # MAC # DATASIZE # SRC # DEST] .
+  eq makeReturnStmt(AEDecryptFinal, RET, # DL, EL) = $assign((# RET , # DL) , EL) .
+  eq makeReturnStmt(AEDecryptFinal, RET, # DATASIZE, (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
+  eq makeReturnStmt(AEDecryptFinal, RET, argNil, (E , E')) = $assign(# RET , E) .
 
 --- Asymmetric Cipher
-  eq makeCall(AsymmetricEncrypt , (# HANDLE , # DL)) = apiCall(AsymmetricEncrypt , (handle(HANDLE) , data(DL))) .
-  eq makeCall(AsymmetricEncrypt , (# HANDLE , # DL , # DATASIZE)) = apiCall(AsymmetricEncrypt , (handle(HANDLE) , data(DL) , capacity(DATASIZE))) .
-  eq makeReturnStmt(AsymmetricEncrypt , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
-  eq makeReturnStmt(AsymmetricEncrypt , RET , size(DATASIZE) , (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
+  eq makeCall(AsymmetricEncrypt , (# HANDLE , # DL)) = AsymmetricEncrypt[# HANDLE # DL] .
+  eq makeCall(AsymmetricEncrypt , (# HANDLE , # DL , # DATASIZE)) = AsymmetricEncrypt[# HANDLE # DL # DATASIZE] .
+  eq makeReturnStmt(AsymmetricEncrypt, RET, # DL, EL) = $assign((# RET , # DL) , EL) .
+  eq makeReturnStmt(AsymmetricEncrypt, RET, # DATASIZE, (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
 
-  eq makeCall(AsymmetricDecrypt , (# HANDLE , # DL)) = apiCall(AsymmetricDecrypt , (handle(HANDLE) , data(DL))) .
-  eq makeCall(AsymmetricDecrypt , (# HANDLE , # DL , # DATASIZE)) = apiCall(AsymmetricDecrypt , (handle(HANDLE) , data(DL) , capacity(DATASIZE))) .
-  eq makeReturnStmt(AsymmetricDecrypt , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
-  eq makeReturnStmt(AsymmetricDecrypt , RET , size(DATASIZE) , (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
+  eq makeCall(AsymmetricDecrypt , (# HANDLE , # DL)) = AsymmetricDecrypt[# HANDLE # DL] .
+  eq makeCall(AsymmetricDecrypt , (# HANDLE , # DL , # DATASIZE)) = AsymmetricDecrypt[# HANDLE # DL # DATASIZE] .
+  eq makeReturnStmt(AsymmetricDecrypt, RET, # DL, EL) = $assign((# RET , # DL) , EL) .
+  eq makeReturnStmt(AsymmetricDecrypt, RET, # DATASIZE, (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
 
-  eq makeCall(AsymmetricSignDigest , (# HANDLE , # DL)) = apiCall(AsymmetricSignDigest , (handle(HANDLE) , data(DL))) .
-  eq makeCall(AsymmetricSignDigest , (# HANDLE , # DL , # DATASIZE)) = apiCall(AsymmetricSignDigest , (handle(HANDLE) , data(DL) , capacity(DATASIZE))) .
-  eq makeReturnStmt(AsymmetricSignDigest , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
-  eq makeReturnStmt(AsymmetricSignDigest , RET , size(DATASIZE) , (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
+  eq makeCall(AsymmetricSignDigest , (# HANDLE , # DL)) = AsymmetricSignDigest[# HANDLE # DL] .
+  eq makeCall(AsymmetricSignDigest , (# HANDLE , # DL , # DATASIZE)) = AsymmetricSignDigest[# HANDLE # DL # DATASIZE] .
+  eq makeReturnStmt(AsymmetricSignDigest, RET, # DL, EL) = $assign((# RET , # DL) , EL) .
+  eq makeReturnStmt(AsymmetricSignDigest, RET, # DATASIZE, (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
 
-  eq makeCall(AsymmetricVerifyDigest , (# HANDLE , # DL , # SIG)) = apiCall(AsymmetricVerifyDigest , (handle(HANDLE) , data(DL) , digest(SIG))) .
-  eq makeReturnStmt(AsymmetricVerifyDigest , RET , empty , E) = $assign(# RET , E) .
+  eq makeCall(AsymmetricVerifyDigest , (# HANDLE , # DL , # SIG)) = AsymmetricVerifyDigest[# HANDLE # DL # SIG] .
+  eq makeReturnStmt(AsymmetricVerifyDigest, RET, argNil, E) = $assign(# RET , E) .
 
-  eq makeCall(AsymmetricDecrypt , (# HANDLE , # DL)) = apiCall(AsymmetricDecrypt , (handle(HANDLE) , data(DL))) .
-  eq makeReturnStmt(AsymmetricDecrypt , RET , data(DL) , EL) = $assign((# RET , # DL) , EL) .
+  eq makeCall(AsymmetricDecrypt , (# HANDLE , # DL)) = AsymmetricDecrypt[# HANDLE # DL] .
+  eq makeReturnStmt(AsymmetricDecrypt, RET, # DL, EL) = $assign((# RET , # DL) , EL) .
 
 --- Misc
-  eq makeCall(DeriveKey , (# HANDLE , # ATTRS , # HANDLE2)) = apiCall(DeriveKey , (handle(HANDLE) , attrs(ATTRS) , trgHandle(HANDLE2))) .
-  eq makeReturnStmt(DeriveKey , noReturnCode , empty , nil) = skip .
-  eq makeCall(GenerateRandom , nil) = apiCall(GenerateRandom , empty) .
-  eq makeReturnStmt(GenerateRandom , noReturnCode , data(DL) , E) = $assign(# DL , E) .
+  eq makeCall(DeriveKey , (# HANDLE , # ATTRS , # HANDLE2)) = DeriveKey[# HANDLE # ATTRS # HANDLE2] .
+  eq makeReturnStmt(DeriveKey, noReturnCode, argNil, nil) = skip .
+  eq makeCall(GenerateRandom , nil) = GenerateRandom[argNil] .
+  eq makeReturnStmt(GenerateRandom, noReturnCode, # DL, E) = $assign(# DL , E) .
 endm
 
 --- IMP types of the cryptographic values, and their typing (see IMP-TYPING).

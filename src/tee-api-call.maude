@@ -1,4 +1,4 @@
---- This module defines API call parameters.
+--- This module defines the IMP values carried by TEE API calls.
 
 mod TEE-API-PARAM is
   pr OBJECT-TYPE .
@@ -22,85 +22,64 @@ mod TEE-API-PARAM is
   pr TEE-CANCEL-REQ-TIME .
   pr IMP-FUNC-SIG .
   pr IMP-EXP-LIST .
+  pr TEE-DATA-TYPE .
+  pr SET{AttrId} .
+  pr SET{FileName} .
 
-  sort TeeApiParam .
   sort BufferRegion .
 
   op bufferRegion : Nat Nat -> BufferRegion [ctor] .
 
---- generic
-  op info : TeeObjectInfo -> TeeApiParam [ctor] .
-  op srcUsages : Set{Usage} -> TeeApiParam [ctor] .
-
---- transient
-  op type : Type -> TeeApiParam [ctor] .
-  op size : Nat -> TeeApiParam [ctor] .
-  op handle : Oid -> TeeApiParam [ctor] .
-  op attrs : Set{CryptoAttribute} -> TeeApiParam [ctor] .
-  op constId : AttrId -> TeeApiParam [ctor] .
-  op constVal : AttrValue -> TeeApiParam [ctor] .
-  op srcHandle : Oid -> TeeApiParam [ctor] .
-  op trgHandle : Oid -> TeeApiParam [ctor] .
-
---- persistent
-  op storageId : StorageIdentifier -> TeeApiParam [ctor] .
-  op fileId : FileName -> TeeApiParam [ctor] .
-  op flags : Set{DataAccessFlag} -> TeeApiParam [ctor] .
-  op opt : Oid -> TeeApiParam [ctor] .
-  op data : List{Data} -> TeeApiParam [ctor] .
-  op size : DataSize -> TeeApiParam [ctor] .
-  op openedHandle : Oid -> TeeApiParam [ctor] .
-  op usages : Set{Usage} -> TeeApiParam [ctor] .
-
-
---- data stream
-  op type : SeekType -> TeeApiParam [ctor] .
-  op offset : Int -> TeeApiParam [ctor] .
-
---- output buffer capacity (in abstract data units)
-  op capacity : DataSize -> TeeApiParam [ctor] .
-  op tagCapacity : DataSize -> TeeApiParam [ctor] .
-  op tagSize : DataSize -> TeeApiParam [ctor] .
-  op srcRegion : BufferRegion -> TeeApiParam [ctor] .
-  op destRegion : BufferRegion -> TeeApiParam [ctor] .
-
---- TEE client API
-  op uuid : AppId -> TeeApiParam [ctor] .
-  op returnOrig : ReturnOrigin -> TeeApiParam [ctor] .
-  op paramType : TeeParamType -> TeeApiParam [ctor] .
-  op taCancelReqTime : TaCancelTimeOut -> TeeApiParam [ctor] .
-  op funcId : FuncId -> TeeApiParam [ctor] .
-  op values : ValueList -> TeeApiParam [ctor] .
-
---- Return code of a finished call, carried in the parameter set of its return(...) status.
-  op retCode : ReturnCode? -> TeeApiParam [ctor] .
+  --- IMP values of the items of TEE API calls.
+  op #_ : Oid -> Value [ctor] .
+  op #_ : FuncId -> Value [ctor] .
+  op #_ : ReturnCode -> Value [ctor] .
+  op #_ : ReturnCode? -> Value [ctor] .
+  op #_ : Type -> Value [ctor] .
+  op #_ : Set{CryptoAttribute} -> Value [ctor] .
+  op #_ : Set{AttrId} -> Value [ctor] .
+  op #_ : AttrId -> Value [ctor] .
+  op #_ : AttrValue -> Value [ctor] .
+  op #_ : TeeObjectInfo -> Value [ctor] .
+  op #_ : Set{Usage} -> Value [ctor] .
+  op #_ : Nat -> Value [ctor] .
+  op #_ : StorageIdentifier -> Value [ctor] .
+  op #_ : Set{DataAccessFlag} -> Value [ctor] .
+  op #_ : List{Data} -> Value [ctor] .
+  op #_ : DataSize -> Value [ctor] .
+  op #_ : FileName -> Value [ctor] .
+  op #_ : Set{FileName} -> Value [ctor] .
+  op #_ : DataPosition -> Value [ctor] .
+  op #_ : SeekType -> Value [ctor] .
+  op #_ : AppId -> Value [ctor] .
+  op #_ : ReturnOrigin -> Value [ctor] .
+  op #_ : TeeParamType -> Value [ctor] .
+  op #_ : TaCancelTimeOut -> Value [ctor] .
+  op #_ : ValueList -> Value [ctor] .
 endm
 
-view TeeApiParam from TRIV to TEE-API-PARAM is
-  sort Elt to TeeApiParam .
-endv
-
 --- This module defines API calls and the call status of a TA kernel.
---- A call is apiCall(F, PARAMS) for the TEE API function F.  The status of the call is
+--- A call is F[ARGS] for the TEE API function F, where ARGS is the list of its arguments,
+--- each written as # item, in the fixed order of the function.  The status of the call is
 --- one of the statuses: noCall, init(Call), exec(Call, Nat) (the Nat is the
 --- call's step), final(Call) and return(Call).  The return code of a finished call is
---- the retCode(RC) item in the parameter set of return(...).
+--- the first item of the argument list of return(...).
 
 mod TEE-API-CALL is
   pr TEE-API .
+  pr TEE-MSG .
   pr TEE-API-PARAM .
-  pr SET{TeeApiParam} .
 
-  sorts TeeApiCall CallStatus .
+  sorts Call CallStatus .
 
-  --- apiCall(F, PARAMS): a call of the TEE API function F with the parameter set PARAMS.
+  --- F[ARGS]: a call of the TEE API function F with the argument list ARGS.
   --- The call is held in the api-call attribute of a TAKernel, wrapped in one of the
   --- CallStatus constructors (noCall, init, exec, final, return).
-  op apiCall : TeeApi Set{TeeApiParam} -> TeeApiCall [ctor] .
+  op _[_] : TeeApi ArgList -> Call [ctor] .
 
   op noCall : -> CallStatus [ctor] .
-  op init : TeeApiCall -> CallStatus [ctor] .
-  op exec : TeeApiCall Nat -> CallStatus [ctor] .
-  op final : TeeApiCall -> CallStatus [ctor] .
-  op return : TeeApiCall -> CallStatus [ctor] .
+  op init : Call -> CallStatus [ctor] .
+  op exec : Call Nat -> CallStatus [ctor] .
+  op final : Call -> CallStatus [ctor] .
+  op return : Call -> CallStatus [ctor] .
 endm

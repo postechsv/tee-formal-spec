@@ -36,7 +36,8 @@ omod GENERIC-OBJECT-BEHAVIOR is
   var HS : Configuration .
   var STATUS : StorageStatus .
   var INFO : TeeObjectInfo .
-  var PARAMS : Set{TeeApiParam} .
+  var PARAMS : ArgList .
+  var AL : ArgList .
 
 ------------------------------------------------------------
 --- Auxiliary Functions
@@ -70,18 +71,11 @@ omod GENERIC-OBJECT-BEHAVIOR is
   op attrContentSize : AttrValue -> DataSize .
   eq attrContentSize(V) = dataSize(1) .
 
-  --- hasCapacity(PARAMS): true when PARAMS contains a capacity parameter.
-  op hasCapacity : Set{TeeApiParam} -> Bool .
-  eq hasCapacity((capacity(DATASIZE) , PARAMS)) = true .
-  ---@dmc owise recurse(sep=_,_, empty=empty)
-  eq hasCapacity(PARAMS) = false [owise] .
-
-  --- capacityFitsAttr(PARAMS): false when the capacity parameter is zero, and true for a
-  --- nonzero capacity.
-  op capacityFitsAttr : Set{TeeApiParam} -> Bool .
-  eq capacityFitsAttr((capacity(dataSize(0)) , PARAMS)) = false .
+  --- capacityFitsAttr(DS): false when the capacity DS is zero, and true for a nonzero capacity.
+  op capacityFitsAttr : DataSize -> Bool .
+  eq capacityFitsAttr(dataSize(0)) = false .
   ---@dmc owise cond(not (N == 0))
-  eq capacityFitsAttr((capacity(dataSize(N)) , PARAMS)) = true [owise] .
+  eq capacityFitsAttr(dataSize(N)) = true [owise] .
 
 --- valueType(ID): true for the value attributes (valAttrIds).
   op valueType : AttrId -> Bool .
@@ -94,23 +88,24 @@ omod GENERIC-OBJECT-BEHAVIOR is
 --- The 'TEE_GetObjectInfo1' function returns the characteristics of an object.
 --- See page 132 of the G.P. documentation for more details.
 --- Step numbers: 0 waits for the object, 1 waits for the storage status (persistent objects only).
+--- The persistent path appends the object info as an intermediate item of the call.
 
   op reqObjectInfo : -> ReqId [ctor] .
   op retObjectInfoTr : -> ReqId [ctor] .
   op retObjectInfoPr : -> ReqId [ctor] .
 
   crl [get-obj-info-subroutine] :
-    < TK : TAKernel | api-call : init(apiCall(GetObjectInfo1 , handle(HANDLE))) , storage : SI >
+    < TK : TAKernel | api-call : init(GetObjectInfo1[# HANDLE]) , storage : SI >
     =>
-    < TK : TAKernel | api-call : exec(apiCall(GetObjectInfo1 , handle(HANDLE)) , 0) >
-    (msg reqObjectInfo[^ SI] from TK to HANDLE)
+    < TK : TAKernel | api-call : exec(GetObjectInfo1[# HANDLE] , 0) >
+    (msg reqObjectInfo[# SI] from TK to HANDLE)
   if not nullHandle(HANDLE)
   .
 
 --- The following two rules acquire transient object data.
 
   rl [get-obj-info-transient-top-level-handle] :
-    (msg reqObjectInfo[^ SI] from TK to HANDLE)
+    (msg reqObjectInfo[# SI] from TK to HANDLE)
     < oid(N , TK) : TransientObject |
                              type : OBJTYPE , max-size : MAXOBJSIZE ,
                              attributes : ATTRS , usages : OBJUSAGES >
@@ -118,21 +113,20 @@ omod GENERIC-OBJECT-BEHAVIOR is
     =>
     < oid(N , TK) : TransientObject | >
     < HANDLE : ObjectHandle | >
-    (msg retObjectInfoTr[^ OBJTYPE ^ keySize(ATTRS) ^ MAXOBJSIZE ^ OBJUSAGES] from HANDLE to TK)
+    (msg retObjectInfoTr[# OBJTYPE # keySize(ATTRS) # MAXOBJSIZE # OBJUSAGES] from HANDLE to TK)
   .
 
   rl [get-obj-info-transient-success] :
-    (msg retObjectInfoTr[^ OBJTYPE ^ KEYSIZE ^ MAXOBJSIZE ^ OBJUSAGES] from HANDLE to TK)
-    < TK : TAKernel | api-call : exec(apiCall(GetObjectInfo1 , PARAMS) , 0) >
+    (msg retObjectInfoTr[# OBJTYPE # KEYSIZE # MAXOBJSIZE # OBJUSAGES] from HANDLE to TK)
+    < TK : TAKernel | api-call : exec(GetObjectInfo1[PARAMS] , 0) >
     => 
-    < TK : TAKernel | api-call : return(apiCall(GetObjectInfo1 , (retCode(success) ,
-                      info(teeObjectInfo(OBJTYPE , KEYSIZE , MAXOBJSIZE , OBJUSAGES , dataSize(0) , pos(0) , empty))))) >
+    < TK : TAKernel | api-call : return(GetObjectInfo1[# success # teeObjectInfo(OBJTYPE , KEYSIZE , MAXOBJSIZE , OBJUSAGES , dataSize(0) , pos(0) , empty)]) >
   .
 
 --- The following three rules acquire persistent object and its associated data stream data.
 
   rl [get-obj-info-persistent-top-level-handle] :
-    (msg reqObjectInfo[^ SI] from TK to HANDLE)
+    (msg reqObjectInfo[# SI] from TK to HANDLE)
     < oid(M, SI) : PersistentObject |
                               type : OBJTYPE, max-size : MAXOBJSIZE,
                               attributes : ATTRS, usages : OBJUSAGES,
@@ -142,32 +136,32 @@ omod GENERIC-OBJECT-BEHAVIOR is
     =>
     < oid(M, SI) : PersistentObject | >
     < HANDLE : ObjectHandle | >
-    (msg retObjectInfoPr[^ OBJTYPE ^ keySize(ATTRS) ^ MAXOBJSIZE ^ OBJUSAGES ^
-                           sizeOfData(STREAMDATA) ^ pos(N) ^ DATAFLAGS] from HANDLE to TK)
+    (msg retObjectInfoPr[# OBJTYPE # keySize(ATTRS) # MAXOBJSIZE # OBJUSAGES #
+                           sizeOfData(STREAMDATA) # pos(N) # DATAFLAGS] from HANDLE to TK)
   .
 
   rl [get-obj-info-persistent-subroutine] :
-    (msg retObjectInfoPr[^ OBJTYPE ^ KEYSIZE ^ MAXOBJSIZE ^ OBJUSAGES ^ DATASIZE ^ DATAPOS ^ DATAFLAGS] from HANDLE to TK)
-    < TK : TAKernel | api-call : exec(apiCall(GetObjectInfo1 , PARAMS) , 0) , storage : SI >
+    (msg retObjectInfoPr[# OBJTYPE # KEYSIZE # MAXOBJSIZE # OBJUSAGES # DATASIZE # DATAPOS # DATAFLAGS] from HANDLE to TK)
+    < TK : TAKernel | api-call : exec(GetObjectInfo1[PARAMS] , 0) , storage : SI >
     =>
-    < TK : TAKernel | api-call : exec(apiCall(GetObjectInfo1 , (info(teeObjectInfo(OBJTYPE , KEYSIZE , MAXOBJSIZE , OBJUSAGES , DATASIZE , DATAPOS , DATAFLAGS)) , PARAMS)) , 1) >
+    < TK : TAKernel | api-call : exec(GetObjectInfo1[PARAMS # teeObjectInfo(OBJTYPE , KEYSIZE , MAXOBJSIZE , OBJUSAGES , DATASIZE , DATAPOS , DATAFLAGS)] , 1) >
     (msg getStatus[] from TK to SI)
   .
 
   rl [get-obj-info-persistent-success] :
-    (msg retStatus[^ (normal).StorageStatus] from SI to TK)
-    < TK : TAKernel | api-call : exec(apiCall(GetObjectInfo1 , (info(INFO) , PARAMS)) , 1) >
+    (msg retStatus[# (normal).StorageStatus] from SI to TK)
+    < TK : TAKernel | api-call : exec(GetObjectInfo1[PARAMS # INFO] , 1) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(GetObjectInfo1 , (retCode(success) , info(INFO)))) >
+    < TK : TAKernel | api-call : return(GetObjectInfo1[# success # INFO]) >
   .
 
 --- get-obj-info-abnormal-storage-err: returns TEE_ERROR_CORRUPT_OBJECT if the persistent object is
 --- corrupt, and TEE_ERROR_STORAGE_NOT_AVAILABLE if its storage area is inaccessible.
   crl [get-obj-info-abnormal-storage-err] :
-    (msg retStatus[^ STATUS] from SI to TK)
-    < TK : TAKernel | api-call : exec(apiCall(GetObjectInfo1 , PARAMS) , 1) >
+    (msg retStatus[# STATUS] from SI to TK)
+    < TK : TAKernel | api-call : exec(GetObjectInfo1[PARAMS] , 1) >
     => 
-    < TK : TAKernel | api-call : return(apiCall(GetObjectInfo1 , retCode(storageErrCode(STATUS)))) >
+    < TK : TAKernel | api-call : return(GetObjectInfo1[# storageErrCode(STATUS)]) >
   if abnormalStorage(STATUS)
   .
 
@@ -177,6 +171,7 @@ omod GENERIC-OBJECT-BEHAVIOR is
 
 --- The 'TEE_RestrictObjectUsage1' restricts the object usage flags of an object handle to contain at most the flags passed in the 'objectUsage' parameter.
 --- See page 134 of the G.P. documentation for more details.
+--- The persistent path appends the source usages (the usages of the object) as an intermediate item.
 
 --- The following rules restrict the usage of the (transient or persistent) object.
 
@@ -186,24 +181,24 @@ omod GENERIC-OBJECT-BEHAVIOR is
   --- restrict-object-usage-subroutine (request): sends reqAttribute to the handle and waits for its
   --- attribute (step 0).
   rl [restrict-object-usage-subroutine] :
-    < TK : TAKernel | api-call : init(apiCall(RestrictObjectUsage1 , (handle(HANDLE) , PARAMS))) >
+    < TK : TAKernel | api-call : init(RestrictObjectUsage1[# HANDLE PARAMS]) >
     =>
-    < TK : TAKernel | api-call : exec(apiCall(RestrictObjectUsage1 , (handle(HANDLE) , PARAMS)) , 0) >
+    < TK : TAKernel | api-call : exec(RestrictObjectUsage1[# HANDLE PARAMS] , 0) >
     (msg reqAttribute[] from TK to HANDLE)
   .
 
   --- restrict-object-usage-subroutine (transient reply): with the attributes of the transient handle,
   --- sends restrictUsage with the updated usages (updateObjectUsage) to the handle.
   rl [restrict-object-usage-subroutine] :
-    (msg retAttributeTr[^ ATTRS ^ OBJTYPE ^ OBJUSAGES] from HANDLE to TK)
-    < TK : TAKernel | api-call : exec(apiCall(RestrictObjectUsage1 , (handle(HANDLE) , usages(OBJUSAGES') , PARAMS)) , 0) >
+    (msg retAttributeTr[# ATTRS # OBJTYPE # OBJUSAGES] from HANDLE to TK)
+    < TK : TAKernel | api-call : exec(RestrictObjectUsage1[# HANDLE # OBJUSAGES'] , 0) >
     =>
-    < TK : TAKernel | api-call : final(apiCall(RestrictObjectUsage1 , (handle(HANDLE) , usages(OBJUSAGES') , PARAMS))) >
-    (msg restrictUsage[^ updateObjectUsage(OBJUSAGES , OBJUSAGES')] from TK to HANDLE)
+    < TK : TAKernel | api-call : final(RestrictObjectUsage1[# HANDLE # OBJUSAGES']) >
+    (msg restrictUsage[# updateObjectUsage(OBJUSAGES , OBJUSAGES')] from TK to HANDLE)
   .
 
   rl [restrict-object-usage-top-level-handle] :
-    (msg restrictUsage[^ OBJUSAGES] from TK to HANDLE)
+    (msg restrictUsage[# OBJUSAGES] from TK to HANDLE)
     < OI : TransientObject | >
     < HANDLE : ObjectHandle | oid : OI >
     =>
@@ -213,7 +208,7 @@ omod GENERIC-OBJECT-BEHAVIOR is
   .
 
   rl [restrict-persistent-usage-top-level-handle] :
-    (msg restrictUsage[^ OBJUSAGES] from TK to HANDLE)
+    (msg restrictUsage[# OBJUSAGES] from TK to HANDLE)
     < OI : PersistentObject | >
     < HANDLE : ObjectHandle | oid : OI >
     =>
@@ -224,42 +219,39 @@ omod GENERIC-OBJECT-BEHAVIOR is
 
   rl [restrict-object-usage-success] :
     (msg finishRestrictUsage[] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(apiCall(RestrictObjectUsage1 , PARAMS)) >
+    < TK : TAKernel | api-call : final(RestrictObjectUsage1[PARAMS]) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(RestrictObjectUsage1 , retCode(noReturnCode))) >
+    < TK : TAKernel | api-call : return(RestrictObjectUsage1[# noReturnCode]) >
   .
 
-
   --- restrict-object-usage-subroutine (persistent reply): with the attributes of the persistent handle,
-  --- waits for the storage status (step 1).
+  --- appends the source usages and waits for the storage status (step 1).
   rl [restrict-object-usage-subroutine] :
-    (msg retAttributePr[^ ATTRS ^ OBJTYPE ^ OBJUSAGES] from HANDLE to TK)
-    < TK : TAKernel | api-call : exec(apiCall(RestrictObjectUsage1 , PARAMS) , 0) , storage : SI >
+    (msg retAttributePr[# ATTRS # OBJTYPE # OBJUSAGES] from HANDLE to TK)
+    < TK : TAKernel | api-call : exec(RestrictObjectUsage1[PARAMS] , 0) , storage : SI >
     =>
-    < TK : TAKernel | api-call : exec(apiCall(RestrictObjectUsage1 , (PARAMS , srcUsages(OBJUSAGES))) , 1) >
+    < TK : TAKernel | api-call : exec(RestrictObjectUsage1[PARAMS # OBJUSAGES] , 1) >
     (msg getStatus[] from TK to SI) 
   .
 
   --- restrict-object-usage-subroutine (status reply): when the storage status is normal, sends
   --- restrictUsage with the updated usages to the handle.
   rl [restrict-object-usage-subroutine] :
-    (msg retStatus[^ (normal).StorageStatus] from SI to TK)
-    < TK : TAKernel | api-call : exec(apiCall(RestrictObjectUsage1 ,
-                                  (handle(HANDLE) , usages(OBJUSAGES') , srcUsages(OBJUSAGES) , PARAMS)) , 1) >
+    (msg retStatus[# (normal).StorageStatus] from SI to TK)
+    < TK : TAKernel | api-call : exec(RestrictObjectUsage1[# HANDLE # OBJUSAGES' # OBJUSAGES] , 1) >
     => 
-    < TK : TAKernel | api-call : final(apiCall(RestrictObjectUsage1 ,
-                                  (handle(HANDLE) , usages(OBJUSAGES') , srcUsages(OBJUSAGES) , PARAMS))) >
-    (msg restrictUsage[^ updateObjectUsage(OBJUSAGES , OBJUSAGES')] from TK to HANDLE)
+    < TK : TAKernel | api-call : final(RestrictObjectUsage1[# HANDLE # OBJUSAGES' # OBJUSAGES]) >
+    (msg restrictUsage[# updateObjectUsage(OBJUSAGES , OBJUSAGES')] from TK to HANDLE)
   .
 
 --- restrict-object-usage-storage-err: returns TEE_ERROR_CORRUPT_OBJECT if the persistent object is
 --- corrupt, and TEE_ERROR_STORAGE_NOT_AVAILABLE if its storage area is inaccessible.
   crl [restrict-object-usage-storage-err] :
-    (msg retStatus[^ STATUS] from SI to TK)
-    < TK : TAKernel | api-call : exec(apiCall(RestrictObjectUsage1 , PARAMS) , 1) >
+    (msg retStatus[# STATUS] from SI to TK)
+    < TK : TAKernel | api-call : exec(RestrictObjectUsage1[PARAMS] , 1) >
     => 
-    < TK : TAKernel | api-call : return(apiCall(RestrictObjectUsage1 , retCode(storageErrCode(STATUS)))) >
-  if abnormalStorage(STATUS) 
+    < TK : TAKernel | api-call : return(RestrictObjectUsage1[# storageErrCode(STATUS)]) >
+  if abnormalStorage(STATUS)
   .
 
 ------------------------------------------------------------
@@ -270,15 +262,17 @@ omod GENERIC-OBJECT-BEHAVIOR is
 --- See page 135 of the G.P. documentation for more details.
 --- Step numbers: 0 waits for the attribute, 1 waits for the storage status (persistent objects only),
 --- 2 has the attribute and usages in its parameters and returns.
+--- The inputs are the handle, the attribute id and, for a call with a size, the capacity.  The
+--- intermediate items appended by step 0 are the attributes and the usages of the object.
 
 --- The following rules extract one buffer attribute from the (transient) object.
 
   --- get-object-buffer-attribute-subroutine (request): sends reqAttribute to the handle and waits for
   --- the attribute (step 0).
   crl [get-object-buffer-attribute-subroutine] :
-    < TK : TAKernel | api-call : init(apiCall(GetObjectBufferAttribute , (handle(HANDLE) , constId(ID)))) >
+    < TK : TAKernel | api-call : init(GetObjectBufferAttribute[# HANDLE # ID]) >
     =>
-    < TK : TAKernel | api-call : exec(apiCall(GetObjectBufferAttribute , (handle(HANDLE) , constId(ID))) , 0) >
+    < TK : TAKernel | api-call : exec(GetObjectBufferAttribute[# HANDLE # ID] , 0) >
     (msg reqAttribute[] from TK to HANDLE)
   if bufferType(ID)
   .
@@ -286,82 +280,71 @@ omod GENERIC-OBJECT-BEHAVIOR is
   --- get-object-buffer-attribute-subroutine (transient reply): stores the attributes and usages in the
   --- call and moves to step 2.
   rl [get-object-buffer-attribute-subroutine] :
-    (msg retAttributeTr[^ ATTRS ^ OBJTYPE ^ OBJUSAGES] from HANDLE to TK)
-    < TK : TAKernel | api-call : exec(apiCall(GetObjectBufferAttribute , PARAMS) , 0) >
+    (msg retAttributeTr[# ATTRS # OBJTYPE # OBJUSAGES] from HANDLE to TK)
+    < TK : TAKernel | api-call : exec(GetObjectBufferAttribute[PARAMS] , 0) >
     =>
-    < TK : TAKernel | api-call : exec(apiCall(GetObjectBufferAttribute ,
-                                  (PARAMS , attrs(ATTRS) , usages(OBJUSAGES))) , 2) >
+    < TK : TAKernel | api-call : exec(GetObjectBufferAttribute[PARAMS # ATTRS # OBJUSAGES] , 2) >
   .
 
+  --- get-object-buffer-attribute-success: the call has no capacity.
   crl [get-object-buffer-attribute-success] :
-    < TK : TAKernel | api-call : exec(apiCall(GetObjectBufferAttribute ,
-                                  (constId(ID) , attrs(ATTRS) , usages(OBJUSAGES) , PARAMS)) , 2) >
+    < TK : TAKernel | api-call : exec(GetObjectBufferAttribute[# HANDLE # ID # ATTRS # OBJUSAGES] , 2) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(GetObjectBufferAttribute ,
-                                  (retCode(success) , constVal(getAttrContent(ID , ATTRS))))) >
-  if ID in getAttrIds(ATTRS) /\ canAcquireAttr(ID , OBJUSAGES) /\ not hasCapacity(PARAMS)
+    < TK : TAKernel | api-call : return(GetObjectBufferAttribute[# success # getAttrContent(ID , ATTRS)]) >
+  if ID in getAttrIds(ATTRS) /\ canAcquireAttr(ID , OBJUSAGES)
   .
 
+  --- get-object-buffer-attribute-capacity-success: the call has a capacity that fits the attribute.
   crl [get-object-buffer-attribute-capacity-success] :
-    < TK : TAKernel | api-call : exec(apiCall(GetObjectBufferAttribute ,
-                                  (constId(ID) , attrs(ATTRS) , usages(OBJUSAGES) , PARAMS)) , 2) >
+    < TK : TAKernel | api-call : exec(GetObjectBufferAttribute[# HANDLE # ID # DATASIZE # ATTRS # OBJUSAGES] , 2) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(GetObjectBufferAttribute ,
-                                  (retCode(success) ,
-                                   (constVal(getAttrContent(ID , ATTRS)) ,
-                                    size(attrContentSize(getAttrContent(ID , ATTRS))))))) >
-  if ID in getAttrIds(ATTRS) /\ canAcquireAttr(ID , OBJUSAGES) /\ capacityFitsAttr(PARAMS)
+    < TK : TAKernel | api-call : return(GetObjectBufferAttribute[# success # getAttrContent(ID , ATTRS) # attrContentSize(getAttrContent(ID , ATTRS))]) >
+  if ID in getAttrIds(ATTRS) /\ canAcquireAttr(ID , OBJUSAGES) /\ capacityFitsAttr(DATASIZE)
   .
 
+  --- get-object-buffer-attribute-short-buffer: the call has a capacity that does not fit the attribute.
   crl [get-object-buffer-attribute-short-buffer] :
-    < TK : TAKernel | api-call : exec(apiCall(GetObjectBufferAttribute ,
-                                  (constId(ID) , attrs(ATTRS) , usages(OBJUSAGES) , PARAMS)) , 2) >
+    < TK : TAKernel | api-call : exec(GetObjectBufferAttribute[# HANDLE # ID # DATASIZE # ATTRS # OBJUSAGES] , 2) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(GetObjectBufferAttribute ,
-                                  (retCode(errorShortBuffer) ,
-                                   size(attrContentSize(getAttrContent(ID , ATTRS)))))) >
-  if ID in getAttrIds(ATTRS) /\ canAcquireAttr(ID , OBJUSAGES) /\
-     hasCapacity(PARAMS) /\ not capacityFitsAttr(PARAMS)
+    < TK : TAKernel | api-call : return(GetObjectBufferAttribute[# errorShortBuffer # attrContentSize(getAttrContent(ID , ATTRS))]) >
+  if ID in getAttrIds(ATTRS) /\ canAcquireAttr(ID , OBJUSAGES) /\ not capacityFitsAttr(DATASIZE)
   .
-
 
   --- get-object-buffer-attribute-subroutine (persistent reply): stores the attributes and usages, and
   --- waits for the storage status (step 1).
   rl [get-object-buffer-attribute-subroutine] :
-    (msg retAttributePr[^ ATTRS ^ OBJTYPE ^ OBJUSAGES] from HANDLE to TK)
-    < TK : TAKernel | api-call : exec(apiCall(GetObjectBufferAttribute , PARAMS) , 0) , storage : SI >
+    (msg retAttributePr[# ATTRS # OBJTYPE # OBJUSAGES] from HANDLE to TK)
+    < TK : TAKernel | api-call : exec(GetObjectBufferAttribute[PARAMS] , 0) , storage : SI >
     =>
-    < TK : TAKernel | api-call : exec(apiCall(GetObjectBufferAttribute ,
-                                  (PARAMS , attrs(ATTRS) , usages(OBJUSAGES))) , 1) >
+    < TK : TAKernel | api-call : exec(GetObjectBufferAttribute[PARAMS # ATTRS # OBJUSAGES] , 1) >
     (msg getStatus[] from TK to SI) 
   .
 
   --- get-object-buffer-attribute-subroutine (status reply): when the storage status is normal, moves to
   --- step 2.
   rl [get-object-buffer-attribute-subroutine] :
-    (msg retStatus[^ (normal).StorageStatus] from SI to TK)
-    < TK : TAKernel | api-call : exec(apiCall(GetObjectBufferAttribute , PARAMS) , 1) >
+    (msg retStatus[# (normal).StorageStatus] from SI to TK)
+    < TK : TAKernel | api-call : exec(GetObjectBufferAttribute[PARAMS] , 1) >
     => 
-    < TK : TAKernel | api-call : exec(apiCall(GetObjectBufferAttribute , PARAMS) , 2) >
+    < TK : TAKernel | api-call : exec(GetObjectBufferAttribute[PARAMS] , 2) >
   .
 
 --- get-object-buffer-attribute-storage-err: returns TEE_ERROR_CORRUPT_OBJECT if the persistent object
 --- is corrupt, and TEE_ERROR_STORAGE_NOT_AVAILABLE if its storage area is inaccessible.
   crl [get-object-buffer-attribute-storage-err] :
-    (msg retStatus[^ STATUS] from SI to TK)
-    < TK : TAKernel | api-call : exec(apiCall(GetObjectBufferAttribute , PARAMS) , 1) >
+    (msg retStatus[# STATUS] from SI to TK)
+    < TK : TAKernel | api-call : exec(GetObjectBufferAttribute[PARAMS] , 1) >
     => 
-    < TK : TAKernel | api-call : return(apiCall(GetObjectBufferAttribute , retCode(storageErrCode(STATUS)))) >
+    < TK : TAKernel | api-call : return(GetObjectBufferAttribute[# storageErrCode(STATUS)]) >
   if abnormalStorage(STATUS) 
   .
 
 --- get-object-buffer-attribute-not-found-err: returns TEE_ERROR_ITEM_NOT_FOUND if the attribute is not
 --- found on this object.
   crl [get-object-buffer-attribute-not-found-err] :
-    < TK : TAKernel | api-call : exec(apiCall(GetObjectBufferAttribute ,
-                                  (constId(ID) , attrs(ATTRS) , PARAMS)) , 2) >
+    < TK : TAKernel | api-call : exec(GetObjectBufferAttribute[# HANDLE # ID AL # ATTRS # OBJUSAGES] , 2) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(GetObjectBufferAttribute , retCode(errorItemNotFound))) >
+    < TK : TAKernel | api-call : return(GetObjectBufferAttribute[# errorItemNotFound]) >
   if not (ID in getAttrIds(ATTRS))
   .
 
@@ -378,9 +361,9 @@ omod GENERIC-OBJECT-BEHAVIOR is
   --- get-object-value-attribute-subroutine (request): sends reqAttribute to the handle and waits for
   --- the attribute (step 0).
   crl [get-object-value-attribute-subroutine] :
-    < TK : TAKernel | api-call : init(apiCall(GetObjectValueAttribute , (handle(HANDLE) , constId(ID)))) >
+    < TK : TAKernel | api-call : init(GetObjectValueAttribute[# HANDLE # ID]) >
     =>
-    < TK : TAKernel | api-call : exec(apiCall(GetObjectValueAttribute , (handle(HANDLE) , constId(ID))) , 0) >
+    < TK : TAKernel | api-call : exec(GetObjectValueAttribute[# HANDLE # ID] , 0) >
     (msg reqAttribute[] from TK to HANDLE)
   if valueType(ID)
   .
@@ -388,60 +371,54 @@ omod GENERIC-OBJECT-BEHAVIOR is
   --- get-object-value-attribute-subroutine (transient reply): stores the attributes and usages in the
   --- call and moves to step 2.
   rl [get-object-value-attribute-subroutine] :
-    (msg retAttributeTr[^ ATTRS ^ OBJTYPE ^ OBJUSAGES] from HANDLE to TK)
-    < TK : TAKernel | api-call : exec(apiCall(GetObjectValueAttribute , PARAMS) , 0) >
+    (msg retAttributeTr[# ATTRS # OBJTYPE # OBJUSAGES] from HANDLE to TK)
+    < TK : TAKernel | api-call : exec(GetObjectValueAttribute[PARAMS] , 0) >
     =>
-    < TK : TAKernel | api-call : exec(apiCall(GetObjectValueAttribute ,
-                                  (PARAMS , attrs(ATTRS) , usages(OBJUSAGES))) , 2) >
+    < TK : TAKernel | api-call : exec(GetObjectValueAttribute[PARAMS # ATTRS # OBJUSAGES] , 2) >
   .
 
   crl [get-object-value-attribute-success] :
-    < TK : TAKernel | api-call : exec(apiCall(GetObjectValueAttribute ,
-                                  (constId(ID) , attrs(ATTRS) , usages(OBJUSAGES) , PARAMS)) , 2) >
+    < TK : TAKernel | api-call : exec(GetObjectValueAttribute[# HANDLE # ID # ATTRS # OBJUSAGES] , 2) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(GetObjectValueAttribute ,
-                                  (retCode(success) , constVal(getAttrContent(ID , ATTRS))))) >
+    < TK : TAKernel | api-call : return(GetObjectValueAttribute[# success # getAttrContent(ID , ATTRS)]) >
   if ID in getAttrIds(ATTRS) /\ canAcquireAttr(ID , OBJUSAGES)
   .
-
 
   --- get-object-value-attribute-subroutine (persistent reply): stores the attributes and usages, and
   --- waits for the storage status (step 1).
   rl [get-object-value-attribute-subroutine] :
-    (msg retAttributePr[^ ATTRS ^ OBJTYPE ^ OBJUSAGES] from HANDLE to TK)
-    < TK : TAKernel | api-call : exec(apiCall(GetObjectValueAttribute , PARAMS) , 0) , storage : SI >
+    (msg retAttributePr[# ATTRS # OBJTYPE # OBJUSAGES] from HANDLE to TK)
+    < TK : TAKernel | api-call : exec(GetObjectValueAttribute[PARAMS] , 0) , storage : SI >
     =>
-    < TK : TAKernel | api-call : exec(apiCall(GetObjectValueAttribute ,
-                                  (PARAMS , attrs(ATTRS) , usages(OBJUSAGES))) , 1) >
+    < TK : TAKernel | api-call : exec(GetObjectValueAttribute[PARAMS # ATTRS # OBJUSAGES] , 1) >
     (msg getStatus[] from TK to SI) 
   .
 
   --- get-object-value-attribute-subroutine (status reply): when the storage status is normal, moves to
   --- step 2.
   rl [get-object-value-attribute-subroutine] :
-    (msg retStatus[^ (normal).StorageStatus] from SI to TK)
-    < TK : TAKernel | api-call : exec(apiCall(GetObjectValueAttribute , PARAMS) , 1) >
+    (msg retStatus[# (normal).StorageStatus] from SI to TK)
+    < TK : TAKernel | api-call : exec(GetObjectValueAttribute[PARAMS] , 1) >
     => 
-    < TK : TAKernel | api-call : exec(apiCall(GetObjectValueAttribute , PARAMS) , 2) >
+    < TK : TAKernel | api-call : exec(GetObjectValueAttribute[PARAMS] , 2) >
   .
 
 --- get-object-value-attribute-storage-err: returns TEE_ERROR_CORRUPT_OBJECT if the persistent object
 --- is corrupt, and TEE_ERROR_STORAGE_NOT_AVAILABLE if its storage area is inaccessible.
   crl [get-object-value-attribute-storage-err] :
-    (msg retStatus[^ STATUS] from SI to TK)
-    < TK : TAKernel | api-call : exec(apiCall(GetObjectValueAttribute , PARAMS) , 1) >
+    (msg retStatus[# STATUS] from SI to TK)
+    < TK : TAKernel | api-call : exec(GetObjectValueAttribute[PARAMS] , 1) >
     => 
-    < TK : TAKernel | api-call : return(apiCall(GetObjectValueAttribute , retCode(storageErrCode(STATUS)))) >
+    < TK : TAKernel | api-call : return(GetObjectValueAttribute[# storageErrCode(STATUS)]) >
   if abnormalStorage(STATUS) 
   .
 
 --- get-object-value-attribute-not-found-err: returns TEE_ERROR_ITEM_NOT_FOUND if the attribute is not
 --- found on this object.
   crl [get-object-value-attribute-not-found-err] :
-    < TK : TAKernel | api-call : exec(apiCall(GetObjectValueAttribute ,
-                                  (constId(ID) , attrs(ATTRS) , PARAMS)) , 2) >
+    < TK : TAKernel | api-call : exec(GetObjectValueAttribute[# HANDLE # ID AL # ATTRS # OBJUSAGES] , 2) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(GetObjectValueAttribute , retCode(errorItemNotFound))) >
+    < TK : TAKernel | api-call : return(GetObjectValueAttribute[# errorItemNotFound]) >
   if not (ID in getAttrIds(ATTRS))
   .
 
@@ -458,9 +435,9 @@ omod GENERIC-OBJECT-BEHAVIOR is
   op finishCloseObject : -> ReqId [ctor] .
 
   crl [close-object-not-null-subroutine] :
-    < TK : TAKernel | api-call : init(apiCall(CloseObject , handle(HANDLE))) >
+    < TK : TAKernel | api-call : init(CloseObject[# HANDLE]) >
     => 
-    < TK : TAKernel | api-call : final(apiCall(CloseObject , handle(HANDLE))) >
+    < TK : TAKernel | api-call : final(CloseObject[# HANDLE]) >
     (msg closeObject[] from TK to HANDLE)
   if not nullHandle(HANDLE)
   .
@@ -484,17 +461,17 @@ omod GENERIC-OBJECT-BEHAVIOR is
 
   rl [close-object-not-null-success] :
     (msg finishCloseObject[] from OI to TK)
-    < TK : TAKernel | api-call : final(apiCall(CloseObject , PARAMS)) >
+    < TK : TAKernel | api-call : final(CloseObject[PARAMS]) >
     =>
-    < TK : TAKernel | api-call : return(apiCall(CloseObject , retCode(noReturnCode))) >
+    < TK : TAKernel | api-call : return(CloseObject[# noReturnCode]) >
   .
 
 --- close-object-null-success: a null handle (TEE_HANDLE_NULL) is closed by doing nothing, and the call
 --- returns noReturnCode.
   crl [close-object-null-success] :
-    < TK : TAKernel | api-call : init(apiCall(CloseObject , handle(HANDLE))) >
+    < TK : TAKernel | api-call : init(CloseObject[# HANDLE]) >
     => 
-    < TK : TAKernel | api-call : return(apiCall(CloseObject , (retCode(noReturnCode) , handle(null)))) >
+    < TK : TAKernel | api-call : return(CloseObject[# noReturnCode # null]) >
   if nullHandle(HANDLE)
   .
 

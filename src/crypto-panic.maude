@@ -8,7 +8,7 @@ omod CRYPTO-PANIC is
   var API : TeeApi .
   var HANDLE : Oid .
   var CI : Oid .
-  var PARAMS : Set{TeeApiParam} .
+  var PARAMS : ArgList .
   var HS : HandleState .
   var HSF : Set{HandleFlag} .
   var OC : OpClass .
@@ -19,16 +19,16 @@ omod CRYPTO-PANIC is
   eq operationClassCompatible(FreeOperation, OC) = true .
   eq operationClassCompatible(GetOperationInfo, OC) = true .
   eq operationClassCompatible(GetOperationInfoMultiple, OC) = true .
-  eq operationClassCompatible(ResetOperation, OC) = true .
+  eq operationClassCompatible(resetOperation, OC) = true .
   eq operationClassCompatible(SetOperationKey, OC) = true .
   eq operationClassCompatible(SetOperationKey2, OC) = true .
   eq operationClassCompatible(CopyOperation, OC) = true .
   eq operationClassCompatible(DigestUpdate, clsDigest) = true .
   eq operationClassCompatible(DigestDoFinal, clsDigest) = true .
   eq operationClassCompatible(DigestExtract, clsDigest) = true .
-  eq operationClassCompatible(CipherInit, clsCipher) = true .
-  eq operationClassCompatible(CipherUpdate, clsCipher) = true .
-  eq operationClassCompatible(CipherDoFinal, clsCipher) = true .
+  eq operationClassCompatible(cipherInit, clsCipher) = true .
+  eq operationClassCompatible(cipherUpdate, clsCipher) = true .
+  eq operationClassCompatible(cipherDoFinal, clsCipher) = true .
   eq operationClassCompatible(MACInit, clsMAC) = true .
   eq operationClassCompatible(MACUpdate, clsMAC) = true .
   eq operationClassCompatible(MACComputeFinal, clsMAC) = true .
@@ -49,7 +49,7 @@ omod CRYPTO-PANIC is
   --- operation-api-class-mismatch-panic: the operation class OC is assigned to OpHandle.  A class mismatch
   --- is a programmer error and sets the kernel status to panic before an operation-specific rule runs.
   ceq [operation-api-class-mismatch-panic] :
-    < TK : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(API , (handle(HANDLE) , PARAMS))) >
+    < TK : TAKernel | status : (normal).AppStatus, api-call : init(API[# HANDLE PARAMS]) >
     < HANDLE : OperationHandle | oid : CI, opclass : OC >
     =
     < TK : TAKernel | status : panic >
@@ -63,7 +63,7 @@ omod CRYPTO-PANIC is
   --- the two-key API. A handle in the init state makes TEE_SetOperationKey2 set the kernel status
   --- to panic.
   rl [set-operation-key2-initialized-panic] :
-    < TK : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(SetOperationKey2 , (handle(HANDLE) , PARAMS))) >
+    < TK : TAKernel | status : (normal).AppStatus, api-call : init(SetOperationKey2[# HANDLE PARAMS]) >
     < HANDLE : OperationHandle | state : handleState((init, HSF)) >
     =>
     < TK : TAKernel | status : panic >

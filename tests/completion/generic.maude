@@ -3,6 +3,7 @@ load ../../src/main
 load ../cases/aux
 
 mod COMPLETION-TEST is
+  var ZvHandle : Oid .
   pr TEE-BEHAVIOR .
   pr TEST-AUX .
   var C : Configuration .
@@ -13,18 +14,14 @@ mod COMPLETION-TEST is
 endm
 
 search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | api-call : exec(apiCall(GetObjectBufferAttribute , (constId(rsaModulus),
-                          attrs(attr(rsaModulus, randomAttrVal)),
-                          usages(usageExtractable), capacity(dataSize(0)))) , 2) >
+  < testTa : TAKernel | api-call : exec(GetObjectBufferAttribute[# ZvHandle # rsaModulus # dataSize(0) # attr(rsaModulus, randomAttrVal) # usageExtractable] , 2) >
 =>*
-  < testTa : TAKernel | api-call : return(apiCall(GetObjectBufferAttribute , (retCode(errorShortBuffer) , size(dataSize(1))))) > .
+  < testTa : TAKernel | api-call : return(GetObjectBufferAttribute[# errorShortBuffer # dataSize(1)]) > .
 
 search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | api-call : exec(apiCall(GetObjectBufferAttribute , (constId(rsaModulus),
-                          attrs(attr(rsaModulus, randomAttrVal)),
-                          usages(usageExtractable), capacity(dataSize(1)))) , 2) >
+  < testTa : TAKernel | api-call : exec(GetObjectBufferAttribute[# ZvHandle # rsaModulus # dataSize(1) # attr(rsaModulus, randomAttrVal) # usageExtractable] , 2) >
 =>*
-  < testTa : TAKernel | api-call : return(apiCall(GetObjectBufferAttribute , (retCode(success) , constVal(randomAttrVal), size(dataSize(1))))) > .
+  < testTa : TAKernel | api-call : return(GetObjectBufferAttribute[# success # randomAttrVal # dataSize(1)]) > .
 
 --- Closing one persistent handle removes only that ID and its top-level object.
 search [1] in COMPLETION-TEST :
@@ -39,7 +36,7 @@ search [1] in COMPLETION-TEST :
 
 --- GetObjectInfo1 combines a persistent owner, top-level handle, and stream.
 search [1] in COMPLETION-TEST :
-  (msg reqObjectInfo[^ oid(0, testTa)] from testTa to oid(101, testTa))
+  (msg reqObjectInfo[# oid(0, testTa)] from testTa to oid(101, testTa))
   < oid(1, oid(0, testTa)) : PersistentObject |
       type : typeAes, max-size : 256,
       attributes : attr(secretValue, randomAttrVal),
@@ -49,13 +46,13 @@ search [1] in COMPLETION-TEST :
       flags : accessRead,
       pos : 2 >
 =>1
-  (msg retObjectInfoPr[^ typeAes ^ keySize(
-      attr(secretValue, randomAttrVal)) ^ 256 ^ usageExtractable ^ dataSize(5) ^ pos(2) ^ accessRead] from oid(101, testTa) to testTa)
+  (msg retObjectInfoPr[# typeAes # keySize(
+      attr(secretValue, randomAttrVal)) # 256 # usageExtractable # dataSize(5) # pos(2) # accessRead] from oid(101, testTa) to testTa)
   C .
 
 --- RestrictObjectUsage1 updates a persistent owner through its top-level handle.
 search [1] in COMPLETION-TEST :
-  (msg restrictUsage[^ usageEncrypt] from testTa to oid(101, testTa))
+  (msg restrictUsage[# usageEncrypt] from testTa to oid(101, testTa))
   < oid(1, testTa) : PersistentObject |
       usages : (usageEncrypt, usageDecrypt) >
   < oid(101, testTa) : ObjectHandle | oid : oid(1, testTa) >
@@ -64,6 +61,6 @@ search [1] in COMPLETION-TEST :
   C .
 
 search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(apiCall(GetObjectInfo1 , handle(null))) >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(GetObjectInfo1[# null]) >
 =>1
-  < testTa : TAKernel | status : panic, api-call : init(apiCall(GetObjectInfo1 , handle(null))) > .
+  < testTa : TAKernel | status : panic, api-call : init(GetObjectInfo1[# null]) > .

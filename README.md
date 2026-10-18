@@ -1,32 +1,103 @@
 # TEE Formal Specification
 
-This repository contains an executable Maude specification of the GlobalPlatform TEE Internal Core API. Based on the object and handle model presented in the accompanying research paper, it models successful API calls, error returns, panics, storage conditions, and cryptographic operation state transitions.
+An executable [Maude](https://maude.cs.illinois.edu/) specification of the GlobalPlatform TEE Internal Core API. It models successful API calls, error returns, panics, storage conditions, and the state transitions of cryptographic operations, together with the trusted application (TA) kernel and the storage and OS services that the API calls depend on. `src/main.maude` is the entry point for the specification.
 
-## Reference Material
+## Features
 
-The specification and its tests are developed against the following sources:
+- Generic, transient, and persistent object APIs
+- Persistent data stream access and persistent object enumeration
+- Cryptographic operations (switchable with the `CRYPTO` feature)
+- Programmer errors and invalid handles, modeled as panics
+- Model programs (`src/imp.maude`) whose calls are translated into TEE API calls (`src/tee-imp.maude`)
+- Build variants that drop feature groups or individual modules
 
-- The TEE API formal model and class structure presented in the research paper
-- GlobalPlatform TEE Internal Core API Specification v1.3.1
-- The model and analysis wrapper from the original artifact
+## Requirements
 
-`src/main.maude` is the entry point for the active specification.
+- Maude 3
+- GNU Make
+- Python 3 (for the test runners and the DM-Check generator)
 
-## Repository Structure
+`make` reads the Maude path from `MAUDE` in a `config.mk` file at the repository root. This file is gitignored, so each user creates it:
+
+```make
+# config.mk
+MAUDE := /path/to/maude
+```
+
+Alternatively, set the `MAUDE_BIN` environment variable. The Python test runner looks for Maude in this order: `MAUDE_BIN`, a sibling `tee-formal-analysis/3rd_party` (or `zenodo/tee-formal-analysis/3rd_party`) binary, then `maude` on `PATH`.
+
+## Quick start
+
+Build the default configuration and run both test suites:
+
+```bash
+make            # build build/default/src and build/default/tests
+make test       # build, then run the API suite and the check suite
+make help       # list features, test selection, and current values
+```
+
+Build variants use a separate build directory selected with `NAME`:
+
+```bash
+make NAME=nocrypto CRYPTO=0 test   # without the cryptographic operation APIs
+make NAME=t WITHOUT=MODULE         # drop a module; MODULE must be a pr line in src/main.maude
+make DMC=1                         # DM-Check-compatible build (tools/gen-dmc.py)
+make V=1 test                      # stream the Maude output of each test file
+```
+
+Run one suite or clean up:
+
+```bash
+make test-api                # API-level black-box searches (tests/api)
+make test-checks             # completion and GlobalPlatform conformance checks
+make check-dmc               # regenerate the DM-Check build and run its ground checks
+make clean NAME=default      # remove build/default
+make distclean               # remove build/
+```
+
+Each build directory `build/$(NAME)/` holds a copy of the selected `src/` and `tests/` trees (or the DM-Check output with `DMC=1`) and the settings used for the build. Settings are cached in `build/$(NAME)/config.mk`.
+
+## Feature selection
+
+Features are defined in `mk/features.mk`. Each one is a variable set to `1` (on, the default) or `0` (off), for example `make CRYPTO=0`.
+
+| Feature | Covers | Requires |
+| --- | --- | --- |
+| `CRYPTO` | Cryptographic operation APIs | `TRANSIENT` |
+| `TRANSIENT` | Transient object API | |
+| `PERSISTENT` | Persistent object API and storage errors | |
+| `GENERIC` | Generic object API | |
+| `DATA_STREAM` | Persistent data stream access | `PERSISTENT` |
+| `ENUMERATOR` | Persistent object enumeration | `PERSISTENT` |
+
+When a feature is off, its files are dropped from `src/main.maude` and its tests are skipped.
+
+## Repository layout
 
 ```text
 tee-formal-spec/
-├── src/                  # Maude specification and executable semantics
+├── Makefile              # build driver and test targets
+├── mk/
+│   └── features.mk       # feature table
+├── src/                  # Maude specification
 ├── tests/
-│   ├── api/              # API-level black-box regression searches
-│   ├── cases/            # Existing test cases grouped by API area
-│   ├── completion.maude  # Visible/invisible completion regressions
-│   └── gp-conformance.maude
+│   ├── api/              # API-level black-box searches (test-*.maude)
+│   ├── cases/            # API-specific test cases (not run by make)
+│   ├── completion/       # completion regressions, one file per API group
+│   ├── gp-conformance/   # GlobalPlatform conformance reductions, one file per module group
+│   ├── run-api-suite.py  # runner for tests/api
+│   └── run-checks.py     # runner for completion/ and gp-conformance/
+├── tools/
+│   ├── select-main.awk   # filter that builds src/main.maude for a feature selection
+│   ├── gen-dmc.py        # DM-Check generator
+│   └── gen-docs.py       # documentation site generator (make docs)
 ├── LICENSE
 └── README.md
 ```
 
-### API Behavior Models
+`build/` is created by `make` and is not tracked.
+
+### API behavior models
 
 | File | Purpose |
 | --- | --- |
@@ -37,21 +108,25 @@ tee-formal-spec/
 | `enumerator.maude` | Persistent object enumeration |
 | `cryptographic.maude` | Cryptographic operations and related APIs |
 
-### Common Objects and TEE Infrastructure
+### Common objects and TEE infrastructure
 
 | File | Purpose |
 | --- | --- |
 | `objects.maude` | Common storage object classes and helper functions |
+| `transient-object.maude`, `persistent-object.maude` | Transient and persistent object classes, shared by the storage APIs |
 | `handle.maude` | Object, enumerator, operation, and session handles |
 | `constants.maude` | GlobalPlatform constants, types, key sizes, and usages |
 | `tee-data-type.maude` | Models of GlobalPlatform API data structures |
 | `tee-api.maude`, `tee-api-call.maude` | API identifiers, call parameters, and return values |
+| `tee-msg.maude` | Message layer of the TEE API models |
+| `session.maude` | Session handling |
 | `tee-kernel.maude` | TA kernel and API execution state |
-| `tee-panic.maude` | Programmer errors and invalid-handle panics |
+| `tee-panic.maude` | General programmer errors and invalid-handle panics |
+| `persistent-panic.maude`, `data-stream-panic.maude`, `crypto-panic.maude` | Panics of the storage and cryptographic APIs |
 | `os.maude`, `os-service.maude` | Trusted OS and storage services |
 | `app.maude`, `ree-app.maude`, `tee-app.maude`, `tee-client.maude` | REE/TEE applications and client behavior |
 
-### Program Execution Semantics
+### Program execution
 
 | File | Purpose |
 | --- | --- |
@@ -59,67 +134,43 @@ tee-formal-spec/
 | `imp.maude` | Syntax and semantics of model programs |
 | `tee-imp.maude` | Translation of program calls into TEE API calls |
 
-## Core Modeling Principles
+## Core modeling principles
 
-### Top-Level Handle Ownership
+### Handles
 
-Handles are represented as independent top-level objects in a configuration rather than being nested inside their owners.
+Handles are top-level objects in the configuration rather than nested inside their owners. No object class has a handle-valued attribute, and the handle constructors create top-level objects.
 
-- An `OpenableObject` records only the IDs of its handles in `handle-id-set`.
-- Each `Handle` refers to its owner through `oid`.
-- A handle is never represented as both a nested object and a top-level object.
-- A persistent object may own multiple handles.
-- A normal close removes only the specified handle.
-- Close-and-delete removes all handles and the stream before deleting the owning object.
+- Each `Handle` has an `oid` that names the object it belongs to.
+- A persistent object may have several open handles. A new handle is added only when its sharing flags are compatible with the handles already open on the object.
+- Closing a handle removes only that handle. The object and its other handles remain.
+- Close-and-delete requires the handle to carry the write-meta access right. On success, all handles of the object are removed, the object is removed together with its embedded data stream, and the storage service is notified to delete the file. Otherwise the TA panics and the object is not deleted.
 
-### Visible and Invisible Reduction
+### Panic semantics
 
-- Regular behavior modules expose API execution through messages and rewrite rules.
-- `*-INVISIBLE` modules provide equation-based reductions with the same observable results.
-- Both paths must agree on successful returns, error codes, panics, and state transitions.
+`tee-panic.maude` evaluates invalid handles and other GlobalPlatform programmer errors against the active `TAKernel` call state and top-level handle objects. A panic path converges to `status : panic` on the `TAKernel`, with the API call in a finished state.
 
-### Panic Semantics
+## Documentation site
 
-`tee-panic.maude` evaluates invalid handles and other GlobalPlatform programmer errors against the active `TaKernel` call state and top-level handle objects. A panic path must converge to `app-status: panic` with the API in a finished state.
-
-## Requirements
-
-- A Maude 3 executable
-- Python 3 for the API regression runner
-
-The API runner locates Maude in the following order:
-
-1. The `MAUDE_BIN` environment variable
-2. A sibling `tee-formal-analysis/3rd_party` artifact
-3. A sibling `zenodo/tee-formal-analysis/3rd_party` artifact
-4. A `maude` executable on `PATH`
-
-## Running the Tests
-
-Run the API regression suite from the repository root:
+`make docs` builds a static HTML site from `src/` into `build/docs/` (generated by `tools/gen-docs.py`, standard library only):
 
 ```bash
-python3 tests/run-api-suite.py
+make docs                                     # build build/docs and check its links
+xdg-open build/docs/index.html                # or open the file in a browser
+python3 tools/gen-docs.py --src src --out build/docs --check   # the same, run directly
 ```
 
-The current suite runs 92 API-level searches.
+The index page's body is the hand-written fragment `docs/overview.html`, in which `[[op:Name]]`-style macros (`mod`, `sort`, `class`, `op`, `rule`, `attr`, `file`; optional `|text`) become links and unknown targets fail the build; the generator adds the site chrome and a table of the files. The site opens from `file://` and needs no network access. It has one page per `src/*.maude` file, where every identifier links to its definition and doc comments appear as prose; and index pages for modules and views, sorts and classes (with class attributes), operators, and rule and equation labels. `--check` verifies every local link and `#anchor`, and exits nonzero if one is missing.
 
-Run the completion and GlobalPlatform conformance checks from the `tests` directory. The following example uses the Linux binary supplied with the analysis artifact:
+## Testing
 
-```bash
-cd tests
-../../tee-formal-analysis/3rd_party/Linux64/maude.linux64 completion.maude
-../../tee-formal-analysis/3rd_party/Linux64/maude.linux64 gp-conformance.maude
-```
+The test groups are:
 
-On macOS, use `Darwin64/maude.darwin64`, or set `MAUDE_BIN` to the appropriate executable path.
+- `tests/api`: black-box searches that verify external API calls and returns (`make test-api`)
+- `tests/completion/<group>.maude`: checks that completed paths converge to final success, error, or panic states (`make test-checks`)
+- `tests/gp-conformance/<group>.maude`: focused reductions derived from GlobalPlatform tables and clauses (`make test-checks`)
+- `tests/cases`: API-specific test cases; not run by the make targets
 
-The test groups serve the following purposes:
-
-- `tests/api`: black-box searches that verify external API calls and returns
-- `tests/completion.maude`: checks that completed paths converge to final success, error, or panic states
-- `tests/gp-conformance.maude`: focused reductions derived from GlobalPlatform tables and clauses
-- `tests/cases`: API-specific test cases inherited from the original artifact
+`make test` runs the API suite and the check suite. Each runs even if the other fails, and the exit status is nonzero if either fails. Without `V=1`, only summary lines are printed, for example `[test-suite] API-level: ...` and `[checks] FILE: ...`.
 
 ## License
 

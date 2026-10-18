@@ -1,17 +1,59 @@
---- This module defines message calls for invoking the TEE storage APIs.
+--- This module defines the message layer of the TEE API models.
+--- A message is msg r[args] from sender to receiver, where r is a request identifier (ReqId)
+--- and args is a list of arguments, each written as # item.  A request with no argument is
+--- written r[].  Modules that send requests declare their identifiers with
+--- op name : -> ReqId [ctor] .
 
-omod TRUSTED-STORAGE-MSG is
-  pr HANDLE-ID .
-  pr TA-INSTANCE-ID .
-  pr SET{TeeAttribute} .
+--- @kind messages
+--- @feature core
+mod TEE-MSG is
+  pr IMP-ARG-LIST .
+  pr OBJECT-ID .
   pr OBJECT-TYPE .
-  pr SET{ObjectUsage} .
+  pr SET{Usage} .
+  pr SET{CryptoAttribute} .
+  pr SET{DataAccessFlag} .
+  pr SET{FileName} .
+  pr DATA-STREAM-SEEK-TYPE .
+  pr DATA-SIZE .
+  pr DATA-POSITION .
+  pr LIST{Data} .
 
-  msg reqAttribute : HandleId TaInstId -> Msg .
-  msg retAttributeTr : Set{TeeAttribute} ObjectType Set{ObjectUsage} TaInstId -> Msg .
-  msg retAttributePr : Set{TeeAttribute} ObjectType Set{ObjectUsage} TaInstId -> Msg .
+  sorts ReqId Req .
 
---- For TEE_CopyObjectAttributes1
-  msg reqCopyAttribute : HandleId Set{TeeAttribute} ObjectType Set{ObjectUsage} TaInstId -> Msg .
-  msg finishCopyAttribute : TaInstId -> Msg .
-endom
+  op #_ : Oid -> Value [ctor] .
+  op #_ : Type -> Value [ctor] .
+  op #_ : Set{Usage} -> Value [ctor] .
+  op #_ : Set{CryptoAttribute} -> Value [ctor] .
+  op #_ : Set{DataAccessFlag} -> Value [ctor] .
+  op #_ : Set{FileName} -> Value [ctor] .
+  op #_ : FileName -> Value [ctor] .
+  op #_ : Nat -> Value [ctor] .
+  op #_ : Bool -> Value [ctor] .
+  op #_ : List{Data} -> Value [ctor] .
+  op #_ : DataSize -> Value [ctor] .
+  op #_ : DataPosition -> Value [ctor] .
+
+  op _[_] : ReqId ArgList -> Req [ctor] .
+  op _[] : ReqId -> Req [ctor] .
+
+  op msg_from_to_ : Req Oid Oid -> Msg [ctor] .
+
+--- Request identifiers shared by the copy-attributes flow.
+  ops getAttrs getAttrsFail setAttrs setAttrsSuccess setAttrsFail : -> ReqId [ctor] .
+  ops retAttrs : -> ReqId [ctor] .
+
+--- Request identifiers for reading the attributes of a handle's object (shared by the get and
+--- restrict APIs).
+  ops reqAttribute retAttributeTr retAttributePr : -> ReqId [ctor] .
+
+--- Request identifiers between a TA and its Storage. The TA sends the
+--- request to the storage (SI), and the storage answers with the matching return identifier.
+--- getStatus / retStatus carry the StorageStatus; checkFileExist / retFileExist carry a Bool;
+--- getPersistentList / retPersistentList carry the file set. notifyFileDeletion and
+--- notifyFileRename update the storage's file set and are acknowledged by acceptNotification.
+  ops getStatus retStatus : -> ReqId [ctor] .
+  ops checkFileExist retFileExist : -> ReqId [ctor] .
+  ops getPersistentList retPersistentList : -> ReqId [ctor] .
+  ops notifyFileDeletion notifyFileRename acceptNotification : -> ReqId [ctor] .
+endm

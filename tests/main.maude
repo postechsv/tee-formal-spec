@@ -16,25 +16,25 @@ mod TEST-DRIVER is
 
   op initTrustedOSwithNoKey : -> Configuration .
   eq initTrustedOSwithNoKey
-  = < osId : TeeOSKernel | sess : (sessionId(0) |-> testTa) , session-counter : 1 ,
-                           service-request-ta : noAppId , service-request-ta-inst : noInstId ,
+  = < osId : TrustedOS | sess : (sessionId(0) |-> testTa) , session-counter : 1 ,
+                           service-request-ta-inst : noOid ,
                            service-in : nil , service-out : nil ,
                            temporary-objects : empty >
-    < storageId(0) : Storage | status : storageNormal , files : empty , counter : 0 > .
+    < oid(0, testTa) : Storage | status : (normal).StorageStatus , files : empty , counter : 0 > .
 
   op initTrustedOS : -> Configuration .
   eq initTrustedOS
-  = < osId : TeeOSKernel | sess : (sessionId(0) |-> testTa) , session-counter : 1 ,
-                           service-request-ta : noAppId , service-request-ta-inst : noInstId ,
+  = < osId : TrustedOS | sess : (sessionId(0) |-> testTa) , session-counter : 1 ,
+                           service-request-ta-inst : noOid ,
                            service-in : nil , service-out : nil ,
                            temporary-objects : empty >
-    < storageId(0) : Storage | status : storageNormal , files : testFileId , counter : 0 > .
+    < oid(0, testTa) : Storage | status : (normal).StorageStatus , files : testFileId , counter : 0 > .
 
 
   op testKey : -> Configuration .
   eq testKey =
-    < persistentObjId : PersistentObject | type : TEE-TYPE-DATA , max-size : 0 Bits  ,
-                                           file-name : testFileId , trust-app-id : TESTTA ,
+    < persistentObjId : PersistObj | type : pureData , max-size : 0  ,
+                                           file-name : testFileId ,
                                            attributes : empty , usages : empty , data-stream-id : dataStreamId >
     < dataStreamId : DataStreamObject | data-size : dataSize(1) , content : newContent(attrContentData(randomAttrVal)) >
   .
@@ -44,13 +44,10 @@ mod TEST-DRIVER is
   ---                                 invoke-req-queue : nil , invoke-ret-queue : nil > .
 
   op initTestTa : Program -> Configuration .
-  eq initTestTa(P) = < testTa : TrustApp | proc : none , prog : P , running : false ,
-                                           status : normal , api-call : noCall , api-return : noReturn ,
-                                           current-api : noApi , api-state : noState , current-params : empty , counter : 0 ,
-                                           storage : storageId(0) , os-kernel : osId ,
-                                           trust-app-id : TESTTA ,
-                                           client-service : clientService(testRa , main) ,
-                                           task : task({sessionId(0) , main , nil} , testRa) , task-counter : 0, state-changed : false > .
+  eq initTestTa(P) = < testTa : TrustedApp | proc : none , prog : P ,
+                                           status : (normal).AppStatus , api-call : noCall , counter : 0 ,
+                                           storage : oid(0, testTa) , os-kernel : osId ,
+                                           client-service : none > .
 
 endm
 
@@ -71,11 +68,38 @@ mod TEST-SCENARIO is
 
   op scenarioWithoutKey : Program -> Configuration .
   eq scenarioWithoutKey(P)
-    = initTestTa(P) initTrustedOSwithNoKey .
+    = initTestTa(P) initTrustedOSwithNoKey (msg invkTa[main argNil] from testRa to testTa) .
 
   op scenarioWithKey : Program -> Configuration .
   eq scenarioWithKey(P)
-    = initTestTa(P) initTrustedOS testKey .
+    = initTestTa(P) initTrustedOS testKey (msg invkTa[main argNil] from testRa to testTa) .
+endm
+
+--- Integration scenario: the TA service addService adds its inputs into the by-reference
+--- output parameter res. The scenario starts from the invkTa message (no pre-set task),
+--- and the TA answers with invkTaRet carrying the output value 22.
+--- testEnumerator (tests/cases/test-enumerator.maude) is not used: its TEE_*Enumerator
+--- calls have no IMP syscall definitions yet. IMP calls of TEE APIs do not return yet:
+--- the return statement of AllocateTransientObject leaves an auto declaration in the k cell.
+mod INTEGRATION-PROGRAM is
+  pr TEST-SCENARIO .
+  pr TEST-AUX .
+  pr TEE-BEHAVIOR .
+  pr TEE-IMP-BEHAVIOR .
+
+  op addService : -> FuncId [ctor] .
+  op integrationProg : -> Program .
+  eq integrationProg =
+    void addService (int srcKey, int destKey, int * res)
+    {
+      res := srcKey + destKey ;
+    }
+  .
+
+  op integrationScenario : -> Configuration .
+  eq integrationScenario =
+    initTestTa(integrationProg) initTrustedOS testKey
+    (msg invkTa[addService (# 10 # 12 # 0)] from testRa to testTa) .
 endm
 
 --- rew scenarioWithoutKey(testTransient) .
@@ -84,7 +108,7 @@ endm
 --- rew scenarioWithKey(testDataStream) .
 --- rew scenarioWithoutKey(testGeneric) .
 --- rew scenarioWithKey(testGeneric) .
-rew scenarioWithKey(testEnumerator) .
+rew integrationScenario .
 --- rew scenarioWithKey(testCryptoGeneric) .
 --- rew scenarioWithKey(testCryptoCipher) .
 --- rew scenarioWithKey(testCryptoMAC) .

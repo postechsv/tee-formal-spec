@@ -1,0 +1,107 @@
+--- Data stream operations (TEE_WriteObjectData, TEE_TruncateObjectData, TEE_SeekObjectData and
+--- the storage error paths) driven from the TA-level API call through the object handle. Each
+--- search is a bounded example driver.
+
+load ./src/main
+load ./tests/api/aux
+
+set show command off .
+set print attribute off .
+set print color off .
+
+mod SEED-DATA-STREAM is
+  pr TEST-AUX .
+  var ZsData : List{Data} .
+endm
+
+--- [SEED-WRITE-SUBROUTINE] write-object-data asks the storage for its status
+search [1] in SEED-DATA-STREAM :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(WriteObjectData[# oid(102, ta) # randomData]), counter : 0, storage : oid(0, ta) >
+  < oid(0, ta) : Storage | status : (normal).StorageStatus, files : empty, counter : 0 >
+=>*
+  < ta : TAKernel | api-call : exec(WriteObjectData[# oid(102, ta) # randomData] , 0) > .
+
+--- [SEED-WRITE-OVERFLOW] write-object-data past the maximum data position returns errorOverflow
+search [1] in SEED-DATA-STREAM :
+  (msg retStatus[# (normal).StorageStatus] from oid(0, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(WriteObjectData[# oid(102, ta) # randomData] , 0), counter : 0, storage : oid(0, ta) >
+  < oid(102, ta) : ObjHandle | oid : oid(1, oid(0, ta)), flags : accessWrite, pos : 4294967295 >
+  < oid(1, oid(0, ta)) : PersistObj | data-stream : randomData, type : typeAes, max-size : 128,
+                           attributes : empty, usages : empty, file-name : testFileId >
+=>*
+  < ta : TAKernel | api-call : return(WriteObjectData[# errorOverflow]) > .
+
+--- [SEED-WRITE-STORAGE-ERR] write-object-data with a corrupt storage returns the storage error
+search [1] in SEED-DATA-STREAM :
+  (msg retStatus[# (corrupted).StorageStatus] from oid(0, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(WriteObjectData[# oid(102, ta) # randomData] , 0), counter : 0, storage : oid(0, ta) >
+=>*
+  < ta : TAKernel | api-call : return(WriteObjectData[# errorCorruptObject]) > .
+
+--- [SEED-TRUNCATE-SUBROUTINE] truncate-object-data asks the storage for its status
+search [1] in SEED-DATA-STREAM :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(TruncateObjectData[# oid(103, ta) # dataSize(0)]), counter : 0, storage : oid(0, ta) >
+  < oid(0, ta) : Storage | status : (normal).StorageStatus, files : empty, counter : 0 >
+=>*
+  < ta : TAKernel | api-call : exec(TruncateObjectData[# oid(103, ta) # dataSize(0)] , 0) > .
+
+--- [SEED-TRUNCATE-SUCCESS] truncate-object-data resizes the data stream of a writable handle
+search [1] in SEED-DATA-STREAM :
+  (msg retStatus[# (normal).StorageStatus] from oid(0, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(TruncateObjectData[# oid(103, ta) # dataSize(0)] , 0), counter : 0, storage : oid(0, ta) >
+  < oid(103, ta) : ObjHandle | oid : oid(1, oid(0, ta)), flags : accessWrite, pos : 0 >
+  < oid(1, oid(0, ta)) : PersistObj | data-stream : randomData, type : typeAes, max-size : 128,
+                           attributes : empty, usages : empty, file-name : testFileId >
+=>*
+  < ta : TAKernel | api-call : return(TruncateObjectData[# success]) > .
+
+--- [SEED-TRUNCATE-STORAGE-ERR] truncate-object-data with an unavailable storage returns the error
+search [1] in SEED-DATA-STREAM :
+  (msg retStatus[# (notAvailable).StorageStatus] from oid(0, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(TruncateObjectData[# oid(103, ta) # dataSize(0)] , 0), counter : 0, storage : oid(0, ta) >
+=>*
+  < ta : TAKernel | api-call : return(TruncateObjectData[# errorStorageNotAvailable]) > .
+
+--- [SEED-SEEK-SUBROUTINE] seek-object-data asks the storage for its status
+search [1] in SEED-DATA-STREAM :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(SeekObjectData[# oid(104, ta) # 0 # seekSet]), counter : 0, storage : oid(0, ta) >
+  < oid(0, ta) : Storage | status : (normal).StorageStatus, files : empty, counter : 0 >
+=>*
+  < ta : TAKernel | api-call : exec(SeekObjectData[# oid(104, ta) # 0 # seekSet] , 0) > .
+
+--- [SEED-SEEK-OVERFLOW] seek-object-data beyond the maximum data position returns errorOverflow
+search [1] in SEED-DATA-STREAM :
+  (msg retStatus[# (normal).StorageStatus] from oid(0, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(SeekObjectData[# oid(104, ta) # 4294967295 # seekCur] , 0), counter : 0, storage : oid(0, ta) >
+  < oid(104, ta) : ObjHandle | oid : oid(1, oid(0, ta)), flags : accessRead, pos : 4294967295 >
+  < oid(1, oid(0, ta)) : PersistObj | data-stream : randomData, type : typeAes, max-size : 128,
+                           attributes : empty, usages : empty, file-name : testFileId >
+=>*
+  < ta : TAKernel | api-call : return(SeekObjectData[# errorOverflow]) > .
+
+--- [SEED-SEEK-STORAGE-ERR] seek-object-data with a corrupt storage returns the storage error
+search [1] in SEED-DATA-STREAM :
+  (msg retStatus[# (corrupted).StorageStatus] from oid(0, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(SeekObjectData[# oid(104, ta) # 0 # seekSet] , 0), counter : 0, storage : oid(0, ta) >
+=>*
+  < ta : TAKernel | api-call : return(SeekObjectData[# errorCorruptObject]) > .
+
+--- [SEED-WRITE-SUCCESS] write-object-data writes the fragments at the handle position
+search [1] in SEED-DATA-STREAM :
+  (msg retStatus[# (normal).StorageStatus] from oid(0, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(WriteObjectData[# oid(102, ta) # randomData] , 0), counter : 0, storage : oid(0, ta) >
+  < oid(102, ta) : ObjHandle | oid : oid(1, oid(0, ta)), flags : accessWrite, pos : 0 >
+  < oid(1, oid(0, ta)) : PersistObj | data-stream : randomData, type : typeAes, max-size : 128,
+                           attributes : empty, usages : empty, file-name : testFileId >
+=>*
+  < ta : TAKernel | api-call : return(WriteObjectData[# success]) > .
+
+--- [SEED-SEEK-SUCCESS] seek-object-data moves the position of a readable handle
+search [1] in SEED-DATA-STREAM :
+  (msg retStatus[# (normal).StorageStatus] from oid(0, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(SeekObjectData[# oid(104, ta) # 0 # seekSet] , 0), counter : 0, storage : oid(0, ta) >
+  < oid(104, ta) : ObjHandle | oid : oid(1, oid(0, ta)), flags : accessRead, pos : 0 >
+  < oid(1, oid(0, ta)) : PersistObj | data-stream : randomData, type : typeAes, max-size : 128,
+                           attributes : empty, usages : empty, file-name : testFileId >
+=>*
+  < ta : TAKernel | api-call : return(SeekObjectData[# success]) > .

@@ -1,111 +1,86 @@
-fmod INVOKE-MESSAGE is
+--- This module defines calls to invoke TA. The request
+--- invkTa[FID VL] carries the TA service FID and its argument values VL; the response
+--- invkTaRet[VL] carries the values of the output parameters.
+
+--- @kind messages
+--- @feature os
+omod INVOKE-TA-CALL is
+  pr TEE-MSG .
+  pr IMP-FUNC-SIG .
+  pr IMP-EXP-LIST .
+
+  op invkTa[__] : APIFuncId ArgList -> Req [ctor] .
+  op invkTaRet[_] : ArgList -> Req [ctor] .
+endom
+
+--- This module defines SMC calls between REE and TEE execution environments.
+--- smcReq(RI, SID, FID, VL) is an SMC request of RA RI for service FID in session SID;
+--- smcRet(RI, VL) is the response carrying the output values VL.
+
+--- @kind messages
+--- @feature os
+omod SECURE-MONITOR-CALL is
+  pr OBJECT-ID .
   pr SESSION-ID .
   pr IMP-FUNC-SIG .
   pr IMP-EXP-LIST .
 
-  sort InvokeMessage .
-
-  op {_,_,_} : SessionId FuncId ValueList -> InvokeMessage [ctor] .
-endfm
-
-view InvokeMessage from TRIV to INVOKE-MESSAGE is
-  sort Elt to InvokeMessage .
-endv
-
---- This module defines calls to invoke TA.
-
-omod INVOKE-TA-CALL is
-  pr TA-INSTANCE-ID .
-  pr INVOKE-MESSAGE .
-
-  msg invokeTA : TaInstId InvokeMessage Oid -> Msg .
-  msg invokeTAReturn : InvokeMessage Oid -> Msg .
-endom
-
---- This module defines SMC arguments.
-
-omod SECURE-MONITOR-CALL-ARG is
-  pr TEE-CLIENT-API .
-  pr INVOKE-MESSAGE .
-
-  sort SmcArgument .
-
-  op invokeMessage : InvokeMessage -> SmcArgument [ctor] .
-  op requestor : Oid -> SmcArgument [ctor] .
-  op {_,_} : TeeClientApi ValueList -> SmcArgument [ctor] .
-endom
-
-view SmcArgument from TRIV to SECURE-MONITOR-CALL-ARG is
-  sort Elt to SmcArgument .
-endv
-
---- This module defines SMC calls between REE and TEE execution environments.
-
-omod SECURE-MONITOR-CALL is
-  pr LIST{SmcArgument} .
-
-  msg smcRequest : List{SmcArgument} -> Msg .
-  msg smcReturn  : List{SmcArgument} -> Msg .
+  msg smcReq : Oid SessionId APIFuncId ArgList -> Msg .
+  msg smcRet : Oid ArgList -> Msg .
 endom
 
 --- This module defines execution environments for REE and TEE.
 
+--- @kind behavior
+--- @feature os
 mod EXECUTION-ENV is
   pr SECURE-MONITOR-CALL .
   inc CONFIGURATION .
 
-  sort Env .
+  sort Envs .
 
-  var ARGS : List{SmcArgument} .
   vars REE TEE : Configuration .
+  vars RI : Oid .
+  var SID : SessionId .
+  var FID : APIFuncId .
+  var VL : ArgList .
 
-  op {_} : Configuration -> Env [ctor] .
-  op _|_ : Env Env -> Env [format (d d n d)] .
-  
---- Version In Paper
-  --- rl [accept-smc-request] : 
-  ---   { REE smcReq(ARGS) } | { TEE } 
-  ---   => 
-  ---   { REE } | { TEE smcReq(ARGS) } 
-  --- . 
-  
-  --- rl [return-smc-request] : 
-  ---   { REE } | { TEE smcRet(ARGS) } 
-  ---   => 
-  ---   { REE smcRet(ARGS) } | { TEE } 
-  --- .
+  op {_}|{_} : Configuration Configuration -> Envs [ctor] .
 
---- Model/Implementation Specific Version (In Order)
-  crl [accept-smc-request] :
-    { REE smcRequest(ARGS) } | { TEE }
+  --- accept-smc-request: the REE request smcReq(RI, SID, FID, VL) is moved from the REE
+  --- environment to the TEE environment.
+  rl [accept-smc-request] :
+    {REE smcReq(RI, SID, FID, VL)} | {TEE}
     =>
-    { REE } | { TEE smcRequest(ARGS) }
-  if TEE =/= none
-  .
+    {REE} | {TEE smcReq(RI, SID, FID, VL)} .
 
+  --- return-smc-request: the TEE response smcRet(RI, VL) is moved from the TEE environment to
+  --- the REE environment.
   rl [return-smc-request] :
-    { REE } | { TEE smcReturn(ARGS) }
+    {REE} | {TEE smcRet(RI, VL)}
     =>
-    { REE smcReturn(ARGS) } | { TEE }
-  .
-
+    {REE smcRet(RI, VL)} | {TEE} .
 endm
 
 --- This module defines storage status constants.
 
+--- @kind constants
+--- @feature os
 fmod STORAGE-STATUS is
   sort StorageStatus .
 
-  op storageNormal : -> StorageStatus [ctor] .
+  op normal : -> StorageStatus [ctor] .
   op outOfSpace : -> StorageStatus [ctor] .
-  op storageCorrupt : -> StorageStatus [ctor] .
-  op storageInAccessible : -> StorageStatus [ctor] .
+  op corrupted : -> StorageStatus [ctor] .
+  op notAvailable : -> StorageStatus [ctor] .
 endfm
 
 view StorageStatus from TRIV to STORAGE-STATUS is
   sort Elt to StorageStatus .
 endv
 
+--- @kind interface
+--- @feature os
 fmod SERVICE is
   sorts Service ServiceReturn .
 endfm
@@ -118,6 +93,8 @@ view ServiceReturn from TRIV to SERVICE is
   sort Elt to ServiceReturn .
 endv
 
+--- @kind data
+--- @feature os
 fmod PROGRAM-CELL is
   pr IMP-PROGRAM .
 
@@ -130,97 +107,73 @@ view ProgramCell from TRIV to PROGRAM-CELL is
   sort Elt to ProgramCell .
 endv
 
-view Oid from TRIV to CONFIGURATION is
+--- OBJECT-ID gives Oid its constructors (the sort itself is CONFIGURATION's).
+view Oid from TRIV to OBJECT-ID is
   sort Elt to Oid .
 endv
 
 --- This module defines the trusted OS.
 
+--- @kind state
+--- @feature os
 omod TEE-OS is
   pr NAT .
-  pr STORAGE-OBJECT-ID .
+  pr OBJECT-ID .
   pr STORAGE-STATUS .
-  pr SET{FileId} .
-  pr TA-INSTANCE-ID .
+  pr SET{FileName} .
   pr MAP{AppId,ProgramCell} .
   pr MAP{SessionId,Oid} .
-  pr MAP{SessionId,List{SmcArgument}} .
-  pr MAP{AppId,Set{TaObjectId}} * (op undefined to noObject) .
+  pr MAP{Oid,Set{Oid}} * (op undefined to noObject) .
   pr LIST{Service} .
   pr LIST{ServiceReturn} .
 
-  subsort StorageId < Oid .
   
---- Paper-level classes. TeeOSKernel refines TrustedOS with executable service
---- queues; TA storage state is held by separate Storage objects.
-  class Storage | status : StorageStatus, files : Set{FileId}, counter : Nat .
-  class TrustedOS | sess : Map{SessionId,Oid} .
+--- TA storage state is held by separate Storage objects.
+  class Storage | status : StorageStatus, files : Set{FileName}, counter : Nat .
 
---- Actual Implemenation
-  class TeeOSKernel | session-counter : Nat,
-                      service-request-ta : AppId?, service-request-ta-inst : TaInstId?,
-                      service-in : List{Service}, service-out : List{ServiceReturn},
-                      temporary-objects : Map{AppId,Set{TaObjectId}},
-                      ta-prog-map : Map{AppId,ProgramCell} .
-  subclass TeeOSKernel < TrustedOS .
+  --- The further attributes are session-counter, service-request-ta-inst, service-in,
+  --- service-out, temporary-objects and ta-prog-map, which hold the service queues and maps.
+  class TrustedOS | sess : Map{SessionId,Oid},
+                    session-counter : Nat,
+                    service-request-ta-inst : Oid?,
+                    service-in : List{Service}, service-out : List{ServiceReturn},
+                    temporary-objects : Map{Oid,Set{Oid}},
+                    ta-prog-map : Map{AppId,ProgramCell} .
 endom
 
-fmod TEE-OS-SERVICE is
+--- @kind interface
+--- @feature os
+mod TEE-OS-SERVICE is
   pr SERVICE .
-  pr STORAGE-STATUS .
-  pr SET{FileId} .
   pr APP-ID .
-  pr TA-INSTANCE-ID .
-
-  op getStorageStatus : -> Service [ctor] .
-  op storageStatus : StorageStatus -> ServiceReturn [ctor] .
-
-  op checkFileExist : FileId -> Service [ctor] .
-  op fileExist : -> ServiceReturn [ctor] .
-  op noFileExist : -> ServiceReturn [ctor] .
-
-  op notifyFileCreation : FileId -> Service [ctor] .
-  op notifyFileDeletion : FileId -> Service [ctor] .
-  op notifyFileRename : FileId FileId -> Service [ctor] .
-  op acceptNotification : -> ServiceReturn [ctor] .
-
---- TODO: NEED TO UPDATE OP NAME
-  op getPersistentList : AppId -> Service [ctor] .
-  op filesInStorage : Set{FileId} -> ServiceReturn [ctor] .
-  op storageEmpty : -> ServiceReturn [ctor] .
+  pr OBJECT-ID .
 
 --- Session
   op openTASession : AppId -> Service [ctor] .
-  op openSessionSuccess : TaInstId -> ServiceReturn [ctor] .
-endfm
+  op openSessionSuccess : Oid -> ServiceReturn [ctor] .
+endm
 
---- This module defines a device class, modeling storage devices.
+--- This module defines a device class, holding the execution environments of a device.
 
+--- @kind state
+--- @feature os
 omod DEVICE is
-  pr DEVICE-ID .
+  pr OBJECT-ID .
   pr EXECUTION-ENV .
 
-  subsort DeviceId < Oid .
-  class Device | execution-envs : Env .
+  class Device | execution-envs : Envs .
 
 endom
 
 --- This module defines id generators for TEE APIs.
 
-fmod ID-GEN is
+--- @kind data
+--- @feature core
+mod ID-GEN is
   pr NAT .
-  pr STORAGE-OBJECT-ID .
+  pr OBJECT-ID .
   pr APP-ID .
-  pr TA-INSTANCE-ID .
-  pr TA-OBJECT-ID .
-  pr DEVICE-ID .
   pr SESSION-ID .
 
-  op taOid : Nat TaInstId -> TaObjectId [ctor] .
-  op storageOid : Nat StorageId -> TaObjectId [ctor] .
-  op richAppId : Nat -> AppId [ctor] .
-  op trustAppId : Nat -> TaInstId [ctor] .
-  op storageId : Nat -> StorageId [ctor] .
-  op deviceId : Nat -> DeviceId [ctor] .
   op sessionId : Nat -> SessionId [ctor] .
-endfm
+endm

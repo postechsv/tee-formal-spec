@@ -1,96 +1,43 @@
 --- Panic conditions required by the GlobalPlatform Internal Core API.
 ---
 --- Handles are top-level configuration objects.  Panic rules therefore inspect
---- the active TaKernel call and the referenced handle directly; they never
+--- the active TAKernel call and the referenced handle directly; they never
 --- traverse an owner's resource object.
+---
+--- GENERAL-PANIC holds the nullHandlePanics operator with all of its equations,
+--- its owise default and the null-handle rule.  The equations are about API names,
+--- which all live in tee-api.maude (always loaded), so they are not split by
+--- feature.  PERSISTENT-PANIC and DATA-STREAM-PANIC hold the access rules of
+--- their group, in persistent-panic.maude and data-stream-panic.maude; disabling
+--- a group in mk/features.mk also removes those files.  The modules import data
+--- modules only, never behaviors.
+--- @kind panic
+--- @feature core
 omod GENERAL-PANIC is
-  pr TRANSIENT-OBJECT-BEHAVIOR .
-  pr UNPROTECTED-PERSISTENT-OBJECT-BEHAVIOR .
-  pr GENERIC-OBJECT-BEHAVIOR .
-  pr ENUMERATOR-OBJECT-BEHAVIOR .
-  pr DATA-STREAM-OBJECT-BEHAVIOR .
-  pr CRYPTO-OPERATION-BEHAVIOR .
+  pr TA-KERNEL .
+  pr OBJECT-HANDLE .
+  pr HANDLE-AUX .
+  --- API names only (no behaviors), so every API constant is visible here.
+  pr TRANSIENT-OBJECT-FUNC .
+  pr PERSISTENT-OBJECT-FUNC .
+  pr GENERIC-OBJECT-FUNC .
+  pr ENUMERATOR-OBJECT-FUNC .
+  pr DATA-STREAM-OBJECT-FUNC .
+  pr CRYPTO-OPERATION-FUNC .
 
-  var TK : TaInstId .
+  var TK : Oid .
   var API : TeeApi .
-  var HANDLE : HandleId .
-  var CI : TaObjectId .
-  var PARAMS : Set{TeeApiParam} .
-  var DATAFLAGS : Set{DataFlag} .
-  var HS : HandleState .
-  var OC : OperationClass .
+  var HANDLE : Oid .
+  var PARAMS : ArgList .
 
-  op operationClassCompatible : TeeApi OperationClass -> Bool .
-  eq operationClassCompatible(FreeOperation, OC) = true .
-  eq operationClassCompatible(GetOperationInfo, OC) = true .
-  eq operationClassCompatible(GetOperationInfoMultiple, OC) = true .
-  eq operationClassCompatible(ResetOperation, OC) = true .
-  eq operationClassCompatible(SetOperationKey, OC) = true .
-  eq operationClassCompatible(SetOperationKey2, OC) = true .
-  eq operationClassCompatible(CopyOperation, OC) = true .
-  eq operationClassCompatible(DigestUpdate, TEE-OPERATION-DIGEST) = true .
-  eq operationClassCompatible(DigestDoFinal, TEE-OPERATION-DIGEST) = true .
-  eq operationClassCompatible(DigestExtract, TEE-OPERATION-DIGEST) = true .
-  eq operationClassCompatible(CipherInit, TEE-OPERATION-CIPHER) = true .
-  eq operationClassCompatible(CipherUpdate, TEE-OPERATION-CIPHER) = true .
-  eq operationClassCompatible(CipherDoFinal, TEE-OPERATION-CIPHER) = true .
-  eq operationClassCompatible(MACInit, TEE-OPERATION-MAC) = true .
-  eq operationClassCompatible(MACUpdate, TEE-OPERATION-MAC) = true .
-  eq operationClassCompatible(MACComputeFinal, TEE-OPERATION-MAC) = true .
-  eq operationClassCompatible(MACCompareFinal, TEE-OPERATION-MAC) = true .
-  eq operationClassCompatible(AEInit, TEE-OPERATION-AE) = true .
-  eq operationClassCompatible(AEUpdateAAD, TEE-OPERATION-AE) = true .
-  eq operationClassCompatible(AEUpdate, TEE-OPERATION-AE) = true .
-  eq operationClassCompatible(AEEncryptFinal, TEE-OPERATION-AE) = true .
-  eq operationClassCompatible(AEDecryptFinal, TEE-OPERATION-AE) = true .
-  eq operationClassCompatible(AsymmetricEncrypt, TEE-OPERATION-ASYMMETRIC-CIPHER) = true .
-  eq operationClassCompatible(AsymmetricDecrypt, TEE-OPERATION-ASYMMETRIC-CIPHER) = true .
-  eq operationClassCompatible(AsymmetricSignDigest, TEE-OPERATION-ASYMMETRIC-SIGNATURE) = true .
-  eq operationClassCompatible(AsymmetricVerifyDigest, TEE-OPERATION-ASYMMETRIC-SIGNATURE) = true .
-  eq operationClassCompatible(DeriveKey, TEE-OPERATION-KEY-DERIVATION) = true .
-  eq operationClassCompatible(API, OC) = false [owise] .
-
-  --- The paper assigns the operation class to OpHandle.  A class mismatch is
-  --- a programmer error and must panic before an operation-specific rule runs.
-  ceq [operation-api-class-mismatch-panic] :
-    < TK : TaKernel | status : normal, api-state : started,
-                      current-api : API,
-                      current-params : handle(HANDLE), PARAMS >
-    < HANDLE : OperationHandle | oid : CI, opclass : OC >
-    =
-    < TK : TaKernel | status : panic, api-state : finished >
-    < HANDLE : OperationHandle | >
-  if not operationClassCompatible(API, OC) .
-
-  --- GP 6.2.6 forbids replacing or clearing a key while the operation is
-  --- initialized.  This also applies when key is TEE_HANDLE_NULL.
-  rl [set-operation-key-initialized-panic] :
-    < TK : TaKernel | status : normal, api-state : started,
-                      current-api : SetOperationKey,
-                      current-params : handle(HANDLE), PARAMS >
-    < HANDLE : OperationHandle | state : init HS >
-    =>
-    < TK : TaKernel | status : panic, api-state : finished >
-    < HANDLE : OperationHandle | >
-  .
-
-  --- GP 6.2.7 applies the same initial-state precondition to the two-key API.
-  rl [set-operation-key2-initialized-panic] :
-    < TK : TaKernel | status : normal, api-state : started,
-                      current-api : SetOperationKey2,
-                      current-params : handle(HANDLE), PARAMS >
-    < HANDLE : OperationHandle | state : init HS >
-    =>
-    < TK : TaKernel | status : panic, api-state : finished >
-    < HANDLE : OperationHandle | >
-  .
-
-  --- APIs for which TEE_HANDLE_NULL is a programmer error.  Free-style APIs
-  --- explicitly accept NULL and are intentionally excluded.
+  --- nullHandlePanics(API): true for the APIs for which TEE_HANDLE_NULL is a programmer error.
+  --- The rule null-handle-panic matches the first argument, so only APIs whose first argument is
+  --- the handle are listed.  copyObjAttrs1 and CopyOperation take a target handle first and
+  --- never panic on it, as before.
+  --- Free-style APIs explicitly accept NULL and are intentionally excluded, so they map to
+  --- false.
   op nullHandlePanics : TeeApi -> Bool .
-  --- GP 5.6.3 explicitly permits TEE_HANDLE_NULL as a no-op.
   eq nullHandlePanics(PopulateTransientObject) = true .
-  eq nullHandlePanics(CopyObjectAttributes1) = true .
   eq nullHandlePanics(GenerateKey) = true .
   eq nullHandlePanics(RenamePersistentObject) = true .
   eq nullHandlePanics(GetObjectInfo1) = true .
@@ -100,22 +47,21 @@ omod GENERAL-PANIC is
   eq nullHandlePanics(ResetPersistentObjectEnumerator) = true .
   eq nullHandlePanics(StartPersistentObjectEnumerator) = true .
   eq nullHandlePanics(GetNextPersistentObject) = true .
-  eq nullHandlePanics(ReadObjectData) = true .
+  eq nullHandlePanics(readObjData) = true .
   eq nullHandlePanics(WriteObjectData) = true .
   eq nullHandlePanics(TruncateObjectData) = true .
   eq nullHandlePanics(SeekObjectData) = true .
   eq nullHandlePanics(GetOperationInfo) = true .
   eq nullHandlePanics(GetOperationInfoMultiple) = true .
-  eq nullHandlePanics(ResetOperation) = true .
+  eq nullHandlePanics(resetOperation) = true .
   eq nullHandlePanics(SetOperationKey) = true .
   eq nullHandlePanics(SetOperationKey2) = true .
-  eq nullHandlePanics(CopyOperation) = true .
   eq nullHandlePanics(DigestUpdate) = true .
   eq nullHandlePanics(DigestDoFinal) = true .
   eq nullHandlePanics(DigestExtract) = true .
-  eq nullHandlePanics(CipherInit) = true .
-  eq nullHandlePanics(CipherUpdate) = true .
-  eq nullHandlePanics(CipherDoFinal) = true .
+  eq nullHandlePanics(cipherInit) = true .
+  eq nullHandlePanics(cipherUpdate) = true .
+  eq nullHandlePanics(cipherDoFinal) = true .
   eq nullHandlePanics(MACInit) = true .
   eq nullHandlePanics(MACUpdate) = true .
   eq nullHandlePanics(MACComputeFinal) = true .
@@ -130,65 +76,16 @@ omod GENERAL-PANIC is
   eq nullHandlePanics(AsymmetricSignDigest) = true .
   eq nullHandlePanics(AsymmetricVerifyDigest) = true .
   eq nullHandlePanics(DeriveKey) = true .
+  ---@dmc owise enumerate(API)
   eq nullHandlePanics(API) = false [owise] .
 
+  --- null-handle-panic: an init call of an API whose handle argument HANDLE is the null handle
+  --- panics the TA when nullHandlePanics(API) holds.  The TA status becomes panic, and the
+  --- api-call is left unchanged.
   crl [null-handle-panic] :
-    < TK : TaKernel | status : normal, api-state : started,
-                      current-api : API,
-                      current-params : handle(HANDLE), PARAMS >
+    < TK : TAKernel | status : (normal).AppStatus,
+                      api-call : init(API[# HANDLE PARAMS]) >
     =>
-    < TK : TaKernel | status : panic, api-state : finished >
+    < TK : TAKernel | status : panic >
   if nullHandle(HANDLE) and nullHandlePanics(API) .
-
-  --- Persistent data-stream access rights are preconditions.  Violating them
-  --- panics before the normal storage request can be issued.
-  crl [read-access-panic] :
-    < TK : TaKernel | status : normal, api-state : started,
-                      current-api : ReadObjectData,
-                      current-params : handle(HANDLE), PARAMS >
-    < HANDLE : ObjectHandle | flags : DATAFLAGS >
-    =>
-    < TK : TaKernel | status : panic, api-state : finished >
-    < HANDLE : ObjectHandle | >
-  if not (TEE-DATA-FLAG-ACCESS-READ in DATAFLAGS) .
-
-  crl [write-access-panic] :
-    < TK : TaKernel | status : normal, api-state : started,
-                      current-api : WriteObjectData,
-                      current-params : handle(HANDLE), PARAMS >
-    < HANDLE : ObjectHandle | flags : DATAFLAGS >
-    =>
-    < TK : TaKernel | status : panic, api-state : finished >
-    < HANDLE : ObjectHandle | >
-  if not (TEE-DATA-FLAG-ACCESS-WRITE in DATAFLAGS) .
-
-  crl [truncate-access-panic] :
-    < TK : TaKernel | status : normal, api-state : started,
-                      current-api : TruncateObjectData,
-                      current-params : handle(HANDLE), PARAMS >
-    < HANDLE : ObjectHandle | flags : DATAFLAGS >
-    =>
-    < TK : TaKernel | status : panic, api-state : finished >
-    < HANDLE : ObjectHandle | >
-  if not (TEE-DATA-FLAG-ACCESS-WRITE in DATAFLAGS) .
-
-  crl [delete-access-panic] :
-    < TK : TaKernel | status : normal, api-state : started,
-                      current-api : CloseAndDeletePersistentObject1,
-                      current-params : handle(HANDLE), PARAMS >
-    < HANDLE : ObjectHandle | flags : DATAFLAGS >
-    =>
-    < TK : TaKernel | status : panic, api-state : finished >
-    < HANDLE : ObjectHandle | >
-  if not (TEE-DATA-FLAG-ACCESS-WRITE-META in DATAFLAGS) .
-
-  crl [rename-access-panic] :
-    < TK : TaKernel | status : normal, api-state : started,
-                      current-api : RenamePersistentObject,
-                      current-params : handle(HANDLE), PARAMS >
-    < HANDLE : ObjectHandle | flags : DATAFLAGS >
-    =>
-    < TK : TaKernel | status : panic, api-state : finished >
-    < HANDLE : ObjectHandle | >
-  if not (TEE-DATA-FLAG-ACCESS-WRITE-META in DATAFLAGS) .
 endom

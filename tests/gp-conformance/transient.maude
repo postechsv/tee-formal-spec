@@ -1,0 +1,79 @@
+load ../../src/main
+
+--- Focused checks derived from GlobalPlatform TEE Internal Core API v1.3.1.
+
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  mandatory(typeDes) == secretValue .
+
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  mandatory(typeEcdhKeypair) ==
+    (eccPrivateValue, eccPublicValueX,
+     eccPublicValueY, eccCurve) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  checkCompatible(typeDhKeypair,
+    (attr(dhPrime, randomAttrVal),
+     attr(dhBase, randomAttrVal),
+     attr(dhPublicValue, randomAttrVal),
+     attr(dhPrivateValue, randomAttrVal),
+     attr(dhXBits, randomAttrVal))) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  not checkCompatible(typeAes,
+    (attr(secretValue, randomAttrVal),
+     attr(rsaModulus, randomAttrVal))) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  mandatoryParamsForKeyGen(typeAes, empty) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  mandatoryParamsForKeyGen(rsaKeyPair,
+    attr(rsaPublicExponent, randomAttrVal)) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  mandatoryParamsForKeyGen(typeDhKeypair,
+    (attr(dhPrime, randomAttrVal),
+     attr(dhBase, randomAttrVal),
+     attr(dhXBits, randomAttrVal))) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  not mandatoryParamsForKeyGen(typeDhKeypair,
+    attr(dhBase, randomAttrVal)) .
+
+--- GP 5.6.7 keySize semantics for generated keys.
+red in TRANSIENT-OBJECT-BEHAVIOR : validKeySizeForGeneration(typeAes, 128) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR : not validKeySizeForGeneration(typeAes, 64) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR : validKeySizeForGeneration(rsaKeyPair, 2048) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR : validKeySizeForGeneration(typeDhKeypair, 0) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR : not validKeySizeForGeneration(typeDhKeypair, 256) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR : validKeySizeForGeneration(typeEcdsaKeypair, 0) .
+
+--- GP Table 5-10: RSA CRT attributes are absent or complete, never partial.
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  validOptionalAttributeGroups(rsaKeyPair, empty) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  validOptionalAttributeGroups(rsaKeyPair, rsaCrtAttributes) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  not validOptionalAttributeGroups(rsaKeyPair,
+    (rsaPrime1, rsaPrime2)) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  not checkCompatible(rsaKeyPair,
+    (attr(rsaModulus, randomAttrVal),
+     attr(rsaPublicExponent, randomAttrVal),
+     attr(rsaPrivateExponent, randomAttrVal),
+     attr(rsaPrime1, randomAttrVal))) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  mandatory(typeEd448Keypair) ==
+    (ed448PublicValue, ed448PrivateValue) .
+
+red in TRANSIENT-OBJECT-BEHAVIOR :
+  mandatoryParamsForKeyGen(typeX448Keypair, empty) .

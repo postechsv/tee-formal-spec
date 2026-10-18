@@ -1,4 +1,4 @@
---- This file defines various opaque handles defined in Table 2-1 
+--- This file defines various opaque handles defined in Table 2-1
 --- of the G.P. documentation (page 37).
 
 ------------------------------------------------------------
@@ -7,14 +7,14 @@
 
 --- This module defines base class for handle object.
 
+--- @kind state
+--- @feature core
 omod HANDLE is
-  pr HANDLE-ID .
-  pr TA-OBJECT .
+  pr OBJECT-ID .
 
-  subsort HandleId < TaObjectId .
   class Handle | oid : Oid .
 
-  op null : -> Oid .
+  op null : -> Oid [ctor] .
 endom
 
 view Handle from TRIV to HANDLE is
@@ -26,11 +26,13 @@ endv
 ------------------------------------------------------------
 
 --- The following five classes are subclasses of handle base class.
---- 1) TaSessionHandle, 2) PropSetHandle, 3) ObjectHandle
---- 4) ObjectEnumHandle, 5) OperationHandle
+--- 1) TaSessionHandle, 2) PropSetHandle, 3) ObjHandle
+--- 4) ObjectEnumHandle, 5) OpHandle
 
 --- This module defines TA session handle, a subclass of handle.
 
+--- @kind state
+--- @feature ta-session
 omod TA-SESSION-HANDLE is
   pr HANDLE .
 
@@ -40,6 +42,8 @@ endom
 
 --- This module defines prop set handle, a subclass of handle.
 
+--- @kind state
+--- @feature core
 omod PROP-SET-HANDLE is
   pr HANDLE .
 
@@ -49,22 +53,22 @@ endom
 
 --- This module defines object handle, a subclass of handle.
 
+--- @kind state
+--- @feature core
 omod OBJECT-HANDLE is
   pr HANDLE .
-  pr SET{DataFlag} .
-  pr DATA-POSITION .
+  pr SET{DataAccessFlag} .
+  pr NAT .
 
-  --- DataPosition is the executable model's bounded Nat representation.
-  class ObjHandle | flags : Set{DataFlag}, pos : DataPosition .
+  --- The object handle class: pos denotes the position in a data stream.
+  class ObjHandle | flags : Set{DataAccessFlag}, pos : Nat .
   subclass ObjHandle < Handle .
-
---- Model/Implementation Specific Version
-  class ObjectHandle .
-  subclass ObjectHandle < ObjHandle .
 endom
 
 --- This module defines object enumerator handle, a subclass of handle.
 
+--- @kind state
+--- @feature enumerator
 omod OBJECT-ENUM-HANDLE is
   pr HANDLE .
 
@@ -72,50 +76,62 @@ omod OBJECT-ENUM-HANDLE is
   subclass ObjectEnumHandle < Handle .
 endom
 
---- This module defines operation handle, a subclass of handle.
 
-fmod HANDLE-STATE is
-  sorts HandleStateFlag HandleState .
-  subsort HandleStateFlag < HandleState .
-  var HS : HandleState .
+--- This module defines the handle flags of an operation handle.
 
-  ops init keySet extract : -> HandleStateFlag [ctor] .
-  op noHandleState : -> HandleState [ctor] .
-  op __ : HandleState HandleState -> HandleState
-    [ctor assoc comm id: noHandleState idem] .
-
-  op handleState : Bool Bool Bool -> HandleState .
-  ops hasInit hasKeySet hasExtract : HandleState -> Bool .
-  eq handleState(false, false, false) = noHandleState .
-  eq handleState(true,  false, false) = init .
-  eq handleState(false, true,  false) = keySet .
-  eq handleState(true,  true,  false) = init keySet .
-  eq handleState(false, false, true)  = extract .
-  eq handleState(true,  false, true)  = init extract .
-  eq handleState(false, true,  true)  = keySet extract .
-  eq handleState(true,  true,  true)  = init keySet extract .
-
-  eq hasInit(init HS) = true .
-  eq hasInit(HS) = false [owise] .
-  eq hasKeySet(keySet HS) = true .
-  eq hasKeySet(HS) = false [owise] .
-  eq hasExtract(extract HS) = true .
-  eq hasExtract(HS) = false [owise] .
+--- @kind constants
+--- @feature core
+fmod HANDLE-FLAG is
+  sort HandleFlag .
+  ops init keySet extract : -> HandleFlag [ctor] .
 endfm
 
+view HandleFlag from TRIV to HANDLE-FLAG is
+  sort Elt to HandleFlag .
+endv
+
+--- @kind data
+--- @feature crypto
+fmod HANDLE-STATE is
+  sort HandleState .
+  pr HANDLE-FLAG .
+  pr SET{HandleFlag} .
+  var S : Set{HandleFlag} .
+
+  op handleState : Set{HandleFlag} -> HandleState [ctor] .
+
+  --- The set of handle flags for a triple of (init, keySet, extract) booleans.
+  op handleFlags : Bool Bool Bool -> Set{HandleFlag} .
+  eq handleFlags(false, false, false) = empty .
+  eq handleFlags(true,  false, false) = init .
+  eq handleFlags(false, true,  false) = keySet .
+  eq handleFlags(true,  true,  false) = (init, keySet) .
+  eq handleFlags(false, false, true)  = extract .
+  eq handleFlags(true,  false, true)  = (init, extract) .
+  eq handleFlags(false, true,  true)  = (keySet, extract) .
+  eq handleFlags(true,  true,  true)  = (init, keySet, extract) .
+
+  --- hasInit(S), hasKeySet(S), hasExtract(S): true when the handle state S contains the init,
+  --- keySet or extract flag, respectively.
+  ops hasInit hasKeySet hasExtract : HandleState -> Bool .
+  eq hasInit(handleState(S)) = init in S .
+  eq hasKeySet(handleState(S)) = keySet in S .
+  eq hasExtract(handleState(S)) = extract in S .
+endfm
+
+--- This module defines operation handle, a subclass of handle.
+--- @kind state
+--- @feature crypto
 omod OPERATION-HANDLE is
   pr HANDLE .
   pr HANDLE-STATE .
   pr OPERATION-CLASS .
 
+  --- The operation handle class: the handle state, the key-material-set flag and the operation class.
   class OpHandle | state : HandleState,
                    key-material-set : Bool,
-                   opclass : OperationClass .
+                   opclass : OpClass .
   subclass OpHandle < Handle .
-
---- Model/Implementation Specific Version
-  class OperationHandle .
-  subclass OperationHandle < OpHandle .
 endom
 
 ------------------------------------------------------------
@@ -124,19 +140,19 @@ endom
 
 --- This module defines handle id generator.
 
+--- @kind assembly
+--- @feature core
 omod HANDLE-ID-GEN is
   pr NAT .
-  pr TA-INSTANCE-ID .
+  pr OBJECT-ID .
   pr HANDLE .
 
-  op handleId : Nat TaInstId -> HandleId [ctor] .
-  op TEE-HANDLE-NULL : -> HandleId [ctor] .
-
-  eq null = TEE-HANDLE-NULL .
 endom
 
 --- This module defines auxiliary operators to generate a new opened handle.
 
+--- @kind data
+--- @feature core
 omod HANDLE-AUX is
   pr OBJECT-HANDLE .
   pr TA-SESSION-HANDLE .
@@ -147,45 +163,49 @@ omod HANDLE-AUX is
   pr OPERATION-CLASS .
 
   var N : Nat .
-  var TK : TaInstId .
-  var DATAFLAGS : Set{DataFlag} .
-  var HANDLE : HandleId .
+  var TK : Oid .
+  var DATAFLAGS : Set{DataAccessFlag} .
+  var HANDLE : Oid .
   var OI : Oid .
-  var OC : OperationClass .
+  var OC : OpClass .
 
-  op freshTransientHandle : Nat TaInstId Oid -> Configuration .
-  op freshPersistentHandle : Nat TaInstId Set{DataFlag} Oid -> Configuration .
-  op freshEnumeratorHandle : Nat TaInstId Oid -> Configuration .
-  op freshOperationHandle : Nat TaInstId Oid OperationClass -> Configuration .
-  op freshSessionHandle : Nat TaInstId -> Configuration . 
-  op freshSessionHandle : Nat TaInstId Oid -> Configuration .
+  --- The fresh*Handle operators create a new handle object with identifier oid(N, TK) in the
+  --- initial state of its handle class.
+  op freshTransientHandle : Nat Oid Oid -> Configuration .
+  op freshPersistentHandle : Nat Oid Set{DataAccessFlag} Oid -> Configuration .
+  op freshEnumeratorHandle : Nat Oid Oid -> Configuration .
+  op freshOperationHandle : Nat Oid Oid OpClass -> Configuration .
+  op freshSessionHandle : Nat Oid -> Configuration . 
+  op freshSessionHandle : Nat Oid Oid -> Configuration .
   
-  op nullHandle : HandleId -> Bool .
-  eq nullHandle(TEE-HANDLE-NULL) = true .
+  --- nullHandle(HANDLE): true only for the null handle.
+  op nullHandle : Oid -> Bool .
+  eq nullHandle(null) = true .
+  ---@dmc owise enumerate(arg1)
   eq nullHandle(HANDLE) = false [owise] .
 
   eq freshTransientHandle(N , TK , OI)
-   = < handleId(N , TK) : ObjectHandle | oid : OI,
+   = < oid(N , TK) : ObjHandle | oid : OI,
                                          flags : empty,
-                                         pos : pos(0) > .
+                                         pos : 0 > .
 
   eq freshPersistentHandle(N , TK , DATAFLAGS , OI)
-   = < handleId(N , TK) : ObjectHandle | oid : OI,
+   = < oid(N , TK) : ObjHandle | oid : OI,
                                          flags : DATAFLAGS,
-                                         pos : pos(0) > .
+                                         pos : 0 > .
   
   eq freshEnumeratorHandle(N , TK , OI)
-   = < handleId(N , TK) : ObjectEnumHandle | oid : OI, is-initialized : false > .
+   = < oid(N , TK) : ObjectEnumHandle | oid : OI, is-initialized : false > .
 
   eq freshOperationHandle(N , TK , OI, OC)
-   = < handleId(N , TK) : OperationHandle | oid : OI, state : noHandleState,
+   = < oid(N , TK) : OpHandle | oid : OI, state : handleState(empty),
                                             key-material-set : false,
                                             opclass : OC > .
 
   eq freshSessionHandle(N, TK)
-  = < handleId(N, TK) : TaSessionHandle | is-initialized : true > .
+  = < oid(N, TK) : TaSessionHandle | is-initialized : true > .
 
   eq freshSessionHandle(N, TK, OI)
-  = < handleId(N, TK) : TaSessionHandle | oid : OI,
+  = < oid(N, TK) : TaSessionHandle | oid : OI,
                                            is-initialized : true > .
 endom

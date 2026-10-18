@@ -1,0 +1,57 @@
+--- Panic conditions for the persistent object APIs.
+--- The nullHandlePanics equations of these APIs are in GENERAL-PANIC.
+
+--- @kind panic
+--- @related PERSISTENT-OBJECT-BEHAVIOR
+--- @feature persistent
+omod PERSISTENT-PANIC is
+  vars ZsRenamePersistentObject1 : Value .
+  vars ZrCloseAndDeletePersistentObject1 ZrRenamePersistentObject : ArgList .
+  inc GENERAL-PANIC .
+  pr TEE-MSG .
+  pr TEE-OS-BEHAVIOR .
+
+  var TK : Oid .
+  var HANDLE : Oid .
+  var PARAMS : ArgList .
+  var DATAFLAGS : Set{DataAccessFlag} .
+
+  --- Persistent object access rights are preconditions.  Violating them
+  --- panics before the normal storage request can be issued.
+  --- delete-access-panic: deleting a handle without accessWriteMeta panics the TA.
+  crl [delete-access-panic] :
+    < TK : TAKernel | status : (normal).AppStatus,
+                      api-call : init(CloseAndDeletePersistentObject1[# HANDLE ZrCloseAndDeletePersistentObject1]) >
+    < HANDLE : ObjHandle | flags : DATAFLAGS >
+    =>
+    < TK : TAKernel | status : panic >
+    < HANDLE : ObjHandle | >
+  if not (accessWriteMeta in DATAFLAGS) .
+
+  --- rename-access-panic: renaming through a handle without accessWriteMeta panics the TA.
+  crl [rename-access-panic] :
+    < TK : TAKernel | status : (normal).AppStatus,
+                      api-call : init(RenamePersistentObject[# HANDLE ZsRenamePersistentObject1 ZrRenamePersistentObject]) >
+    < HANDLE : ObjHandle | flags : DATAFLAGS >
+    =>
+    < TK : TAKernel | status : panic >
+    < HANDLE : ObjHandle | >
+  if not (accessWriteMeta in DATAFLAGS) .
+
+  op create : -> ReqId [ctor] .
+  var ARGS : ArgList .
+  var SI : Oid .
+  var STATUS : StorageStatus .
+
+  --- create-persistent-abnormal-storage-panic: the G.P. documentation gives no result for
+  --- createPersistent when the storage status is abnormal, so the TA panics as in the other
+  --- failure cases.
+  crl [create-persistent-abnormal-storage-panic] :
+    (msg create[ARGS] from TK to SI)
+    < TK : TAKernel | status : (normal).AppStatus >
+    < SI : Storage | status : STATUS >
+    =>
+    < TK : TAKernel | status : panic >
+    < SI : Storage | >
+  if abnormalStorage(STATUS) .
+endom

@@ -1,0 +1,180 @@
+--- Statement-level regression suite for the IMP semantics (src/imp.maude), in the
+--- spirit of the torture tests of Ellison and Rosu (POPL 2012).  Each program runs
+--- through mkConf (which checks it with wellTyped first) and the final store
+--- and environment are checked with exact values.  A search that finds no solution,
+--- or a red that is not "true", fails the run.  A stuck program is one whose final
+--- configuration is not k(.K) (see isFinal).
+load ../../src/main
+load ../cases/aux
+
+mod IMP-SEM-TEST is
+  pr TEE-BEHAVIOR .
+  pr TEE-IMP-BEHAVIOR .
+  pr TEST-AUX .
+  ops qx qy qs qi qr qt qc qb qg : -> Var [ctor] .
+  ops qa qbb qp qn : -> Var [ctor] .
+  ops qv qz : -> Var [ctor] .
+  ops lab1 lab2 : -> Label [ctor] .
+  op qfact : -> FuncId [ctor] .
+  op qf : -> FuncId [ctor] .
+  op qsetx : -> FuncId [ctor] .
+  op qswap : -> FuncId [ctor] .
+  op qPt : -> ImpType [ctor] .
+  var ENV : Map{Var,Nat} .
+  var MEM : Map{Nat,Value?} .
+  var L L' : Nat .
+  var KS : KConfig .
+  var K : K .
+
+  --- A final configuration has an empty continuation.  Any other continuation is
+  --- either unfinished or stuck (it may hold a term that is not a KLabel).
+  op isFinal : KConfig -> Bool .
+  eq isFinal(k(K) KS) = (K == .K) .
+endm
+
+------------------------------------------------------------
+--- Goto: forward, backward, mid-sequence, out of a block, inside a function.
+------------------------------------------------------------
+
+--- Forward goto keeps the statements after the label (y is written).
+search [1] in IMP-SEM-TEST : mkConf(int qx ; int qy ; goto lab1 ; lab1 : qx := # 1 ; qy := # 2 ;) =>* k(.K) env((qx |-> L) ; (qy |-> L') ; ENV) store((L |-> # 1) ; (L' |-> # 2) ; MEM) KS:KConfig .
+
+--- A label in the middle of a sequence: the statement after it runs.
+search [1] in IMP-SEM-TEST : mkConf(int qx ; lab1 : qx := # 1 ; qx := # 5 ;) =>* k(.K) env((qx |-> L) ; ENV) store((L |-> # 5) ; MEM) KS:KConfig .
+
+--- Forward goto skips a statement; the label then continues the sequence.
+search [1] in IMP-SEM-TEST : mkConf(int qx ; qx := # 0 ; goto lab1 ; qx := # 9 ; lab1 : qx := qx + # 2 ;) =>* k(.K) env((qx |-> L) ; ENV) store((L |-> # 2) ; MEM) KS:KConfig .
+
+--- A loop built from goto.  The goto is inside an if body, so it leaves the block
+--- and the block environment is restored.  Sums 0..4: s = 10, and i ends at 5.
+search [1] in IMP-SEM-TEST : mkConf(int qi ; int qs ; qi := # 0 ; qs := # 0 ; lab1 : if (qi <= # 4) { qs := qs + qi ; qi := qi + # 1 ; goto lab1 ; } else { skip } ) =>* k(.K) env((qi |-> L) ; (qs |-> L') ; ENV) store((L |-> # 5) ; (L' |-> # 10) ; MEM) KS:KConfig .
+
+--- goto inside a function jumps to the function's own label and returns normally.
+search [1] in IMP-SEM-TEST : mkConf(int qf() { int qr ; goto lab1 ; qr := # 9 ; lab1 : qr := # 4 ; return qr ; } int qx ; qx := qf() ;) =>* k(.K) env((qx |-> L) ; ENV) store((L |-> # 4) ; MEM) KS:KConfig .
+
+--- Labels are per function: lab1 of f is not the top-level lab1.
+search [1] in IMP-SEM-TEST : mkConf(int qx ; int qf() { goto lab1 ; return # 1 ; lab1 : return # 2 ; } lab1 : qx := # 7 ; int qy ; qy := qf() ;) =>* k(.K) env((qx |-> L) ; (qy |-> L') ; ENV) store((L |-> # 7) ; (L' |-> # 2) ; MEM) KS:KConfig .
+
+--- goto out of a block that declared a variable: the block environment is left
+--- The variable y is gone after the goto, and the label continues with x = 5 + 1.
+search [1] in IMP-SEM-TEST : mkConf(int qx ; qx := # 1 ; if (# true) { int qy ; qy := # 5 ; qx := qy ; goto lab1 ; } else { skip } lab1 : qx := qx + # 1 ;) =>* k(.K) env((qx |-> L) ; ENV) store((L |-> # 6) ; MEM) KS:KConfig .
+
+--- A label inside an if body is not a label of the sequence: rejected statically.
+red (wellTyped(int qx ; if (# true) { lab1 : qx := # 1 ; } else { skip } goto lab1 ;) == true) == false .
+
+--- A label and a goto that are not in the same sequence are rejected statically.
+red (wellTyped(int qx ; int qf() { goto lab1 ; return # 1 ; } lab1 : qx := # 7 ;) == true) == false .
+--- goto to a label that does not exist is rejected statically ...
+red (wellTyped(int qx ; goto lab2 ; lab1 : qx := # 1 ;) == true) == false .
+--- ... and is stuck at runtime when the program is run without mkConf.
+red isFinal(k(goto lab2 ;) env(empty) genv(empty) store(empty) fdecl(empty) sdecl(empty) stack(nilStack) nextLoc(0) labels(empty)) == false .
+
+------------------------------------------------------------
+--- Control flow.
+------------------------------------------------------------
+
+--- while: s = 0+1+2+3, i = 4.
+search [1] in IMP-SEM-TEST : mkConf(int qi ; int qs ; qi := # 0 ; qs := # 0 ; while (qi <= # 3) { qs := qs + qi ; qi := qi + # 1 ; }) =>* k(.K) env((qi |-> L) ; (qs |-> L') ; ENV) store((L |-> # 4) ; (L' |-> # 6) ; MEM) KS:KConfig .
+
+--- Nested if: the inner else is not taken.
+search [1] in IMP-SEM-TEST : mkConf(int qx ; qx := # 2 ; if (qx <= # 3) { if (qx == # 2) { qx := # 20 ; } else { qx := # 30 ; } } else { qx := # 40 ; }) =>* k(.K) env((qx |-> L) ; ENV) store((L |-> # 20) ; MEM) KS:KConfig .
+
+--- Block scoping: a declaration in an if body is gone after it.  Inside the body
+--- y := x reads the inner x (2); after the body, return x reads the global x (1).
+search [1] in IMP-SEM-TEST : mkConf(int qx ; qx := # 1 ; int qf() { int qy ; qy := # 0 ; if (# true) { int qx ; qx := # 2 ; qy := qx ; } else { skip } return qx + qy ; } int qr ; qr := qf() ;) =>* k(.K) env((qx |-> L) ; (qr |-> L') ; ENV) store((L |-> # 1) ; (L' |-> # 3) ; MEM) KS:KConfig .
+
+------------------------------------------------------------
+--- Functions.
+------------------------------------------------------------
+
+--- Recursion: factorial of 5.
+search [1] in IMP-SEM-TEST : mkConf(int qfact(int qn) { if (qn <= # 1) { return # 1 ; } else { skip } int qr ; qr := qfact(qn - # 1) ; return qn * qr ; } int qx ; qx := qfact(# 5) ;) =>* k(.K) env((qx |-> L) ; ENV) store((L |-> # 120) ; MEM) KS:KConfig .
+
+--- By-reference parameter: the callee writes the caller's variable.
+search [1] in IMP-SEM-TEST : mkConf(int qsetx(int * qp) { qp := # 1 ; return # 1 ; } int qx ; qx := # 0 ; qx := qsetx(qx) ;) =>* k(.K) env((qx |-> L) ; ENV) store((L |-> # 1) ; MEM) KS:KConfig .
+
+--- By-reference swap of two caller variables.
+search [1] in IMP-SEM-TEST : mkConf(int qswap(int * qa, int * qbb) { int qt ; qt := qa ; qa := qbb ; qbb := qt ; return # 0 ; } int qx ; int qy ; qx := # 1 ; qy := # 2 ; int qr ; qr := qswap(qx, qy) ;) =>* k(.K) env((qx |-> L) ; (qy |-> L') ; ENV) store((L |-> # 2) ; (L' |-> # 1) ; MEM) KS:KConfig .
+
+------------------------------------------------------------
+--- Structs.
+------------------------------------------------------------
+
+--- Member access and struct copy: t := s copies the members, so updating t.a
+--- does not change s.a.  x = s.a = 1, y = t.b = 2.
+search [1] in IMP-SEM-TEST : mkConf(struct qPt { int qa ; int qbb ; } ; struct qPt qs ; struct qPt qt ; int qx ; int qy ; qs . qa := # 1 ; qs . qbb := # 2 ; qt := qs ; qt . qa := # 5 ; qx := qs . qa ; qy := qt . qbb ;) =>* k(.K) env((qx |-> L) ; (qy |-> L') ; ENV) store((L |-> # 1) ; (L' |-> # 2) ; MEM) KS:KConfig .
+
+------------------------------------------------------------
+--- Expressions.
+------------------------------------------------------------
+
+--- Short-circuit: the right operand (a division by zero) is not evaluated.
+search [1] in IMP-SEM-TEST : mkConf(bool qb ; bool qc ; qb := (# false) && ((# 1 / # 0) == # 1) ; qc := (# true) || ((# 1 / # 0) == # 1) ;) =>* k(.K) env((qb |-> L) ; (qc |-> L') ; ENV) store((L |-> # false) ; (L' |-> # true) ; MEM) KS:KConfig .
+
+--- Division by zero is stuck: the program has no final configuration.
+red isFinal(mkConf(int qx ; qx := # 1 / # 0 ;)) == false .
+
+--- Reading an uninitialized variable is stuck.
+red isFinal(mkConf(int qx ; int qy ; qy := qx ;)) == false .
+
+------------------------------------------------------------
+--- Declarations: hoisting (C11 6.2.4p6).  Every declaration of a block is allocated
+--- when the block is entered, so a goto that skips a declaration does not leave it
+--- unallocated.  A declaration reached in the normal flow resets its object to undef.
+------------------------------------------------------------
+
+--- A forward goto past a declaration of the same name as a global does not change the
+--- global: the local g (hoisted to the function entry) is the one that is assigned.
+--- The global stays 7, and f returns 3.
+search [1] in IMP-SEM-TEST : mkConf(int qg ; qg := # 7 ; int qf() { int qr ; goto lab1 ; int qg ; lab1 : qg := # 3 ; qr := qg ; return qr ; } int qx ; qx := qf() ;) =>* k(.K) env((qg |-> L) ; (qx |-> L') ; ENV) store((L |-> # 7) ; (L' |-> # 3) ; MEM) KS:KConfig .
+
+--- A forward goto past a declaration that shadows nothing: the skipped declaration is
+--- allocated on entry, so the statement after the label can assign it (it used to be stuck).
+search [1] in IMP-SEM-TEST : mkConf(int qx ; goto lab1 ; int qy ; lab1 : qy := # 2 ; qx := # 5 ;) =>* k(.K) env((qx |-> L) ; (qy |-> L') ; ENV) store((L |-> # 5) ; (L' |-> # 2) ; MEM) KS:KConfig .
+--- The same inside a function body.
+search [1] in IMP-SEM-TEST : mkConf(int qf() { int qr ; goto lab1 ; int qy ; lab1 : qy := # 2 ; return qy ; } int qx ; qx := qf() ;) =>* k(.K) env((qx |-> L) ; ENV) store((L |-> # 2) ; MEM) KS:KConfig .
+
+--- A backward goto re-reaches the declaration of y: y is reset to undef (not allocated
+--- again: nextLoc stays 2, the location of y is the one allocated on entry), so the
+--- read after it is stuck.
+red isFinal(mkConf(int qi ; qi := # 0 ; lab1 : int qy ; if (qi == # 0) { qy := # 5 ; qi := # 1 ; goto lab1 ; } else { skip } int qx ; qx := qy ;)) == false .
+--- The final state after the re-reach: y is undef and i is 1, with the same location.
+search [1] in IMP-SEM-TEST : mkConf(int qi ; qi := # 0 ; lab1 : int qy ; if (qi == # 0) { qy := # 5 ; qi := # 1 ; goto lab1 ; } else { skip } ) =>* k(.K) env((qi |-> L) ; (qy |-> L') ; ENV) store((L |-> # 1) ; (L' |-> undef) ; MEM) nextLoc(2) KS:KConfig .
+
+--- A struct declared in a loop body is hoisted, and a backward goto re-reaches it: its
+--- member is reset to undef, so the member read is stuck (the k cell is left holding it).
+search [1] in IMP-SEM-TEST : mkConf(struct qPt { int qa ; } ; int qi ; qi := # 0 ; lab1 : struct qPt qs ; if (qi == # 0) { qs . qa := # 5 ; qi := # 1 ; goto lab1 ; } else { skip } int qx ; qx := qs . qa ;) =>! k({ loc(L) . qa } ~> K:K) KS:KConfig .
+--- A struct local of a function body is hoisted and assigned through its member.
+search [1] in IMP-SEM-TEST : mkConf(struct qPt { int qa ; } ; int qf() { struct qPt qs ; qs . qa := # 4 ; return qs . qa ; } int qx ; qx := qf() ;) =>* k(.K) env((qx |-> L) ; ENV) store((L |-> # 4) ; MEM) KS:KConfig .
+--- An auto variable is hoisted with the other top-level declarations.
+search [1] in IMP-SEM-TEST : mkConf(int qy ; auto qx ; qx := # 1 ; qy := qx ;) =>* k(.K) env((qx |-> L) ; (qy |-> L') ; ENV) store((L |-> # 1) ; (L' |-> # 1) ; MEM) KS:KConfig .
+--- A declaration in a while body is allocated on each entry of the body and holds its value there: s = 0+1+2 = 3.
+search [1] in IMP-SEM-TEST : mkConf(int qi ; qi := # 0 ; int qs ; qs := # 0 ; while (qi <= # 2) { int qy ; qy := qi ; qs := qs + qy ; qi := qi + # 1 ; }) =>* k(.K) env((qi |-> L) ; (qs |-> L') ; ENV) store((L |-> # 3) ; (L' |-> # 3) ; MEM) KS:KConfig .
+
+------------------------------------------------------------
+--- Arrays.  An array of N elements takes N consecutive locations (qv: 0, 1, 2 here),
+--- and the length is kept in arrlen.  A read or write of a[E] is checked at run time
+--- against the length, so an index outside 0 <= I < N is stuck.
+------------------------------------------------------------
+
+--- Elements are written and read through literal indices: qx = qv[0] + qv[1] = 3.
+search [1] in IMP-SEM-TEST : mkConf(int[3] qv ; qv[# 0] := # 1 ; qv[# 1] := # 2 ; qv[# 2] := qv[# 0] + qv[# 1] ; int qx ; qx := qv[# 2] ;) =>* k(.K) env((qv |-> 0) ; (qx |-> 3) ; ENV) store((0 |-> # 1) ; (1 |-> # 2) ; (2 |-> # 3) ; (3 |-> # 3) ; MEM) nextLoc(4) KS:KConfig .
+--- An index held in a variable: qi = 1 names the element qv[1].
+search [1] in IMP-SEM-TEST : mkConf(int[3] qv ; int qi ; qi := # 1 ; qv[qi] := # 5 ; int qx ; qx := qv[qi] ;) =>* k(.K) env((qi |-> 3) ; (qx |-> 4) ; ENV) store((1 |-> # 5) ; (3 |-> # 1) ; (4 |-> # 5) ; MEM) KS:KConfig .
+--- A loop fills and sums the elements: qv = 1, 2, 3 and qs = 6.
+search [1] in IMP-SEM-TEST : mkConf(int[3] qv ; int qi ; int qs ; qi := # 0 ; qs := # 0 ; while (qi <= # 2) { qv[qi] := qi + # 1 ; qs := qs + qv[qi] ; qi := qi + # 1 ; }) =>* k(.K) env((qi |-> 3) ; (qs |-> 4) ; ENV) store((0 |-> # 1) ; (1 |-> # 2) ; (2 |-> # 3) ; (3 |-> # 3) ; (4 |-> # 6) ; MEM) KS:KConfig .
+--- An element passed by reference: the callee writes qv[1].
+search [1] in IMP-SEM-TEST : mkConf(int qsetx(int * qp) { qp := # 9 ; return # 1 ; } int[2] qv ; qv[# 1] := # 0 ; int qr ; qr := qsetx(qv[# 1]) ;) =>* k(.K) env((qv |-> 0) ; (qr |-> 2) ; ENV) store((1 |-> # 9) ; (2 |-> # 1) ; MEM) KS:KConfig .
+--- A literal index outside the bounds is rejected by mkConf; an index held in a variable
+--- is checked at run time, and an out-of-range one is stuck.
+red (mkConf(int[2] qv ; qv[# 2] := # 1 ;) == illTyped) == true .
+red isFinal(mkConf(int[2] qv ; int qi ; qi := # 2 ; qv[qi] := # 1 ;)) == false .
+--- Reading an element that was never written is stuck.
+red isFinal(mkConf(int[2] qv ; int qx ; qx := qv[# 0] ;)) == false .
+
+------------------------------------------------------------
+--- By-value struct parameter.  The argument is copied into a new struct object, so the
+--- callee's change does not reach the caller: qx = 9 (the callee), qy = 1 (the caller).
+------------------------------------------------------------
+
+search [1] in IMP-SEM-TEST : mkConf(struct qPt { int qa ; } ; int qf(struct qPt qp) { qp . qa := # 9 ; return qp . qa ; } struct qPt qs ; int qx ; int qy ; qs . qa := # 1 ; qx := qf(qs) ; qy := qs . qa ;) =>* k(.K) env((qx |-> L) ; (qy |-> L') ; ENV) store((L |-> # 9) ; (L' |-> # 1) ; MEM) KS:KConfig .

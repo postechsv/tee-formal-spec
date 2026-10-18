@@ -1,0 +1,75 @@
+--- Panic conditions for the cryptographic operation APIs.
+--- The nullHandlePanics equations of these APIs are in GENERAL-PANIC.
+
+--- @kind panic
+--- @feature crypto
+omod CRYPTO-PANIC is
+  pr CRYPTO-OPERATION-BEHAVIOR .
+
+  var TK : Oid .
+  var API : TeeApi .
+  var HANDLE : Oid .
+  var CI : Oid .
+  var PARAMS : ArgList .
+  var HS : HandleState .
+  var HSF : Set{HandleFlag} .
+  var OC : OpClass .
+
+  --- operationClassCompatible(API, OC): true when the operation class OC is one that API accepts.
+  --- Other combinations of API and OC are not compatible.
+  op operationClassCompatible : TeeApi OpClass -> Bool .
+  eq operationClassCompatible(FreeOperation, OC) = true .
+  eq operationClassCompatible(GetOperationInfo, OC) = true .
+  eq operationClassCompatible(GetOperationInfoMultiple, OC) = true .
+  eq operationClassCompatible(resetOperation, OC) = true .
+  eq operationClassCompatible(SetOperationKey, OC) = true .
+  eq operationClassCompatible(SetOperationKey2, OC) = true .
+  eq operationClassCompatible(CopyOperation, OC) = true .
+  eq operationClassCompatible(DigestUpdate, clsDigest) = true .
+  eq operationClassCompatible(DigestDoFinal, clsDigest) = true .
+  eq operationClassCompatible(DigestExtract, clsDigest) = true .
+  eq operationClassCompatible(cipherInit, clsCipher) = true .
+  eq operationClassCompatible(cipherUpdate, clsCipher) = true .
+  eq operationClassCompatible(cipherDoFinal, clsCipher) = true .
+  eq operationClassCompatible(MACInit, clsMAC) = true .
+  eq operationClassCompatible(MACUpdate, clsMAC) = true .
+  eq operationClassCompatible(MACComputeFinal, clsMAC) = true .
+  eq operationClassCompatible(MACCompareFinal, clsMAC) = true .
+  eq operationClassCompatible(AEInit, clsAE) = true .
+  eq operationClassCompatible(AEUpdateAAD, clsAE) = true .
+  eq operationClassCompatible(AEUpdate, clsAE) = true .
+  eq operationClassCompatible(AEEncryptFinal, clsAE) = true .
+  eq operationClassCompatible(AEDecryptFinal, clsAE) = true .
+  eq operationClassCompatible(AsymmetricEncrypt, clsAsymmetricCipher) = true .
+  eq operationClassCompatible(AsymmetricDecrypt, clsAsymmetricCipher) = true .
+  eq operationClassCompatible(AsymmetricSignDigest, clsAsymmetricSignature) = true .
+  eq operationClassCompatible(AsymmetricVerifyDigest, clsAsymmetricSignature) = true .
+  eq operationClassCompatible(DeriveKey, clsKeyDerivation) = true .
+  ---@dmc owise enumerate(arg1, arg2)
+  eq operationClassCompatible(API, OC) = false [owise] .
+
+  --- operation-api-class-mismatch-panic: the operation class OC is assigned to OpHandle.  A class mismatch
+  --- is a programmer error and sets the kernel status to panic before an operation-specific rule runs.
+  ceq [operation-api-class-mismatch-panic] :
+    < TK : TAKernel | status : (normal).AppStatus, api-call : init(API[# HANDLE PARAMS]) >
+    < HANDLE : OpHandle | oid : CI, opclass : OC >
+    =
+    < TK : TAKernel | status : panic >
+    < HANDLE : OpHandle | >
+  if not operationClassCompatible(API, OC) .
+
+  --- No initialized-state panic for SetOperationKey: SetOperationKey leaves the INIT state (set or
+  --- clear), so the operation-specific rules in cryptographic.maude handle it.
+
+  --- set-operation-key2-initialized-panic: GP 6.2.7 applies the same initial-state precondition to
+  --- the two-key API. A handle in the init state makes TEE_SetOperationKey2 set the kernel status
+  --- to panic.
+  rl [set-operation-key2-initialized-panic] :
+    < TK : TAKernel | status : (normal).AppStatus, api-call : init(SetOperationKey2[# HANDLE PARAMS]) >
+    < HANDLE : OpHandle | state : handleState((init, HSF)) >
+    =>
+    < TK : TAKernel | status : panic >
+    < HANDLE : OpHandle | >
+  .
+
+endom

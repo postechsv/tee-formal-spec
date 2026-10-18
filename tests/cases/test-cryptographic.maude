@@ -7,27 +7,27 @@ mod CRYPTOGRAPHIC-TEST-CASES is
 
   op keyForCipherExists : -> Stmt [ctor] .
   eq keyForCipherExists = 
-    AllocateTransientObject(# TEE-TYPE-AES, # 256 Bits ; res, key) ;
-    InitRefAttribute(# TEE-ATTR-SECRET-VALUE, # randomAttrVal  ; attr) ;
+    AllocateTransientObject(# typeAes, # 256 ; res, key) ;
+    InitRefAttribute(# secretValue, # randomAttrVal  ; attr) ;
     PopulateTransientObject(key, attr  ; res) .
 
   op keySetOperationForCipherExists : -> Stmt [ctor] .
   eq keySetOperationForCipherExists = 
     keyForCipherExists ;
-    AllocateOperation(# TEE-ALG-AES-CBC-NOPAD, # TEE-MODE-ENCRYPT, # 256 Bits  ; res, op) ;
+    allocOperation(# algAesCbcNopad, # modeEncrypt, # 256  ; res, op) ;
     SetOperationKey(op, key ; res) ;
     FreeTransientObject(key ; key) . --- To analyze results better
 
   op keyForMACExists : -> Stmt [ctor] .
   eq keyForMACExists = 
-    AllocateTransientObject(# TEE-TYPE-HMAC-SHA256, # 256 Bits ; res, key) ;
-    InitRefAttribute(# TEE-ATTR-SECRET-VALUE, # randomAttrVal  ; attr) ;
+    AllocateTransientObject(# typeHmacSha256, # 256 ; res, key) ;
+    InitRefAttribute(# secretValue, # randomAttrVal  ; attr) ;
     PopulateTransientObject(key, attr  ; res) .
 
   op keySetOperationForMACExists : -> Stmt [ctor] .
   eq keySetOperationForMACExists = 
     keyForMACExists ;
-    AllocateOperation(# TEE-ALG-HMAC-SHA256, # TEE-MODE-MAC, # 256 Bits  ; res, op) ;
+    allocOperation(# algHmacSha256, # modeMac, # 256  ; res, op) ;
     SetOperationKey(op, key ; res) ;
     FreeTransientObject(key ; key) . --- To analyze results better
 
@@ -40,17 +40,17 @@ mod CRYPTOGRAPHIC-TEST-CASES is
 
       --- For TEE_AllocateOperation
       --- Test Case 1 (For Symmetric Cipher)
-      --- AllocateOperation(# TEE-ALG-AES-CBC-NOPAD, # TEE-MODE-ENCRYPT, # 256 Bits  ; res, op) ;
+      --- allocOperation(# algAesCbcNopad, # modeEncrypt, # 256  ; res, op) ;
       --- return res
 
       --- Test Case 2 (For MAC)
-      --- AllocateOperation(# TEE-ALG-HMAC-SHA256, # TEE-MODE-MAC, # 256 Bits  ; res, op) ;
+      --- allocOperation(# algHmacSha256, # modeMac, # 256  ; res, op) ;
       --- return res
 
       --- For TEE_SetOperationKey
       --- Test Case 1
       --- keyForCipherExists ;
-      --- AllocateOperation(# TEE-ALG-AES-CBC-NOPAD, # TEE-MODE-ENCRYPT, # 256 Bits  ; res, op) ;
+      --- allocOperation(# algAesCbcNopad, # modeEncrypt, # 256  ; res, op) ;
       --- SetOperationKey(op, key ; res) ;
       --- return res
 
@@ -63,8 +63,8 @@ mod CRYPTOGRAPHIC-TEST-CASES is
       --- For TEE_ResetOperation
       --- Test Case 1
       keySetOperationForCipherExists ;
-      CipherInit(op, iv ;) ; --- Tested in testCryptoCipher
-      ResetOperation(op ;) ;
+      cipherInit(op ;) ; --- Tested in testCryptoCipher
+      resetOperation(op ;) ;
       return res
     }
   .
@@ -82,21 +82,21 @@ mod CRYPTOGRAPHIC-TEST-CASES is
       --- For TEE_CipherInit
       --- Test Case 1
       --- keySetOperationForCipherExists ;
-      --- CipherInit(op, iv ;) ;
+      --- cipherInit(op ;) ;
       --- return res
 
       --- For TEE_CipherUpdate
       --- Test Case 1
       --- keySetOperationForCipherExists ;
-      --- CipherInit(op, iv ;) ;
-      --- CipherUpdate(op, srcData ; res, destData) ;
+      --- cipherInit(op ;) ;
+      --- cipherUpdate(op, srcData ; res, destData) ;
       --- return destData
 
       --- For TEE_CipherDoFinal
       --- Test Case 1
       keySetOperationForCipherExists ;
-      CipherInit(op, iv ;) ;
-      CipherDoFinal(op, srcData ; res, destData) ;
+      cipherInit(op ;) ;
+      cipherDoFinal(op, srcData ; res, destData) ;
       return destData
     }
   .
@@ -135,7 +135,7 @@ mod CRYPTOGRAPHIC-TEST-CASES is
       --- Test Case 1
       keySetOperationForMACExists ;
       MACInit(op, iv ;) ;
-      mac := # macValue(randomData, TEE-ALG-HMAC-SHA256, key(teeAttribute(TEE-ATTR-SECRET-VALUE,randomAttrVal))) ;
+      mac := # macValue(randomData, algHmacSha256, attr(secretValue,randomAttrVal)) ;
       MACCompareFinal(op, message, mac ; res) ;
       return res
     }

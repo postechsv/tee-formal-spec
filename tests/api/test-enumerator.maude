@@ -16,23 +16,15 @@ set print color off .
 
 --- [BB-E-AL-1] alloc-enumerator-success
 search [1] in TEST-AUX :
-  < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
-                    current-api : AllocatePersistentObjectEnumerator, api-state : started,
-                    current-params : empty, counter : 0, trust-app-id : TESTTA >
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(AllocatePersistentObjectEnumerator[argNil]), counter : 0 >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(AllocatePersistentObjectEnumerator , TEE-SUCCESS,
-                                           handle(handleId(1, ta))) > .
+  < ta : TAKernel | api-call : return(AllocatePersistentObjectEnumerator[# success # oid(1, ta)]) > .
 
 --- [BB-E-AL-2] alloc-enumerator-out-of-memory
 search [1] in TEST-AUX :
-  < ta : TaKernel | status : outOfMemory, api-call : noCall, api-return : noReturn,
-                    current-api : AllocatePersistentObjectEnumerator, api-state : started,
-                    current-params : empty, counter : 0, trust-app-id : TESTTA >
+  < ta : TAKernel | status : outOfMemory, api-call : init(AllocatePersistentObjectEnumerator[argNil]), counter : 0 >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(AllocatePersistentObjectEnumerator , TEE-ERROR-OUT-OF-MEMORY,
-                                           handle(TEE-HANDLE-NULL)) > .
+  < ta : TAKernel | api-call : return(AllocatePersistentObjectEnumerator[# errorOutOfMemory # null]) > .
 
 --- ============================================================
 --- FreePersistentObjectEnumerator
@@ -40,28 +32,18 @@ search [1] in TEST-AUX :
 
 --- [BB-E-FR-1] free-enumerator-success
 search [1] in TEST-AUX :
-  < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
-                    current-api : FreePersistentObjectEnumerator, api-state : started,
-                    current-params : handle(handleId(2, ta)),
-                    counter : 0, trust-app-id : TESTTA >
-  < handleId(2, ta) : ObjectEnumHandle | oid : e, is-initialized : false >
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(FreePersistentObjectEnumerator[# oid(2, ta)]), counter : 0 >
+  < oid(2, ta) : ObjectEnumHandle | oid : e, is-initialized : false >
   < e : EnumeratorObject |
-                           persistent-objects : empty, enumerating : false,
-                           trust-app-id : TESTTA >
+                           persistent-objects : empty, enumerating : false >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(FreePersistentObjectEnumerator) > .
+  < ta : TAKernel | api-call : return(FreePersistentObjectEnumerator[# noReturnCode]) > .
 
 --- [BB-E-FR-2] free-enumerator-null-success
 search [1] in TEST-AUX :
-  < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
-                    current-api : FreePersistentObjectEnumerator, api-state : started,
-                    current-params : handle(TEE-HANDLE-NULL),
-                    counter : 0, trust-app-id : TESTTA >
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(FreePersistentObjectEnumerator[# null]), counter : 0 >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(FreePersistentObjectEnumerator ,
-                                           handle(TEE-HANDLE-NULL)) > .
+  < ta : TAKernel | api-call : return(FreePersistentObjectEnumerator[# noReturnCode # null]) > .
 
 --- ============================================================
 --- ResetPersistentObjectEnumerator
@@ -69,27 +51,18 @@ search [1] in TEST-AUX :
 
 --- [BB-E-RS-1] reset-enumerator-success
 search [1] in TEST-AUX :
-  < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
-                    current-api : ResetPersistentObjectEnumerator, api-state : started,
-                    current-params : handle(handleId(3, ta)),
-                    counter : 0, trust-app-id : TESTTA >
-  < handleId(3, ta) : ObjectEnumHandle | oid : e, is-initialized : false >
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(ResetPersistentObjectEnumerator[# oid(3, ta)]), counter : 0 >
+  < oid(3, ta) : ObjectEnumHandle | oid : e, is-initialized : false >
   < e : EnumeratorObject |
-                           persistent-objects : (testFileId), enumerating : true,
-                           trust-app-id : TESTTA >
+                           persistent-objects : (testFileId), enumerating : true >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(ResetPersistentObjectEnumerator) > .
+  < ta : TAKernel | api-call : return(ResetPersistentObjectEnumerator[# noReturnCode]) > .
 
 --- [BB-E-RS-2] reset-enumerator-null-success
 search [1] in TEST-AUX :
-  < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
-                    current-api : ResetPersistentObjectEnumerator, api-state : started,
-                    current-params : handle(TEE-HANDLE-NULL),
-                    counter : 0, trust-app-id : TESTTA >
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(ResetPersistentObjectEnumerator[# null]), counter : 0 >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(ResetPersistentObjectEnumerator) > .
+  < ta : TAKernel | api-call : return(ResetPersistentObjectEnumerator[# noReturnCode]) > .
 
 --- ============================================================
 --- StartPersistentObjectEnumerator
@@ -97,40 +70,29 @@ search [1] in TEST-AUX :
 
 --- [BB-E-ST-1] start-enumerator-success
 search [1] in TEST-AUX :
-  retTrustedOS(storageStatus(storageNormal) filesInStorage(testFileId) , ta)
-  < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
-                    current-api : StartPersistentObjectEnumerator, api-state : started,
-                    current-params : handle(handleId(4, ta)),
-                    counter : 0, trust-app-id : TESTTA >
-  < handleId(4, ta) : ObjectEnumHandle | oid : e, is-initialized : false >
+  (msg retStatus[# (normal).StorageStatus] from oid(0, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(StartPersistentObjectEnumerator[# oid(4, ta) # storagePrivate]), counter : 0, storage : oid(0, ta) >
+  < oid(0, ta) : Storage | status : (normal).StorageStatus, files : testFileId, counter : 0 >
+  < oid(4, ta) : ObjectEnumHandle | oid : e, is-initialized : false >
   < e : EnumeratorObject |
-                           persistent-objects : empty, enumerating : false,
-                           trust-app-id : TESTTA >
+                           persistent-objects : empty, enumerating : false >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(StartPersistentObjectEnumerator , TEE-SUCCESS) > .
+  < ta : TAKernel | api-call : return(StartPersistentObjectEnumerator[# success]) > .
 
 --- [BB-E-ST-2] start-enumerator-item-not-found
 search [1] in TEST-AUX :
-  retTrustedOS(storageStatus(storageNormal) storageEmpty , ta)
-  < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
-                    current-api : StartPersistentObjectEnumerator, api-state : started,
-                    current-params : handle(handleId(4, ta)),
-                    counter : 0, trust-app-id : TESTTA >
+  (msg retStatus[# (normal).StorageStatus] from oid(0, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(StartPersistentObjectEnumerator[# oid(4, ta) # storagePrivate] , 0), counter : 0, storage : oid(0, ta) >
+  < oid(0, ta) : Storage | status : (normal).StorageStatus, files : empty, counter : 0 >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(StartPersistentObjectEnumerator , TEE-ERROR-ITEM-NOT-FOUND) > .
+  < ta : TAKernel | api-call : return(StartPersistentObjectEnumerator[# errorItemNotFound]) > .
 
 --- [BB-E-ST-3] start-enumerator-storage-error
 search [1] in TEST-AUX :
-  retTrustedOS(storageStatus(storageCorrupt) fileExist , ta)
-  < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
-                    current-api : StartPersistentObjectEnumerator, api-state : started,
-                    current-params : handle(handleId(4, ta)),
-                    counter : 0, trust-app-id : TESTTA >
+  (msg retStatus[# (corrupted).StorageStatus] from oid(0, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(StartPersistentObjectEnumerator[# oid(4, ta) # storagePrivate]), counter : 0, storage : oid(0, ta) >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(StartPersistentObjectEnumerator , TEE-ERROR-CORRUPT-OBJECT) > .
+  < ta : TAKernel | api-call : return(StartPersistentObjectEnumerator[# errorCorruptObject]) > .
 
 --- ============================================================
 --- GetNextPersistentObject
@@ -138,31 +100,17 @@ search [1] in TEST-AUX :
 
 --- [BB-E-GN-1] get-next-success
 search [1] in TEST-AUX :
-  retNextObject(teeObjectInfo(TEE-TYPE-AES,
-                              keySize(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)),
-                              128 Bits, TEE-USAGE-ENCRYPT,
-                              dataSize(3), pos(0), empty), ta)
-  < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
-                    current-api : GetNextPersistentObject, api-state : waitGetNextObject,
-                    current-params : fileId(testFileId),
-                    counter : 0, trust-app-id : TESTTA >
+  (msg retNextObject[# teeObjectInfo(typeAes,
+                              keySize(attr(secretValue, randomAttrVal)),
+                              128, usageEncrypt,
+                              dataSize(3), pos(0), empty)] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(GetNextPersistentObject[ZsGetNextPersistentObject0 # testFileId]), counter : 0 >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(GetNextPersistentObject , TEE-SUCCESS,
-                                           (info(teeObjectInfo(TEE-TYPE-AES,
-                                                               keySize(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)),
-                                                               128 Bits, TEE-USAGE-ENCRYPT,
-                                                               dataSize(3), pos(0), empty)),
-                                            fileId(testFileId))) > .
+  < ta : TAKernel | api-call : return(GetNextPersistentObject[# success # teeObjectInfo(typeAes, keySize(attr(secretValue, randomAttrVal)), 128, usageEncrypt, dataSize(3), pos(0), empty) # testFileId]) > .
 
 --- [BB-E-GN-2] get-next-storage-not-available
 search [1] in TEST-AUX :
-  retTrustedOS(storageStatus(storageInAccessible) , ta)
-  < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
-                    current-api : GetNextPersistentObject, api-state : started,
-                    current-params : empty,
-                    counter : 0, trust-app-id : TESTTA >
+  (msg retStatus[# (notAvailable).StorageStatus] from oid(0, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(GetNextPersistentObject[ZsGetNextPersistentObject0]), counter : 0, storage : oid(0, ta) >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(GetNextPersistentObject ,
-                                           TEE-ERROR-STORAGE-NOT-AVAILABLE) > .
+  < ta : TAKernel | api-call : return(GetNextPersistentObject[# errorStorageNotAvailable]) > .

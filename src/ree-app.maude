@@ -2,21 +2,19 @@
 
 --- This module defines the abstract RA class.
 
-omod RICH-APP is  
+--- @kind state
+--- @feature client
+omod RICH-APP is
   pr PROGRAM-APP .
-  pr LIST{InvokeMessage} .
 
-  class RA .
-  subclass RA < App .
-
---- Model/Implementation Specific Version
-  class RichApp | invoke-req-queue : List{InvokeMessage},
-                  invoke-ret-queue : List{InvokeMessage} .
-  subclass RichApp < RA ProgramApp .
+  class RichApp .
+  subclass RichApp < App .
 endom
 
---- This module defines basic behaviours for rich application.
+--- This module defines basic behaviors for rich application.
 
+--- @kind behavior
+--- @feature client
 omod RICH-APP-BEHAVIOR is
   pr RICH-APP .
   pr IMP-SEMANTICS .
@@ -28,67 +26,38 @@ omod RICH-APP-BEHAVIOR is
   var RI : Oid .
   var K : K .
   var SID : SessionId .
-  var VL : ValueList .
-  var XL : VarList .
-  var EL : ExpList .
-  vars E1 E2 : Exp .
+  var VL : ArgList .
+  var RET : ArgList .
+  var OUT : ExpList .
   var KS : KConfig .
-  var FUNC : FuncId .
-  var MSG : InvokeMessage .
-  var QUEUE : List{InvokeMessage} .
+  var FID : FuncId .
+  var E : Exp .
+  var EL : ExpList .
+  var V : Value .
+
+--- assign(OUT, RET) stores the output values RET into the output expressions OUT.
+  op assign : ExpList ArgList -> Stmt .
+  eq assign((E, EL), (V VL)) = E := V ; assign(EL, VL) .
+  eq assign(nil, argNil) = skip .
 
 ------------------------------------------------------------
 --- IMP Semantics
 ------------------------------------------------------------
 
---- Version In Paper
-  --- crl [invoke-ta] :
-  ---   < RI : RA | proc : (k(FUNC(VL) ~> K) KS) >
-  ---   => 
-  ---   < RI : RA | proc : (k($wait(FUNC) ~> K) KS) > 
-  ---   smcReq(ARGS) 
-  --- if isInvokeFunc(FUNC) /\ ARGS := makeSmcArgs(RI , FUNC , VL) 
-  --- .
-
---- Model/Implementation Specific Version (2 rules)
-  rl [invoke-ta] :
-    < RI : RichApp | proc : (k($in(# SID , # FUNC , VL) ~> $waitSysCall(TeecInvokeCommand) ~> K) KS) ,
-                     invoke-req-queue : QUEUE >
-    => 
-    < RI : RichApp | proc : (k($waitSysCall(TeecInvokeCommand) ~> K) KS) ,
-                     invoke-req-queue : (QUEUE {SID , FUNC , VL}) > 
+--- invoke-ta-smc: the $in task of TEEC_InvokeCommand creates the SMC request.
+  rl [invoke-ta-smc] :
+    < RI : RichApp | proc : (k($in(# SID # FID VL) ~> $wait(teecInvokeCommand) ~> K) KS) >
+    =>
+    < RI : RichApp | proc : (k($wait(teecInvokeCommand) ~> K) KS) >
+    smcReq(RI, SID, FID, VL)
   .
 
-  rl [smc-request] :
-    < RI : RichApp | invoke-req-queue : MSG QUEUE >
-    => 
-    < RI : RichApp | invoke-req-queue : QUEUE >
-    smcRequest(requestor(RI) invokeMessage(MSG)) 
-  .
-
---- Version In Paper
-  --- crl [invoke-ta-finish] :
-  ---   smcRet(ARGS)
-  ---   < RI : RA | proc : (k($wait(F) ~> $out(XL) ~> K) KS) >
-  ---   => 
-  ---   < RI : RA | proc : (k(STMT ~> K) KS) >
-  --- if RI == getRequestor(ARGS) /\ VL := retVal(ARGS) /\ STMT := makeRetStmt(VL , XL)
-  --- .
-
---- Model/Implementation Specific Version (2 rules)
-  rl [smc-return] :
-    smcReturn(requestor(RI) invokeMessage(MSG))
-    < RI : RichApp | invoke-ret-queue : QUEUE >
-    => 
-    < RI : RichApp | invoke-ret-queue : QUEUE MSG > 
-  .
-
+--- invoke-ta-finish: the SMC response assigns the output values to the output expressions.
   rl [invoke-ta-finish] :
-    < RI : RichApp | proc : (k($waitSysCall(TeecInvokeCommand) ~> $out(XL | E1, E2, EL) ~> K) KS) ,
-                     invoke-ret-queue : ({SID , FUNC , VL} QUEUE) >
-    => 
-    < RI : RichApp | proc : (k($assign(VL , (XL,EL)) ~> K) KS), 
-                     invoke-ret-queue : QUEUE > 
+    smcRet(RI, RET)
+    < RI : RichApp | proc : (k($wait(teecInvokeCommand) ~> $out(OUT) ~> K) KS) >
+    =>
+    < RI : RichApp | proc : (k(assign(OUT, RET) ~> K) KS) >
   .
 
 endom

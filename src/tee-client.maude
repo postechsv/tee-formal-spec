@@ -1,3 +1,5 @@
+--- @kind behavior
+--- @feature client
 omod TEE-CLIENT-API-BEHAVIOR is
   pr PROGRAM-APP .
   pr SECURE-MONITOR-CALL .
@@ -7,15 +9,15 @@ omod TEE-CLIENT-API-BEHAVIOR is
   pr RETURN-IMP-VALUE .
 
   vars KI RI : Oid .
-  var TI : TaInstId .
-  var TK : TaInstId .
+  var TI : Oid .
+  var TK : Oid .
   var SID : SessionId .
   var SMAP : Map{SessionId,Oid} .
   var FUNC : FuncId .
-  var VL : ValueList .
+  var VL : ArgList .
 
 ------------------------------------------------------------
---- Auxilary Functions
+--- Auxiliary Functions
 ------------------------------------------------------------
 
   --- op insertToSmcQueue : SessionId SmcArgument Map{SessionId,List{SmcArgument}} -> Map{SessionId,List{SmcArgument}} .
@@ -27,8 +29,7 @@ omod TEE-CLIENT-API-BEHAVIOR is
   --- eq makeCleanMsgs(TI , TN , empty) = none .
 
   --- op getObjects : AppId Configuration -> Set{ObjectId} .
-  --- eq getObjects(TN , < OI : CryptoOperation | trust-app-id : TN > TEE) = (OI , getObjects(TN , TEE)) .
-  --- eq getObjects(TN , < OI : TransientObject | trust-app-id : TN > TEE) = (OI , getObjects(TN , TEE)) .
+  --- eq getObjects(TN , < OI : TransObj | trust-app-id : TN > TEE) = (OI , getObjects(TN , TEE)) .
   --- eq getObjects(TN , TEE) = empty [owise] .
 
 ------------------------------------------------------------
@@ -38,15 +39,15 @@ omod TEE-CLIENT-API-BEHAVIOR is
 --- TODO : assume TA instance already exist
 
   --- rl [open-session] :
-  ---   smcRequest(requestor(RI) {TeecOpenSession , # TI})
-  ---   < KI : TeeOSKernel | sess : SMAP , session-counter : N >
+  ---   smcReq(requestor(RI) {TeecOpenSession , # TI})
+  ---   < KI : TrustedOS | sess : SMAP , session-counter : N >
   ---   =>
-  ---   < KI : TeeOSKernel | sess : (sessionId(N) |-> TI , SMAP) , session-counter : N + 1 >
-  ---   smcReturn(requestor(RI) {TeecOpenSession , (# TEE-SUCCESS , # sessionId(N))})
+  ---   < KI : TrustedOS | sess : (sessionId(N) |-> TI , SMAP) , session-counter : N + 1 >
+  ---   smcRet(requestor(RI) {TeecOpenSession , (# success , # sessionId(N))})
   --- .
 
   --- rl [close-session-subroutine] :
-  ---   smcRequest(RI , {TeecCloseSession , # SI})
+  ---   smcReq(RI , {TeecCloseSession , # SI})
   ---   < OSI : TeeOS | sess : (SI |-> TI , RMAP) >
   ---   =>
   ---   < OSI : TeeOS | sess : RMAP >
@@ -58,13 +59,13 @@ omod TEE-CLIENT-API-BEHAVIOR is
   ---   < OSI : TeeOS | >
   ---   =>
   ---   < OSI : TeeOS | >
-  ---   smcReturn(RI , {TeecCloseSession , # TEE-SUCCESS })
+  ---   smcRet(RI , {TeecCloseSession , # success })
   --- .
 
   --- rl [kill-ta-req] :
-  ---   < DEVID : Device | objects : {REE} | {killTa(RI , TI) < TI : TrustApp | id : TN > < OSI : TeeOS | clean-objects : MOBJ > TEE} >
+  ---   < DEVID : Device | objects : {REE} | {killTa(RI , TI) < TI : TrustedApp | id : TN > < OSI : TeeOS | clean-objects : MOBJ > TEE} >
   ---   =>
-  ---   < DEVID : Device | objects : {REE} | {killTaContinue(RI , TI) makeCleanMsgs(TI , TN , getObjects(TN , TEE)) < TI : TrustApp | >
+  ---   < DEVID : Device | objects : {REE} | {killTaContinue(RI , TI) makeCleanMsgs(TI , TN , getObjects(TN , TEE)) < TI : TrustedApp | >
   ---                                         < OSI : TeeOS | clean-objects : (TI |-> getObjects(TN , TEE) , MOBJ) > TEE} >
   --- .
 
@@ -75,129 +76,123 @@ omod TEE-CLIENT-API-BEHAVIOR is
   --- .
 
   --- rl [kill-ta-ret] :
-  ---   < DEVID : Device | objects : {REE} | {< OSI : TeeOS | clean-objects : (TI |-> empty , MOBJ) > < TI : TrustApp | > killTaContinue(RI , TI) TEE} >
+  ---   < DEVID : Device | objects : {REE} | {< OSI : TeeOS | clean-objects : (TI |-> empty , MOBJ) > < TI : TrustedApp | > killTaContinue(RI , TI) TEE} >
   ---   =>
-  ---   < DEVID : Device | objects : {REE} | {< OSI : TeeOS | clean-objects : MOBJ > < TI : TrustApp | status : normal > killTaFinish(RI , TI) TEE} >
+  ---   < DEVID : Device | objects : {REE} | {< OSI : TeeOS | clean-objects : MOBJ > < TI : TrustedApp | status : normal > killTaFinish(RI , TI) TEE} >
   --- .
 
---- Version In Paper
-  --- crl [accept-smc-request] :
-  ---   smcReq(ARGS)
-  ---   < OS : TrustedOS | sess : SM >
-  ---   =>
-  ---   < OS : TrustedOS | >
-  ---   invkTa(TI , RI , ARGS)
-  --- if RI := getRequestor(ARGS) /\ TI := getTargetTa(ARGS , SM)
-  --- .
+  var FID : FuncId .
+  var RET : ArgList .
 
---- Model/Implementation Specific Version
-  rl [accept-smc-request-subroutine] :
-    smcRequest(requestor(RI) invokeMessage({SID , FUNC , VL}))
-    < KI : TeeOSKernel | sess : (SID |-> TK , SMAP) >
+--- handle-smc-request: the TrustedOS forwards the SMC request to the TA of the session.
+  rl [handle-smc-request] :
+    < KI : TrustedOS | sess : (SID |-> TK , SMAP) > smcReq(RI, SID, FID, VL)
     =>
-    < KI : TeeOSKernel | >
-    invokeTA(TK , {SID , FUNC , VL} , RI)
-  .
+    < KI : TrustedOS | > (msg invkTa[FID VL] from RI to TK) .
 
---- Version In Paper
-  --- crl [return-smc-request] :
-  ---   invkTaRet(RI , RES)
-  ---   < OS : TrustedOS | >
-  ---   =>
-  ---   < OS : TrustedOS | >
-  ---   smcRet(ARGS)
-  --- if ARGS := makeSmcArgs(RI , RES)
-  --- .
-
---- Model/Implementation Specific Version (2 rules)
-  rl [return-smc-request-subroutine] :
-    invokeTAReturn({SID , FUNC , VL} , RI)
-    < KI : TeeOSKernel | >
+--- handle-smc-request-finish: the TrustedOS returns the TA's output values as an SMC response.
+  rl [handle-smc-request-finish] :
+    < KI : TrustedOS | > (msg invkTaRet[RET] from TI to RI)
     =>
-    < KI : TeeOSKernel | >
-    smcReturn(requestor(RI) invokeMessage({SID , FUNC , VL}))
-  .
+    < KI : TrustedOS | > smcRet(RI, RET) .
 
-  rl [return-smc-request-subroutine] :
-    < TI : TrustApp | status : panic, task : task({SID , FUNC , VL} , RI) >
-    < KI : TeeOSKernel | >
+--- return-smc-request-panic: a TA that panics before answering returns target-dead to the RA
+--- of its request (its client-service {RI, FID}), and the TA has no client-service afterwards.
+  rl [return-smc-request-panic] :
+    < TI : TrustedApp | status : panic, client-service : {RI , FID} >
+    < KI : TrustedOS | >
     =>
-    < KI : TeeOSKernel | >
-    < TI : TrustApp | status : panic, client-service : noClientService,
-                      task : noTask, state-changed : false >
-    smcReturn(requestor(RI) invokeMessage({SID , FUNC , (# TEE-ERROR-TARGET-DEAD, VL)}))
-  .
+    < KI : TrustedOS | >
+    < TI : TrustedApp | status : panic, client-service : none >
+    smcRet(RI, # errorTargetDead) .
+
 endom
 
+--- @kind behavior
+--- @feature client
 omod TEE-INTERNAL-CLIENT-API-BEHAVIOR is
+  vars ZsTeeInvokeTACommand1 ZsTeeInvokeTACommand2 ZsTeeOpenTASession1 : Value .
+  vars ZrTeeInvokeTACommand ZrTeeOpenTASession : ArgList .
   pr SESSION .
   pr TEE-OS-BEHAVIOR .
   pr TRUST-APP .
   pr HANDLE-AUX .
   pr RETURN-IMP-VALUE .
   pr TEE-INTERNAL-CLIENT-FUNC .
+  pr TEE-MSG .
+
+  op #_ : FuncId -> Value [ctor] .
+  op #_ : ArgList -> Value [ctor] .
 
   var N : Nat .
-  var TK RK : TaInstId .
-  var TN TA : AppId .
-  var HANDLE : HandleId .
+  var TK RK : Oid .
+  var TA : AppId .
+  var HANDLE : Oid .
   var FUNC : FuncId .
-  var OI : TaObjectId .
-  var VL : ValueList .
+  var OI : Oid .
+  var VL : ArgList .
   --- var TEEID : TeeUUID .
-  var PARAMS : Set{TeeApiParam} .
+  var PARAMS : ArgList .
   var RET : ReturnCode .
 
 ------------------------------------------------------------
 --- 'TEE_OpenTASession'
 ------------------------------------------------------------
 
---- The 'TEE_OpenTASession' function opens a new session with a Trusted Application.
---- See page 98 of the G.P. documentation for more details.
+  --- The 'TEE_OpenTASession' function opens a new session with a Trusted Application.
+  --- See page 98 of the G.P. documentation for more details.
 
+  --- open-session-subroutine: the init call of TeeOpenTASession becomes final, and the
+  --- TrustedOS is asked to open a session with the TA TA.
   rl [open-session-subroutine] :
-    < TK : TaKernel | status : normal , api-call : noCall , api-return : noReturn ,
-                      api-state : started , current-api : TeeOpenTASession ,
-                      current-params : (uuid(TA) , PARAMS) ,
-                      trust-app-id : TN >
+    < TK : TAKernel | status : (normal).AppStatus ,
+                      api-call : init(TeeOpenTASession[# TA ZsTeeOpenTASession1 ZrTeeOpenTASession]) >
     =>
-    < TK : TaKernel | api-state : TeeOpenTASession(uuid(TA) , PARAMS) # 1 >
-    reqTrustedOS(openTASession(TA) , TK , TN)
+    < TK : TAKernel | api-call : final(TeeOpenTASession[# TA ZsTeeOpenTASession1 ZrTeeOpenTASession]) >
+    reqTrustedOS(openTASession(TA) , TK)
   .
 
+  --- open-session-success: the openSessionSuccess(RK) answer of the TrustedOS finishes the call
+  --- with success and the handle oid(N + 1, TK).  The session object oid(N, TK) is created
+  --- with ta-id RK, the handle oid(N + 1, TK) is created for it, and the counter advances by
+  --- two.
   rl [open-session-success] :
     retTrustedOS(openSessionSuccess(RK), TK)
-    < TK : TaKernel | status : normal , api-state : TeeOpenTASession(PARAMS) # 1 , counter : N >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(TeeOpenTASession[PARAMS]) , counter : N >
     =>
-    < TK : TaKernel | api-return : apiReturn(TeeOpenTASession , TEE-SUCCESS , (handle(handleId(N + 1, TK)) , returnOrig(TEE-ORIGIN-TRUSTED-APP))) ,
-                      api-state : finished , counter : N + 2 >
-    < taOid(N , TK) : Session |
+    < TK : TAKernel | api-call : return(TeeOpenTASession[# success # oid(N + 1, TK) # originTrustedApp]) ,
+                      counter : N + 2 >
+    < oid(N , TK) : Session |
       req : noReq , ret : noRet , ta-id : RK >
-    freshSessionHandle(N + 1, TK, taOid(N, TK))
+    freshSessionHandle(N + 1, TK, oid(N, TK))
   .
 
 ------------------------------------------------------------
 --- 'TEE_InvokeTACommand'
 ------------------------------------------------------------
 
---- The 'TEE_InvokeTACommand' function invokes a command within a session opened between the client Trusted Application instance and a destination Trusted Application instance.
---- See page 101 of the G.P. documentation for more details.
+  --- The 'TEE_InvokeTACommand' function invokes a command within a session opened between the
+  --- client Trusted Application instance and a destination Trusted Application instance.
+  --- See page 101 of the G.P. documentation for more details.
 
-  msg reqInvoke : HandleId FuncId ValueList TaInstId -> Msg .
-  msg finishReqInvoke : HandleId FuncId TaInstId ValueList -> Msg .
+  op reqInvoke : -> ReqId [ctor] .
+  op finishReqInvoke : -> ReqId [ctor] .
 
+  --- invoke-ta-command-subroutine (request): the init call of TeeInvokeTACommand becomes
+  --- final, and the reqInvoke message with FUNC and VL is sent to the session handle HANDLE.
   rl [invoke-ta-command-subroutine] :
-    < TK : TaKernel | status : normal , api-call : noCall , api-return : noReturn ,
-                      api-state : started , current-api : TeeInvokeTACommand ,
-                      current-params : (handle(HANDLE) , funcId(FUNC) , values(VL) , PARAMS) >
+    < TK : TAKernel | status : (normal).AppStatus ,
+                      api-call : init(TeeInvokeTACommand[# HANDLE # FUNC # VL ZrTeeInvokeTACommand]) >
     =>
-    < TK : TaKernel | api-state : TeeInvokeTACommand(handle(HANDLE) , funcId(FUNC) , values(VL) , PARAMS) # 1 >
-    reqInvoke(HANDLE , FUNC , VL , TK)
+    < TK : TAKernel | api-call : final(TeeInvokeTACommand[# HANDLE # FUNC # VL ZrTeeInvokeTACommand]) >
+    (msg reqInvoke[# FUNC # VL] from TK to HANDLE)
   .
 
-
+  --- invoke-ta-command-top-level-handle: the reqInvoke message reaches the session handle
+  --- HANDLE of the idle session OI (req : noReq), and the request {HANDLE, FUNC, VL, TK} is
+  --- stored in the session.
   rl [invoke-ta-command-top-level-handle] :
-    reqInvoke(HANDLE, FUNC, VL, TK)
+    (msg reqInvoke[# FUNC # VL] from TK to HANDLE)
     < OI : Session | req : noReq >
     < HANDLE : TaSessionHandle | oid : OI >
     =>
@@ -205,30 +200,24 @@ omod TEE-INTERNAL-CLIENT-API-BEHAVIOR is
     < HANDLE : TaSessionHandle | >
   .
 
-
+  --- invoke-ta-command-top-level-return: the stored return {HANDLE, FUNC, TK, VL} of the session
+  --- OI is cleared, and the finishReqInvoke message with FUNC and VL is sent back to TK.
   rl [invoke-ta-command-top-level-return] :
     < OI : Session | ret : {HANDLE, FUNC, TK, VL} >
     < HANDLE : TaSessionHandle | oid : OI >
     =>
     < OI : Session | ret : noRet >
     < HANDLE : TaSessionHandle | >
-    finishReqInvoke(HANDLE, FUNC, TK, VL)
+    (msg finishReqInvoke[# FUNC # VL] from HANDLE to TK)
   .
 
+  --- invoke-ta-command-subroutine (finish): the finishReqInvoke message gives the return code
+  --- RET and the values VL to the final call of TeeInvokeTACommand, which becomes return.
   rl [invoke-ta-command-subroutine] :
-    finishReqInvoke(HANDLE , FUNC , TK , (# RET , VL))
-    < TK : TaKernel | api-state : TeeInvokeTACommand(handle(HANDLE) , PARAMS) # 1 >
+    (msg finishReqInvoke[# FUNC # (# RET VL)] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(TeeInvokeTACommand[# HANDLE ZsTeeInvokeTACommand1 ZsTeeInvokeTACommand2 ZrTeeInvokeTACommand]) >
     =>
-    < TK : TaKernel | api-return : apiReturn(TeeInvokeTACommand , RET , values(VL)) ,
-                      api-state : finished >
+    < TK : TAKernel | api-call : return(TeeInvokeTACommand[# RET # VL]) >
   .
-
-  --- rl [invoke-ta-command-subroutine] :
-  ---   retTrustedOS(openSessionSuccess, TK)
-  ---   < TK : TaKernel | status : normal , api-state : TeeOpenTASession(PARAMS) # 1 , counter : N >
-  ---   =>
-  ---   < TK : TaKernel | api-return : apiReturn(TeeOpenTASession , TEE-SUCCESS , (handle(handleId(N + 1, TK)) , returnOrig(TEE-ORIGIN-TRUSTED-APP))) ,
-  ---                     api-state : finished , counter : N + 2 >
-  --- .
 
 endom

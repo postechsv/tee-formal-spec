@@ -16,59 +16,31 @@ set print color off .
 
 --- [BB-G-OI-1] get-object-info transient success
 search [1] in TEST-AUX :
-  < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
-                    current-api : GetObjectInfo1, api-state : started,
-                    current-params : handle(handleId(1, ta)),
-                    counter : 0, trust-app-id : TESTTA >
-  < handleId(1, ta) : ObjectHandle | oid : t,
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(GetObjectInfo1[# oid(1, ta)]), counter : 0, storage : oid(0, ta) >
+  < oid(1, ta) : ObjHandle | oid : oid(9, ta),
                                         flags : empty,
-                                        pos : pos(0) >
-  < t : TransientObject |
-                           type : TEE-TYPE-AES,
-                           max-size : 128 Bits,
-                           attributes : teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal),
-                           usages : TEE-USAGE-ENCRYPT,
-                           trust-app-id : TESTTA >
+                                        pos : 0 >
+  < oid(9, ta) : TransObj |
+                           type : typeAes,
+                           max-size : 128,
+                           attributes : attr(secretValue, randomAttrVal),
+                           usages : usageEncrypt >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(GetObjectInfo1 , TEE-SUCCESS,
-                                           info(teeObjectInfo(TEE-TYPE-AES,
-                                                              keySize(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)),
-                                                              128 Bits,
-                                                              TEE-USAGE-ENCRYPT,
-                                                              dataSize(0), pos(0), empty))) > .
+  < ta : TAKernel | api-call : return(GetObjectInfo1[# success # teeObjectInfo(typeAes, keySize(attr(secretValue, randomAttrVal)), 128, usageEncrypt, dataSize(0), pos(0), empty)]) > .
 
 --- [BB-G-OI-2] get-object-info persistent success
 search [1] in TEST-AUX :
-  retTrustedOS(storageStatus(storageNormal) , ta)
-  < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
-                    current-api : GetObjectInfo1, api-state : waitStorageCheck,
-                    current-params : info(teeObjectInfo(TEE-TYPE-AES,
-                                                       keySize(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)),
-                                                       128 Bits,
-                                                       TEE-USAGE-ENCRYPT,
-                                                       dataSize(5), pos(0),
-                                                       TEE-DATA-FLAG-ACCESS-READ)),
-                    counter : 0, trust-app-id : TESTTA >
+  (msg retStatus[# (normal).StorageStatus] from oid(0, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(GetObjectInfo1[ZsGetObjectInfo10 # teeObjectInfo(typeAes, keySize(attr(secretValue, randomAttrVal)), 128, usageEncrypt, dataSize(5), pos(0), accessRead)] , 1), counter : 0 >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(GetObjectInfo1 , TEE-SUCCESS,
-                                           info(teeObjectInfo(TEE-TYPE-AES,
-                                                              keySize(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal)),
-                                                              128 Bits,
-                                                              TEE-USAGE-ENCRYPT,
-                                                              dataSize(5), pos(0),
-                                                              TEE-DATA-FLAG-ACCESS-READ))) > .
+  < ta : TAKernel | api-call : return(GetObjectInfo1[# success # teeObjectInfo(typeAes, keySize(attr(secretValue, randomAttrVal)), 128, usageEncrypt, dataSize(5), pos(0), accessRead)]) > .
 
 --- [BB-G-OI-3] get-object-info storage error
 search [1] in TEST-AUX :
-  retTrustedOS(storageStatus(storageCorrupt) , ta)
-  < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
-                    current-api : GetObjectInfo1, api-state : waitStorageCheck,
-                    current-params : empty, counter : 0, trust-app-id : TESTTA >
+  (msg retStatus[# (corrupted).StorageStatus] from oid(0, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(GetObjectInfo1[ZsGetObjectInfo10] , 1), counter : 0 >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(GetObjectInfo1 , TEE-ERROR-CORRUPT-OBJECT) > .
+  < ta : TAKernel | api-call : return(GetObjectInfo1[# errorCorruptObject]) > .
 
 --- ============================================================
 --- RestrictObjectUsage1
@@ -76,33 +48,25 @@ search [1] in TEST-AUX :
 
 --- [BB-G-RU-1] restrict-usage transient success
 search [1] in TEST-AUX :
-  retAttributeTr(empty, TEE-TYPE-AES, TEE-USAGE-ENCRYPT, ta)
-  < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
-                    current-api : RestrictObjectUsage1, api-state : waitReqAttribute,
-                    current-params : (handle(handleId(3, ta)), usages(TEE-USAGE-ENCRYPT)),
-                    counter : 0, trust-app-id : TESTTA >
-  < handleId(3, ta) : ObjectHandle | oid : t,
+  (msg retAttributeTr[# (empty).Set{CryptoAttribute} # typeAes # usageEncrypt] from oid(3, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(RestrictObjectUsage1[# oid(3, ta) # usageEncrypt] , 0), counter : 0 >
+  < oid(3, ta) : ObjHandle | oid : t,
                                         flags : empty,
-                                        pos : pos(0) >
-  < t : TransientObject |
-                           type : TEE-TYPE-AES,
-                           max-size : 128 Bits,
+                                        pos : 0 >
+  < t : TransObj |
+                           type : typeAes,
+                           max-size : 128,
                            attributes : empty,
-                           usages : TEE-USAGE-ENCRYPT,
-                           trust-app-id : TESTTA >
+                           usages : usageEncrypt >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(RestrictObjectUsage1) > .
+  < ta : TAKernel | api-call : return(RestrictObjectUsage1[# noReturnCode]) > .
 
 --- [BB-G-RU-2] restrict-usage storage error
 search [1] in TEST-AUX :
-  retTrustedOS(storageStatus(storageInAccessible) , ta)
-  < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
-                    current-api : RestrictObjectUsage1, api-state : waitStorageCheck,
-                    current-params : empty, counter : 0, trust-app-id : TESTTA >
+  (msg retStatus[# (notAvailable).StorageStatus] from oid(0, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(RestrictObjectUsage1[ZsRestrictObjectUsage10 ZsRestrictObjectUsage11] , 1), counter : 0 >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(RestrictObjectUsage1 , TEE-ERROR-STORAGE-NOT-AVAILABLE) > .
+  < ta : TAKernel | api-call : return(RestrictObjectUsage1[# errorStorageNotAvailable]) > .
 
 --- ============================================================
 --- GetObjectBufferAttribute
@@ -110,46 +74,31 @@ search [1] in TEST-AUX :
 
 --- [BB-G-GB-1] get-buffer-attribute success
 search [1] in TEST-AUX :
-  retAttributeTr(teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal), TEE-TYPE-AES, TEE-USAGE-EXTRACTABLE, ta)
-  < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
-                    current-api : GetObjectBufferAttribute, api-state : waitReqAttribute,
-                    current-params : (handle(handleId(5, ta)),
-                                      constId(TEE-ATTR-SECRET-VALUE)),
-                    counter : 0, trust-app-id : TESTTA >
-  < handleId(5, ta) : ObjectHandle | oid : t,
+  (msg retAttributeTr[# (attr(secretValue, randomAttrVal)).Set{CryptoAttribute} # typeAes # usageExtractable] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(GetObjectBufferAttribute[# oid(5, ta) # secretValue] , 0), counter : 0 >
+  < oid(5, ta) : ObjHandle | oid : t,
                                         flags : empty,
-                                        pos : pos(0) >
-  < t : TransientObject |
-                           type : TEE-TYPE-AES,
-                           max-size : 128 Bits,
-                           attributes : teeAttribute(TEE-ATTR-SECRET-VALUE, randomAttrVal),
-                           usages : TEE-USAGE-EXTRACTABLE,
-                           trust-app-id : TESTTA >
+                                        pos : 0 >
+  < t : TransObj |
+                           type : typeAes,
+                           max-size : 128,
+                           attributes : attr(secretValue, randomAttrVal),
+                           usages : usageExtractable >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(GetObjectBufferAttribute , TEE-SUCCESS,
-                                           constVal(randomAttrVal)) > .
+  < ta : TAKernel | api-call : return(GetObjectBufferAttribute[# success # randomAttrVal]) > .
 
 --- [BB-G-GB-2] get-buffer-attribute not found
 search [1] in TEST-AUX :
-  < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
-                    current-api : GetObjectBufferAttribute, api-state : waitGetBufferAttribute,
-                    current-params : (constId(TEE-ATTR-SECRET-VALUE),
-                                      attrs(empty)),
-                    counter : 0, trust-app-id : TESTTA >
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(GetObjectBufferAttribute[# oid(5, ta) # secretValue # (empty).Set{CryptoAttribute} # usageExtractable] , 2), counter : 0 >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(GetObjectBufferAttribute , TEE-ERROR-ITEM-NOT-FOUND) > .
+  < ta : TAKernel | api-call : return(GetObjectBufferAttribute[# errorItemNotFound]) > .
 
 --- [BB-G-GB-3] get-buffer-attribute storage error
 search [1] in TEST-AUX :
-  retTrustedOS(storageStatus(storageCorrupt) , ta)
-  < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
-                    current-api : GetObjectBufferAttribute, api-state : waitStorageCheck,
-                    current-params : empty, counter : 0, trust-app-id : TESTTA >
+  (msg retStatus[# (corrupted).StorageStatus] from oid(0, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(GetObjectBufferAttribute[ZsGetObjectBufferAttribute0 ZsGetObjectBufferAttribute1] , 1), counter : 0 >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(GetObjectBufferAttribute , TEE-ERROR-CORRUPT-OBJECT) > .
+  < ta : TAKernel | api-call : return(GetObjectBufferAttribute[# errorCorruptObject]) > .
 
 --- ============================================================
 --- GetObjectValueAttribute
@@ -157,47 +106,32 @@ search [1] in TEST-AUX :
 
 --- [BB-G-GV-1] get-value-attribute success
 search [1] in TEST-AUX :
-  retAttributeTr(teeAttribute(TEE-ATTR-RSA-PSS-SALT-LENGTH, attrValue(TEE-ATTR-RSA-PSS-SALT-LENGTH)), TEE-TYPE-AES, empty, ta)
-  < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
-                    current-api : GetObjectValueAttribute, api-state : waitReqAttribute,
-                    current-params : (handle(handleId(6, ta)),
-                                      constId(TEE-ATTR-RSA-PSS-SALT-LENGTH)),
-                    counter : 0, trust-app-id : TESTTA >
-  < handleId(6, ta) : ObjectHandle | oid : t,
+  (msg retAttributeTr[# attr(rsaPssSaltLength, attrValue(1)) # typeAes # (empty).Set{Usage}] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(GetObjectValueAttribute[# oid(6, ta) # rsaPssSaltLength] , 0), counter : 0 >
+  < oid(6, ta) : ObjHandle | oid : t,
                                         flags : empty,
-                                        pos : pos(0) >
-  < t : TransientObject |
-                           type : TEE-TYPE-AES,
-                           max-size : 128 Bits,
-                           attributes : teeAttribute(TEE-ATTR-RSA-PSS-SALT-LENGTH,
-                                                       attrValue(TEE-ATTR-RSA-PSS-SALT-LENGTH)),
-                           usages : empty,
-                           trust-app-id : TESTTA >
+                                        pos : 0 >
+  < t : TransObj |
+                           type : typeAes,
+                           max-size : 128,
+                           attributes : attr(rsaPssSaltLength,
+                                                       attrValue(1)),
+                           usages : empty >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(GetObjectValueAttribute , TEE-SUCCESS,
-                                           constVal(attrValue(TEE-ATTR-RSA-PSS-SALT-LENGTH))) > .
+  < ta : TAKernel | api-call : return(GetObjectValueAttribute[# success # attrValue(1)]) > .
 
 --- [BB-G-GV-2] get-value-attribute not found
 search [1] in TEST-AUX :
-  < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
-                    current-api : GetObjectValueAttribute, api-state : waitGetValueAttribute,
-                    current-params : (constId(TEE-ATTR-RSA-PSS-SALT-LENGTH),
-                                      attrs(empty)),
-                    counter : 0, trust-app-id : TESTTA >
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(GetObjectValueAttribute[# oid(5, ta) # rsaPssSaltLength # (empty).Set{CryptoAttribute} # usageExtractable] , 2), counter : 0 >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(GetObjectValueAttribute , TEE-ERROR-ITEM-NOT-FOUND) > .
+  < ta : TAKernel | api-call : return(GetObjectValueAttribute[# errorItemNotFound]) > .
 
 --- [BB-G-GV-3] get-value-attribute storage not available
 search [1] in TEST-AUX :
-  retTrustedOS(storageStatus(storageInAccessible) , ta)
-  < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
-                    current-api : GetObjectValueAttribute, api-state : waitStorageCheck,
-                    current-params : empty, counter : 0, trust-app-id : TESTTA >
+  (msg retStatus[# (notAvailable).StorageStatus] from oid(0, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(GetObjectValueAttribute[ZsGetObjectValueAttribute0 ZsGetObjectValueAttribute1] , 1), counter : 0 >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(GetObjectValueAttribute , TEE-ERROR-STORAGE-NOT-AVAILABLE) > .
+  < ta : TAKernel | api-call : return(GetObjectValueAttribute[# errorStorageNotAvailable]) > .
 
 --- ============================================================
 --- CloseObject
@@ -205,49 +139,34 @@ search [1] in TEST-AUX :
 
 --- [BB-G-CL-1] close transient object
 search [1] in TEST-AUX :
-  < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
-                    current-api : CloseObject, api-state : started,
-                    current-params : handle(handleId(7, ta)),
-                    counter : 0, trust-app-id : TESTTA >
-  < handleId(7, ta) : ObjectHandle | oid : t,
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(CloseObject[# oid(7, ta)]), counter : 0 >
+  < oid(7, ta) : ObjHandle | oid : t,
                                         flags : empty,
-                                        pos : pos(0) >
-  < t : TransientObject |
-                           type : TEE-TYPE-AES,
-                           max-size : 128 Bits,
+                                        pos : 0 >
+  < t : TransObj |
+                           type : typeAes,
+                           max-size : 128,
                            attributes : empty,
-                           usages : empty,
-                           trust-app-id : TESTTA >
+                           usages : empty >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(CloseObject) > .
+  < ta : TAKernel | api-call : return(CloseObject[# noReturnCode]) > .
 
 --- [BB-G-CL-2] close persistent object
 search [1] in TEST-AUX :
-  < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
-                    current-api : CloseObject, api-state : started,
-                    current-params : handle(handleId(8, ta)),
-                    counter : 0, trust-app-id : TESTTA >
-  < handleId(8, ta) : ObjectHandle | oid : p,
-                                           flags : TEE-DATA-FLAG-ACCESS-READ,
-                                           pos : pos(0) >
-  < p : PersistentObject | type : TEE-TYPE-AES,
-                           max-size : 128 Bits,
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(CloseObject[# oid(8, ta)]), counter : 0 >
+  < oid(8, ta) : ObjHandle | oid : oid(1, oid(0, ta)),
+                                           flags : accessRead,
+                                           pos : 0 >
+  < oid(1, oid(0, ta)) : PersistObj | type : typeAes,
+                           max-size : 128,
                            attributes : empty,
                            usages : empty,
-                           data-stream-id : taOid(10, ta),
-                           file-name : testFileId,
-                           trust-app-id : TESTTA >
+                           file-name : testFileId >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(CloseObject) > .
+  < ta : TAKernel | api-call : return(CloseObject[# noReturnCode]) > .
 
 --- [BB-G-CL-3] close null handle
 search [1] in TEST-AUX :
-  < ta : TaKernel | status : normal, api-call : noCall, api-return : noReturn,
-                    current-api : CloseObject, api-state : started,
-                    current-params : handle(TEE-HANDLE-NULL),
-                    counter : 0, trust-app-id : TESTTA >
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(CloseObject[# null]), counter : 0 >
 =>*
-  < ta : TaKernel | api-state : finished,
-                    api-return : apiReturn(CloseObject , handle(TEE-HANDLE-NULL)) > .
+  < ta : TAKernel | api-call : return(CloseObject[# noReturnCode # null]) > .

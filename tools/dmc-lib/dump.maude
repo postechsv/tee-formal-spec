@@ -1,0 +1,80 @@
+--- Reflection dumper used by tools/gen-dmc.py (generated copy lives in the cache dir).
+mod DMC-DUMP is
+  pr META-LEVEL .
+  pr STRING .
+
+  vars OD OS : OpDecl .
+  vars OSS OSS2 : OpDeclSet .
+  var TL : TypeList .
+  var T T1 T2 : Type .
+  var AS AS2 : AttrSet .
+  var A : Attr .
+  var Q : Qid .
+  var EQS : EquationSet .
+  var EQ : Equation .
+  var SD : SubsortDecl .
+  var SDS : SubsortDeclSet .
+  var TM T3 : Term .
+  var C : Condition .
+  var TLS : TypeList .
+  var TLX : TypeList .
+
+  op dump : Qid -> String .
+  op opsStr : OpDeclSet -> String .
+  op ownOpsStr : OpDeclSet -> String .
+  op ownOpStr : OpDecl -> String .
+  op opStr : OpDecl -> String .
+  op tlStr : TypeList -> String .
+  op tStr : Type -> String .
+  op attrStr : AttrSet -> String .
+  op attrOne : Attr -> String .
+  op subsStr : SubsortDeclSet -> String .
+  op subStr : SubsortDecl -> String .
+  op eqsStr : EquationSet -> String .
+  op eqStr : Equation -> String .
+  op owiseCount : EquationSet -> String .
+
+  eq dump(Q) = "M@@" + string(Q) + "@@" + opsStr(getOps(upModule(Q, true)))
+             + ownOpsStr(getOps(upModule(Q, false)))
+             + subsStr(getSubsorts(upModule(Q, true)))
+             + eqsStr(getEqs(upModule(Q, false))) + "%%" .
+
+  eq opsStr(none) = "" .
+  eq ownOpsStr(none) = "" .
+  eq ownOpsStr(OD OSS) = ownOpStr(OD) + ownOpsStr(OSS) .
+  eq ownOpStr(op Q : TL -> T [AS] .) = "D@@" + string(Q) + "@@" + tlStr(TL) + "@@" + tStr(T) + "@@" + attrStr(AS) + "%%" .
+  eq opsStr(OD OSS) = opStr(OD) + opsStr(OSS) .
+
+  ceq opStr(op Q : TL -> T [AS] .) = "C@@" + string(Q) + "@@" + tlStr(TL) + "@@" + tStr(T) + "@@" + attrStr(AS) + "%%"
+    if hasCtorAttr(AS) .
+  eq opStr(op Q : TL -> T [AS] .) = "F@@" + string(Q) + "@@" + tlStr(TL) + "@@" + tStr(T) + "@@" + attrStr(AS) + "%%" [owise] .
+
+
+  op hasCtorAttr : AttrSet -> Bool .
+  eq hasCtorAttr(ctor AS) = true .
+  eq hasCtorAttr(AS) = false [owise] .
+
+  eq tlStr(nil) = "" .
+  eq tlStr(T1 TLS) = tStr(T1) + " " + tlStr(TLS) .
+
+  eq tStr(T:Sort) = string(T:Sort) .
+  eq tStr(T) = "KIND" [owise] .
+
+  eq attrStr(none) = "" .
+  eq attrStr(A AS) = attrOne(A) + " " + attrStr(AS) .
+  eq attrOne(ctor) = "ctor" .
+  eq attrOne(assoc) = "assoc" .
+  eq attrOne(comm) = "comm" .
+  eq attrOne(idem) = "idem" .
+  eq attrOne(owise) = "owise" .
+  eq attrOne(A) = "other" [owise] .
+
+  eq subsStr(none) = "" .
+  eq subsStr(SD SDS) = subStr(SD) + subsStr(SDS) .
+  eq subStr(subsort T1 < T2 .) = "S@@" + tStr(T1) + "@@" + tStr(T2) + "%%" .
+
+  eq eqsStr(none) = "" .
+  eq eqsStr(EQ EQS) = eqStr(EQ) + eqsStr(EQS) .
+  eq eqStr(eq TM = T3 [AS] .) = "E@@" + attrStr(AS) + "%%" .
+  eq eqStr(ceq TM = T3 if C [AS] .) = "E@@" + attrStr(AS) + "%%" .
+endm

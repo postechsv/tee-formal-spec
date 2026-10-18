@@ -1,41 +1,31 @@
 --- This file defines the abstract trusted application (TA) class and the commands it uses
 
-omod TASK is
-  pr INVOKE-MESSAGE .
-
-  sorts Task Task? .
-  subsort Task < Task? .
-
-  op task : InvokeMessage Oid -> Task [ctor] .
-  op noTask : -> Task? [ctor] .
-endom
-
+--- The client-service attribute of a TA: either {RI, FID}, the requesting RA RI and the
+--- service function FID, or none.
+--- @kind interface
+--- @feature client
 omod CLIENT-SERVICE is
   pr CONFIGURATION .
   pr IMP-FUNC-SIG .
 
-  --- Executable representation of the paper's Pair{Oid,APIFuncId}? type.
   sorts ClientService ClientService? .
   subsort ClientService < ClientService? .
 
-  op clientService : Oid APIFuncId -> ClientService [ctor] .
-  op noClientService : -> ClientService? [ctor] .
+  op {_,_} : Oid APIFuncId -> ClientService [ctor] .
+  op none : -> ClientService? [ctor] .
 endom
 
 --- This module defines the abstract TA class.
 
+--- @kind state
+--- @feature ta-session
 omod TRUST-APP is
   pr PROGRAM-APP .
   pr TA-KERNEL .
-  pr TASK .
   pr CLIENT-SERVICE .
 
   class TrustedApp | client-service : ClientService? .
   subclass TrustedApp < App TAKernel .
-
---- Model/Implementation Specific Version
-  class TrustApp | task : Task?, task-counter : Nat, state-changed : Bool .
-  subclass TrustApp < TrustedApp TaKernel ProgramApp .
 endom
 
 --- This module defines messages for TAs.
@@ -56,6 +46,8 @@ endom
 
 --- This module defines basic behaviors for TAs.
 
+--- @kind behavior
+--- @feature ta-session
 omod TRUST-APP-BEHAVIOR is
   pr TRUST-APP .
   pr TEE-API-IMP-PROGRAM .
@@ -63,196 +55,97 @@ omod TRUST-APP-BEHAVIOR is
   pr INVOKE-TA-CALL .
 
   var RI : Oid .
-  var TI : TaInstId .
-  var SID : SessionId .
-  var FUNC : FuncId .
+  var TI : Oid .
+  var FID : FuncId .
   var P : Program .
   var KS : KConfig .
-  var VL : ValueList .
-  var N : Nat .
+  var RET : ArgList .
+  var VL : ArgList .
 
---- Version In Paper
-  --- crl [handle-invoke-ta] :
-  ---   invkTa(TI , RI , ARGS)
-  ---   < TI : TrustedApp | proc : none , prog : P >
-  ---   => 
-  ---   < TI : TrustedApp | proc : run(P , F , VL) >
-  ---   invkTa(TI , RI , ARGS) 
-  --- if F := getFunc(ARGS) /\ VL := getParams(ARGS) 
-  --- .
-
---- Model/Implementation Specific Version (2 rules)
---- Receive parameters from RA.
-
-  rl [accept-invoke-ta] :
-    invokeTA(TI , {SID , FUNC , VL} , RI)
-    < TI : TrustApp | task : noTask , running : false >
-    =>
-    < TI : TrustApp | client-service : clientService(RI , FUNC) ,
-                      task : task({SID , FUNC , VL} , RI) >
-  .
-
---- Handle REE request by running TA program.
-
+  --- handle-invoke-ta: an invkTa request for the service FID with the values VL starts the
+  --- program of the TA with mkConf(syscalls P, FID, VL) and records {RI, FID} as its
+  --- client-service.
   rl [handle-invoke-ta] :
-    < TI : TrustApp | task : task({SID , FUNC , VL} , RI) , task-counter : N ,
-                      proc : none , prog : P , running : false >
-    => 
-    < TI : TrustApp | task-counter : N + 1 ,
-                      proc : run(syscalls P , FUNC , VL) , running : true > 
+    (msg invkTa[FID VL] from RI to TI)
+    < TI : TrustedApp | proc : none , client-service : none ,
+                        prog : P , status : (normal).AppStatus >
+    =>
+    < TI : TrustedApp | proc : mkConf(syscalls P , FID , VL) ,
+                        client-service : {RI , FID} >
   .
 
---- Version In Paper
-  --- crl [handle-invoke-ta-finish] :
-  ---   invkTa(TI , RI , ARGS)
-  ---   < TI : TrustedApp | proc : KS >
-  ---   => 
-  ---   < TI : TrustedApp | proc : none >
-  ---   invkTaRet(RI , RV)
-  --- if finished(KS) /\ RV := getRes(KS) /\ RI := getRequestor(ARGS) 
-  --- .
-
---- Model/Implementation Specific Version
---- Return REE request results.
-
-  rl [handle-invoke-ta-finish] :
-    < TI : TrustApp | proc : (k(.K) KS) , task : task({SID , FUNC , VL} , RI) , running : true >
-    => 
-    < TI : TrustApp | proc : none , client-service : noClientService ,
-                      task : noTask , running : false >
-    invokeTAReturn({SID , FUNC , readReturn(FUNC, KS)} , RI) 
-  .
+  --- handle-invoke-ta-finish: when the program has finished, the output values of the
+  --- service are returned to the RA as invkTaRet, and the TA is available again.
+  crl [handle-invoke-ta-finish] :
+    < TI : TrustedApp | proc : (k(.K) KS) , client-service : {RI , FID} ,
+                        prog : P , status : (normal).AppStatus >
+    =>
+    < TI : TrustedApp | proc : none , client-service : none >
+    (msg invkTaRet[RET] from TI to RI)
+  if RET := getVals(getOutVars(getFuncParams(P , FID)), KS) .
 
 endom
 
 --- This module defines IMP call and return for trust applications.
 
+--- @kind behavior
+--- @feature imp
 omod TRUST-APP-IMP-BEHAVIOR is
   pr TRUST-APP .
   pr IMP-AUX .
   pr TEE-API-IMP-PROGRAM .
   pr TEE-API-IMP-CALL .
 
-  var TI : TaInstId .
+  var TI : Oid .
   var K : K .
   var TEEAPI : TeeApi .
-  var VL : ValueList .
+  var VL : ArgList .
   var EL : ExpList .
   var KS : KConfig .
   var RET : ReturnCode? .
-  var PARAMS : Set{TeeApiParam} .
+  var PARAMS : ArgList .
+  var TF : TeeApi .
+  var PL : ExpList .
+  var IN : ExpList .
+  var OUT : ExpList .
 
 ------------------------------------------------------------
 --- IMP Semantics
 ------------------------------------------------------------
 
---- Version In Paper
-  --- crl [tee-api-call] :
-  ---   < TI : TrustedApp | proc : (k(FUNC(VL) ~> K) KS) >
-  ---   => 
-  ---   < TI : TrustedApp | proc : (k($wait(FUNC) ~> K) KS) , api-call : FUNC(VL) >
-  --- if isTeeApi(FUNC) 
-  --- .
+  --- tee-api-call: a call of a TEE API TF, made by a TA that is normal and has no call in
+  --- progress, runs the stub of TF as a function call: its parameters PL are zipped with the
+  --- arguments EL, and the stub body (signature, $inH, $wait, $out, return) is invoked.  The
+  --- signature PL | IN | OUT is read from the stub (getFuncParams). The rule needs a stub for TF:
+  --- getStub gives skip for a name with no stub.
+  ---@dmc keep-builtin
+  crl [tee-api-call] :
+    < TI : TrustedApp | proc : (k({ TF(EL) } ~> K) KS) ,
+                        api-call : noCall , status : (normal).AppStatus >
+    =>
+    < TI : TrustedApp | proc : (k(zip(nil, zipL(PL, EL)) ~> invoke(getStub(TF)) ~> K) KS) >
+  if pSig(PL, IN, OUT) := getFuncParams(TF) /\ getStub(TF) =/= skip .
 
-
---- Model/Implementation Specific Version (2 rules)
-  rl [tee-api-call] :
-    < TI : TrustApp | proc : (k($in(VL) ~> $waitSysCall(TEEAPI) ~> K) KS) ,
-                      api-state : noState , api-call : noCall , api-return : noReturn ,
-                      current-api : noApi , current-params : empty >
-    => 
-    < TI : TrustApp | proc : (k($waitSysCall(TEEAPI) ~> K) KS) ,
-                      api-call : makeCall(TEEAPI , VL), state-changed : false > 
-  .
-
+  --- tee-api-call-accept: the $in task of a TEE API call, with the TA in normal status and
+  --- no call in progress, accepts the call and sets its api-call to init.  The call itself
+  --- is run by the object rules of the TEE API.
   rl [tee-api-call-accept] :
-    < TI : TrustApp | api-call : apiCall(TEEAPI , PARAMS) , api-state : noState , 
-                      current-api : noApi , current-params : empty >
-    => 
-    < TI : TrustApp | api-call : noCall , api-state : started ,
-                      current-api : TEEAPI , current-params : PARAMS, state-changed : false >
+    < TI : TrustedApp | proc : (k($in(VL) ~> $wait(TEEAPI) ~> K) KS) ,
+                        api-call : noCall , status : (normal).AppStatus >
+    =>
+    < TI : TrustedApp | proc : (k($wait(TEEAPI) ~> K) KS) ,
+                        api-call : init(makeCall(TEEAPI , VL)) >
   .
 
---- Version In Paper
-  --- crl [tee-api-call-return] :
-  ---   < TI : TrustedApp | proc : (k($wait(FUNC) ~> $out(XL) ~> K) KS) ,
-  ---               api-call : return(FUNC , VL) >
-  ---   => 
-  ---   < TI : TrustedApp | proc : (k(STMT ~> K) KS) , api-call : noCall >
-  --- if isTeeApi(FUNC) /\ STMT := makeRetStmt(VL , XL) 
-  --- .
-
---- Actual Implemenation
+  --- tee-api-call-return: when the call has returned, the $out task is replaced by the
+  --- statement makeReturnStmt(TEEAPI, RET, PARAMS, EL), which assigns the return values to
+  --- the output parameters, and the api-call is set to noCall.
   rl [tee-api-call-return] :
-    < TI : TrustApp | proc : (k($waitSysCall(TEEAPI) ~> $out(EL) ~> K) KS) , api-state : finished ,
-                      api-return : apiReturn(TEEAPI , RET , PARAMS) , current-api : TEEAPI >
-    => 
-    < TI : TrustApp | proc : (k(makeReturnStmt(TEEAPI , RET , PARAMS , EL) ~> K) KS) ,
-                      api-state : noState , api-return : noReturn , 
-                      current-api : noApi , current-params : empty, state-changed : false > 
-  .
-
-endom
-
-omod TRUST-APP-IMP-BEHAVIOR-INVISIBLE is
-  pr TRUST-APP-IMP-BEHAVIOR .
-
-  var TI : TaInstId .
-  var K : K .
-  var TEEAPI : TeeApi .
-  var VL : ValueList .
-  var EL : ExpList .
-  var KS : KConfig .
-  var RET : ReturnCode? .
-  var PARAMS : Set{TeeApiParam} .
-
-------------------------------------------------------------
---- IMP Semantics
-------------------------------------------------------------
-
---- Version In Paper
-  --- crl [tee-api-call] :
-  ---   < TI : TrustedApp | proc : (k(FUNC(VL) ~> K) KS) >
-  ---   => 
-  ---   < TI : TrustedApp | proc : (k($wait(FUNC) ~> K) KS) , api-call : FUNC(VL) >
-  --- if isTeeApi(FUNC) 
-  --- .
-
---- Model/Implementation Specific Version (2 rules)
-  eq
-    < TI : TrustApp | proc : (k($in(VL) ~> $waitSysCall(TEEAPI) ~> K) KS) ,
-                      api-state : noState , api-call : noCall , api-return : noReturn ,
-                      current-api : noApi , current-params : empty >
-    =
-    < TI : TrustApp | proc : (k($waitSysCall(TEEAPI) ~> K) KS) ,
-                      api-call : makeCall(TEEAPI , VL), state-changed : false > 
-  .
-
-  eq
-    < TI : TrustApp | api-call : apiCall(TEEAPI , PARAMS) , api-state : noState , 
-                      current-api : noApi , current-params : empty >
-    =
-    < TI : TrustApp | api-call : noCall , api-state : started ,
-                      current-api : TEEAPI , current-params : PARAMS, state-changed : false >
-  .
-
---- Version In Paper
-  --- crl [tee-api-call-return] :
-  ---   < TI : TrustedApp | proc : (k($wait(FUNC) ~> $out(XL) ~> K) KS) ,
-  ---               api-call : return(FUNC , VL) >
-  ---   => 
-  ---   < TI : TrustedApp | proc : (k(STMT ~> K) KS) , api-call : noCall >
-  --- if isTeeApi(FUNC) /\ STMT := makeRetStmt(VL , XL) 
-  --- .
-
---- Actual Implemenation
-  eq
-    < TI : TrustApp | proc : (k($waitSysCall(TEEAPI) ~> $out(EL) ~> K) KS) , api-state : finished ,
-                      api-return : apiReturn(TEEAPI , RET , PARAMS) , current-api : TEEAPI >
-    =
-    < TI : TrustApp | proc : (k(makeReturnStmt(TEEAPI , RET , PARAMS , EL) ~> K) KS) ,
-                      api-state : noState , api-return : noReturn , 
-                      current-api : noApi , current-params : empty, state-changed : false > 
+    < TI : TrustedApp | proc : (k($wait(TEEAPI) ~> $out(EL) ~> K) KS) ,
+                        api-call : return(TEEAPI[# RET PARAMS]) >
+    =>
+    < TI : TrustedApp | proc : (k(makeReturnStmt(TEEAPI, RET, PARAMS, EL) ~> K) KS) ,
+                        api-call : noCall >
   .
 
 endom

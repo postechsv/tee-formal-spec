@@ -1,0 +1,46 @@
+--- Regression checks for API paths completed from GlobalPlatform v1.3.1.
+load ../../src/main
+load ../cases/aux
+
+mod COMPLETION-TEST is
+  var ZvHandle : Oid .
+  pr TEE-BEHAVIOR .
+  pr TEST-AUX .
+  var C : Configuration .
+  var TESTDIGEST : List{Data} .
+  var CIPHERRESULT : List{Data} .
+  var TESTMAC : List{Data} .
+  var P : Program .
+endm
+
+search [1] in COMPLETION-TEST :
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(StartPersistentObjectEnumerator[# ZvHandle # storageIllegalValue]) >
+=>*
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : return(StartPersistentObjectEnumerator[# errorItemNotFound]) > .
+
+--- Enumerator handles use the same top-level object representation.
+search [1] in COMPLETION-TEST :
+  < testTa : TAKernel | api-call : init(ResetPersistentObjectEnumerator[# oid(101, testTa)]) >
+  < oid(1, testTa) : EnumeratorObject |
+      persistent-objects : testFileId, enumerating : true >
+  < oid(101, testTa) : ObjectEnumHandle | oid : oid(1, testTa) >
+=>*
+  < testTa : TAKernel | api-call : return(ResetPersistentObjectEnumerator[# noReturnCode]) >
+  < oid(1, testTa) : EnumeratorObject |
+      persistent-objects : empty, enumerating : false >
+  < oid(101, testTa) : ObjectEnumHandle | oid : oid(1, testTa) > .
+
+--- Enumeration resolves duplicate file identifiers in the TA's Storage only.
+search [1] in COMPLETION-TEST :
+  (msg reqNextObject[# testFileId] from testTa to oid(0, otherTa))
+  < oid(0, oid(0, testTa)) : PersistObj |
+      type : typeDes, max-size : 64, attributes : empty,
+      usages : empty, file-name : testFileId >
+  < oid(0, oid(0, otherTa)) : PersistObj |
+      type : typeAes, max-size : 128, attributes : empty,
+      usages : usageEncrypt, file-name : testFileId,
+      data-stream : (randomData zeroData) >
+=>1
+  (msg retNextObject[# teeObjectInfo(typeAes, keySize(empty), 128,
+                              usageEncrypt, dataSize(2), pos(0), empty)] from oid(0, otherTa) to testTa)
+  C .

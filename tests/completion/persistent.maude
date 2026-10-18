@@ -1,0 +1,154 @@
+--- Regression checks for API paths completed from GlobalPlatform v1.3.1.
+load ../../src/main
+load ../cases/aux
+
+mod COMPLETION-TEST is
+  var ZvFileId : FileName .
+  var ZvFlags : Set{DataAccessFlag} .
+  var ZvStorageId : StorageIdentifier .
+  pr TEE-BEHAVIOR .
+  pr TEST-AUX .
+  var C : Configuration .
+  var TESTDIGEST : List{Data} .
+  var CIPHERRESULT : List{Data} .
+  var TESTMAC : List{Data} .
+  var P : Program .
+endm
+
+--- Top-level operation-handle regression coverage appears below.
+--- Unimplemented and illegal trusted-storage identifiers report ITEM_NOT_FOUND.
+search [1] in COMPLETION-TEST :
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(OpenPersistentObject[# storagePerso # ZvFileId # ZvFlags]) >
+=>*
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : return(OpenPersistentObject[# errorItemNotFound # null]) > .
+
+--- Creating a persistent object can consume an abstract top-level transient handle.
+search [1] in COMPLETION-TEST :
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(createPersistent[# ZvStorageId # testFileId # accessRead # oid(101, testTa) # (nil).List{Data} # dataSize(0) # null]), storage : oid(0, testTa), counter : 0, TA-ATTS:AttributeSet >
+  < oid(101, testTa) : ObjHandle | oid : oid(1, testTa), flags : empty, pos : 0 >
+  < oid(1, testTa) : TransObj | initialized : true, type : typeAes, attributes : empty, usages : usageExtractable, max-size : 128 >
+  < oid(0, testTa) : Storage | status : (normal).StorageStatus, files : empty, counter : 0 >
+=>*
+  < testTa : TAKernel | api-call : return(createPersistent[# success # oid(0, oid(0, testTa))]), TA-ATTS:AttributeSet > C:Configuration .
+
+--- Transforming a transient object advances its Storage object (two identifiers per persistent object: handle and object).
+search [1] in COMPLETION-TEST :
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(createPersistent[# ZvStorageId # testFileId # accessRead # oid(101, testTa) # (nil).List{Data} # dataSize(0) # null]), storage : oid(0, testTa), counter : 0, TA-ATTS:AttributeSet >
+  < oid(101, testTa) : ObjHandle | oid : oid(1, testTa), flags : empty, pos : 0 >
+  < oid(1, testTa) : TransObj | initialized : true, type : typeAes, attributes : empty, usages : usageExtractable, max-size : 128 >
+  < oid(0, testTa) : Storage | status : (normal).StorageStatus, files : empty, counter : 0 >
+=>*
+  < oid(0, testTa) : Storage | files : testFileId, counter : 2, STO-ATTS:AttributeSet > C:Configuration .
+
+--- OpenPersistentObject resolves an object through the handle's oid relation.
+search [1] in COMPLETION-TEST :
+  (msg openPersistentHandle[# testFileId # accessRead # 3] from testTa to oid(0, testTa))
+  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId >
+=>*
+  (msg finishOpenPersistentHandle[# oid(3, testTa)] from oid(0, testTa) to testTa)
+  C .
+
+--- A second open conflicts when an existing reader did not share read access.
+search [1] in COMPLETION-TEST :
+  (msg openPersistentHandle[# testFileId # (accessRead,
+                        shareRead) # 2] from testTa to oid(0, testTa))
+  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId >
+  < oid(1, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
+      flags : accessRead >
+=>*
+  (msg failOpenPersistentHandle[] from oid(0, testTa) to testTa)
+  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId >
+  < oid(1, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
+      flags : accessRead > .
+
+--- Opening is scoped to the TA's Storage even when another Storage contains
+--- an object with the same file identifier.
+search [1] in COMPLETION-TEST :
+  (msg openPersistentHandle[# testFileId # accessRead # 4] from testTa to oid(0, otherTa))
+  < oid(0, oid(0, testTa)) : PersistObj | file-name : testFileId >
+  < oid(0, oid(0, otherTa)) : PersistObj | file-name : testFileId >
+=>*
+  (msg finishOpenPersistentHandle[# oid(4, testTa)] from oid(0, otherTa) to testTa)
+  < oid(4, testTa) : ObjHandle |
+      oid : oid(0, oid(0, otherTa)),
+      flags : accessRead,
+      pos : 0 >
+  < oid(0, oid(0, testTa)) : PersistObj | file-name : testFileId >
+  < oid(0, oid(0, otherTa)) : PersistObj | file-name : testFileId > .
+
+--- Overwrite removes only the old object in the TA's Storage namespace.
+search [1] in COMPLETION-TEST :
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(createPersistent[# ZvStorageId # testFileId # (accessRead , overwrite) # null # (nil).List{Data} # dataSize(0) # null]), storage : oid(0, testTa), counter : 0, TA-ATTS:AttributeSet >
+  < oid(0, testTa) : Storage | status : (normal).StorageStatus, files : testFileId, counter : 0 >
+  < oid(0, oid(0, testTa)) : PersistObj | file-name : testFileId, data-stream : nil, REST1:AttributeSet >
+  < oid(0, oid(0, otherTa)) : PersistObj | file-name : testFileId, data-stream : nil, REST3:AttributeSet >
+=>*
+  < testTa : TAKernel | api-call : return(createPersistent[# success # oid(0, oid(0, testTa))]), TA-ATTS:AttributeSet >
+  < oid(0, oid(0, otherTa)) : PersistObj | file-name : testFileId, data-stream : nil, REST3:AttributeSet > C:Configuration .
+
+--- CloseAndDelete invalidates every top-level handle that references the owner.
+search [1] in COMPLETION-TEST :
+  (msg deletePersistent[# oid(0, testTa)] from testTa to oid(101, testTa))
+  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId >
+  < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
+      flags : accessWriteMeta >
+  < oid(102, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)) >
+=>*
+  (msg finishDeletePersistent[# testFileId] from oid(101, testTa) to testTa) .
+
+--- RenamePersistentObject authorizes through a top-level write-meta handle.
+search [1] in COMPLETION-TEST :
+  (msg renamePersistent[# newTestFileId # oid(0, testTa)] from testTa to oid(101, testTa))
+  < oid(1, testTa) : PersistObj |
+      file-name : testFileId >
+  < oid(101, testTa) : ObjHandle | oid : oid(1, testTa),
+      flags : accessWriteMeta >
+=>*
+  (msg finishRenamePersistent[# testFileId] from oid(1, testTa) to testTa)
+  C .
+
+--- Persistent attributes are available through a top-level object handle.
+search [1] in COMPLETION-TEST :
+  (msg getAttrs[] from testTa to oid(101, testTa))
+  < oid(1, testTa) : PersistObj |
+      type : typeAes, attributes : empty,
+      usages : usageExtractable >
+  < oid(101, testTa) : ObjHandle | oid : oid(1, testTa) >
+=>1
+  (msg retAttrs[# typeAes # (empty).Set{CryptoAttribute} # usageExtractable] from oid(101, testTa) to testTa)
+  C .
+
+--- Storage-side file bookkeeping: the TA's storage removes a deleted file from its file set.
+search [1] in COMPLETION-TEST :
+  (msg notifyFileDeletion[# testFileId] from testTa to oid(0, testTa))
+  < testTa : TAKernel | storage : oid(0, testTa) >
+  < oid(0, testTa) : Storage | files : (testFileId, newTestFileId), counter : 2 >
+=>1
+  (msg acceptNotification[] from oid(0, testTa) to testTa)
+  < testTa : TAKernel | storage : oid(0, testTa) >
+  < oid(0, testTa) : Storage | files : newTestFileId, counter : 2 >
+  C .
+
+--- Storage-side rename: the old file name is replaced by the new one.
+search [1] in COMPLETION-TEST :
+  (msg notifyFileRename[# testFileId # newTestFileId] from testTa to oid(0, testTa))
+  < testTa : TAKernel | storage : oid(0, testTa) >
+  < oid(0, testTa) : Storage | files : testFileId, counter : 2 >
+=>1
+  (msg acceptNotification[] from oid(0, testTa) to testTa)
+  < testTa : TAKernel | storage : oid(0, testTa) >
+  < oid(0, testTa) : Storage | files : newTestFileId, counter : 2 >
+  C .
+
+--- A notification changes only the Storage it is sent to.
+search [1] in COMPLETION-TEST :
+  (msg notifyFileDeletion[# testFileId] from testTa to oid(0, testTa))
+  < testTa : TAKernel | storage : oid(0, testTa) >
+  < oid(0, testTa) : Storage | files : testFileId, counter : 0 >
+  < oid(0, otherTa) : Storage | files : testFileId, counter : 6 >
+=>1
+  (msg acceptNotification[] from oid(0, testTa) to testTa)
+  < testTa : TAKernel | storage : oid(0, testTa) >
+  < oid(0, testTa) : Storage | files : empty, counter : 0 >
+  < oid(0, otherTa) : Storage | files : testFileId, counter : 6 >
+  C .

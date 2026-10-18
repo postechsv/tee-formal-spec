@@ -108,10 +108,13 @@ Equality of the DMC build (plan)
   * A prelude sort with an equality (Oid of CONFIGURATION, no module of its own) gets its equations in
     prelude_eq_module variants, with the same per-constructor-set rule.
   * Auxiliary equalities: DM-AUX-EQ-MAP (mapEq, Map{Var,Nat}) and DM-AUX-EQ-EXP (expListEq, ExpList), each
-    importing only aux_req of its kind; a variant imports the one it calls.  The equality of List{X} is the
+    importing only aux_req of its kind; a variant imports the one it calls.  expListEq compares elements with
+    expElemEq, one equation per pair of element kinds (Value, Var, PExp, FExp call, FExp without arguments):
+    the same kind compares the parts with their own `.=.`, different kinds are false.  The equations of
+    expListEq use only the shapes nil and (E L), since the identity axiom of `,` matches any non-empty list.  The equality of List{X} is the
     function listEqX in LIST-EQ-X (defined from the element equality); an equation module imports LIST-EQ-X
-    only when its equations call listEqX.  listEqX has equations for nil, one element (the element itself)
-    and two or more elements, because a one-element list is the element term in the DMC build.
+    only when its equations call listEqX.  listEqX has equations for nil and for two or more elements, each
+    shape (EX LX); a one-element list is matched by (EX LX) with LX = nil (see list_eq_block).
   * Constants of closed sorts (close-sort) are abbreviations for their constructor terms in the DMC build
     (closed_rewrite_code, const_terms and qid_terms in the manifest), so every pattern in the output is a
     constructor term.  A constant of a sort declared with several ranges is qualified (qualc, QUAL_CONSTS).
@@ -1305,6 +1308,34 @@ AUX_EXP = 'DM-AUX-EQ-EXP'
 LIST_EXP = ('ExpList', 'ValueList', 'VarList')
 
 
+# Element sorts of an ExpList: Value and Var (LExp) are subsorts of Exp, and PExp (T X) and FExp (F(EL) and
+# F()) are constructor sorts.  Each kind has its own equality: the `.=.` of its parts.
+EXP_ELEM_SORTS = ('Value', 'Var', 'ImpType', 'FuncId')
+EXP_CTOR_MOD = 'IMP-EXP'     # declares the PExp constructor (ImpType Var) and the FExp ones (FuncId ...)
+# (kind, left pattern, right pattern) of each element kind: Value, Var, PExp (T X), FExp call F(EL), FExp F()
+EXP_KINDS = [
+    ('V', 'VA', 'VB'),
+    ('X', 'XA', 'XB'),
+    ('P', '(TA XA)', '(TB XB)'),
+    ('C', 'FA(EA)', 'FB(EB)'),
+    ('N', 'FA()', 'FB()'),
+]
+EXP_SAME_RHS = {'V': 'VA .=. VB', 'X': 'XA .=. XB', 'P': '(TA .=. TB) and (XA .=. XB)',
+                'C': '(FA .=. FB) and expListEq(EA, EB)', 'N': 'FA .=. FB'}
+
+
+def exp_elem_eqs():
+    """expElemEq over the kinds of Exp: same kind -> the equality of the parts; different kinds -> false."""
+    out = []
+    for i, (ka, la, _) in enumerate(EXP_KINDS):
+        for j, (kb, _, rb) in enumerate(EXP_KINDS):
+            if i == j:
+                out.append('  eq expElemEq(%s, %s) = %s .' % (la, rb, EXP_SAME_RHS[ka]))
+            else:
+                out.append('  eq expElemEq(%s, %s) = false .' % (la, rb))
+    return out
+
+
 def aux_module(gen):
     """DM-AUX-EQ-MAP and DM-AUX-EQ-EXP: owise-free equalities of the auxiliary argument sorts (Map{Var,Nat},
     ExpList).  Each imports only what its own equations use (aux_req), and an equation module imports the
@@ -1331,25 +1362,24 @@ def aux_module(gen):
         gen.dm_imports[AUX_EXP] = imports
         out.extend(['mod %s is' % AUX_EXP] + ['  pr %s .' % m for m in imports] + [
             '  op expListEq : ExpList ExpList -> Bool .',
+            '  op expElemEq : Exp Exp -> Bool .',
+            # `.=.` of the element parts; the same profiles as the sort modules, so the declarations merge
+            '  op _.=._ : Value Value -> Bool .',
+            '  op _.=._ : Var Var -> Bool .',
+            '  op _.=._ : ImpType ImpType -> Bool .',
+            '  op _.=._ : FuncId FuncId -> Bool .',
+            '  vars VA VB : Value .',
+            '  vars XA XB : Var .',
+            '  vars TA TB : ImpType .',
+            '  vars FA FB : FuncId .',
+            '  vars EA EB : ExpList .',
             '  vars E E\' : Exp .',
             '  vars L L\' : ExpList .',
-            '  eq expListEq(E, E\') = E .=. E\' .',
             '  eq expListEq(nil, nil) = true .',
-            '  eq expListEq(nil, E\') = false .',
-            '  eq expListEq(E, nil) = false .',
-            '  eq expListEq((E , L), (E\' , L\')) = (E .=. E\') and expListEq(L, L\') .',
-            '  eq expListEq((nil , L), (nil , L\')) = expListEq(L, L\') .',
-            '  eq expListEq((E , L), (nil , L\')) = false .',
-            '  eq expListEq((nil , L), (E\' , L\')) = false .',
-            '  eq expListEq((E , L), E\') = false .',
-            '  eq expListEq(E, (E\' , L\')) = false .',
-            '  eq expListEq((nil , L), E\') = false .',
-            '  eq expListEq(E, (nil , L\')) = false .',
-            '  eq expListEq((E , L), nil) = false .',
             '  eq expListEq(nil, (E\' , L\')) = false .',
-            '  eq expListEq((nil , L), nil) = false .',
-            '  eq expListEq(nil, (nil , L\')) = false .',
-            'endm', ''])
+            '  eq expListEq((E , L), nil) = false .',
+            '  eq expListEq((E , L), (E\' , L\')) = expElemEq(E, E\') and expListEq(L, L\') .',
+        ] + exp_elem_eqs() + ['endm', ''])
     return out
 
 
@@ -2944,7 +2974,8 @@ def aux_req(gen, kind):
     if kind == 'map':
         names = [visible_decl(gen, MAP_VN), gen.sort_mod.get('Var')]
     else:
-        names = [gen.sort_mod.get('Exp'), gen.sort_mod.get('ExpList')]
+        names = [gen.sort_mod.get(x) for x in EXP_ELEM_SORTS] + [gen.sort_mod.get('Exp'), gen.sort_mod.get('ExpList'),
+                                                                 EXP_CTOR_MOD]
     return set(m for m in names if m and m in gen.mod_order and m not in gen.main_mods)
 
 
@@ -3286,17 +3317,13 @@ def list_eq_block(gen, a, upgraded, users):
     if D is not None:
         lines.append('  pr %s .' % D)
     lines.append('  op %s : %s %s -> Bool .' % (f, S, S))
-    # a list of one element is the element itself (identity of the juxtaposition), so the shapes are:
-    # nil, one element, or (EX LX) with at least two elements; each pair of shapes has its own equation
+    # The identity axiom of the juxtaposition makes (EX LX) match every non-empty list (and a one-element
+    # list, with LX = nil), so only the shapes nil and (EX LX) are written.  An equation with a bare
+    # element pattern or with a (nil LX) pattern would overlap with these and give conflicting results.
     lines += ['  vars EX EY : %s .' % a, '  vars LX LY : %s .' % S,
               '  eq %s(nil, nil) = true .' % f,
-              '  eq %s(nil, EY) = false .' % f,
-              '  eq %s(EX, nil) = false .' % f,
-              '  eq %s(EX, EY) = %s .' % (f, arg_eq(gen, 'EX', 'EY', a)),
-              '  eq %s(nil, (EX LX)) = false .' % f,
+              '  eq %s(nil, (EY LY)) = false .' % f,
               '  eq %s((EX LX), nil) = false .' % f,
-              '  eq %s((EX LX), EY) = false .' % f,
-              '  eq %s(EX, (EY LY)) = false .' % f,
               '  eq %s((EX LX), (EY LY)) = %s and %s(LX, LY) .' % (f, arg_eq(gen, 'EX', 'EY', a), f),
               'endfm', '']
     return lines
@@ -3858,7 +3885,8 @@ def run_build_tests(maude, build_dir, cmds, cache, late=None, bundles=None):
         if not re.search(r'^reduce in ', block, re.M):
             continue
         rm = re.search(r'^result [^:]+: (.*)$', block, re.M | re.S)
-        res_blocks.append(norm(rm.group(1)) if rm else 'NO-RESULT')
+        # the last block also holds Maude's closing 'Bye.' line (quit in the input)
+        res_blocks.append(re.sub(r'\s*Bye\.$', '', norm(rm.group(1))) if rm else 'NO-RESULT')
     if len(res_blocks) != len(keep):
         raise GenError('ground check: %d results for %d usable commands in %s'
                        % (len(res_blocks), len(keep), build_dir))
@@ -3940,6 +3968,46 @@ def load_warnings(maude, cache, out_dir, tests_out):
     return found
 
 
+# Hand-written ground checks of the ExpList equality (DM-AUX-EQ-EXP): the expected Bool is what `==` gives
+# on the same ExpLists in the plain build.  They run in TEE-BEHAVIOR, which imports the equation variants
+# that the element equalities need.  The elements cover every kind of Exp (Value, Var, PExp, FExp).
+AUX_LIST_CHECK_MODULE = 'TEE-BEHAVIOR'
+AUX_LIST_CHECKS = [
+    ('nil', 'nil', 'true'),
+    ('nil', '(# 1, # 2)', 'false'),
+    ('(# 1, # 2)', 'nil', 'false'),
+    ('(# 1, # 2)', '(# 1, # 2)', 'true'),
+    ('(# 1, # 2)', '(# 1, # 3)', 'false'),
+    ('(# 1, # 2)', '# 1', 'false'),
+    ('# 1', '# 1', 'true'),
+    ('(int mkVar(1))', '(int mkVar(1))', 'true'),
+    ('(int mkVar(1))', '(int mkVar(2))', 'false'),
+    ('(int mkVar(1))', '(TEE-Handle * mkVar(1))', 'false'),
+    ('(int mkVar(1), int mkVar(2))', '(int mkVar(1), int mkVar(2))', 'true'),
+    ('(int mkVar(1), int mkVar(2))', '(int mkVar(1), int mkVar(3))', 'false'),
+    ('(mkFuncId(0)(# 1))', '(mkFuncId(0)(# 1))', 'true'),
+    ('(mkFuncId(0)(# 1))', '(mkFuncId(0)(# 2))', 'false'),
+    ('(mkFuncId(0)())', '(mkFuncId(0)())', 'true'),
+    ('(mkFuncId(0)())', '(mkFuncId(1)())', 'false'),
+    ('(mkFuncId(0)())', '(int mkVar(1))', 'false'),
+    ('(# 1, mkFuncId(0)())', '(# 1, mkFuncId(0)())', 'true'),
+]
+
+
+def aux_list_checks(gen, check_build, maude):
+    """Run AUX_LIST_CHECKS in the DMC check build.  Returns (count, mismatches, skipped) in the shape of
+    ground_check; a mismatch is ((module, command), expected, got)."""
+    if AUX_LIST_CHECK_MODULE not in gen.mod_order:
+        return 0, [], ['expListEq checks skipped (no %s module)' % AUX_LIST_CHECK_MODULE]
+    cmds = [(AUX_LIST_CHECK_MODULE, 'expListEq(%s, %s)' % (x, y)) for x, y, _ in AUX_LIST_CHECKS]
+    got = run_build_tests(maude, check_build, cmds, gen.cache_dir)
+    mism = []
+    for (x, y, want), (mod, cmd), g in zip(AUX_LIST_CHECKS, cmds, got):
+        if g != want:
+            mism.append(((mod, cmd), want, 'NO-RESULT' if g is None else g))
+    return len(cmds), mism, []
+
+
 def ground_check(gen, orig_dir, out_dir, maude):
     groups = {}
     tests = []
@@ -3991,12 +4059,15 @@ def ground_check(gen, orig_dir, out_dir, maude):
                 stuck.append((t, a[idx], b[idx]))
                 continue
             mism.append((t, a[idx], b[idx]))
+    aux_total, aux_mism, aux_skip = aux_list_checks(gen, out_dir, maude)
+    mism += aux_mism
+    skipped += aux_skip
     if unparsed:
         skipped.append('%d unparsable test commands skipped' % unparsed)
     if stuck:
         skipped.append('%d stuck (unreduced numEq on ill-formed ground terms): %s'
                        % (len(stuck), '; '.join(sorted(set('%s::%s' % t[0] for t in stuck)))))
-    return len(uniq), mism, skipped
+    return len(uniq) + aux_total, mism, skipped
 
 
 IMPORT_RE = re.compile(r'^(?:pr|protecting|ex|extending|inc|including)\s+([^\s{*.]+)')

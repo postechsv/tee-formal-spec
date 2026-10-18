@@ -13,6 +13,7 @@
 #                           only: not cached, does not change the build; V=0 is the default
 #   make dmc                same as make DMC=1 (the setting is cached like the features)
 #   make check-dmc          regenerate the DMC build and run gen-dmc's ground checks (exit 2 on mismatch)
+#   make docs               build the documentation site: build/docs/index.html (reads src/ and docs/overview.html)
 #   make help               list features, test selection and current values
 #   make clean NAME=t       remove build/t
 #
@@ -66,7 +67,7 @@ V ?= $(or $(VERBOSE),0)
 Q = $(if $(filter 1,$(V)),,@)
 VFLAG = $(if $(filter 1,$(V)),-v)
 
-.PHONY: all src test test-api test-checks dmc check-dmc help config clean distclean FORCE
+.PHONY: all src test test-api test-checks dmc check-dmc docs help config clean distclean FORCE
 
 all: src
 
@@ -156,6 +157,11 @@ dmc:
 check-dmc:
 	@$(MAKE) --no-print-directory -B DMC=1 DMC_CHECK=1 src
 
+# Static documentation site from src/ (tools/gen-docs.py). Independent of NAME and the features.
+# docs/overview.html is the hand-written body of index.html.
+docs: docs/overview.html tools/gen-docs.py
+	python3 tools/gen-docs.py --src src --out build/docs --overview docs/overview.html --check
+
 help config:
 	@echo "NAME=$(NAME)  OUT=$(OUT)  MAUDE=$(MAUDE)"
 	@echo "features:"
@@ -172,6 +178,7 @@ help config:
 	@echo "  make test-checks  search/red checks (run-checks.py)"
 	@echo "  make dmc       same as DMC=1 (cached)"
 	@echo "  make check-dmc regenerate the DMC build and run its ground checks"
+	@echo "  make docs      build the documentation site in build/docs (open build/docs/index.html)"
 	@echo "  make clean     remove $(OUT)"
 	@echo "  make distclean remove build/"
 

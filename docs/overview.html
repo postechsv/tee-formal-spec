@@ -1,0 +1,172 @@
+<h1>TEE Formal Specification</h1>
+
+<p>This project is an executable specification, in Maude and Full Maude, of the GlobalPlatform TEE Internal Core API. It models successful calls, error returns, panics, storage conditions, and the state transitions of cryptographic operations. It also models the trusted application (TA) kernel, the trusted OS, and the rich (REE) application that calls into the TEE, so a complete call can be run from the REE side into a TA and back.</p>
+
+<p>The specification is a set of object-oriented modules over one configuration, and its behaviour is given by rewrite rules. Models are run by rewriting and explored with <code>search</code>, which the test suites in <code>tests/</code> use. Storage is represented by [[class:Storage]] objects, and API calls observe it only through messages. The entry point is [[file:main]], which defines [[mod:TEE-BEHAVIOR]].</p>
+
+<h2>Architecture</h2>
+
+<p>The system state is a Maude configuration of objects, messages, and K computations. Each TA instance is a [[class:TrustedApp]], a subclass of [[class:App]] (program and running K computation) and of [[class:TAKernel]]. The TAKernel holds the TA status (<code>normal</code>, <code>outOfMemory</code>, or <code>panic</code>, see [[sort:AppStatus]]), the call status <code>api-call</code>, the storage reference, and a counter for fresh identifiers (module [[mod:TA-KERNEL]]).</p>
+
+<p>The main components are these.</p>
+<ul>
+  <li><strong>REE and TEE environments.</strong> A [[class:Device]] holds an [[sort:Envs]] value, a pair of configurations <code>{REE}|{TEE}</code>. The rules [[rule:accept-smc-request]] and [[rule:return-smc-request]] of [[mod:EXECUTION-ENV]] move secure monitor call (SMC) messages across that boundary.</li>
+  <li><strong>Rich application.</strong> [[class:RichApp]] is the REE client. Its behaviour, in [[mod:RICH-APP-BEHAVIOR]], turns a call to <code>teecInvokeCommand</code> into an SMC request, and assigns the returned values when the response arrives.</li>
+  <li><strong>Trusted OS.</strong> [[class:TrustedOS]] is the OS kernel of the TEE. It holds the session map from session identifiers to TA instances, the queues of OS services, and the map from application identifiers to TA programs. It creates a TA instance when a TA asks to open a session with it, and it forwards SMC requests to the TA of their session. Its behaviour is in [[mod:TEE-OS-BEHAVIOR]].</li>
+  <li><strong>Storage.</strong> [[class:Storage]] holds the file set of one TA. It answers the storage messages declared in [[mod:TEE-MSG]], such as <code>getStatus</code>, <code>checkFileExist</code>, and <code>notifyFileDeletion</code>. Each TA instance has its own storage object, created with it.</li>
+  <li><strong>Sessions.</strong> [[class:Session]] records the request and return of one TA-to-TA session (module [[mod:SESSION-BEHAVIOR]]).</li>
+  <li><strong>Objects and handles.</strong> Transient objects ([[class:TransientObject]]), persistent objects ([[class:PersistentObject]]), enumerators ([[class:EnumeratorObject]]), and crypto operations ([[class:CryptoOperation]]) are top-level objects. Handles are top-level objects too, subclasses of [[class:Handle]] such as [[class:ObjectHandle]], whose <code>oid</code> names the object they refer to (module [[mod:HANDLE]]).</li>
+</ul>
+
+<p>The figure shows the messages between the main components during one invocation of a TA command.</p>
+
+<figure>
+<svg viewBox="0 0 800 400" width="100%" role="img" aria-label="Components of one device and the messages between them" xmlns="http://www.w3.org/2000/svg" style="max-width:800px;display:block;margin:0 auto;">
+  <defs>
+    <marker id="ov-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+    <marker id="ov-arrow-rev" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M10,0 L0,5 L10,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+  <!-- environments -->
+  <rect x="20" y="30" width="170" height="350" rx="8" fill="none" stroke="currentColor" stroke-opacity="0.5" stroke-dasharray="6 4"/>
+  <text x="34" y="54" font-size="15" fill="var(--muted,currentColor)" font-family="sans-serif">REE</text>
+  <rect x="230" y="30" width="550" height="350" rx="8" fill="none" stroke="currentColor" stroke-opacity="0.5" stroke-dasharray="6 4"/>
+  <text x="244" y="54" font-size="15" fill="var(--muted,currentColor)" font-family="sans-serif">TEE</text>
+  <text x="100" y="20" font-size="14" text-anchor="middle" fill="var(--muted,currentColor)" font-family="sans-serif">smc boundary</text>
+
+  <!-- RichApp -->
+  <a href="src/ree-app.html#class-RichApp">
+    <rect x="36" y="140" width="138" height="72" rx="6" fill="var(--bg-alt,none)" stroke="var(--accent,#2563eb)" stroke-width="2"/>
+    <text x="105" y="170" font-size="16" font-weight="600" text-anchor="middle" fill="currentColor" font-family="sans-serif">RichApp</text>
+    <text x="105" y="192" font-size="14" text-anchor="middle" fill="currentColor" font-family="sans-serif">REE client</text>
+  </a>
+
+  <!-- TrustedOS -->
+  <a href="src/os.html#class-TrustedOS">
+    <rect x="262" y="140" width="158" height="72" rx="6" fill="var(--bg-alt,none)" stroke="currentColor" stroke-width="1.5"/>
+    <text x="341" y="170" font-size="16" font-weight="600" text-anchor="middle" fill="currentColor" font-family="sans-serif">TrustedOS</text>
+    <text x="341" y="192" font-size="14" text-anchor="middle" fill="currentColor" font-family="sans-serif">sessions, services</text>
+  </a>
+
+  <!-- TrustedApp -->
+  <a href="src/tee-app.html#class-TrustedApp">
+    <rect x="540" y="140" width="220" height="72" rx="6" fill="var(--bg-alt,none)" stroke="currentColor" stroke-width="1.5"/>
+    <text x="650" y="170" font-size="16" font-weight="600" text-anchor="middle" fill="currentColor" font-family="sans-serif">TrustedApp</text>
+    <text x="650" y="192" font-size="14" text-anchor="middle" fill="currentColor" font-family="sans-serif">TAKernel, program</text>
+  </a>
+
+  <!-- Storage -->
+  <a href="src/os.html#class-Storage">
+    <rect x="540" y="300" width="220" height="58" rx="6" fill="var(--bg-alt,none)" stroke="currentColor" stroke-width="1.5"/>
+    <text x="650" y="324" font-size="16" font-weight="600" text-anchor="middle" fill="currentColor" font-family="sans-serif">Storage</text>
+    <text x="650" y="344" font-size="14" text-anchor="middle" fill="currentColor" font-family="sans-serif">file set of the TA</text>
+  </a>
+
+  <!-- Objects and handles -->
+  <a href="src/handle.html#class-ObjectHandle">
+    <rect x="262" y="300" width="158" height="58" rx="6" fill="var(--bg-alt,none)" stroke="currentColor" stroke-width="1.5"/>
+    <text x="341" y="324" font-size="16" font-weight="600" text-anchor="middle" fill="currentColor" font-family="sans-serif">Objects</text>
+    <text x="341" y="344" font-size="14" text-anchor="middle" fill="currentColor" font-family="sans-serif">and handles</text>
+  </a>
+
+  <!-- SMC messages RichApp <-> TrustedOS -->
+  <line x1="174" y1="164" x2="262" y2="164" stroke="currentColor" stroke-width="1.5" marker-end="url(#ov-arrow)"/>
+  <text x="226" y="156" font-size="14" text-anchor="middle" fill="currentColor" font-family="sans-serif">smcReq</text>
+  <line x1="262" y1="190" x2="174" y2="190" stroke="currentColor" stroke-width="1.5" marker-end="url(#ov-arrow)"/>
+  <text x="226" y="212" font-size="14" text-anchor="middle" fill="currentColor" font-family="sans-serif">smcRet</text>
+
+  <!-- invocation TrustedOS <-> TrustedApp -->
+  <line x1="420" y1="164" x2="540" y2="164" stroke="currentColor" stroke-width="1.5" marker-end="url(#ov-arrow)"/>
+  <text x="480" y="156" font-size="14" text-anchor="middle" fill="currentColor" font-family="sans-serif">invkTa</text>
+  <line x1="540" y1="190" x2="420" y2="190" stroke="currentColor" stroke-width="1.5" marker-end="url(#ov-arrow)"/>
+  <text x="480" y="212" font-size="14" text-anchor="middle" fill="currentColor" font-family="sans-serif">invkTaRet</text>
+
+  <!-- storage messages -->
+  <line x1="650" y1="212" x2="650" y2="300" stroke="currentColor" stroke-width="1.5" marker-start="url(#ov-arrow-rev)" marker-end="url(#ov-arrow)"/>
+  <text x="664" y="254" font-size="14" fill="currentColor" font-family="sans-serif">storage</text>
+  <text x="664" y="272" font-size="14" fill="currentColor" font-family="sans-serif">messages</text>
+
+  <!-- object creation and access -->
+  <line x1="560" y1="212" x2="420" y2="300" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#ov-arrow)"/>
+  <text x="500" y="282" font-size="14" fill="currentColor" font-family="sans-serif">create, read</text>
+</svg>
+<figcaption>One TEE device. The REE client (RichApp) sends an SMC request (smcReq) across the boundary. The TrustedOS forwards it to the TA as invkTa and receives invkTaRet, and the answer returns to the REE as smcRet. Storage messages pass between the TA and its own Storage object. The TA creates and reads handles and objects (dashed arrow). Solid arrows are messages; labels are the message names in the model.</figcaption>
+</figure>
+
+<h2>Life of an API call</h2>
+
+<p>The clearest example is <code>TEE_AllocateTransientObject</code> ([[op:AllocateTransientObject]]), which completes in one step. A TA program reaches it through a trusted stub built by [[op:defineSysCall]] (module [[mod:TEE-API-IMP-PROG-AUX]]). The stub sends its arguments with <code>$in</code> and waits with <code>$wait</code>. The call status ([[sort:CallStatus]]) moves through <code>noCall</code>, <code>init</code>, <code>exec</code>, <code>final</code>, and <code>return</code>, and the call is an [[op:apiCall]] (module [[mod:TEE-API-CALL]]). The steps are these.</p>
+
+<ol>
+  <li>[[rule:tee-api-call-accept]] (in [[mod:TRUST-APP-IMP-BEHAVIOR]]). When the TA is <code>normal</code> and its call status is <code>noCall</code>, it accepts the <code>$in</code> arguments and sets the status to <code>init(makeCall(...))</code>. For this API, [[op:makeCall]] is defined in [[mod:TRANSIENT-OBJECT-TEE-CALL]]. It maps the object type and key size to <code>type(...)</code> and <code>size(...)</code>.</li>
+  <li>[[rule:allocate-transient-success]] (in [[mod:TRANSIENT-OBJECT-BEHAVIOR]]). From <code>init</code>, when the type and size are supported, the call moves directly to <code>return</code> with <code>retCode(success)</code> and the new handle <code>oid(N + 1, TK)</code>. The counter advances by two. The rule creates a [[class:TransientObject]] with identifier <code>oid(N, TK)</code>, no attributes, and <code>initialized : false</code>. It creates the handle with [[op:freshTransientHandle]].</li>
+  <li>[[rule:tee-api-call-return]] (in [[mod:TRUST-APP-IMP-BEHAVIOR]]). When the status is <code>return</code>, the pending <code>$out</code> is replaced by the statement from [[op:makeReturnStmt]]. On success that statement stores the handle in the out parameter and sets <code>ret</code> to <code>success</code>. The call status goes back to <code>noCall</code>.</li>
+</ol>
+
+<p>Two error paths of the same call return without creating an object. [[rule:allocate-transient-out-of-memory-err]] returns <code>errorOutOfMemory</code> when the TA status is <code>outOfMemory</code>. [[rule:allocate-transient-not-supported-err]] returns <code>errorNotSupported</code> when the type or size is not supported. The rule that would set the status to <code>outOfMemory</code> is commented out in [[file:tee-kernel]], so that status is reached only from an initial configuration.</p>
+
+<p>Calls with more than one step use <code>exec</code>, with a step number as the second argument. <code>TEE_OpenPersistentObject</code> enters <code>exec(...,0)</code> when it sends <code>getStatus</code> to the storage, and <code>exec(...,1)</code> after a <code>normal</code> <code>retStatus</code> arrives, when it sends <code>checkFileExist</code> (rule <code>open-persistent-status-normal</code>). It enters <code>final</code> when the file exists, and [[rule:open-persistent-success]] returns the handle.</p>
+
+<p>Calls that involve another TA use the same statuses, with messages to the [[class:TrustedOS]]. [[rule:open-session-subroutine]] sends an <code>openTASession</code> request, [[rule:open-ta-session]] creates the TA instance and its storage, and [[rule:open-session-success]] creates the [[class:Session]] and returns its handle. <code>TEE_InvokeTACommand</code> stores its request in the session object; the rules of [[mod:SESSION-BEHAVIOR]] run the target TA, and [[rule:invoke-ta-command-top-level-return]] sends the result back to the caller.</p>
+
+<p>A TA command invoked from the REE follows these steps.</p>
+<ol>
+  <li>[[rule:invoke-ta-smc]] creates <code>smcReq</code> from the <code>$in</code> arguments of the RichApp's <code>teecInvokeCommand</code>.</li>
+  <li>[[rule:accept-smc-request]] moves the request into the TEE configuration.</li>
+  <li>[[rule:handle-smc-request]] sends <code>invkTa</code> from the TrustedOS to the TA of the session.</li>
+  <li>[[rule:handle-invoke-ta]] starts the TA program with <code>mkConf</code> and records the requester as <code>client-service</code>.</li>
+  <li>[[rule:handle-invoke-ta-finish]] returns <code>invkTaRet</code> when the program has finished. [[rule:handle-smc-request-finish]] turns it into <code>smcRet</code>.</li>
+  <li>[[rule:return-smc-request]] moves the response back to the REE. [[rule:invoke-ta-finish]] assigns the output values.</li>
+</ol>
+<p>If the TA is in <code>panic</code> while a request is pending, [[rule:return-smc-request-panic]] returns <code>errorTargetDead</code> to the REE application instead.</p>
+
+<h2>Model programs</h2>
+
+<p>A TA is a program in a small typed imperative language, defined in [[file:imp]]. It has C-like statements, functions with value and reference parameters, structs, arrays, and labelled <code>goto</code>. Its semantics is a K-style rewriting system over a configuration of cells (<code>k</code>, environment, store, call stack; sort [[sort:KConfig]]).</p>
+
+<p>API functions are reached through trusted stubs declared in [[file:tee-imp]]. Each stub, made by [[op:defineSysCall]], waits for the API status and writes the outputs back. [[op:makeCall]] converts the arguments into a parameter set of [[sort:TeeApiParam]], and [[op:makeReturnStmt]] converts the result back into statements. A TA program <code>P</code> starts with the <code>syscalls</code> prefix of [[mod:TEE-API-IMP-PROGRAM]] and runs as <code>mkConf(syscalls P, FID, VL)</code>, where <code>FID</code> is the command. [[file:app]] builds the configuration only for a well-typed program; otherwise the result is <code>illTyped</code>.</p>
+
+<h2>Errors and panics</h2>
+
+<p>Errors defined by the API are return codes: a failing call returns <code>retCode(RC)</code>, for example <code>errorOutOfMemory</code>, <code>errorNotSupported</code>, or <code>errorItemNotFound</code>. Storage failures are mapped to return codes by <code>storageErrCode</code> in [[mod:TEE-OS-BEHAVIOR]].</p>
+
+<p>Programmer errors are panics, which set the TA status to <code>panic</code>. [[mod:GENERAL-PANIC]] covers null handles: [[op:nullHandlePanics]] lists the APIs for which the null handle is an error, and [[rule:null-handle-panic]] applies it. Access rules live in the feature group files, for example [[rule:delete-access-panic]] in [[mod:PERSISTENT-PANIC]] and [[rule:read-access-panic]] in [[mod:DATA-STREAM-PANIC]].</p>
+
+<h2>Feature groups</h2>
+
+<p>The feature table is in <code>mk/features.mk</code>. Each feature in the table below drops its files from the build when it is set to 0.</p>
+
+<table>
+  <thead>
+    <tr><th>Feature</th><th>Files</th><th>Notes</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>TRANSIENT</code></td><td>[[file:transient]]</td><td>Transient object API. The shared module [[file:transient-object]] is always loaded.</td></tr>
+    <tr><td><code>PERSISTENT</code></td><td>[[file:persistent]], [[file:persistent-panic]]</td><td>Persistent object API and storage errors. The shared module [[file:persistent-object]] is always loaded.</td></tr>
+    <tr><td><code>GENERIC</code></td><td>[[file:generic]]</td><td>Generic object API, for either kind of object.</td></tr>
+    <tr><td><code>DATA_STREAM</code></td><td>[[file:data-stream]], [[file:data-stream-panic]]</td><td>Persistent data stream access. Requires <code>PERSISTENT</code>.</td></tr>
+    <tr><td><code>ENUMERATOR</code></td><td>[[file:enumerator]]</td><td>Persistent object enumeration. Requires <code>PERSISTENT</code>.</td></tr>
+    <tr><td><code>CRYPTO</code></td><td>[[file:cryptographic]], [[file:crypto-panic]]</td><td>Cryptographic operation APIs. Keys are transient objects, so this requires <code>TRANSIENT</code>.</td></tr>
+  </tbody>
+</table>
+
+<p>All other files, including the client, OS, handle, and IMP files, are always loaded. The protected persistent object behaviour and the TA termination rules are commented out in the current sources.</p>
+
+<h2>Reading guide</h2>
+
+<p>Read these files in this order.</p>
+<ol>
+  <li>README.md, then [[file:main]], for the list of modules that make up the model.</li>
+  <li>[[file:tee-kernel]] and [[file:tee-api-call]], for the TA kernel and the call status.</li>
+  <li>[[file:tee-app]] and [[file:ree-app]], for the TA and the REE client, and the invocation rules.</li>
+  <li>[[file:os]] and [[file:os-service]], for the environments, the TrustedOS, and the storage messages.</li>
+  <li>[[file:handle]], for handles and their creation.</li>
+  <li>[[file:transient]], then [[file:tee-imp]], for one complete API group and the stubs that call it.</li>
+  <li>[[file:tee-client]] and [[file:tee-panic]], for the client API and the general panics.</li>
+  <li>[[file:imp]], for the program language, and [[file:app]], for how a program is started.</li>
+</ol>
+
+<p>The generated index pages list every module, sort, class, operator, and rule: <a href="modules.html">modules.html</a>, <a href="sorts.html">sorts.html</a>, <a href="ops.html">ops.html</a>, and <a href="rules.html">rules.html</a>.</p>

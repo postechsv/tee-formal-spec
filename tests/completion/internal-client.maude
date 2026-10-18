@@ -55,7 +55,7 @@ search [1] in COMPLETION-TEST :
 --- A received invocation runs the TA service to completion: the TA answers with invkTaRet
 --- carrying the output value of res (22), and it is available again with no client-service.
 search [1] in COMPLETION-TEST :
-  (msg invkTa[addService (# 10, # 12, # 0)] from testRa to testTa)
+  (msg invkTa[addService (# 10 # 12 # 0)] from testRa to testTa)
   < testTa : TrustedApp |
       proc : none, prog : serviceProg, client-service : none,
       status : (normal).AppStatus, storage : oid(0, testTa), os-kernel : osId,
@@ -71,7 +71,7 @@ search [1] in COMPLETION-TEST :
 --- parameter res is declared with the value of its argument (0), and addService is called
 --- with the input values 3 and 4, so the output res is 7.
 search [1] in COMPLETION-TEST :
-  mkConf(serviceProg, addService, (# 3, # 4, # 0))
+  mkConf(serviceProg, addService, # 3 # 4 # 0)
 =>+
   k(.K) stack(nilStack) env((res |-> LOC) ; ENVM) store((LOC |-> # 7) ; MEMM) KSM:KConfig
   .
@@ -79,7 +79,7 @@ search [1] in COMPLETION-TEST :
 --- TeeInvokeTACommand resolves a top-level session handle in both directions.
 --- The session object is oid(1, testTa); its handle is oid(2, testTa).
 search [1] in COMPLETION-TEST :
-  (msg reqInvoke[# main # (nil).ImpList] from testTa to oid(2, testTa))
+  (msg reqInvoke[# main # argNil] from testTa to oid(2, testTa))
   < oid(1, testTa) : Session | req : noReq >
   < oid(2, testTa) : TaSessionHandle | oid : oid(1, testTa) >
 =>1
@@ -87,10 +87,10 @@ search [1] in COMPLETION-TEST :
 
 search [1] in COMPLETION-TEST :
   < oid(1, testTa) : Session |
-      ret : {oid(2, testTa), main, testTa, nil} >
+      ret : {oid(2, testTa), main, testTa, argNil} >
   < oid(2, testTa) : TaSessionHandle | oid : oid(1, testTa) >
 =>1
-  (msg finishReqInvoke[# main # (nil).ImpList] from oid(2, testTa) to testTa)
+  (msg finishReqInvoke[# main # argNil] from oid(2, testTa) to testTa)
   C .
 
 --- A TA that panics while serving the request of RA testRa returns target-dead to testRa,
@@ -110,7 +110,7 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   C
   < testTa : TrustedApp |
-      proc : mkConf(allocProg, main, nil), prog : allocProg, client-service : none,
+      proc : mkConf(allocProg, main, argNil), prog : allocProg, client-service : none,
       status : (normal).AppStatus, api-call : noCall, counter : 0, TAATTS:AttributeSet >
 =>+
   < testTa : TrustedApp |

@@ -81,7 +81,7 @@ Equality of the DMC build (plan)
   * A sort gets `_.=._` (variant equations, Bool results True/False) when its constructors (dmc_ctors:
     every reflected constructor and constant over all modules, plus the closed constructors) are structural:
     numeric arguments (numEq), Bool (boolEq), a Set (mutual subset), Map{Var,Nat} (mapEq), a List{X} or a
-    comma list ExpList/ValueList/VarList (listEqX, expListEq), or other structural sorts.  Constants only:
+    comma list ExpList/VarList (listEqX, expListEq), or other structural sorts.  Constants only:
     pairwise.  The `_.=._` declaration goes into the sort's own module.
   * A sort whose constructors are not all visible from its declaring module (`late` sorts, or a constructor
     cycle) gets its equations in equation modules (PRE_MAIN), written to dm-eq.maude and loaded by main.maude
@@ -1305,7 +1305,7 @@ def arg_eq(gen, x, y, srt):
 MAP_VN = 'Map{Var,Nat}'
 AUX_MAP = 'DM-AUX-EQ-MAP'
 AUX_EXP = 'DM-AUX-EQ-EXP'
-LIST_EXP = ('ExpList', 'ValueList', 'VarList')
+LIST_EXP = ('ExpList', 'VarList')
 
 
 # Element sorts of an ExpList: Value and Var (LExp) are subsorts of Exp, and PExp (T X) and FExp (F(EL) and
@@ -2422,8 +2422,8 @@ def args_status(gen, mod, cx, pats, nodes):
 
 
 def sort_elem_of(sort):
-    """Element sort of a comma list sort (ExpList -> Exp, ValueList -> Value, VarList -> Var)."""
-    return {'ExpList': 'Exp', 'ValueList': 'Value', 'VarList': 'Var'}[sort]
+    """Element sort of a comma list sort (ExpList -> Exp, VarList -> Var)."""
+    return {'ExpList': 'Exp', 'VarList': 'Var'}[sort]
 
 
 def refine_options(gen, mod, cx, N, P, reason):

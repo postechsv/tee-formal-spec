@@ -22,8 +22,8 @@ omod RICH-APP-BEHAVIOR is
   var RI : Oid .
   var K : K .
   var SID : SessionId .
-  var VL : ValueList .
-  var RET : ValueList .
+  var VL : ArgList .
+  var RET : ArgList .
   var OUT : ExpList .
   var KS : KConfig .
   var FID : FuncId .
@@ -32,9 +32,9 @@ omod RICH-APP-BEHAVIOR is
   var V : Value .
 
 --- assign(OUT, RET) stores the output values RET into the output expressions OUT.
-  op assign : ExpList ValueList -> Stmt .
-  eq assign((E, EL), (V, VL)) = E := V ; assign(EL, VL) .
-  eq assign(nil, nil) = skip .
+  op assign : ExpList ArgList -> Stmt .
+  eq assign((E, EL), (V VL)) = E := V ; assign(EL, VL) .
+  eq assign(nil, argNil) = skip .
 
 ------------------------------------------------------------
 --- IMP Semantics
@@ -42,7 +42,7 @@ omod RICH-APP-BEHAVIOR is
 
 --- invoke-ta-smc: the $in task of TEEC_InvokeCommand creates the SMC request.
   rl [invoke-ta-smc] :
-    < RI : RichApp | proc : (k($in(# SID , # FID , VL) ~> $wait(teecInvokeCommand) ~> K) KS) >
+    < RI : RichApp | proc : (k($in(# SID # FID VL) ~> $wait(teecInvokeCommand) ~> K) KS) >
     =>
     < RI : RichApp | proc : (k($wait(teecInvokeCommand) ~> K) KS) >
     smcReq(RI, SID, FID, VL)

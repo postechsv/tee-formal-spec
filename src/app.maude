@@ -19,7 +19,7 @@ omod PROGRAM-APP-AUX is
   var T U : ImpType .
   var V : Value .
   var P : Program .
-  var VL : ValueList .
+  var VL : ArgList .
   var KS : KConfig .
   var K : K .
   var ENV : Map{Var,Nat} .
@@ -77,27 +77,27 @@ omod PROGRAM-APP-AUX is
   --- entry of VL, and then calls FUNC.  An output parameter is passed by reference, so the
   --- caller reads it back after the call; an input parameter is passed with its value.  Only
   --- the output parameters are declared here.
-  op callFunc : Program FuncId ValueList -> K .
+  op callFunc : Program FuncId ArgList -> K .
   ceq callFunc(P, FUNC, VL) = outDecls(PARAMS, VL) ~> FUNC(callArgs(PARAMS, VL)) ;
   if PARAMS := getFuncParams(P, FUNC) .
 
   --- outDecls(PARAMS, VL): declares each output parameter X of PARAMS and assigns it the
   --- matching value of VL.  Input parameters are skipped.
-  op outDecls : ExpList ValueList -> K .
-  ceq outDecls((T X, PARAMS), (V, VL))
+  op outDecls : ExpList ArgList -> K .
+  ceq outDecls((T X, PARAMS), (V VL))
     = hoistPExp(U X) ~> X := V ; ~> outDecls(PARAMS, VL)
   if isOutType(T) /\ U := pointee(T) .
   ---@dmc owise enumerate(T)
-  eq outDecls((T X, PARAMS), (V, VL)) = outDecls(PARAMS, VL) [owise] .
-  eq outDecls(nil, nil) = .K .
+  eq outDecls((T X, PARAMS), (V VL)) = outDecls(PARAMS, VL) [owise] .
+  eq outDecls(nil, argNil) = .K .
 
   --- callArgs(PARAMS, VL): the actual arguments of a call, X for each output parameter and
   --- the value V for each input parameter.
-  op callArgs : ExpList ValueList -> ExpList .
-  ceq callArgs((T X, PARAMS), (V, VL)) = X , callArgs(PARAMS, VL) if isOutType(T) .
+  op callArgs : ExpList ArgList -> ExpList .
+  ceq callArgs((T X, PARAMS), (V VL)) = X , callArgs(PARAMS, VL) if isOutType(T) .
   ---@dmc owise enumerate(T)
-  eq callArgs((T X, PARAMS), (V, VL)) = V , callArgs(PARAMS, VL) [owise] .
-  eq callArgs(nil, nil) = nil .
+  eq callArgs((T X, PARAMS), (V VL)) = V , callArgs(PARAMS, VL) [owise] .
+  eq callArgs(nil, argNil) = nil .
 
   --- pointee(T): the type U that the pointer or reference type T (U * or U &) refers to.
   op pointee : ImpType -> ImpType .
@@ -108,7 +108,7 @@ omod PROGRAM-APP-AUX is
   --- callFunc(P, FUNC, VL) in the k cell.  The other cells start in their initial state, with
   --- the labels cell holding the labels of P.  The configuration is built only when P is well
   --- typed; otherwise the result is illTyped.
-  op mkConf : Program FuncId ValueList -> KConfig .
+  op mkConf : Program FuncId ArgList -> KConfig .
   ceq mkConf(P, FUNC, VL)
     = k(hoistK(getSList(P)) ~> $genv ~> P ~> callFunc(P, FUNC, VL)) env(empty) genv(empty)
       store(empty) fdecl(empty) sdecl(empty) stack(nilStack) nextLoc(0)
@@ -119,12 +119,12 @@ omod PROGRAM-APP-AUX is
 
   --- getVals(XL, KS): the values of the variables XL, read from the env and store cells of
   --- the configuration KS.
-  op getVals : VarList KConfig -> ValueList .
+  op getVals : VarList KConfig -> ArgList .
   eq getVals(XL, env(ENV) store(MEM) KS) = findAllValues(XL, ENV, MEM) .
 
-  op findAllValues : VarList Map{Var,Nat} Map{Nat,Value?} -> ValueList .
-  eq findAllValues((X,XL), ENV, MEM) = findValue(X, ENV, MEM) , findAllValues(XL, ENV, MEM) .
-  eq findAllValues(nil, ENV, MEM) = nil .
+  op findAllValues : VarList Map{Var,Nat} Map{Nat,Value?} -> ArgList .
+  eq findAllValues((X,XL), ENV, MEM) = findValue(X, ENV, MEM) findAllValues(XL, ENV, MEM) .
+  eq findAllValues(nil, ENV, MEM) = argNil .
 
   op findValue : Var Map{Var,Nat} Map{Nat,Value?} -> Value .
   eq findValue(X, (X |-> L) ; ENV, (L |-> V) ; MEM) = V .

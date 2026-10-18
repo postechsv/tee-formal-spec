@@ -83,6 +83,20 @@ fmod IMP-VALUE is
   op #_ : Int -> Value [ctor] .
 endfm
 
+--- Argument lists.  An argument is a value written # item, and an argument list is a juxtaposition
+--- list of arguments (argNil is the empty list).  The value lists of the RA, the TrustedOS and the
+--- TA (heated TEE API inputs, invocation payloads and output values) are argument lists.
+
+fmod IMP-ARG-LIST is
+  pr IMP-VALUE .
+
+  sorts Arg ArgList .
+  subsort Value < Arg < ArgList .
+
+  op argNil : -> ArgList [ctor] .
+  op __ : ArgList ArgList -> ArgList [ctor assoc id: argNil] .
+endfm
+
 view Value? from TRIV to IMP-VALUE is
   sort Elt to Value? .
 endv
@@ -124,6 +138,7 @@ endfm
 fmod IMP-EXP-LIST is
   inc IMP-BASE-EXP .
   inc IMP-LIST .
+  pr IMP-ARG-LIST .
 
   sort ExpList .
   subsort Exp ImpList < ExpList .
@@ -133,9 +148,6 @@ fmod IMP-EXP-LIST is
   subsorts Var ImpList < VarList < ExpList .
   op _,_ : VarList VarList -> VarList [ctor ditto] .
 
-  sort ValueList .
-  subsorts Value ImpList < ValueList < ExpList .
-  op _,_ : ValueList ValueList -> ValueList [ctor ditto] .
 endfm
 
 --- Function Signature
@@ -324,9 +336,10 @@ fmod IMP-INTERNAL is
   --- is the first item of the stub body and does nothing when run (see getFuncParams).
   op $sig : ExpList ExpList -> IStmt [ctor] .
   --- $inH(VL, EL): the input parameters EL of a TEE API stub, heated one by one; the values
-  --- collected so far are VL.  Each value is cooled into VL, and $in(VL) is the finished task.
-  op $inH : ValueList ExpList -> IStmt [ctor] .
-  op $in(_) : ValueList -> IStmt [ctor] .
+  --- collected so far are the argument list VL.  Each value is cooled into VL, and $in(VL) is
+  --- the finished task.
+  op $inH : ArgList ExpList -> IStmt [ctor] .
+  op $in(_) : ArgList -> IStmt [ctor] .
   op $out(_) : ExpList -> IStmt [ctor] .
   op $out(_|_) : ExpList ExpList -> IStmt [ctor] .
   op $alloc : ImpType -> IStmt [ctor] .
@@ -714,7 +727,7 @@ fmod IMP-EVAL-CONTEXT is
   ops `{_+`[`]`} `{_-`[`]`} `{_*`[`]`} `{_/`[`]`} `{_<=`[`]`} `{_&&`[`]`} `{_||`[`]`} `{_==`[`]`} : Value -> KLabel [ctor] .
   op `{!`[`]`} : -> KLabel [ctor] .
   ops `{`[`]._`} `{_.`[`]`} : Exp -> KLabel [ctor] .
-  op $inC : ValueList ExpList -> KLabel [ctor] .
+  op $inC : ArgList ExpList -> KLabel [ctor] .
   --- Array index: the array operand (a location) is heated, then the index.
   op $idxA : Exp -> KLabel [ctor] .
   op $idxI : Value -> KLabel [ctor] .
@@ -780,7 +793,6 @@ fmod IMP-STRICTNESS is
   var K : K .
   var F : FuncId .
   var EL : ExpList .
-  var VL : ValueList .
   var STRT : Map{Var,Nat} .
 
   ceq k(E ; ~> K)                     = k({ E } ~> []; ~> K) if not E :: Value .
@@ -891,12 +903,12 @@ fmod IMP-STRICTNESS is
 
 --- Input parameters of a TEE API stub: $inH heats each input name to its value and cools
 --- the value into the list of values (see defineSysCall in tee-imp.maude).
-  var IVL : ValueList .
+  var IVL : ArgList .
   var IE : Exp .
   var IEL : ExpList .
   var IOUT : ExpList .
   eq k($inH(IVL, (IE, IEL)) ~> K) = k({ IE } ~> $inC(IVL, IEL) ~> K) .
-  eq k({ VA } ~> $inC(IVL, IEL) ~> K) = k($inH((IVL, VA), IEL) ~> K) .
+  eq k({ VA } ~> $inC(IVL, IEL) ~> K) = k($inH((IVL VA), IEL) ~> K) .
   eq k($inH(IVL, nil) ~> K) = k($in(IVL) ~> K) .
   eq k($sig(IEL, IOUT) ~> K) = k(K) .
 
@@ -1119,7 +1131,6 @@ mod IMP-SEMANTICS is
   var BODY : K .
   var STIT : StackItem .
   var STACK : CallStack .
-  var VL : ValueList .
   vars EL EL' : ExpList .
   var LB : Label .
   vars LM LM' : Map{Label,Stmt} .

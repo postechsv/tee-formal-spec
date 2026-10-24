@@ -380,6 +380,7 @@ mod PERSISTENT-OBJECT-TEE-CALL is
   pr ID-IMP-VALUE .
   pr RETURN-IMP-VALUE .
   pr PERSISTENT-OBJECT-FUNC .
+  pr DATA-STREAM-OBJECT-FUNC .
   pr PERSISTENT-OBJECT-IMP-VALUE .
   pr TEE-API-IMP-PROG-AUX .
 
@@ -465,11 +466,72 @@ mod PERSISTENT-OBJECT-TEE-CALL is
   eq makeCall(RenamePersistentObject , # HANDLE # FILE) = RenamePersistentObject[# HANDLE # FILE] .
   eq makeReturnStmt(RenamePersistentObject, RET, argNil, R) = $assign(# RET , R) .
 
+--- The stubs of the data stream functions (their makeCall and makeReturnStmt are in
+--- DATA-STREAM-OBJECT-TEE-CALL).  They are in PersistLibs, so that a build without the data
+--- stream group keeps syscalls well typed; a call of them is then stuck at api-call init.
+--- The return code is written to the output parameter 'code (and the data read to 'buf), as
+--- makeReturnStmt assigns it with $assign.
+
+  op ReadObjectDataLib : -> Program .
+  eq ReadObjectDataLib
+  = defineSysCall(
+      int readObjData(TEE-Handle 'obj, TEE-Size 'size, TEE-Result * 'code, TEE-Buffer * 'buf),
+      @inArgs('obj, 'size),
+      @outArgs('code, 'buf),
+      @body(skip),
+      @return(# 1)
+  ) .
+
+  op WriteObjectDataLib : -> Program .
+  eq WriteObjectDataLib
+  = defineSysCall(
+      int WriteObjectData(TEE-Handle 'obj, TEE-Buffer 'buf, TEE-Result * 'code),
+      @inArgs('obj, 'buf),
+      @outArgs('code),
+      @body(skip),
+      @return(# 1)
+  ) .
+
+  op TruncateObjectDataLib : -> Program .
+  eq TruncateObjectDataLib
+  = defineSysCall(
+      int TruncateObjectData(TEE-Handle 'obj, TEE-Size 'size, TEE-Result * 'code),
+      @inArgs('obj, 'size),
+      @outArgs('code),
+      @body(skip),
+      @return(# 1)
+  ) .
+
+  op SeekObjectDataLib : -> Program .
+  eq SeekObjectDataLib
+  = defineSysCall(
+      int SeekObjectData(TEE-Handle 'obj, int 'offset, TEE-Whence 'whence, TEE-Result * 'code),
+      @inArgs('obj, 'offset, 'whence),
+      @outArgs('code),
+      @body(skip),
+      @return(# 1)
+  ) .
+
+  op RenamePersistentObjectLib : -> Program .
+  eq RenamePersistentObjectLib
+  = defineSysCall(
+      int RenamePersistentObject(TEE-Handle 'obj, TEE-ObjectId 'newId, TEE-Result * 'code),
+      @inArgs('obj, 'newId),
+      @outArgs('code),
+      @body(skip),
+      @return(# 1)
+  ) .
+
 
   eq PersistLibs = 
     OpenPersistentObjectLib
     CreatePersistentObjectLib 
     CloseAndDeletePersistentObjectLib
+    RenamePersistentObjectLib
+    ReadObjectDataLib
+    WriteObjectDataLib
+    TruncateObjectDataLib
+    SeekObjectDataLib
 
   .
 endm

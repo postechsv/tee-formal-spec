@@ -8,13 +8,39 @@ mod COMPLETION-TEST is
   var ZvOffset : Int .
   var ZvType : SeekType .
   pr TEE-BEHAVIOR .
+  pr TEE-IMP-BEHAVIOR .
   pr TEST-AUX .
   var C : Configuration .
   var TESTDIGEST : List{Data} .
   var CIPHERRESULT : List{Data} .
   var TESTMAC : List{Data} .
   var P : Program .
+  op rwService : -> FuncId [ctor] .
+  op rwProg : -> Program .
+  eq rwProg = TEE-Result 'c ; TEE-Buffer 'b ; int 'r ;
+              'r := readObjData(# oid(5, testTa), # dataSize(1), 'c, 'b) ;
+              'r := WriteObjectData(# oid(5, testTa), 'b, 'c) ;
+              void rwService() { skip } .
 endm
+
+--- A TA program calls readObjData and WriteObjectData through their stubs: the request reads the
+--- fragment randomData (removed from the stream) and writes it back at position 0, so the stream
+--- is randomData again and the handle position is 1.  The TA answers the request with invkTaRet.
+search [1] in COMPLETION-TEST :
+  (msg invkTa[rwService argNil] from testRa to testTa)
+  < testTa : TrustedApp | proc : none, prog : rwProg, client-service : none,
+      status : (normal).AppStatus, storage : oid(0, testTa), os-kernel : osId,
+      counter : 6, api-call : noCall >
+  < oid(0, testTa) : Storage | status : (normal).StorageStatus, files : testFileId, counter : 2 >
+  < oid(5, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)), flags : (accessRead, accessWrite), pos : 0 >
+  < oid(1, oid(0, testTa)) : PersistObj | type : pureData, usages : empty, max-size : 0, attributes : empty,
+      file-name : testFileId, data-stream : randomData >
+=>!
+  (msg invkTaRet[argNil] from testTa to testRa)
+  < testTa : TrustedApp | proc : none, client-service : none, api-call : noCall, AS1:AttributeSet >
+  < oid(5, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)), flags : (accessRead, accessWrite), pos : 1 >
+  < oid(1, oid(0, testTa)) : PersistObj | data-stream : randomData, AS2:AttributeSet >
+  C .
 
 --- readObjData removes the first fragment of the data stream of a top-level persistent handle.
 search [1] in COMPLETION-TEST :

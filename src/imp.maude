@@ -327,11 +327,7 @@ fmod IMP-STMT is
   op nilElem : -> SList [ctor] .
   op <_> : Stmt -> SElem [ctor] .
   op __ : SList SList -> SList [assoc id: nilElem] .
-  
-  op getSList : Stmt -> SList .
-  eq getSList(S S') = < S > getSList(S') .
-  ---@dmc owise drop
-  eq getSList(S) = < S > [owise] .
+  --- getSList is in IMP-INTERNAL, where every Stmt constructor ($libFun too) is visible to its owise.
 endfm
 
 --- Internal computation items.  They live in their own sort IStmt, a subsort of K
@@ -362,6 +358,13 @@ fmod IMP-INTERNAL is
   sort LibFun .
   subsort LibFun < Stmt .
   op $libFun : FuncSig K -> LibFun [ctor] .
+
+  var S S' : Stmt .
+  op getSList : Stmt -> SList .
+  eq getSList(S S') = < S > getSList(S') .
+  ---@dmc scope(CRYPTO-IMP-VALUE-TYPE, TEE-IMP-BEHAVIOR, TEE-BEHAVIOR, TRANSIENT-OBJECT-TEE-CALL, DATA-STREAM-OBJECT-TEE-CALL, ENUMERATOR-OBJECT-TEE-CALL, GENERIC-OBJECT-TEE-CALL, OVERWRITE-INV)
+  ---@dmc owise enumerate(S)
+  eq getSList(S) = < S > [owise] .
 
   op $setLoc : Var Nat -> IStmt [ctor] .
   op $wait : TeeApi -> IStmt [ctor] .
@@ -423,6 +426,9 @@ fmod IMP-PROGRAM is
 
   sort Program .
   subsort Stmt < Program .
+  --- A program followed by a program (a library prefix and a program variable, as in
+  --- mkConf(syscalls P, ...)) is a Program; on statements it is the Stmt sequence above.
+  op __ : Program Program -> Program [ctor gather (e E) prec 62] .
 endfm
 
 --- Static type system for IMP.  Judgments return constructor-wrapped results

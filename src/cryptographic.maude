@@ -289,6 +289,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- outputSize(DATA): dataSize(1) for a macValue term, and dataSize(size(DATA)) otherwise.
   op outputSize : List{Data} -> DataSize .
   eq outputSize(macValue(DATA , ALGO , KATTRS)) = dataSize(1) .
+  ---@dmc scope(TEE-BEHAVIOR)
   ---@dmc owise enumerate(DATA)
   eq outputSize(DATA) = dataSize(size(DATA)) [owise] .
 
@@ -326,6 +327,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   op regionsOverlapBadly : Arg Arg -> Bool .
   eq regionsOverlapBadly(# bufferRegion(NB , MB) , # bufferRegion(PB , QB)) =
     NB =/= PB and NB < PB + QB and PB < NB + MB .
+  ---@dmc scope(TEE-BEHAVIOR)
   ---@dmc owise enumerate(arg1, arg2)
   eq regionsOverlapBadly(A , A') = false [owise] .
 
@@ -335,6 +337,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   eq overlapSensitive(AEUpdate) = true .
   eq overlapSensitive(AEEncryptFinal) = true .
   eq overlapSensitive(AEDecryptFinal) = true .
+  ---@dmc scope(TEE-BEHAVIOR)
   ---@dmc owise enumerate(API)
   eq overlapSensitive(API) = false [owise] .
 
@@ -378,6 +381,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- of DATA equals the RSA key size in bytes.
   op validRsaCiphertextSize : Nat List{Data} -> Bool .
   eq validRsaCiphertextSize(KEYSIZE , encrypted(DATA , ALGO , ATTRS)) = true .
+  ---@dmc scope(TEE-BEHAVIOR)
   ---@dmc owise enumerate(DATA)
   eq validRsaCiphertextSize(KEYSIZE , DATA) = size(DATA) == rsaKeyBytes(KEYSIZE) [owise] .
 
@@ -781,6 +785,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   eq singleKeyMaterialCompatible(ALGO , KEYSIZE,
       (attr(secretValue, sizedAttrVal(N, M)), ATTRS)) =
     validKeySize(ALGO , N) and N <= KEYSIZE .
+  ---@dmc scope(TEE-BEHAVIOR)
   ---@dmc owise recurse(sep=_,_, empty=empty)
   eq singleKeyMaterialCompatible(ALGO , KEYSIZE , ATTRS) = true [owise] .
 
@@ -817,6 +822,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   ceq ivLengthValid(algAesCcm , IV) = true if 7 <= size(IV) and size(IV) <= 13 .
   ceq ivLengthValid(algAesGcm , IV) = true if size(IV) > 0 .
   ceq ivLengthValid(ALGO , nil) = true if not ivRequired(ALGO) .
+  ---@dmc scope(TEE-BEHAVIOR)
   ---@dmc owise enumerate(arg1, arg2)
   eq ivLengthValid(ALGO , IV) = false [owise] .
 
@@ -1899,6 +1905,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- cipher-update-try-cipher-success: when the operation is active, the handle has init and
   --- keySet, and runOp succeeds on DATA, the CryptoOp and the handle are cleared, and
   --- finishCipher carries the output OPRESULT.
+  ---@dmc inline-match
   crl [cipher-update-try-cipher-success] :
     < CI : CryptoOp | state : active , attributes : ATTRS ,
                       algorithm : ALGO , mode : MODE >
@@ -1960,6 +1967,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- cipher-do-final-try-cipher-final-success: under the same conditions as
   --- cipher-update-try-cipher-success, the operation becomes initial, the handle loses init, and
   --- finishCipherDoFinal carries OPRESULT.
+  ---@dmc inline-match
   crl [cipher-do-final-try-cipher-final-success] :
     < CI : CryptoOp | state : active , attributes : ATTRS ,
                       algorithm : ALGO , mode : MODE >
@@ -2262,6 +2270,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- ae-update-top-level-capacity: when runOp succeeds on KATTRS and DL DATA, the output capacity
   --- fits OPRESULT and the buffers do not overlap, the call moves to final and reqAEUpdate is sent
   --- to HANDLE.
+  ---@dmc inline-match
   crl [ae-update-top-level-capacity] :
     < TK : TAKernel | api-call : init(AEUpdate[# HANDLE # DATA ZrAEUpdate]) >
     < CI : CryptoOp |
@@ -2280,6 +2289,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- ae-update-top-level-short-buffer: when the output capacity does not fit OPRESULT,
   --- errorShortBuffer is returned with the size of OPRESULT.
+  ---@dmc inline-match
   crl [ae-update-top-level-short-buffer] :
     < TK : TAKernel | api-call : init(AEUpdate[# HANDLE # DATA ZrAEUpdate]) >
     < CI : CryptoOp |
@@ -2297,6 +2307,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- ae-update-top-level-object: when runOp succeeds, DL DATA is appended to acc-data and the state
   --- becomes active, and finishTopAEUpdate carrying OPRESULT is sent to HANDLE.
+  ---@dmc inline-match
   crl [ae-update-top-level-object] :
     (msg reqAEUpdate[# DATA] from TK to HANDLE)
     < CI : CryptoOp |
@@ -2347,6 +2358,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- ae-encrypt-final-top-level-capacity: for an encrypting operation, the output capacity (if any)
   --- must fit OPRESULT and the tag capacity (if any) must fit computeMAC of acc-data and DATA. When
   --- the buffers do not overlap, the call moves to final and aeEncryptFinal is sent to HANDLE.
+  ---@dmc inline-match
   crl [ae-encrypt-final-top-level-capacity] :
     < TK : TAKernel | api-call : init(AEEncryptFinal[# HANDLE # DATA ZrAEEncryptFinal]) >
     < CI : CryptoOp |
@@ -2367,6 +2379,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- ae-encrypt-final-top-level-short-buffer: when the output or the tag capacity does not fit,
   --- errorShortBuffer is returned with the output size and the tag size.
+  ---@dmc inline-match
   crl [ae-encrypt-final-top-level-short-buffer] :
     < TK : TAKernel | api-call : init(AEEncryptFinal[# HANDLE # DATA ZrAEEncryptFinal]) >
     < CI : CryptoOp |
@@ -2387,6 +2400,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- ae-encrypt-final-top-level-object: acc-data is reset to nil and the state to initial, and
   --- finishTopAEEncryptFinal carries OPRESULT and computeMAC of acc-data and DATA to HANDLE.
+  ---@dmc inline-match
   crl [ae-encrypt-final-top-level-object] :
     (msg aeEncryptFinal[# DATA] from TK to HANDLE)
     < CI : CryptoOp |
@@ -2433,6 +2447,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- ae-decrypt-final-top-level-capacity: when runOp succeeds in modeDecrypt and the output
   --- capacity fits OPRESULT, the call moves to final and aeDecryptFinal is sent to HANDLE.
+  ---@dmc inline-match
   crl [ae-decrypt-final-top-level-capacity] :
     < TK : TAKernel | api-call : init(AEDecryptFinal[# HANDLE # DATA # MAC ZrAEDecryptFinal]) >
     < CI : CryptoOp |
@@ -2451,6 +2466,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- ae-decrypt-final-top-level-short-buffer: when the output capacity does not fit OPRESULT,
   --- errorShortBuffer is returned with the output size.
+  ---@dmc inline-match
   crl [ae-decrypt-final-top-level-short-buffer] :
     < TK : TAKernel | api-call : init(AEDecryptFinal[# HANDLE # DATA # MAC ZrAEDecryptFinal]) >
     < CI : CryptoOp |
@@ -2468,6 +2484,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- ae-decrypt-final-top-level-object: acc-data is reset to nil and the state to initial, and
   --- finishTopAEDecryptFinal carries OPRESULT, the computed MAC and MAC to HANDLE.
+  ---@dmc inline-match
   crl [ae-decrypt-final-top-level-object] :
     (msg aeDecryptFinal[# DATA # MAC] from TK to HANDLE)
     < CI : CryptoOp |
@@ -2576,6 +2593,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- asymmetric-encrypt-top-level-object: when runOp succeeds on DATA and DATA is a valid
   --- encryption input, the CryptoOp and the handle are cleared, and finishTopAsymEncrypt
   --- carrying OPRESULT is sent to HANDLE.
+  ---@dmc inline-match
   crl [asymmetric-encrypt-top-level-object] :
     (msg asymEncrypt[# DATA] from TK to HANDLE)
     < CI : CryptoOp |
@@ -2640,6 +2658,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- asymmetric-decrypt-top-level-capacity: when runOp succeeds in modeDecrypt, the ciphertext has
   --- the RSA key size and is valid for ALGO, and the output capacity fits OPRESULT, the call moves
   --- to final and asymDecrypt is sent to HANDLE.
+  ---@dmc inline-match
   crl [asymmetric-decrypt-top-level-capacity] :
     < TK : TAKernel | api-call : init(AsymmetricDecrypt[# HANDLE # DATA ZrAsymmetricDecrypt]) >
     < CI : CryptoOp |
@@ -2658,6 +2677,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- asymmetric-decrypt-top-level-short-buffer: under the same conditions, when the output capacity
   --- does not fit OPRESULT, errorShortBuffer is returned with the size of OPRESULT.
+  ---@dmc inline-match
   crl [asymmetric-decrypt-top-level-short-buffer] :
     < TK : TAKernel | api-call : init(AsymmetricDecrypt[# HANDLE # DATA ZrAsymmetricDecrypt]) >
     < CI : CryptoOp |
@@ -2705,6 +2725,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- asymmetric-decrypt-top-level-object: when runOp succeeds and the ciphertext is valid, the
   --- CryptoOp and the handle are cleared, and finishTopAsymDecrypt carrying OPRESULT is sent
   --- to HANDLE.
+  ---@dmc inline-match
   crl [asymmetric-decrypt-top-level-object] :
     (msg asymDecrypt[# DATA] from TK to HANDLE)
     < CI : CryptoOp |

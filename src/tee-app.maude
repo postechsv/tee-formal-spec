@@ -76,6 +76,7 @@ omod TRUST-APP-BEHAVIOR is
 
   --- handle-invoke-ta-finish: when the program has finished, the output values of the
   --- service are returned to the RA as invkTaRet, and the TA is available again.
+  ---@dmc inline-match
   crl [handle-invoke-ta-finish] :
     < TI : TrustedApp | proc : (k(.K) KS) , client-service : {RI , FID} ,
                         prog : P , status : (normal).AppStatus >
@@ -119,6 +120,8 @@ omod TRUST-APP-IMP-BEHAVIOR is
   --- signature PL | IN | OUT is read from the stub (getFuncParams). The rule needs a stub for TF:
   --- getStub gives skip for a name with no stub.
   ---@dmc keep-builtin
+  ---@dmc shape-cond(getStub(TF) =/= skip => $sig(DMSI:ExpList, DMSO:ExpList) ~> DMSK:K)
+  ---@dmc inline-match
   crl [tee-api-call] :
     < TI : TrustedApp | proc : (k({ TF(EL) } ~> K) KS) ,
                         api-call : noCall , status : (normal).AppStatus >

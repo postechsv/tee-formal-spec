@@ -80,6 +80,10 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
        < H : ObjHandle | oid : OI, flags : DATAFLAGS2 > HS) =
      accessRightCheckingAux(DATAFLAGS, DATAFLAGS2)
      and persistentHandlesCompatible(OI, DATAFLAGS, HS) .
+---@dmc scope(TEE-BEHAVIOR, OVERWRITE-INV, LOST-UPDATE-INV)
+---@dmc classes(TaSessionHandle, PropSetHandle, ObjHandle, ObjectEnumHandle, OpHandle, CryptoObj, App, TAKernel, Storage, TrustedOS, Device, Session, EnumeratorObject, CryptoOp)
+---@dmc classes(OwAttrs, OwObj, LuAttrs)
+---@dmc exact-classes(Handle)
 ---@dmc owise recurse(sep=__, empty=none)
   eq persistentHandlesCompatible(OI, DATAFLAGS, OBJ HS) =
      persistentHandlesCompatible(OI, DATAFLAGS, HS) [owise] .
@@ -94,6 +98,10 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   eq removePersistentHandles(OI, none) = none .
   eq removePersistentHandles(OI, < H : ObjHandle | oid : OI > HS) =
      removePersistentHandles(OI, HS) .
+---@dmc scope(TEE-BEHAVIOR, OVERWRITE-INV, LOST-UPDATE-INV)
+---@dmc classes(TaSessionHandle, PropSetHandle, ObjHandle, ObjectEnumHandle, OpHandle, CryptoObj, App, TAKernel, Storage, TrustedOS, Device, Session, EnumeratorObject, CryptoOp)
+---@dmc classes(OwAttrs, OwObj, LuAttrs)
+---@dmc exact-classes(Handle)
 ---@dmc owise recurse(sep=__, empty=none)
   eq removePersistentHandles(OI, OBJ HS) =
      OBJ removePersistentHandles(OI, HS) [owise] .
@@ -300,6 +308,7 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   --- create-persist-pure-new: when the file does not exist and the method is pure, the storage
   --- creates the handle newOid(N) and the pureData object newOid(N + 1), and advances its counter
   --- by 2.
+  ---@dmc inline-match
   crl [create-persist-pure-new] :
     (msg create[# pure # FILE # FLAGS # HI # DATA] from TK to SI)
     < SI : Storage | status : (normal).StorageStatus , files : FILES , counter : N >
@@ -315,6 +324,7 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   --- create-persist-transform-new: when the file does not exist and the method is transform, the
   --- new object takes the type, usages, max-size and attributes of the transient object OI
   --- referred to by HI.
+  ---@dmc inline-match
   crl [create-persist-transform-new] :
     (msg create[# transform # FILE # FLAGS # HI # DATA] from TK to SI)
     < HI : ObjHandle | oid : OI >
@@ -331,6 +341,7 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
 
   --- create-persist-persist-new: as create-persist-transform-new, but the source is a CryptoObj OI
   --- whose properties are moved to the new object, and the handle HI is closed.
+  ---@dmc inline-match
   crl [create-persist-persist-new] :
     (msg create[# persist # FILE # FLAGS # HI # DATA] from TK to SI)
     < HI : ObjHandle | oid : OI >
@@ -351,6 +362,7 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
 
   --- create-persist-pure: the forwarded pure create creates the PersistObj NEWPI with type
   --- pureData and a new handle NEWHI, and returns createSuccess.
+  ---@dmc inline-match
   crl [create-persist-pure] :
     (msg create[# pure # FILE # FLAGS # HI # DATA # N # TK] from SI to PI)
     < PI : PersistObj | file-name : FILE >
@@ -364,6 +376,7 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
 
   --- create-persist-transform: the forwarded transform create gives the PersistObj NEWPI the
   --- type, usages, max-size and attributes of the transient object OI referred to by HI.
+  ---@dmc inline-match
   crl [create-persist-transform] :
     (msg create[# transform # FILE # FLAGS # HI # DATA # N # TK] from SI to PI)
     < PI : PersistObj | file-name : FILE >
@@ -379,6 +392,7 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
 
   --- create-persist-persist: the forwarded persist create moves the properties of the CryptoObj OI
   --- referred to by HI to the PersistObj NEWPI, and closes OI and HI.
+  ---@dmc inline-match
   crl [create-persist-persist] :
     (msg create[# persist # FILE # FLAGS # HI # DATA # N # TK] from SI to PI)
     < PI : PersistObj | file-name : FILE >

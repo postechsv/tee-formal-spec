@@ -48,6 +48,7 @@ omod PROGRAM-APP-AUX is
   op mkFunMap : SList -> Map{FuncSig,K} .
   eq mkFunMap(< FSIG {S} > SL) = FSIG |-> S , mkFunMap(SL) .
   eq mkFunMap(< $libFun(FSIG, BODY) > SL) = FSIG |-> BODY , mkFunMap(SL) .
+  ---@dmc scope(TEE-BEHAVIOR)
   ---@dmc owise enumerate(S)
   eq mkFunMap(< S > SL) = mkFunMap(SL) [owise] .
   eq mkFunMap(nilElem) = empty . --- should be matched with the last statement
@@ -56,6 +57,7 @@ omod PROGRAM-APP-AUX is
   --- FMAP has no entry for FUNC.
   op getParams : FuncId Map{FuncSig,K} -> ExpList .
   eq getParams(FUNC, (T FUNC(PARAMS) |-> S , FMAP)) = PARAMS .
+---@dmc sort-split(Stmt < K)
 ---@dmc owise recurse(sep=_,_, empty=empty)
   eq getParams(FUNC, FMAP) = nil [owise] .
 
@@ -68,6 +70,7 @@ omod PROGRAM-APP-AUX is
   op isOutType : ImpType -> Bool .
   eq isOutType(T *) = true .
   eq isOutType(T &) = true .
+  ---@dmc scope(TEE-BEHAVIOR, OVERWRITE-INV, LOST-UPDATE-INV)
   ---@dmc owise enumerate(T)
   eq isOutType(T) = false [owise] .
 
@@ -91,6 +94,7 @@ omod PROGRAM-APP-AUX is
   ceq outDecls((T X, PARAMS), (V VL))
     = hoistPExp(U X) ~> X := V ; ~> outDecls(PARAMS, VL)
   if isOutType(T) /\ U := pointee(T) .
+  ---@dmc scope(TEE-BEHAVIOR)
   ---@dmc owise enumerate(T)
   eq outDecls((T X, PARAMS), (V VL)) = outDecls(PARAMS, VL) [owise] .
   eq outDecls(nil, argNil) = .K .
@@ -99,6 +103,7 @@ omod PROGRAM-APP-AUX is
   --- the value V for each input parameter.
   op callArgs : ExpList ArgList -> ExpList .
   ceq callArgs((T X, PARAMS), (V VL)) = X , callArgs(PARAMS, VL) if isOutType(T) .
+  ---@dmc scope(TEE-BEHAVIOR)
   ---@dmc owise enumerate(T)
   eq callArgs((T X, PARAMS), (V VL)) = V , callArgs(PARAMS, VL) [owise] .
   eq callArgs(nil, argNil) = nil .
@@ -118,7 +123,7 @@ omod PROGRAM-APP-AUX is
       store(empty) fdecl(empty) sdecl(empty) stack(nilStack) nextLoc(0)
       labels(labelsOf(getSList(P))) arrlen(empty)
   if wellTyped(P) = true .
-  ---@dmc keep-builtin
+  ---@dmc drop
   ceq mkConf(P, FUNC, VL) = illTyped if wellTyped(P) =/= true .
 
   --- getVals(XL, KS): the values of the variables XL, read from the env and store cells of

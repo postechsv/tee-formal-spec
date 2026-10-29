@@ -11,7 +11,8 @@ Usage
       load dm-check-alpha12.maude
       set module TEE-BEHAVIOR .
   Expected: "Module TEE-BEHAVIOR is now active." and no "cannot reason soundly" list.  The DMC build
-  has no built-in ==/=/=, no owise, no membership axioms and no non-equational rule conditions.
+  has no built-in ==/=/=, no owise, no membership axioms and no non-equational rule conditions
+  (matching conditions are removed with inline-match, see below).
 
 Input: the ORIGINAL spec (src/) with `---@dmc <directive>` comment lines placed immediately before the
 statement (or view header) they affect.  The annotated spec loads unchanged (the directives are
@@ -29,7 +30,12 @@ Options
   --check           self-checks: reflection freshness, drift of enumerated constructors, and ground-term
                     comparison of ORIGINAL vs DMC for every enumerated owise group (test commands that
                     the module cannot parse are skipped and counted; DMC results are read back through
-                    the closed-sort numbering)
+                    the closed-sort numbering).  Then the target check: the same comparison for every owise
+                    group in every target module that sees its function (main.maude modules, loaded modules
+                    no loaded module imports, and --target modules), with
+                    ground arguments from that module's signature (an Object element with every class
+                    constant, superclasses too).  Mismatches go to <cache-dir>/target-mismatches.txt
+  --target M[,M...] extra target module of the target check
   --dmc-base DIR    DMC-compatible base files for the check build (default: <out-dir>)
   --fresh           ignore the reflection cache
   --cache-dir DIR   bookkeeping directory: reflect.json (reflection cache), ground-*.in and check-build
@@ -66,6 +72,26 @@ Directives (one per line, before the statement)
         cases; a sibling that names a constant, a constructor shape or an attribute of an element splits
         that element on demand.  The cell right-hand side is the owise value on the rest, with the
         element put back when the owise right-hand side rebuilds the collection.
+  The cell engine (enumerate, enumerate(...), recurse, shapes) takes these directives before the owise
+  equation (the generator does not infer them; the target check of --check finds a missing one):
+  ---@dmc scope(M1, M2, ...)
+        [owise] is relative to the module in which a term is reduced: the cells are also made over the
+        constructors of each listed module that the build has and that sees the operator (modules of
+        another configuration are skipped).  The cells that hold a constructor or an attribute the owise's
+        module does not see go into Mi before its end line, with the owise module's variables written with
+        sorts, and Mi adds the equations of the dmc-no-<attr> / dmc-is-<K> / dmc-out-<Sp>-<S> predicates
+        for what it adds.  Without scope, the cells are those of the owise's module.
+  ---@dmc classes(K1, K2, ...)       ---@dmc exact-classes(K1, ...)
+        the cells of an Object element whose class a sibling names: a class variable V:K per class of
+        classes (K and its subclasses), and V:K with the guard dmc-is-K(V) per class of exact-classes (an
+        object written with K itself).  Each module writes the listed classes it sees.  A class cell that a
+        sibling's class cuts (they share subclasses, and the cell has some outside them) is an error.
+  ---@dmc sort-split(Sp < S)
+        a sibling variable of sort Sp at a position of sort S splits the cell into the terms of Sp
+        (decided by the sibling) and V:S with the guard dmc-out-<Sp>-<S>(V), a predicate defined by
+        constructor equations over the least sort of a term (out_pred_eqs: subsort-overloaded constructors
+        recurse on their arguments, assoc sequences with an identity are matched with two elements fixed).
+        Without the directive, such a sibling is an error.
   ---@dmc owise shapes(sep=<op>, empty=<const>, elem=<sort>)
         cell engine over a list argument with the shapes  <empty> | <one element> | (<element>, <rest>).
   ---@dmc exclude-ctors(c1,c2,...)
@@ -73,6 +99,30 @@ Directives (one per line, before the statement)
   ---@dmc keep-builtin
         keep the statement's `==` / `=/=` as written.  Used for the IMP expression constructor `_==_`
         (Exp Exp -> Exp), which is not Maude's built-in equality.
+  ---@dmc split                 (before a rule)  one rule per branch of the if ... fi terms of the right-hand
+        side: the condition B of an if term is added to the rule condition (/\\ B and /\\ not B), the if terms
+        with that condition are resolved, and this repeats until no if term is left.  Labels get -then / -else.
+  ---@dmc split(B)              (before a rule)  two rules, with /\\ B and with /\\ not B; the if terms with
+        condition B are resolved.  Several split directives apply in order.  Meaning-preserving when B
+        reduces to true or false on ground terms.
+  ---@dmc inline-match          (before a rule or a conditional equation)  its matching conditions P := t are
+        removed.  A variable pattern V (or V:S) is replaced by t in the right-hand side and the later
+        conditions.  A constructor pattern whose arguments are variables, such as [X] or f(X, Y), becomes
+        the equational condition t = P' where P' is P with each argument X replaced by dmc-matchN-i(t),
+        a projection declared right before the statement (eq dmc-matchN-i(P) = X); so do the occurrences of
+        X.  Meaning-preserving when t reduces to a term of the variable's sort (variable pattern).
+  ---@dmc pattern(V=P)          (before a conditional rule or equation)  the author asserts that the condition
+        holds exactly when V has the shape P: V is replaced by (P) and the condition is dropped.  The
+        variables of P carry their sorts (S1:Stmt).  Sibling owise enumerations see the new pattern.  E.g.
+        `getSList(S) =/= < S >` holds exactly for a juxtaposition: pattern(S=S1:Stmt S2:Stmt).
+  ---@dmc shape-cond(T =/= C => P)   (before a conditional rule or equation)  the author asserts that the
+        condition T =/= C holds exactly when T has the shape P (variables of P carry their sorts).  The
+        condition becomes dmc-shapeN(T) = true, declared right before the statement with the one equation
+        dmc-shapeN(P) = true.  E.g. a TEE API has a stub (getStub(TF) =/= skip) exactly when its stub body
+        starts with the signature: shape-cond(getStub(TF) =/= skip => $sig(I:ExpList, O:ExpList) ~> R:K).
+  ---@dmc drop                  (before a rule or equation)  the statement is left out of the DMC build (and
+        is no sibling of owise equations).  For a case DM-Check cannot express that the analysis does not
+        reach, e.g. the illTyped result of mkConf (wellTyped is only defined as true).  Counted in the manifest.
   ---@dmc replace  ...  ---@dmc end
         generator escape hatch (a block `---(` ... `---)` uncommented into the output).  The
         annotated tree uses no replace block; the count is reported.
@@ -152,8 +202,9 @@ argument is split only when a sibling equation has a constructor, constant, attr
 pattern at that position, so cells no sibling constrains stay merged.  A cell covered completely by
 a sibling is dropped; a cell covered in part gets the guard `not (<sibling pattern equalities and
 condition>)`.  Built-in `==` appears only in guards on sorts marked keep-builtin.  Attribute sets are
-split only at the attributes that the siblings name; a sibling written without a rest variable is
-approximated by its named attributes (documented limitation).
+split only at the attributes that the siblings name, one attribute at a time into present (`a : X, REST`)
+and absent (`REST` with the guard `dmc-no-a(REST)`, a predicate declared next to the cells); a sibling
+written without a rest variable is approximated by its named attributes (documented limitation).
 
 Reflection: DMC-DUMP (tools/dmc-lib/dump.maude) is run on the ORIGINAL spec through the META-LEVEL
 (upModule with imports, getOps, getSubsorts, getEqs).  The result (operators with ranges, constructors,
@@ -173,6 +224,7 @@ replace uses, equality kinds, upgraded views, closed sorts and the constant/Qid 
 """
 
 import argparse
+import copy
 import hashlib
 try:
     import resource
@@ -680,10 +732,33 @@ def parse_directive(d):
         need = ['sep', 'empty'] + (['elem'] if m.group(1) == 'shapes' else [])
         if any(x not in kv for x in need):
             raise GenError('%s needs %s: %s' % (m.group(1), ', '.join(x + '=' for x in need), d))
+        bad = [k for k in kv if k not in ('sep', 'empty', 'elem')]
+        if bad:
+            raise GenError('%s: unknown option %s (target modules and classes are the directives scope(...), '
+                           'classes(...), exact-classes(...))' % (d, ', '.join(bad)))
         return 'owise', (m.group(1), kv)
+    m = re.match(r'^(scope|classes|exact-classes)\((.*)\)$', d)
+    if m:
+        return m.group(1), [x.strip() for x in m.group(2).split(',') if x.strip()]
+    m = re.match(r"^sort-split\(\s*(\w[\w\-']*)\s*<\s*(\w[\w\-']*)\s*\)$", d)
+    if m:
+        return 'sort-split', (m.group(1), m.group(2))
     m = re.match(r'^exclude-ctors\((.*)\)$', d)
     if m:
         return 'exclude', [x.strip() for x in m.group(1).split(',') if x.strip()]
+    if d in ('inline-match', 'drop'):
+        return d, None
+    m = re.match(r"^pattern\(\s*([A-Za-z][\w\-']*)\s*=(.+)\)$", d)
+    if m:
+        return 'pattern', (m.group(1), m.group(2).strip())
+    m = re.match(r"^shape-cond\((.+?)\s+=>\s+(.+)\)$", d)
+    if m:
+        return 'shape-cond', (m.group(1).strip(), m.group(2).strip())
+    if d == 'split':
+        return 'split', None
+    m = re.match(r'^split\((.+)\)$', d)
+    if m:
+        return 'split', m.group(1).strip()
     raise GenError('unknown directive: ---@dmc %s' % d)
 
 
@@ -892,6 +967,8 @@ class Gen(object):
         self.manifest = []
         self.counts = {}
         self.replaces = []
+        self.stmt_dirs = []     # drop / pattern / inline-match uses (manifest 'statements')
+        self.match_count = 0    # projections dmc-matchN-i of inline-match (numbered over the build)
         self.coll = None
         self.plan = None
         self.closed = {}        # closed sort -> dict(ctor, mod, file, line)   (close-sort directive)
@@ -910,6 +987,9 @@ class Gen(object):
         self.dm_for = {}        # main or test module -> equation modules it imports (its own variants)
         self.dm_use = {}        # main module -> the imports of its header (its bundle, or its single dm_for entry)
         self.main_order = []    # modules of main.maude in file order (names the bundles of main's modules)
+        self.scope_eqs = {}     # target module -> its owise cells (target_owise)
+        self.target_noattr = set()  # (target, attr, added attribute) of the dmc-no-<attr> equations of targets
+        self.last_cx = None     # the CellCtx of the last cell_owise run
         self.graph = {}         # module -> modules it imports (original texts of the loaded files and tests)
         self.vis = {}           # main or test module -> its import closure (source modules and modules of tests)
 
@@ -1035,6 +1115,13 @@ def pass1(gen, fname, fi):
                     gen.mod_sorts[cur_mod].add(s)
                     gen.sort_mod.setdefault(s, cur_mod)
             elif re.match(r'^c?eq\s', t):
+                # siblings of owise equations: as the DMC build has them (drop / pattern)
+                sd = [parse_directive(d) for d in u.dmc]
+                if any(k == 'drop' for k, _ in sd):
+                    continue
+                for k, v in sd:
+                    if k == 'pattern':
+                        t = apply_pattern(t, v[0], v[1], '%s:%d' % (fname, u.line))
                 e = parse_eq(t)
                 if e is None:
                     continue
@@ -1743,7 +1830,7 @@ def collection_stmts(ctx, u, e, sibs, action, excl, keep):
     rest = args[N - 1] if not nested else val
     elems = elem_list(gen, mod, S, sep, empty, excl)
     if nested:
-        return _nested_stmts(ctx, where, fn, args, N - 1, val, S, elems, e, keep)
+        return _nested_stmts(ctx, where, fn, args, N - 1, val, S, elems, e, keep, sibs)
     shared = set()
     for i, a in enumerate(args):
         if i != N - 1:
@@ -1913,12 +2000,46 @@ def collection_stmts(ctx, u, e, sibs, action, excl, keep):
     return stmts, info
 
 
-def _nested_stmts(ctx, where, fn, args, i, var, S, elems, e, keep):
-    """enumerate(VAR) where VAR sits inside argument i of the owise LHS (e.g. < S > SL)."""
+def _nested_covered(gen, mod, args, i, var, elems, sibs):
+    """Constructors that an unconditional sibling covers completely at the place of VAR: the sibling has
+    the owise arguments, with VAR replaced by the constructor applied to distinct variables (as the
+    pattern directive writes them, e.g. < (S1:Stmt S2:Stmt) > SL)."""
+    tpl = norm(args[i])
+    m = re.search(r"(?<![\w\-'])" + re.escape(var) + r"(?![\w\-'])", tpl)
+    rx = re.compile(re.escape(tpl[:m.start()]) + r'(.+)' + re.escape(tpl[m.end():]))
+    out = set()
+    for s in sibs:
+        if s['cond'] is not None or len(s['args']) != len(args):
+            continue
+        if any(norm(s['args'][j]) != norm(args[j]) for j in range(len(args)) if j != i):
+            continue
+        sm = rx.fullmatch(norm(s['args'][i]))
+        if not sm:
+            continue
+        hit = match_mixfix(gen, mod, elems, sm.group(1))
+        if hit is None:
+            name, sargs = classify_item(sm.group(1))
+            hit = (name, sargs) if any(c['name'] == name for c in elems) else None
+        if hit is None:
+            continue
+        vs = [VAR_PAT_RE.match(strip_parens(a)) for a in hit[1]]
+        if all(vs) and len(set(v.group(1) for v in vs)) == len(vs):
+            out.add(hit[0])
+    return out
+
+
+def _nested_stmts(ctx, where, fn, args, i, var, S, elems, e, keep, sibs=()):
+    """enumerate(VAR) where VAR sits inside argument i of the owise LHS (e.g. < S > SL).  Constructors
+    covered by an unconditional sibling are skipped (_nested_covered); conditional siblings are not
+    looked at."""
     gen, mod = ctx.gen, ctx.mod
     cnt = [0]
-    stmts, used = [], []
+    stmts, used, skipped = [], [], []
+    covered = _nested_covered(gen, mod, args, i, var, elems, sibs)
     for c in elems:
+        if c['name'] in covered:
+            skipped.append(c['name'])
+            continue
         vs = []
         for srt in c['doms']:
             cnt[0] += 1
@@ -1933,7 +2054,7 @@ def _nested_stmts(ctx, where, fn, args, i, var, S, elems, e, keep):
         used.append(c['name'])
     info = {'fn': fn, 'module': mod, 'N': i + 1, 'sort': S, 'doms': gen.mod_ops.get(mod, {}).get(fn),
             'kind': 'enumerate', 'sep': None, 'empty': None, 'excl': [], 'elements': [c['name'] for c in elems],
-            'used': used, 'skipped': [], 'empty_covered': False, 'nested': var}
+            'used': used, 'skipped': skipped, 'empty_covered': False, 'nested': var}
     return stmts, info
 
 
@@ -1983,6 +2104,7 @@ def owise_stmts(ctx, u, e, dirs):
         if s['cond'] is not None:
             s['cond'] = rewrite_text(ctx, s['cond'], where)
     action, excl, keep = None, [], False
+    ann = {'scope': [], 'classes': [], 'exact-classes': [], 'sort-split': set()}
     for key, val in dirs:
         if key == 'owise':
             action = val
@@ -1990,6 +2112,12 @@ def owise_stmts(ctx, u, e, dirs):
             excl += val
         elif key == 'keep-builtin':
             keep = True
+        elif key == 'sort-split':
+            ann[key].add(val)
+        elif key in ann:
+            ann[key] += val
+    ctx = copy.copy(ctx)
+    ctx.ann = ann
     rhs = e['rhs'] if keep else rewrite_text(ctx, e['rhs'], where)
     e = dict(e, rhs=rhs)
     if action is not None and action[0] == 'drop':
@@ -2002,9 +2130,11 @@ def owise_stmts(ctx, u, e, dirs):
             raise GenError('%s: owise LHS must be a prefix operator application' % where)
     if action is not None and action[0] == 'enumerate':
         stmts, info = collection_stmts(ctx, u, e, sibs, action, excl, keep)
+        stmts += target_owise(ctx, u, e, sibs, action, excl, keep, where)
         return 'annot', stmts, info
     if action is not None and action[0] in ('enumerate-multi', 'recurse', 'shapes'):
         stmts, info = cell_owise(ctx, u, e, sibs, action, excl, keep)
+        stmts += target_owise(ctx, u, e, sibs, action, excl, keep, where)
         return 'annot', stmts, info
     kind, text = auto_owise(ctx, u, e, sibs)
     return kind, ['ceq %s = %s if %s .' % (e['lhs'], e['rhs'], text)], None
@@ -2018,7 +2148,8 @@ def owise_stmts(ctx, u, e, dirs):
 # A cell is a tuple of argument nodes (one per owise LHS argument):
 #   ('v', name, sort, fresh)            variable leaf (fresh: generated name, rendered name:sort)
 #   ('c', name, kids, sort)             constructor application; kids is a tuple of nodes
-#   ('set', attrs, rest, sort)          attribute set; attrs = ((attr, attrsort, node), ...), rest node or None
+#   ('set', attrs, rest, sort)          attribute set; attrs = ((attr, attrsort, node), ...), rest node or None;
+#                                       node None: the attribute is absent (guard dmc-no-<attr>(rest))
 #   ('cons', elem, rest, sep, sort)     collection cell  elem sep rest
 # Sibling argument patterns:
 #   ('var', name, sort)  ('lit', text)  ('c', name, kids, rng)  ('attrs', ((attr, dom, pat), ...), restvar)
@@ -2158,6 +2289,15 @@ def vops(gen, mod):
     return cache[mod]
 
 
+def mixfix_words(gen, mod):
+    """Keyword tokens of the mixfix constructors of mod (msg, from, to of msg_from_to_)."""
+    cache = gen.__dict__.setdefault('mixfix_words_cache', {})
+    if mod not in cache:
+        cache[mod] = set(w for c in vops(gen, mod) if '_' in c['name']
+                         for w in c['name'].split('_') if IDENT_RE.match(w))
+    return cache[mod]
+
+
 def attr_dom(gen, mod, attr):
     for c in vops(gen, mod):
         if c['name'] == attr + ':_' and len(c['doms']) == 1:
@@ -2198,7 +2338,10 @@ def parse_pat(gen, mod, toks, sort):
             if c['name'] == t and not c['doms'] and gleq(gen, c['rng'], sort):
                 return ('c', t, (), c['rng'])
         if IDENT_RE.match(t):
-            return ('var', t, gen.mod_vars.get(mod, {}).get(t))
+            srt = gen.mod_vars.get(mod, {}).get(t)
+            if srt is None and t in mixfix_words(gen, mod):
+                return None         # a keyword of a mixfix constructor, not a variable
+            return ('var', t, srt)
         return None
     if toks[0] == '(' and span_end(toks, 0) == len(toks):
         return parse_pat(gen, mod, toks[1:-1], sort)
@@ -2232,7 +2375,9 @@ def parse_pat(gen, mod, toks, sort):
 
 
 def node_sort(N):
-    if N[0] == 'v':
+    if N[0] in ('v', 'vout'):
+        return N[2]
+    if N[0] == 'cls':
         return N[2]
     if N[0] == 'cons':
         return N[4]
@@ -2243,12 +2388,16 @@ def render_node(N):
     k = N[0]
     if k == 'v':
         return '%s:%s' % (N[1], N[2]) if N[3] else N[1]
+    if k == 'vout':
+        return '%s:%s' % (N[1], N[2])
+    if k == 'cls':
+        return '%s:%s' % (N[4], N[2])
     if k == 'c':
         if not N[2]:
             return qualc(N[1], N[3])
         return render(N[1], [render_node(c) for c in N[2]], nested=True)
     if k == 'set':
-        parts = ['%s : %s' % (a, render_node(c)) for a, _, c in N[1]]
+        parts = ['%s : %s' % (a, render_node(c)) for a, _, c in N[1] if c is not None]
         if N[2] is not None:
             parts.append(render_node(N[2]))
         return ', '.join(parts)
@@ -2323,6 +2472,15 @@ class CellCtx(object):
         self.refine = set()
         self.keep = False
         self.where = ''
+        self.noattr = set()   # attributes some cell needs absent (dmc-no-<attr>)
+        self.iscls = set()    # class constants some cell selects exactly (dmc-is-<class>)
+        self.narrow = set()   # (sibling variable, its sort, node sort): a sibling variable below its node's sort
+        self.outs = set()     # (Sp, S) of the dmc-out-<Sp>-<S> guards of the cells
+        self.cls_down = None  # class constant -> the class constants below it (itself too), over the owise's
+                              # module and its scope modules (class_universe)
+        self.classes = []     # classes(...): class variable cells
+        self.exact = []       # exact-classes(...): exact class cells
+        self.sort_split = set()  # sort-split(Sp < S)
 
     def fresh(self, sort):
         self.count += 1
@@ -2332,6 +2490,21 @@ class CellCtx(object):
 def m_match(gen, mod, cx, P, N):
     """Status of a non-collection pattern against a node: no | maybe | yes(pieces, binds)."""
     k = P[0]
+    if N[0] == 'cls':
+        # a class cell: all the class constants below N[1] (or N[1] alone when exact).  A class name C in a
+        # sibling's object pattern stands for C and its subclasses; class_options makes every cell either
+        # inside or outside the classes of each sibling, so the answer is yes or no
+        if k == 'var' and P[1] in cx.shared:
+            return ('yes', [(N, P[1], cx.sort_of[P[1]])], [])
+        if k == 'var':
+            if P[2] is not None and P[2] != 'Cid':
+                cls_split_check(cx, N, P[2])
+            return ('yes', [], [(P[1], N)]) if P[2] is None or P[2] == 'Cid' or cls_le(cx, N[1], P[2]) \
+                else ('no',)
+        if k == 'c' and not P[2] and is_class_rng(gen, P[3]):
+            cls_split_check(cx, N, P[1])
+            return ('yes', [], []) if cls_le(cx, N[1], P[1]) else ('no',)
+        return ('no',)
     if k == 'var':
         name = P[1]
         if name in cx.shared:
@@ -2339,8 +2512,23 @@ def m_match(gen, mod, cx, P, N):
                 return ('yes', [], [])
             return ('yes', [(N, name, cx.sort_of[name])], [])
         ns = node_sort(N)
-        if P[2] is not None and not (gleq(gen, ns, P[2]) or gleq(gen, P[2], ns)):
-            return ('no',)                  # sorts unrelated: the variable can never match this node
+        if N[0] == 'vout' and (gleq(gen, P[2] or ns, N[3]) or not sorts_meet(gen, P[2] or ns, ns)):
+            return ('no',)                  # the cell's terms are outside the sort N[3], so outside P's
+        if P[2] is None or gleq(gen, ns, P[2]):
+            return ('yes', [], [(name, N)])
+        if not sorts_meet(gen, ns, P[2]):
+            return ('no',)                  # no term of the node's sort has the variable's sort
+        if N[0] == 'v' and N[3]:
+            if (P[2], ns) not in cx.sort_split:
+                raise GenError('%s: the sibling variable %s:%s covers only part of %s; add ---@dmc sort-split(%s < %s)'
+                               % (cx.where, name, P[2], ns, P[2], ns))
+            return ('maybe', (), P, ('sort', P[2]))
+        if N[0] == 'c' and not any(o['name'] == N[1] and len(o['doms']) == len(N[2]) and gleq(gen, o['rng'], P[2])
+                                   for o in reflected_ctors(gen)):
+            return ('no',)                  # no declaration of the constructor has a range inside P's sort
+        # an owise variable (not split), a constructor with a declaration inside P's sort, or a cell already
+        # outside another sort: the sibling is taken to cover the node, and no cell is made for the rest
+        cx.narrow.add((name, P[2], ns))
         return ('yes', [], [(name, N)])
     if k == 'lit':
         if N[0] == 'v' and N[2] in NUM_SORTS:
@@ -2351,6 +2539,15 @@ def m_match(gen, mod, cx, P, N):
     if k == 'c':
         name, kids, rng = P[1], P[2], P[3]
         if N[0] == 'c':
+            if N[1] != name and not N[2] and not kids and is_class_rng(gen, N[3]) and is_class_rng(gen, rng):
+                # class constants: in an object pattern a class name C stands for C and its subclasses
+                if gleq(gen, N[3], rng):
+                    return ('yes', [], [])
+                if gleq(gen, rng, N[3]):
+                    raise GenError('%s: the cell for class %s also matches the objects of its subclass %s, '
+                                   'which a sibling equation handles; list the cells with ---@dmc classes(...)'
+                                   % (cx.where, N[1], name))
+                return ('no',)
             if N[1] != name or len(N[2]) != len(kids):
                 return ('no',)
             return combine([under(i, m_match(gen, mod, cx, kids[i], N[2][i])) for i in range(len(kids))])
@@ -2367,10 +2564,12 @@ def m_match(gen, mod, cx, P, N):
             return ('no',)
         sts = []
         for attr, dom, p in items:
-            child = None
+            child, absent = None, False
             for a, _, c in N[1]:
                 if a == attr:
-                    child = c
+                    child, absent = c, c is None
+            if absent:
+                return ('no',)
             if child is None:
                 if N[2] is None:
                     return ('no',)
@@ -2426,6 +2625,211 @@ def sort_elem_of(sort):
     return {'ExpList': 'Exp', 'VarList': 'Var'}[sort]
 
 
+def is_class_rng(gen, rng):
+    """rng is a class sort (a sort below Cid)."""
+    return rng != 'Cid' and gleq(gen, rng, 'Cid')
+
+
+def is_class_const(gen, c):
+    return not c['doms'] and is_class_rng(gen, c['rng'])
+
+
+def class_universe(gen, mods):
+    """Class constant -> the class constants below it (itself too), over the owise's module and its scope
+    modules: a class variable V:K of a cell in the owise's module also matches the subclasses of K that only a
+    scope module declares (TrustedApp < App TAKernel)."""
+    down = {}
+    for M in mods:
+        consts = [c for c in vops(gen, M) if is_class_const(gen, c)]
+        for k in consts:
+            d = down.setdefault(k['name'], set())
+            d.update(c['name'] for c in consts if gen.leq(M, c['rng'], k['rng']))
+    return down
+
+
+def cls_split_check(cx, N, C):
+    """A class variable cell N must lie inside the classes of a sibling's class C or outside them."""
+    if N[3]:
+        return
+    mine, theirs = cx.cls_down.get(N[1], {N[1]}), cx.cls_down.get(C, {C})
+    if mine & theirs and not mine <= theirs:
+        raise GenError('%s: the cell of class %s is split by the sibling class %s (common subclasses %s); '
+                       'change classes(...) / exact-classes(...)'
+                       % (cx.where, N[1], C, ', '.join(sorted(mine & theirs))))
+
+
+def cls_le(cx, a, b):
+    """Class constant a is b or a subclass of b (over the class universe)."""
+    return a == b or a in cx.cls_down.get(b, ())
+
+
+def class_options(gen, mod, cx, sort):
+    """Cells of a class position of sort `sort` (Cid or a class sort), as the directives list them: a class
+    variable V:K for each class K of classes(...) (K and its subclasses), V:K with the guard dmc-is-K(V) for
+    each class K of exact-classes(...) (an object written with K itself).  A module writes the cells of the
+    classes it sees; a listed class it does not see (a class of another configuration) is skipped."""
+    if not cx.classes and not cx.exact:
+        raise GenError('%s: a sibling splits a class position (%s); list its cells with ---@dmc classes(...) '
+                       '(and exact-classes(...))' % (cx.where, sort))
+    rng = dict((c['name'], c['rng']) for c in vops(gen, mod) if is_class_const(gen, c))
+    opts = []
+    for ks, exact in ((cx.classes, False), (cx.exact, True)):
+        for k in ks:
+            if k in rng and (sort == 'Cid' or cls_le(cx, k, sort)):
+                opts.append(('cls', k, rng[k], exact, cx.fresh(rng[k])[1]))
+    if not opts:
+        raise GenError('%s: no listed class below %s' % (cx.where, sort))
+    return opts
+
+
+def all_sorts(gen):
+    """Every sort of the reflected modules (subsort declarations, constructor ranges and arguments)."""
+    res = gen.__dict__.get('all_sorts_cache')
+    if res is None:
+        res = set()
+        for M in gen.refl.mods.values():
+            for a, b in M.get('subs', []):
+                res.update((a, b))
+            for c in M.get('ctors', []):
+                res.update(x for x in [c['rng']] + c['doms'] if not x.startswith('['))
+        gen.all_sorts_cache = res
+    return res
+
+
+def sorts_below(gen, X):
+    return set(Y for Y in all_sorts(gen) if gleq(gen, Y, X))
+
+
+def sorts_meet(gen, a, b):
+    """Some sort is below both a and b (a term may have both sorts)."""
+    return bool(sorts_below(gen, a) & sorts_below(gen, b))
+
+
+def reflected_ctors(gen):
+    """The constructors of all reflected modules, once per (name, arguments, range)."""
+    res = gen.__dict__.get('reflected_ctors_cache')
+    if res is None:
+        seen, res = set(), []
+        for M in gen.refl.mods.values():
+            for c in M.get('ctors', []):
+                key = (c['name'], tuple(c['doms']), c['rng'])
+                if key not in seen and not c['rng'].startswith('['):
+                    seen.add(key)
+                    res.append(c)
+        gen.reflected_ctors_cache = res
+    return res
+
+
+def visible_sorts(gen, mod):
+    """Sorts of the constructors and subsort declarations visible in mod."""
+    res = set()
+    for c in vops(gen, mod):
+        res.update(x for x in [c['rng']] + c['doms'] if not x.startswith('['))
+    res.update(x for pair in gen.refl.mods.get(mod, {}).get('subs', []) for x in pair)
+    return res
+
+
+def out_pred(Sp, S):
+    return 'dmc-out-%s-%s' % (re.sub(r'\W', '', Sp), re.sub(r'\W', '', S))
+
+
+def out_pred_eqs(gen, mod, Sp, S, where):
+    """Declarations and equations of dmc-out-<Sp>-<S> : S -> Bool (a term of S is outside Sp), over the
+    constructors visible in mod, and of the predicates they call.  A ground constructor term t of S has a least
+    sort Y, and t is in Sp exactly when Y is below Sp:
+      - V:X -> True for each largest sort X below S that shares no subsort with Sp, and V:Sp -> False;
+      - for a sort Y left (below S, not below Sp, meeting Sp), the terms whose least sort is Y itself: a
+        constructor c of range Y gives True when no declaration of c (same name and arity) has a range below
+        Sp; otherwise c(X1:D1, ..., Xn:Dn) is outside Sp when, for each such declaration o, some Xi is outside
+        o's i-th argument sort (dmc-out-<o_i>-<D_i>, recursively);
+      - an assoc constructor of Y: E1 op E2 op R -> True, with E1, E2 over the largest sorts below Y and the
+        constructors of Y other than the identity (two elements fixed: R may collapse to the identity and the
+        pattern still holds a sequence), or E op R -> True without an identity.
+    The sorts are those of all reflected modules (a target may add subsorts).  Returns the statement lines."""
+    out, todo, done = [], [(Sp, S)], set()
+    vis = set((c['name'], tuple(c['doms']), c['rng']) for c in vops(gen, mod))
+    vsorts = visible_sorts(gen, mod)
+    while todo:
+        Sp_, S_ = todo.pop(0)
+        if (Sp_, S_) in done:
+            continue
+        done.add((Sp_, S_))
+        f = out_pred(Sp_, S_)
+        sorts = sorted(sorts_below(gen, S_))
+        below = dict((X, sorts_below(gen, X)) for X in sorts)
+        bsp = sorts_below(gen, Sp_)
+        out.append('op %s : %s -> Bool .' % (f, S_))
+        out.append('eq %s(DMCO:%s) = False .' % (f, Sp_))
+        covered = set()
+        for X in sorted(sorts, key=lambda X: (-len(below[X]), X)):
+            if below[X] <= covered or below[X] & bsp:
+                continue
+            covered |= below[X]
+            if X in vsorts:
+                out.append('eq %s(DMCO:%s) = True .' % (f, X))
+
+        def sub(Dsp, D):
+            """Text of `X:D is outside Dsp` for an argument (a predicate call, or a constant)."""
+            if gleq(gen, D, Dsp):
+                return None                         # always inside
+            if not sorts_meet(gen, D, Dsp):
+                return 'True'
+            todo.append((Dsp, D))
+            return '%s(%%s)' % out_pred(Dsp, D)
+        for Y in sorts:
+            if Y in covered or Y in bsp:
+                continue
+            for c in sorted((c for c in reflected_ctors(gen) if c['rng'] == Y),
+                            key=lambda c: (c['name'], c['doms'])):
+                if (c['name'], tuple(c['doms']), c['rng']) not in vis:
+                    continue
+                low = [o for o in reflected_ctors(gen) if o['name'] == c['name'] and len(o['doms']) == len(c['doms'])
+                       and o['rng'] != Y and gleq(gen, o['rng'], Sp_)]
+                if 'assoc' in c['attrs']:
+                    if low or len(c['doms']) != 2:
+                        raise GenError('%s: cannot define %s: assoc constructor %s has a declaration inside %s'
+                                       % (where, f, c['name'], Sp_))
+                    ident = next((a[3:] for a in c['attrs'] if a.startswith('id=')), None)
+                    if ident is None:
+                        out.append('eq %s(%s) = True .' % (f, render(c['name'], ['DMCO1:%s' % Y, 'DMCO2:%s' % Y])))
+                        continue
+                    proper = [Z for Z in sorts if Z != Y and gleq(gen, Z, Y)]
+                    elems = ['DMCO%%d:%s' % Z for Z in sorted(proper)
+                             if Z in vsorts and not any(W != Z and gleq(gen, Z, W) for W in proper)]
+                    for o in reflected_ctors(gen):
+                        if o['rng'] == Y and 'assoc' not in o['attrs'] and o['name'] != ident \
+                                and (o['name'], tuple(o['doms']), o['rng']) in vis:
+                            elems.append(render(o['name'], ['DMCA%%d%d:%s' % (k, d) for k, d in enumerate(o['doms'])],
+                                                rng=Y))
+                    for a in elems:
+                        for b in elems:
+                            t = render(c['name'], [a.replace('%d', '1'),
+                                                   render(c['name'], [b.replace('%d', '2'), 'DMCO3:%s' % Y])])
+                            out.append('eq %s(%s) = True .' % (f, t))
+                    continue
+                args = ['DMCO%d:%s' % (k + 1, d) for k, d in enumerate(c['doms'])]
+                lhs = '%s(%s)' % (f, render(c['name'], args, rng=Y))
+                if not low:
+                    out.append('eq %s = True .' % lhs)
+                    continue
+                conj = []
+                for o in low:
+                    disj = []
+                    for k, (D, Do) in enumerate(zip(c['doms'], o['doms'])):
+                        t = sub(Do, D)
+                        if t == 'True':
+                            disj = ['True']
+                            break
+                        if t is not None:
+                            disj.append(t % args[k])
+                    if not disj:
+                        conj = ['False']
+                        break
+                    conj.append(disj[0] if len(disj) == 1 else '(%s)' % ' or '.join(disj))
+                out.append('eq %s = %s .' % (lhs, ' and '.join(conj) if conj else 'True'))
+    return out
+
+
 def refine_options(gen, mod, cx, N, P, reason):
     """Replacement nodes that split N so that the pattern P can be decided."""
     if isinstance(reason, tuple) and reason[0] == 'attr':
@@ -2433,12 +2837,23 @@ def refine_options(gen, mod, cx, N, P, reason):
             raise GenError('%s: internal: attribute refinement of %s' % (cx.where, N[0]))
         dom = [d for a, d, _ in P[1] if a == reason[1]][0]
         child = cx.fresh(dom)
-        return [('set', N[1] + ((reason[1], dom, child),), N[2], N[3])]
+        return [('set', N[1] + ((reason[1], dom, child),), N[2], N[3]),
+                ('set', N[1] + ((reason[1], dom, None),), N[2], N[3])]
     if N[0] == 'v' and N[2] == ATTRSET:
         if P[0] != 'attrs':
             raise GenError('%s: cannot refine an attribute set for this pattern' % cx.where)
-        attrs = tuple((a, d, cx.fresh(d)) for a, d, _ in P[1])
-        return [('set', attrs, cx.fresh(ATTRSET), ATTRSET)]
+        # one attribute at a time, present or absent; the next attribute the pattern names is refined
+        # on the rest (('attr', a) reason)
+        if not P[1]:
+            raise GenError('%s: internal: attribute refinement without attributes' % cx.where)
+        a, d, _ = P[1][0]
+        rest = cx.fresh(ATTRSET)
+        return [('set', ((a, d, cx.fresh(d)),), rest, ATTRSET), ('set', ((a, d, None),), rest, ATTRSET)]
+    if isinstance(reason, tuple) and reason[0] == 'sort':
+        # the terms of the sibling's sort (decided by the sibling) and the others (guard dmc-out-<Sp>-<S>)
+        return [cx.fresh(reason[1]), ('vout', cx.fresh(N[2])[1], N[2], reason[1])]
+    if N[0] == 'v' and (N[2] == 'Cid' or is_class_rng(gen, N[2])):
+        return class_options(gen, mod, cx, N[2])
     if N[0] == 'v':
         sort = N[2]
         opts = []
@@ -2522,6 +2937,99 @@ def cell_guards(gen, mod, cx, nodes, sts):
     return guards
 
 
+def absent_guards(cx, leaf):
+    """dmc-no-<attr>(REST) for every attribute a cell's attribute sets lack (('set', ...) entries with
+    node None); cx.noattr collects the attributes whose predicate the statements need."""
+    out = []
+
+    def walk(N):
+        if N is None:
+            return
+        if N[0] == 'cls':
+            if N[3]:
+                cx.iscls.add(N[1])
+                out.append('dmc-is-%s(%s)' % (N[1], render_node(N)))
+            return
+        if N[0] == 'vout':
+            cx.outs.add((N[3], N[2]))
+            out.append('%s(%s)' % (out_pred(N[3], N[2]), render_node(N)))
+            return
+        if N[0] == 'c':
+            for k in N[2]:
+                walk(k)
+        elif N[0] == 'cons':
+            walk(N[1])
+            walk(N[2])
+        elif N[0] == 'set':
+            for a, _, c in N[1]:
+                if c is None:
+                    if N[2] is None:
+                        raise GenError('%s: internal: absent attribute without a rest' % cx.where)
+                    cx.noattr.add(a)
+                    out.append('dmc-no-%s(%s)' % (a, render_node(N[2])))
+                else:
+                    walk(c)
+    for N in leaf:
+        walk(N)
+    return out
+
+
+def noattr_decls(ctx, cx):
+    """Declarations of the predicates dmc-no-<attr> : AttributeSet -> Bool (the attribute set has no
+    attribute attr), once per module and attribute: one equation per attribute constructor visible in
+    the owise's module.  An attribute that only later modules declare leaves the predicate unreduced,
+    so the guarded cell does not apply there (no wrong reduction)."""
+    gen, mod = ctx.gen, ctx.mod
+    done = ctx.__dict__.setdefault('noattr_done', set())
+    out = []
+    for a in sorted(cx.noattr):
+        if (mod, a) in done:
+            continue
+        done.add((mod, a))
+        f = 'dmc-no-%s' % a
+        out.append('op %s : %s -> Bool .' % (f, ATTRSET))
+        out.append('eq %s(none) = True .' % f)
+        for c in sorted(vops(gen, mod), key=lambda c: c['name']):
+            m = re.match(r"^([A-Za-z][\w\-']*):_$", c['name'])
+            if not m or len(c['doms']) != 1:
+                continue
+            b, d = m.group(1), c['doms'][0]
+            val = 'False' if b == a else '%s(DMCAS:%s)' % (f, ATTRSET)
+            out.append('eq %s((%s : DMCA:%s), DMCAS:%s) = %s .' % (f, b, d, ATTRSET, val))
+    return out
+
+
+def iscls_decls(ctx, cx):
+    """Declarations of the predicates dmc-is-<K> : Cid -> Bool (the class is K itself, not a subclass), once per
+    module and class, for the classes the owise's module sees: True for K, False for every other class
+    constant visible there.  A target adds the classes it declares (target_owise)."""
+    gen, mod = ctx.gen, ctx.mod
+    done = ctx.__dict__.setdefault('iscls_done', set())
+    consts = sorted(c['name'] for c in vops(gen, mod) if is_class_const(gen, c))
+    out = []
+    for k in sorted(cx.iscls):
+        if (mod, k) in done or k not in consts:
+            continue
+        done.add((mod, k))
+        out.append('op dmc-is-%s : Cid -> Bool .' % k)
+        out.extend('eq dmc-is-%s(%s) = %s .' % (k, c, 'True' if c == k else 'False') for c in consts)
+    return out
+
+
+def out_decls(ctx, cx, where):
+    """The dmc-out-<Sp>-<S> predicates of the cells' guards (out_pred_eqs), once per module, over the
+    constructors the owise's module sees.  A target adds the equations of what it adds (target_owise)."""
+    gen, mod = ctx.gen, ctx.mod
+    done = ctx.__dict__.setdefault('out_done', set())
+    out = []
+    for Sp, S in sorted(cx.outs):
+        for st in out_pred_eqs(gen, mod, Sp, S, where):
+            if (mod, st) not in done:
+                done.add((mod, st))
+                out.append(st)
+    return out
+
+
 def pat_node(cx, p, sort):
     """Node of an owise LHS argument: its variables stay unrefined, its constructors are fixed."""
     if p[0] == 'var':
@@ -2538,8 +3046,142 @@ def gen_leq_ok(gen, mod, a, b):
     return a == b or gleq(gen, a, b)
 
 
-def cell_owise(ctx, u, e, sibs, action, excl, keep):
-    """Equations for an owise LHS with enumerated / collection arguments (see the cell engine)."""
+def target_owise(ctx, u, e, sibs, action, excl, keep, where):
+    """Owise cells of the target modules (target_modules: main.maude modules, loaded modules no loaded module
+    imports, such as ghost property modules).  The meaning of [owise] is relative to the module in which a
+    term is reduced, so the complement is taken over the signature of each target T that sees the function:
+    the engine of the owise is run again with the constructors visible in T, and the cells that hold a
+    constructor or attribute the owise's module does not see go into T (before its end, see
+    insert_target_eqs and main_with_plan), with the owise module's variables written with their sorts.
+    The dmc-no-<attr> predicates get one equation per attribute that T adds.  Returns the declarations
+    that the owise's own module needs for those cells (dmc-no-<attr> predicates its own cells do not use)."""
+    gen, mod = ctx.gen, ctx.mod
+    fn = e['fn']
+    doms = gen.mod_ops.get(mod, {}).get(fn)
+    own = set(c['name'] for c in gen.refl.value_ops(mod))
+    own_attrs = set(attr_names(gen, mod))
+    mvars = gen.mod_vars.get(mod, {})
+    extra_decls = []
+    for T in scope_modules(ctx, fn, doms):
+        if T == mod:
+            continue
+        new = set(c['name'] for c in gen.refl.value_ops(T)) - own
+        new_attrs = [a for a in attr_names(gen, T) if a not in own_attrs]
+        if not new:
+            continue
+        saved_vars, saved_ops = gen.mod_vars.get(T), gen.mod_ops.get(T)
+        # the engines read the owise's variables and operator from the module table of the module they work in
+        gen.mod_vars[T] = dict(saved_vars or {}, **mvars)
+        gen.mod_ops[T] = dict(saved_ops or {}, **{fn: doms})
+        tctx = copy.copy(ctx)
+        tctx.mod = T
+        try:
+            if action[0] == 'enumerate':
+                stmts, _ = collection_stmts(tctx, u, e, sibs, action, excl, keep)
+                noattr, iscls, outs = set(), set(), set()
+            else:
+                stmts, _ = cell_owise(ctx, u, e, sibs, action, excl, keep, emod=T)
+                noattr = set(gen.last_cx.noattr)
+                iscls = set(gen.last_cx.iscls)
+                outs = set(gen.last_cx.outs)
+        finally:
+            for table, saved in ((gen.mod_vars, saved_vars), (gen.mod_ops, saved_ops)):
+                if saved is None:
+                    del table[T]
+                else:
+                    table[T] = saved
+        out = []
+        # declarations of dmc-no-<attr> that only T's cells need: they belong to the owise's module (cell_owise
+        # writes them over the attributes of that module, once per module and attribute)
+        decl = ('op dmc-no-', 'eq dmc-no-', 'op dmc-is-', 'eq dmc-is-', 'op dmc-out-', 'eq dmc-out-')
+        extra_decls.extend(st for st in stmts if st.startswith(decl))
+        stmts = [st for st in stmts if not st.startswith(decl)]
+        for st in stmts:
+            m = re.match(r'^c?eq (.*?) = ', st)
+            if not m or not any(t in new for t in re.findall(r"[A-Za-z][\w\-']*", m.group(1))):
+                continue
+            for name, srt in mvars.items():
+                st = re.sub(r"(?<![\w:$'\-])%s(?![\w:'\-])" % re.escape(name), '%s:%s' % (name, srt), st)
+            out.append(closed_rewrite_line(gen, st))
+        # the absent-attribute predicates of the cells: declared in the owise's module (over its attributes),
+        # completed here with the attributes T adds
+        for a in sorted(noattr):
+            for c in sorted(vops(gen, T), key=lambda c: c['name']):
+                mm = re.match(r"^([A-Za-z][\w\-']*):_$", c['name'])
+                if not mm or len(c['doms']) != 1 or mm.group(1) not in new_attrs:
+                    continue
+                key = (T, a, mm.group(1))
+                if key in gen.target_noattr:
+                    continue
+                gen.target_noattr.add(key)
+                out.append('eq dmc-no-%s((%s : DMCA:%s), DMCAS:%s) = dmc-no-%s(DMCAS:%s) .'
+                           % (a, mm.group(1), c['doms'][0], ATTRSET, a, ATTRSET))
+        # dmc-is-<K>: declared in the owise's module when it sees K (completed here with the classes T adds),
+        # else declared here over the classes of T
+        tconsts = sorted(c['name'] for c in vops(gen, T) if is_class_const(gen, c))
+        for k in sorted(iscls):
+            if k in own:
+                vals = [c for c in tconsts if c not in own]
+            else:
+                if (T, k, None) in gen.target_noattr:
+                    continue
+                gen.target_noattr.add((T, k, None))
+                out.append('op dmc-is-%s : Cid -> Bool .' % k)
+                vals = tconsts
+            for c in vals:
+                if (T, 'is-' + k, c) not in gen.target_noattr:
+                    gen.target_noattr.add((T, 'is-' + k, c))
+                    out.append('eq dmc-is-%s(%s) = %s .' % (k, c, 'True' if c == k else 'False'))
+        # dmc-out-<Sp>-<S>: the equations of the constructors and sorts T adds
+        for Sp, S in sorted(outs):
+            base = set(out_pred_eqs(gen, mod, Sp, S, where))
+            for st in out_pred_eqs(gen, T, Sp, S, where):
+                if st not in base and (T, st) not in gen.target_noattr:
+                    gen.target_noattr.add((T, st))
+                    out.append(st)
+        if out and gen.coll is None:
+            gen.scope_eqs.setdefault(T, []).append('  --- %s: %s owise cells over the constructors of %s'
+                                                   % (where, fn, T))
+            gen.scope_eqs[T].extend('  ' + x for x in out)
+    return extra_decls
+
+
+def scope_modules(ctx, fn, doms):
+    """The modules of the scope(...) directive that the build has and that see the operator fn (a module of
+    another configuration is skipped)."""
+    gen = ctx.gen
+    return [T for T in ctx.__dict__.get('ann', {}).get('scope', ())
+            if doms is not None and gen.refl.has_module(T) and gen.refl.has_op(T, fn, doms)]
+
+
+def attr_names(gen, mod):
+    """Attribute names (`name :_` constructors) visible in mod."""
+    return sorted(set(m.group(1) for m in (re.match(r"^([A-Za-z][\w\-']*):_$", c['name'])
+                                           for c in vops(gen, mod)) if m))
+
+
+def insert_target_eqs(gen, text):
+    """The target cells (gen.scope_eqs) of the modules declared in text, right before their end line."""
+    if not gen.scope_eqs:
+        return text
+    out, cur = [], None
+    for ln in text.splitlines(True):
+        raw = ln.rstrip('\r\n')
+        head = HEAD_RE.match(raw)
+        if head:
+            cur = head.group(2)
+        elif cur is not None and re.match(r'^\s*(endm|endfm|endom)\b', raw):
+            if gen.scope_eqs.get(cur):
+                eol = ln[len(raw):] or '\n'
+                out.extend(x + eol for x in gen.scope_eqs[cur])
+            cur = None
+        out.append(ln)
+    return ''.join(out)
+
+
+def cell_owise(ctx, u, e, sibs, action, excl, keep, emod=None):
+    """Equations for an owise LHS with enumerated / collection arguments (see the cell engine).
+    emod: the module whose constructors are enumerated (default: the owise's own module)."""
     gen, mod = ctx.gen, ctx.mod
     where = '%s:%d' % (ctx.fname, u.line)
     kind, val = action
@@ -2549,6 +3191,8 @@ def cell_owise(ctx, u, e, sibs, action, excl, keep):
         raise GenError('%s: owise operator %s has no declaration matching its LHS' % (where, fn))
     n = len(args)
     mvars = gen.mod_vars.get(mod, {})
+    if emod is not None:
+        mod = emod
     cx = CellCtx()
     cx.where = where
     cx.keep = keep
@@ -2574,6 +3218,10 @@ def cell_owise(ctx, u, e, sibs, action, excl, keep):
             raise GenError('%s: unsupported collection argument %s' % (where, args[coll]))
     kv = val if isinstance(val, dict) else {}
     sep, empty = kv.get('sep'), kv.get('empty')
+    ann = ctx.__dict__.get('ann', {})
+    cx.classes, cx.exact = ann.get('classes', []), ann.get('exact-classes', [])
+    cx.sort_split = ann.get('sort-split', set())
+    cx.cls_down = class_universe(gen, [ctx.mod] + scope_modules(ctx, fn, doms))
     collsort = doms[coll] if coll is not None else None
     owise_nodes = []
     for i in range(n):
@@ -2648,6 +3296,7 @@ def cell_owise(ctx, u, e, sibs, action, excl, keep):
             guards = cell_guards(gen, mod, cx, leaf, sts)
             if guards is None:
                 continue
+            guards = absent_guards(cx, leaf) + guards
             leaves += 1
             lhs = '%s(%s)' % (fn, ', '.join(render_node(x) for x in leaf))
             renames = {}
@@ -2684,6 +3333,12 @@ def cell_owise(ctx, u, e, sibs, action, excl, keep):
                 stmts.append('ceq %s = %s if %s .' % (lhs, rhs, ' /\\ '.join(guards)))
             else:
                 stmts.append('eq %s = %s .' % (lhs, rhs))
+    stmts = noattr_decls(ctx, cx) + iscls_decls(ctx, cx) + out_decls(ctx, cx, where) + stmts
+    gen.last_cx = cx
+    if cx.narrow and gen.coll is None and emod is None:
+        gen.warn('%s: %s: the cells assume that sibling variables cover their whole node sort (%s); terms '
+                 'outside the variable sort leave the operator unreduced' % (where, fn, ', '.join(
+                     '%s:%s in %s' % x for x in sorted(cx.narrow))))
     elems = [c['name'] for c in elem_list(gen, mod, elemsort, sep, empty, excl)] if mode == 'recurse' else []
     info = {'fn': fn, 'module': mod, 'N': coll + 1 if coll is not None else None, 'sort': collsort,
             'doms': doms, 'kind': 'recurse' if mode == 'recurse' else 'enumerate', 'sep': sep,
@@ -3435,6 +4090,369 @@ def owise_recurse_args(args):
     return args
 
 
+def rule_stmt(ctx, t, dirs, where):
+    """Text of the rule t after restrict(...) and the built-in equality rewriting, or None (unchanged)."""
+    gen = ctx.gen
+    keep = any(k == 'keep-builtin' for k, v in dirs)
+    rs = [v for k, v in dirs if k == 'restrict']
+    if rs:
+        for v, srt in rs[0]:
+            t = re.sub(r"(?<![\w\-'$#%%:])%s(?![\w\-'$#%%:])" % re.escape(v), '%s:%s' % (v, srt), t)
+        gen.count(ctx.fname, 'restrict')
+        # the left-hand side keeps the IMP constructor (V:Value == V':Value); the right side is rewritten
+        i = t.index(' => ') + len(' => ')
+        return t[:i] + rewrite_text(ctx, t[i:], where, keep)
+    if '==' in t or '=/=' in t:
+        gen.count(ctx.fname, 'auto-builtin-rule')
+        return rewrite_text(ctx, t, where, keep) if not keep else None
+    return None
+
+
+# ---------------------------------------------------------------- inline-match, pattern, drop
+
+STMT_DIRS = ('drop', 'pattern', 'shape-cond', 'inline-match')
+VAR_PAT_RE = re.compile(r"^([A-Za-z][\w\-']*)(?::([\w\-'{}]+))?$")
+
+
+def subst_var(text, var, repl):
+    """text with the variable var (bare or annotated var:Sort) replaced by repl."""
+    return re.sub(r"(?<![\w\-'$#%:])" + re.escape(var) + r"(?::[\w\-'{}]+)?(?![\w\-'$#%:])",
+                  lambda m: repl, text)
+
+
+def as_arg(t):
+    """t as an operand: parenthesized unless it is a name or a prefix application f(...)."""
+    t = t.strip()
+    m = re.match(r"^[\w\-'$#%]+", t)
+    if m and (m.end() == len(t) or (t[m.end()] == '(' and group_closes_at_end(t, m.end()))):
+        return t
+    return '(%s)' % strip_all(t)
+
+
+def split_stmt(t):
+    """eq/ceq/rl/crl text -> (kind, parts) with parts lhs, rhs, cond (None), attrs (None or text)."""
+    if t.startswith(('rl ', 'crl ')):
+        return 'rule', parse_rule(t)
+    e = parse_eq(t)
+    if e is None:
+        return None, None
+    return 'eq', e
+
+
+def join_stmt(kind, p):
+    if kind == 'rule':
+        return render_rule(p)
+    s = ('ceq ' if p['cond'] else 'eq ') + '%s = %s' % (p['lhs'], p['rhs'])
+    if p['cond']:
+        s += ' if ' + p['cond']
+    if p['attrs']:
+        s += ' [%s]' % p['attrs']
+    return s + ' .'
+
+
+def apply_pattern(t, var, pat, where):
+    """---@dmc pattern(V=P): V becomes (P) and the condition is dropped."""
+    kind, p = split_stmt(t)
+    if kind is None or not p['cond']:
+        raise GenError('%s: pattern(%s=...) needs a conditional rule or equation' % (where, var))
+    if not mentions(p['lhs'], var):
+        raise GenError('%s: pattern(%s=...): %s is not in the left-hand side' % (where, var, var))
+    p = dict(p)
+    p['lhs'] = subst_var(p['lhs'], var, '(%s)' % pat)
+    p['rhs'] = subst_var(p['rhs'], var, '(%s)' % pat)
+    p['cond'] = None
+    return join_stmt(kind, p)
+
+
+def apply_shape_cond(ctx, t, old, pat, where):
+    """---@dmc shape-cond(T =/= C => P): the author asserts that the condition T =/= C holds exactly when
+    T has the shape P.  The condition becomes dmc-shapeN(T) = true, with the one equation
+    dmc-shapeN(P) = true (declarations to put before the statement, statement text)."""
+    gen = ctx.gen
+    kind, p = split_stmt(t)
+    if kind is None or not p['cond']:
+        raise GenError('%s: shape-cond needs a conditional rule or equation' % where)
+    conds = split_top(p['cond'], '/\\')
+    hit = [i for i, c in enumerate(conds) if norm(c) == norm(old)]
+    k = find_top(old, ' =/= ')
+    if len(hit) != 1 or k < 0:
+        raise GenError('%s: shape-cond: %s is not a condition T =/= C of the statement' % (where, old))
+    term = old[:k].strip()
+    dom = infer_sort(gen, ctx.mod, term)
+    if dom is None or dom == NUMLIT:
+        raise GenError('%s: shape-cond: cannot infer the sort of %s' % (where, term))
+    gen.match_count += 1
+    name = 'dmc-shape%d' % gen.match_count
+    conds[hit[0]] = '%s(%s) = true' % (name, term)
+    p = dict(p)
+    p['cond'] = ' /\\ '.join(conds)
+    return ['op %s : %s -> Bool .' % (name, dom), 'eq %s(%s) = true .' % (name, pat)], join_stmt(kind, p)
+
+
+def ctor_pattern(gen, mod, pat):
+    """A constructor pattern with variable arguments -> (operator name, [(var, sort)], ordered); None
+    otherwise.  Prefix f(X, Y) or mixfix ([X], X ; Y): the variables are the declared variables of the
+    module and the annotated ones (X:S)."""
+    vs = gen.mod_vars.get(mod, {})
+
+    def var_of(tok):
+        m = VAR_PAT_RE.match(tok)
+        if not m:
+            return None
+        if m.group(2):
+            return m.group(1), m.group(2)
+        return (m.group(1), vs[m.group(1)]) if m.group(1) in vs else None
+    m = re.match(r"^([\w\-'$#%]+)\((.*)\)$", pat)
+    if m and group_closes_at_end(pat, m.end(1)):
+        args = [var_of(a.strip()) for a in split_top(m.group(2), ',')]
+        if not args or None in args:
+            return None
+        return m.group(1), args
+    name, args = '', []
+    for tok in re.findall(r"[\w\-'$#%]+(?::[\w\-'{}]+)?|[^\s\w]", pat):
+        v = var_of(tok)
+        if v is not None:
+            name += '_'
+            args.append(v)
+        elif re.match(r"^[\w\-'$#%]", tok):
+            return None
+        else:
+            name += tok
+    return (name, args) if args else None
+
+
+def inline_match(ctx, t, where):
+    """---@dmc inline-match: (declarations to put before the statement, statement text)."""
+    gen = ctx.gen
+    kind, p = split_stmt(t)
+    if kind is None or not p['cond']:
+        raise GenError('%s: inline-match needs a conditional rule or equation' % where)
+    conds = split_top(p['cond'], '/\\')
+    rhs = p['rhs']
+    decls, out, found = [], [], False
+    for i in range(len(conds)):
+        c = conds[i]
+        k = find_top(c, ' := ')
+        if k < 0:
+            out.append(c)
+            continue
+        found = True
+        pat, term = strip_all(c[:k]), c[k + 4:].strip()
+        m = VAR_PAT_RE.match(pat)
+        if m and (m.group(2) or m.group(1) in gen.mod_vars.get(ctx.mod, {})):
+            subs = [(m.group(1), as_arg(term))]
+        else:
+            cp = ctor_pattern(gen, ctx.mod, pat)
+            if cp is None:
+                raise GenError('%s: inline-match: %s is neither a variable nor a constructor applied to '
+                               'variables' % (where, pat))
+            name, args = cp
+            dom = infer_sort(gen, ctx.mod, term)
+            if dom is None or dom == NUMLIT:
+                raise GenError('%s: inline-match: cannot infer the sort of %s' % (where, term))
+            gen.match_count += 1
+            n = gen.match_count
+            fresh = ['DMCM%d:%s' % (j + 1, s) for j, (v, s) in enumerate(args)]
+            lhs_pat = render(name, fresh, nested=False)
+            subs = []
+            for j, (v, s) in enumerate(args):
+                proj = 'dmc-match%d-%d' % (n, j + 1)
+                decls.append('op %s : %s -> %s .' % (proj, dom, s))
+                decls.append('eq %s(%s) = %s .' % (proj, lhs_pat, fresh[j]))
+                subs.append((v, '%s(%s)' % (proj, term)))
+            out.append('%s = %s' % (term, render(name, [x for _, x in subs], nested=False)))
+        for v, x in subs:
+            if mentions(p['lhs'], v):
+                raise GenError('%s: inline-match: %s is bound by the left-hand side' % (where, v))
+            rhs = subst_var(rhs, v, x)
+            conds[i + 1:] = [subst_var(cc, v, x) for cc in conds[i + 1:]]
+    if not found:
+        raise GenError('%s: inline-match, but the statement has no matching condition' % where)
+    p = dict(p)
+    p['rhs'] = rhs
+    p['cond'] = ' /\\ '.join(out) if out else None
+    return decls, join_stmt(kind, p)
+
+
+def stmt_directives(ctx, u, dirs, where):
+    """drop / pattern / inline-match on a statement: None (dropped) or (declarations, statement text)."""
+    kinds = [k for k, v in dirs]
+    t = u.text
+    if 'drop' in kinds:
+        return None
+    decls = []
+    for k, v in dirs:
+        if k == 'pattern':
+            t = apply_pattern(t, v[0], v[1], where)
+        elif k == 'shape-cond':
+            d, t = apply_shape_cond(ctx, t, v[0], v[1], where)
+            decls.extend(d)
+    if 'inline-match' in kinds:
+        d, t = inline_match(ctx, t, where)
+        decls.extend(d)
+    return decls, t
+
+
+# ---------------------------------------------------------------- rules: parsing and splitting
+
+RULE_RE = re.compile(r'^(c?rl)\s+(?:\[([^\[\]]*)\]\s*:\s*)?(.*?)\s*\.$', re.S)
+RULE_ATTR_RE = re.compile(r'\s\[\s*(?:nonexec|metadata|print|narrowing|label)\b[^\[\]]*\]$')
+
+
+def parse_rule(t):
+    """rl/crl statement text -> dict(kw, label, lhs, rhs, cond, attrs).  The condition `if` of a crl is
+    the depth-0 `if` after `=>` that no `fi` closes (the right-hand side may hold if ... fi terms)."""
+    m = RULE_RE.match(t.strip())
+    if not m:
+        raise GenError('not a rule: %s' % t)
+    kw, label, body = m.group(1), m.group(2), m.group(3)
+    attrs = None
+    am = RULE_ATTR_RE.search(body)
+    if am:
+        attrs = body[am.start():].strip()
+        body = body[:am.start()].rstrip()
+    toks = tokenize(body)
+    depth, arrow = 0, None
+    for k, (a, b, tok) in enumerate(toks):
+        if tok in OPEN:
+            depth += 1
+        elif tok in CLOSE:
+            depth -= 1
+        elif tok == '=>' and depth == 0:
+            arrow = k
+            break
+    if arrow is None:
+        raise GenError('rule without => : %s' % t)
+    open_ifs, depth = [], 0
+    for a, b, tok in toks[arrow + 1:]:
+        if tok in OPEN:
+            depth += 1
+        elif tok in CLOSE:
+            depth -= 1
+        elif depth == 0 and tok == 'if':
+            open_ifs.append(a)
+        elif depth == 0 and tok == 'fi':
+            if not open_ifs:
+                raise GenError('fi without if: %s' % t)
+            open_ifs.pop()
+    if len(open_ifs) != (1 if kw == 'crl' else 0):
+        raise GenError('cannot find the condition of the rule: %s' % t)
+    cut = open_ifs[0] if open_ifs else len(body)
+    return {'kw': kw, 'label': label.strip() if label else None, 'lhs': body[:toks[arrow][0]].strip(),
+            'rhs': body[toks[arrow][1]:cut].strip(),
+            'cond': body[cut + 2:].strip() if open_ifs else None, 'attrs': attrs}
+
+
+def render_rule(r):
+    s = 'crl ' if r['cond'] else 'rl '
+    if r['label']:
+        s += '[%s] : ' % r['label']
+    s += '%s => %s' % (r['lhs'], r['rhs'])
+    if r['cond']:
+        s += ' if ' + r['cond']
+    if r['attrs']:
+        s += ' ' + r['attrs']
+    return s + ' .'
+
+
+def find_if(text, start=0):
+    """The first `if B then X else Y fi` term of text at or after the character start:
+    dict(start, end, cond, then, else, enclosed) with character offsets; None when there is none."""
+    toks = tokenize(text)
+    for k, (a, b, tok) in enumerate(toks):
+        if tok != 'if' or a < start:
+            continue
+        nest, depth, th, el = 0, 0, None, None
+        for j in range(k, len(toks)):
+            t = toks[j][2]
+            if t in OPEN:
+                depth += 1
+            elif t in CLOSE:
+                depth -= 1
+            elif depth == 0 and t == 'if':
+                nest += 1
+            elif depth == 0 and t == 'fi':
+                nest -= 1
+                if nest == 0:
+                    if th is None or el is None:
+                        raise GenError('if ... fi without then/else: %s' % text[a:toks[j][1]])
+                    enclosed = k > 0 and toks[k - 1][2] == '(' and j + 1 < len(toks) and toks[j + 1][2] == ')'
+                    return {'start': a, 'end': toks[j][1], 'cond': text[b:toks[th][0]].strip(),
+                            'then': text[toks[th][1]:toks[el][0]].strip(),
+                            'else': text[toks[el][1]:toks[j][0]].strip(), 'enclosed': enclosed}
+            elif depth == 0 and nest == 1 and t == 'then' and th is None:
+                th = j
+            elif depth == 0 and nest == 1 and t == 'else' and el is None:
+                el = j
+        raise GenError('if without fi: %s' % text[a:])
+    return None
+
+
+def resolve_if(text, cond, value):
+    """text with every `if cond then X else Y fi` (same condition, up to white space) replaced by X
+    (value True) or Y, parenthesized unless the if term already is."""
+    pos = 0
+    while True:
+        f = find_if(text, pos)
+        if f is None:
+            return text
+        if norm(f['cond']) != norm(cond):
+            pos = f['start'] + 2
+            continue
+        part = f['then'] if value else f['else']
+        if f['enclosed']:
+            part = strip_all(part)
+        elif len(tokenize(part)) > 1:
+            part = '(%s)' % part
+        text = text[:f['start']] + part + text[f['end']:]
+        pos = f['start']
+
+
+def neg_bool(b):
+    """Negation of the Bool term b (`not (B)` gives B back)."""
+    b = b.strip()
+    m = re.match(r'^not\s+(.*)$', b)
+    if m:
+        inner = m.group(1).strip()
+        if strip_parens(inner) != inner or len(tokenize(inner)) == 1:
+            return strip_parens(inner)
+    return neg_cond(b)
+
+
+def split_on(r, cond, where):
+    """The two rules r /\\ cond and r /\\ not cond; the if terms of the right-hand side with this condition
+    are resolved.  Labels get -then / -else."""
+    out = []
+    for value, c, suffix in ((True, cond, 'then'), (False, neg_bool(cond), 'else')):
+        p = dict(r)
+        p['rhs'] = resolve_if(r['rhs'], cond, value)
+        p['cond'] = '%s /\\ %s' % (r['cond'], c) if r['cond'] else c
+        p['label'] = '%s-%s' % (r['label'], suffix) if r['label'] else None
+        out.append(p)
+    return out
+
+
+def split_all(r, where):
+    f = find_if(r['rhs'])
+    if f is None:
+        return [r]
+    return [q for p in split_on(r, f['cond'], where) for q in split_all(p, where)]
+
+
+def split_rule(t, splits, where):
+    """---@dmc split / split(B), in order: split(B) splits on B, split splits on the condition of every
+    if term of the right-hand side until none is left."""
+    rules = [parse_rule(t)]
+    for b in splits:
+        if b is None:
+            if all(find_if(r['rhs']) is None for r in rules):
+                raise GenError('%s: split, but the right-hand side has no if ... fi' % where)
+            rules = [q for r in rules for q in split_all(r, where)]
+        else:
+            rules = [q for r in rules for q in split_on(r, b, where)]
+    return [render_rule(r) for r in rules]
+
+
 def transform_unit(ctx, u, raw):
     """Replacement lines (without EOL) for a unit, or None to keep it verbatim."""
     gen = ctx.gen
@@ -3487,6 +4505,25 @@ def transform_unit(ctx, u, raw):
         return None
     t = u.text
     kinds = [k for k, v in dirs]
+    if any(k in STMT_DIRS for k in kinds):
+        if not t.startswith(('eq ', 'ceq ', 'rl ', 'crl ')):
+            raise GenError('%s: %s on a statement that is not a rule or equation' % (where, kinds))
+        if 'owise' in kinds:
+            raise GenError('%s: %s together with an owise directive' % (where, kinds))
+        res = stmt_directives(ctx, u, dirs, where)
+        for k in kinds:
+            if k in STMT_DIRS:
+                gen.count(ctx.fname, k)
+                gen.stmt_dirs.append({'kind': k, 'file': ctx.fname, 'line': u.line,
+                                     'stmt': norm(u.text)})
+        if res is None:
+            return []
+        decls, t2 = res
+        u2 = copy.copy(u)
+        u2.text = t2
+        u2.dmc = [d for d in u.dmc if parse_directive(d)[0] not in STMT_DIRS]
+        rest = transform_unit(ctx, u2, ctx.indent + t2)
+        return [ctx.indent + x for x in decls] + (rest if rest is not None else [ctx.indent + t2])
     if 'qid-subsort' in kinds or 'qid-literals' in kinds:
         return []
     if 'close' in kinds:
@@ -3512,6 +4549,20 @@ def transform_unit(ctx, u, raw):
             gen.count(ctx.fname, 'auto-pr')
             return [ctx.indent + new]
         return None
+    if t.startswith(('rl ', 'crl ')):
+        splits = [v for k, v in dirs if k == 'split']
+        if splits:
+            pieces = split_rule(t, splits, where)
+            out = []
+            for p in pieces:
+                gen.count(ctx.fname, 'split-rule')
+                r = rule_stmt(ctx, p, dirs, where)
+                out.append(ctx.indent + (p if r is None else r))
+            return out
+        r = rule_stmt(ctx, t, dirs, where)
+        return None if r is None else [ctx.indent + r]
+    if any(k == 'split' for k, v in dirs):
+        raise GenError('%s: split on a statement that is not a rule' % where)
     rs = [v for k, v in dirs if k == 'restrict']
     if rs:
         for v, srt in rs[0]:
@@ -3523,12 +4574,6 @@ def transform_unit(ctx, u, raw):
             i = t.index(sep) + len(sep)
             keep = any(k == 'keep-builtin' for k, v in dirs)
             return [ctx.indent + t[:i] + rewrite_text(ctx, t[i:], where, keep)]
-    if t.startswith(('rl ', 'crl ')):
-        keep = any(k == 'keep-builtin' for k, v in dirs)
-        if '==' in t or '=/=' in t:
-            gen.count(ctx.fname, 'auto-builtin-rule')
-            return [ctx.indent + rewrite_text(ctx, t, where, keep)] if not keep else None
-        return None
     e = parse_eq(t)
     if e is not None:
         if e['owise']:
@@ -3606,7 +4651,8 @@ def transform_file(gen, fname, fi):
             else:
                 for ln in res:
                     for piece in ln.split('\n'):
-                        if rule_unit:
+                        # declarations generated for the statement (inline-match) hold no constants
+                        if rule_unit and not piece.lstrip().startswith(('op ', 'ops ')):
                             piece = closed_rewrite_line(gen, piece)
                         out.append(piece + eol)
             i = u.end + 1
@@ -3766,6 +4812,9 @@ def main_with_plan(gen, text, eol):
             out.append(ln)
             if post:
                 out.extend(x + eol for x in post)
+        elif cur is not None and re.match(r'^\s*(endm|endfm|endom)\b', raw) and gen.scope_eqs.get(cur):
+            out.extend(x + eol for x in gen.scope_eqs[cur])
+            out.append(ln)
         else:
             out.append(ln)
     return ''.join(out)
@@ -3878,12 +4927,17 @@ def run_build_tests(maude, build_dir, cmds, cache, late=None, bundles=None):
     with open(path, 'w') as f:
         f.write('\n'.join(lines) + '\n')
     out = maude_run(maude, build_dir, path)
-    bad_lines = set(int(m) for m in re.findall(r'^Warning: <standard input>, line (\d+)', out, re.M))
+    # an ambiguous term is still reduced (one parse is picked), so its command has a result that is not compared
+    warns = re.findall(r'^Warning: <standard input>, line (\d+): (.*)$', out, re.M)
+    bad_lines = set(int(n) for n, w in warns if not w.startswith('ambiguous'))
+    amb_lines = set(int(n) for n, w in warns if w.startswith('ambiguous'))
     keep = [i for i, (sl, rl) in enumerate(cmd_lines) if sl not in bad_lines and rl not in bad_lines]
     res_blocks = []
     for block in re.split(r'^=+\s*$', out, flags=re.M):
         if not re.search(r'^reduce in ', block, re.M):
             continue
+        # warnings after the result belong to the next command (its parse), not to this result
+        block = re.split(r'^Warning:', block, flags=re.M)[0]
         rm = re.search(r'^result [^:]+: (.*)$', block, re.M | re.S)
         # the last block also holds Maude's closing 'Bye.' line (quit in the input)
         res_blocks.append(re.sub(r'\s*Bye\.$', '', norm(rm.group(1))) if rm else 'NO-RESULT')
@@ -3893,7 +4947,7 @@ def run_build_tests(maude, build_dir, cmds, cache, late=None, bundles=None):
     res = [None] * len(cmds)
     for i, r in zip(keep, res_blocks):
         # a result that Maude reports with a warning (a term the module cannot parse) is not comparable
-        res[i] = None if 'Warning' in r else r
+        res[i] = None if 'Warning' in r or cmd_lines[i][1] in amb_lines else r
     return res
 
 
@@ -4070,6 +5124,189 @@ def ground_check(gen, orig_dir, out_dir, maude):
     return len(uniq) + aux_total, mism, skipped
 
 
+
+# ---------------------------------------------------------------- target checks
+#
+# The meaning of [owise] is relative to the module in which a term is reduced (Maude manual 4.5.4: the
+# enabled predicate covers every term of the kind, with the equations of that module).  ground_check
+# reduces in the owise's own module; target_check reduces in the modules where the spec is used (the
+# modules of main.maude, the modules no loaded module imports such as ghost property modules, and
+# --target modules), with ground arguments built from the signature of that module: an Object element is
+# tried with every class constant (superclasses too) and with attribute sets made of the attributes the
+# function's equations name, plus one attribute they do not name.
+
+TARGET_CALLS = 600      # ground calls per (target, owise group)
+
+
+def target_modules(gen, extra=()):
+    """main.maude modules, loaded modules that no loaded module imports, and the extra ones."""
+    loaded = set(gen.mod_order)
+    imported = set()
+    for m in loaded | set(gen.main_order):
+        imported |= set(gen.graph.get(m, ())) & loaded
+    roots = sorted((loaded - imported) - set(gen.main_order), key=lambda m: gen.mod_order[m])
+    out = list(gen.main_order) + roots + [m for m in extra if m not in gen.main_order and m not in roots]
+    return [m for m in out if gen.refl.has_module(m)]
+
+
+def target_sig(gen, T):
+    sup = gen.refl.supers(T)
+    ctors = [c for c in gen.refl.ctors(T) if not c['rng'].startswith('[')]
+    return ctors, (lambda a, b: a == b or b in sup.get(a, set()))
+
+
+def target_ground(ctors, leq, sort, depth, limit, memo):
+    """Up to `limit` ground constructor terms of `sort` (non-AC constructors, fewest arguments first)."""
+    key = (sort, depth, limit)
+    if key in memo:
+        return memo[key]
+    memo[key] = []
+    out = []
+    if sort == 'Nat':
+        out = ['0', '1']
+    elif sort == 'Bool':
+        out = ['true', 'false']
+    elif depth >= 0 and sort not in ('String', 'Qid', 'Float', 'Char'):
+        cands = sorted((c for c in ctors if leq(c['rng'], sort)
+                        and 'assoc' not in c['attrs'] and 'comm' not in c['attrs']), key=lambda c: len(c['doms']))
+        for c in cands:
+            if len(out) >= limit:
+                break
+            ets = [target_ground(ctors, leq, d, depth - 1, 2, memo) for d in c['doms']]
+            if any(not e for e in ets):
+                continue
+            from itertools import product
+            for combo in list(product(*ets))[:2]:
+                out.append(render(c['name'], ['(%s)' % x for x in combo], nested=False, rng=c['rng']))
+    res = list(dict.fromkeys(out))[:limit]
+    memo[key] = res
+    return res
+
+
+def attr_ctors(ctors):
+    """attribute name -> its constructors (`name :_` with one argument)."""
+    res = {}
+    for c in ctors:
+        if c['rng'] == 'Attribute' and len(c['doms']) == 1 and c['name'].endswith(':_'):
+            res.setdefault(c['name'][:-2].rstrip(), []).append(c)
+    return res
+
+
+def named_attrs(gen, g, ac):
+    """Attributes that the equations of the owise group's function name (owise included)."""
+    found = set()
+    for e in gen.mod_eqs.get(g['module'], []):
+        if e.get('fn') == g['fn']:
+            found |= set(a for a in re.findall(r"([A-Za-z][\w\-]*)\s*:\s", e.get('lhs') or '') if a in ac)
+    return sorted(found)
+
+
+def object_elements(ctors, leq, named, memo):
+    ac = attr_ctors(ctors)
+    singles = []
+    for a in named:
+        for c in ac.get(a, []):
+            singles.extend('%s : (%s)' % (a, v) for v in target_ground(ctors, leq, c['doms'][0], 2, 3, memo))
+    other = None
+    for a in sorted(ac):
+        if a not in named:
+            vs = target_ground(ctors, leq, ac[a][0]['doms'][0], 2, 1, memo)
+            if vs:
+                other = '%s : (%s)' % (a, vs[0])
+                break
+    sets = ['none'] + singles
+    if other:
+        sets += [other] + ['%s, %s' % (x, other) for x in singles[:3]]
+    oids = target_ground(ctors, leq, 'Oid', 2, 1, memo)
+    if not oids:
+        return []
+    cids = [c['name'] for c in ctors if not c['doms'] and leq(c['rng'], 'Cid')]
+    return ['< %s : %s | %s >' % (oids[0], k, a) for k in cids for a in sets]
+
+
+def collection_terms(ctors, leq, sort, g, named, memo):
+    """Elements of an owise recurse collection: objects (Configuration), the other non-AC constructors of
+    the collection sort, alone and next to a second element."""
+    elems = object_elements(ctors, leq, named, memo) if sort == 'Configuration' else []
+    for c in ctors:
+        if not leq(c['rng'], sort) or c['name'] in (g['sep'], g['empty']) or c['rng'] == sort \
+                or c['rng'] == 'Object' or 'assoc' in c['attrs'] or 'comm' in c['attrs']:
+            continue
+        ets = [target_ground(ctors, leq, d, 2, 2, memo) for d in c['doms']]
+        if any(not e for e in ets):
+            continue
+        from itertools import product
+        for combo in list(product(*ets))[:3]:
+            elems.append(render(c['name'], ['(%s)' % x for x in combo], nested=False, rng=c['rng']))
+    elems = list(dict.fromkeys(elems))
+    if not elems:
+        return []
+    sep = g['sep'].replace('_', '').strip()
+    pair = (lambda x, y: '%s %s' % (x, y)) if sep == '' else (lambda x, y: '%s %s %s' % (x, sep, y))
+    return [g['empty']] + elems + [pair(e, elems[0]) for e in elems[1:]]
+
+
+def target_cmds(gen, T, g, memo):
+    ctors, leq = target_sig(gen, T)
+    named = named_attrs(gen, g, attr_ctors(ctors))
+    argsets = []
+    for i, d in enumerate(g['doms']):
+        if g['kind'] == 'recurse' and i == len(g['doms']) - 1:
+            argsets.append(collection_terms(ctors, leq, d, g, named, memo))
+        else:
+            argsets.append(target_ground(ctors, leq, d, 3, 3, memo))
+    if any(not a for a in argsets):
+        return []
+    big = max(range(len(argsets)), key=lambda i: len(argsets[i]))
+    from itertools import product
+    small = [a if i == big else a[:2] for i, a in enumerate(argsets)]
+    cmds = ['%s(%s)' % (g['fn'], ', '.join('(%s)' % x for x in combo)) for combo in product(*small)]
+    return cmds[:TARGET_CALLS]
+
+
+def target_check(gen, orig_dir, out_dir, maude, extra=()):
+    """Compare ORIGINAL and DMC on ground calls of every owise group in every target module that sees its
+    function.  Returns (targets, rows, mismatches, skipped): rows are (target, fn, tests, mismatches, unparsed),
+    a mismatch is (target, call, orig, dmc, stuck) where stuck means the DMC result still holds the call's
+    function (the DMC build has no equation for the term)."""
+    targets = target_modules(gen, extra)
+    tests, owner = [], []
+    for T in targets:
+        memo = {}
+        for g in gen.manifest:
+            if not gen.refl.has_op(T, g['fn'], g['doms']):
+                continue
+            for c in target_cmds(gen, T, g, memo):
+                tests.append((T, c))
+                owner.append(g['fn'])
+    cache = gen.cache_dir
+    a = [None if x is None else unqualify(x) for x in run_build_tests(maude, orig_dir, tests, cache)]
+    inv = unclose_map(gen)
+    wbund, wuse = bundle_groups(gen, list(dict.fromkeys(T for T, _ in tests)), '-TC')
+    dmc_cmds = [(T, qop_rewrite(gen, c)) for T, c in tests]
+    b = [None if x is None else unclose(gen, x, inv)
+         for x in run_build_tests(maude, out_dir, dmc_cmds, cache, late=wuse, bundles=wbund)]
+    # the two builds may print an AC term (attribute set, configuration) in different orders: a textual
+    # difference is decided by == in the DMC build
+    diff = [i for i in range(len(tests)) if a[i] is not None and b[i] is not None and a[i] != b[i]]
+    eqs = run_build_tests(maude, out_dir, [(tests[i][0], '(%s) == (%s)' % (b[i], a[i])) for i in diff], cache,
+                          late=wuse, bundles=wbund)
+    same = set(i for i, r in zip(diff, eqs) if r == 'true')
+    rows, mism = {}, []
+    for i, (T, c) in enumerate(tests):
+        r = rows.setdefault((T, owner[i]), [0, 0, 0])
+        if a[i] is None or b[i] is None:
+            r[2] += 1
+            continue
+        r[0] += 1
+        if a[i] != b[i] and i not in same:
+            r[1] += 1
+            stuck = re.search(r'(?<![\w\-$])%s\(' % re.escape(owner[i]), b[i]) is not None
+            mism.append((T, c, a[i], b[i], stuck))
+    skipped = ['%s::%s' % k for k, r in rows.items() if r[0] == 0]
+    return targets, [(k[0], k[1], r[0], r[1], r[2]) for k, r in rows.items()], mism, skipped
+
+
 IMPORT_RE = re.compile(r'^(?:pr|protecting|ex|extending|inc|including)\s+([^\s{*.]+)')
 
 
@@ -4163,6 +5400,8 @@ def main(argv=None):
     ap.add_argument('--tests-out', default=None, help='derived test tree (default: <out>/../dmc-tests)')
     ap.add_argument('--cache-dir', default=None,
                     help='reflection cache, ground-check inputs and manifest.json (default: <out>/.dmc-cache)')
+    ap.add_argument('--target', action='append', default=[],
+                    help='extra target module of the --check owise comparison (repeatable, or comma-separated)')
     args = ap.parse_args(argv)
     src = os.path.abspath(args.src)
     out = os.path.abspath(args.out)
@@ -4257,6 +5496,8 @@ def main(argv=None):
         return 1
     gen.coll = None
     gen.manifest, gen.counts, gen.replaces = [], {}, []
+    gen.stmt_dirs, gen.match_count = [], 0
+    gen.scope_eqs, gen.target_noattr = {}, set()
 
     # pass B: strict transformation
     new_text = {}
@@ -4267,6 +5508,8 @@ def main(argv=None):
             new_text[f] = transform_file(gen, f, fis[f])
         except GenError as ex:
             gen.errors.append(str(ex))
+    for f in new_text:
+        new_text[f] = insert_target_eqs(gen, new_text[f])
     main_text = None
     if 'main.maude' in fis:
         raw = fis['main.maude'].raw
@@ -4293,7 +5536,7 @@ def main(argv=None):
     drift = []
     if args.check and prev_manifest:
         for g in prev_manifest.get('groups', []):
-            if g.get('nodrift'):
+            if g.get('nodrift') or 'module' not in g:     # 'module' missing: manifest of an older gen-dmc
                 continue
             cur = [c['name'] for c in elem_list(gen, g['module'], g['sort'], g['sep'], g['empty'],
                                                  set(g['excl']))]
@@ -4327,7 +5570,8 @@ def main(argv=None):
             os.path.dirname(out), 'dmc-tests')
         ntests = derive_tests(gen, tests_src, tests_out)
         print('  derived test files: %d -> %s' % (ntests, tests_out))
-    manifest = {'version': GEN_VERSION, 'groups': gen.manifest, 'replaces': gen.replaces,
+    manifest = {'version': GEN_VERSION, 'groups': gen.manifest, 'statements': gen.stmt_dirs,
+                'replaces': gen.replaces,
                 'counts': gen.counts, 'warnings': gen.warnings,
                 'views_upgraded': sorted(gen.plan.upgrade), 'kinds': gen.plan.kinds,
                 'closed': dict((S, {'ctor': gen.closed[S]['ctor'], 'items': gen.closed_items[S]})
@@ -4367,6 +5611,23 @@ def main(argv=None):
               % (total, len(mism), skipped))
         for t, a, b in mism[:20]:
             print('    MISMATCH %s::%s\n      ORIG %s\n      DMC  %s' % (t[0], t[1], a, b))
+        extra = [m for t in args.target for m in t.split(',') if m.strip()]
+        targets, rows, tmism, tskip = target_check(gen, src, check_build, args.maude, extra)
+        print('  target check: %d tests in %s; %d mismatch(es) (%d stuck in DMC)'
+              % (sum(r[2] for r in rows), ', '.join(t for t in targets if any(r[0] == t for r in rows)),
+                 len(tmism), sum(1 for m in tmism if m[4])))
+        for T, fn, n, m, u in rows:
+            if m:
+                print('    %-24s %-32s %4d/%4d mismatch (%d unparsable)' % (T, fn, m, n, u))
+        if tskip:
+            print('    no comparable call: %s' % ', '.join(tskip))
+        tpath = os.path.join(cache_dir, 'target-mismatches.txt')
+        with open(tpath, 'w') as fh:
+            for T, c, x, y, stuck in tmism:
+                fh.write('%s %s\n  CALL %s\n  ORIG %s\n  DMC  %s\n' % (T, 'STUCK' if stuck else 'VALUE', c, x, y))
+        if tmism:
+            print('    details: %s' % tpath)
+        mism = mism + [((T, c), x, y) for T, c, x, y, _ in tmism]
         warns = load_warnings(args.maude, cache_dir, out, tests_out if tests_src else None)
         print('  load warnings: %d' % len(warns))
         for f, w in warns:

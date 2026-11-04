@@ -26,6 +26,8 @@ MAUDE := /path/to/maude
 
 Alternatively, set the `MAUDE_BIN` environment variable. The Python test runner looks for Maude in this order: `MAUDE_BIN`, a sibling `tee-formal-analysis/3rd_party` (or `zenodo/tee-formal-analysis/3rd_party`) binary, then `maude` on `PATH`.
 
+`make lean` runs [maude2lean](https://github.com/fadoss/maude2lean); set `MAUDE2LEAN := /path/to/maude2lean` in `config.mk` when it is not on `PATH`.
+
 ## Quick start
 
 Build the default configuration and run both test suites:
@@ -42,6 +44,8 @@ Build variants use a separate build directory selected with `NAME`:
 make NAME=nocrypto CRYPTO=0 test   # without the cryptographic operation APIs
 make NAME=t WITHOUT=MODULE         # drop a module; MODULE must be a pr line in src/main.maude
 make DMC=1                         # DM-Check-compatible build (tools/gen-dmc.py)
+make NAME=t DMC=1 M2L=1            # maude2lean-compatible build (tools/gen-maude2lean.py on the DMC build)
+make NAME=t lean                   # translate the M2L build to Lean (build/t/lean/TeeSpec.lean)
 make V=1 test                      # stream the Maude output of each test file
 ```
 
@@ -51,6 +55,7 @@ Run one suite or clean up:
 make test-api                # API-level black-box searches (tests/api)
 make test-checks             # completion and GlobalPlatform conformance checks
 make check-dmc               # regenerate the DM-Check build and run its ground checks
+make check-m2l               # regenerate the maude2lean build and run its checks
 make clean NAME=default      # remove build/default
 make distclean               # remove build/
 ```
@@ -90,6 +95,7 @@ tee-formal-spec/
 ├── tools/
 │   ├── select-main.awk   # filter that builds src/main.maude for a feature selection
 │   ├── gen-dmc.py        # DM-Check generator
+│   ├── gen-maude2lean.py # maude2lean pass over the DM-Check build (sort tests -> predicates)
 │   └── gen-docs.py       # documentation site generator (make docs)
 ├── LICENSE
 └── README.md

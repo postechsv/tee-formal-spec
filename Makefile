@@ -5,6 +5,9 @@
 #   make NAME=t CRYPTO=0    build without the crypto modules
 #   make NAME=t WITHOUT=M   build without module M (must be a pr line in main.maude)
 #   make NAME=t DMC=1       build the DM-Check version (tools/gen-dmc.py) instead of a plain copy
+#   make NAME=t GHOST=ghost/x.maude   compose the ghost file(s) with the spec rules (tools/ghost.py)
+#                           before the copy or gen-dmc; a space-separated list is allowed. Cached
+#                           like DMC; GHOST= turns it off.
 #   make NAME=t test        build, then run test-api and test-checks in build/t/tests
 #   make test-api           API-level black-box tests (tests/api/test-*.maude)
 #   make test-checks        search/red checks (completion/*.maude, gp-conformance/*.maude)
@@ -13,6 +16,10 @@
 #                           only: not cached, does not change the build; V=0 is the default
 #   make dmc                same as make DMC=1 (the setting is cached like the features)
 #   make check-dmc          regenerate the DMC build and run gen-dmc's ground checks (exit 2 on mismatch)
+#   make NAME=t DMC=1 M2L=1 build the maude2lean version (tools/gen-maude2lean.py on the DMC build)
+#   make m2l                same as make DMC=1 M2L=1 (cached)
+#   make check-m2l          regenerate the M2L build and run gen-maude2lean's checks
+#   make lean               translate the M2L build to Lean: build/t/lean/TeeSpec.lean (MAUDE2LEAN)
 #   make docs               build the documentation site: build/docs/index.html (reads src/ and docs/overview.html)
 #   make help               list features, test selection and current values
 #   make clean NAME=t       remove build/t
@@ -22,6 +29,9 @@
 #                  output (DMC=1). Nothing else is written there by the DMC build.
 #   .dmc-cache/    DMC=1 bookkeeping (reflection cache, manifest.json, check-build). Kept across
 #                  builds; only make clean removes it.
+#   .m2l/dmc-src/  M2L=1: the gen-dmc output that gen-maude2lean reads (src/ is its output)
+#   .m2l-cache/    M2L=1 bookkeeping (reflection cache, manifest.json, check inputs)
+#   lean/          make lean output
 #   config.mk, config.want, .inputs (the selected input list), .stamp (build marker)
 #   .stage/        intermediate, removed after each successful build. A failed build leaves
 #                  the stamp untouched, so the next run rebuilds.
@@ -45,6 +55,11 @@ FINAL_STAMP := $(OUT)/.stamp
 MAUDE ?= $(or $(MAUDE_BIN),maude)
 export MAUDE_BIN := $(MAUDE)
 
+# maude2lean (make lean). Set MAUDE2LEAN in config.mk, e.g. the binary of a virtualenv.
+MAUDE2LEAN ?= maude2lean
+M2L_FLAGS ?= --lean-version 4
+LEAN_OUT = $(OUT)/lean/TeeSpec.lean
+
 # Settings used by the previous build in this directory.
 -include $(OUT)/config.mk
 
@@ -53,6 +68,15 @@ include mk/features.mk
 
 # DM-Check transform (tools/gen-dmc.py). Not a spec feature: it does not drop any files.
 DMC ?= 0
+
+# maude2lean build (tools/gen-maude2lean.py): the DMC build without sort tests. Needs DMC=1;
+# cached like DMC.
+M2L ?= 0
+# M2L_EQ=0: the M2L build without gen-dmc's _.=._ (gen-maude2lean --no-eq; its uses become the built-in ==).
+M2L_EQ ?= 1
+
+# Ghost files (tools/ghost.py) composed with the stage. Not a spec feature either.
+GHOST ?=
 
 # Verbose output (V=1 or VERBOSE=1): the test runners stream Maude's output and the recipes
 # are echoed. Display only, so it is not written to config.want or the cache, and changing it
@@ -67,13 +91,17 @@ V ?= $(or $(VERBOSE),0)
 Q = $(if $(filter 1,$(V)),,@)
 VFLAG = $(if $(filter 1,$(V)),-v)
 
-.PHONY: all src test test-api test-checks dmc check-dmc docs help config clean distclean FORCE
+.PHONY: all src test test-api test-checks dmc check-dmc m2l check-m2l lean docs help config clean distclean FORCE
 
 all: src
 
 # Stop early on invalid values or unmet requirements.
 $(if $(filter-out 0 1,$(V)),$(error V must be 0 or 1, got '$(V)'))
 $(if $(filter-out 0 1,$(DMC)),$(error DMC must be 0 or 1, got '$(DMC)'))
+$(if $(filter-out 0 1,$(M2L)),$(error M2L must be 0 or 1, got '$(M2L)'))
+$(if $(filter 1,$(M2L)),$(if $(filter 0,$(DMC)),$(error M2L=1 requires DMC=1)))
+$(if $(filter-out 0 1,$(M2L_EQ)),$(error M2L_EQ must be 0 or 1, got '$(M2L_EQ)'))
+$(foreach G,$(GHOST),$(if $(wildcard $(G)),,$(error GHOST file '$(G)' not found)))
 $(foreach F,$(FEATURES),\
   $(if $(filter-out 0 1,$($(F))),$(error $(F) must be 0 or 1, got '$($(F))'))\
   $(if $(filter 1,$($(F))),\
@@ -106,16 +134,22 @@ TEST_SRCS := $(shell find tests -type f)
 # gen-dmc reads the stage and writes $(OUT)/src; derived tests go to $(OUT)/tests. Its
 # bookkeeping lives in $(OUT)/.dmc-cache, outside src/ (the DMC=0 path replaces src/ wholesale).
 # DMC_CHECK=1 (set by check-dmc) adds --check.
-GEN_DMC = python3 tools/gen-dmc.py $(STAGE)/src $(OUT)/src --tests $(STAGE)/tests --tests-out $(OUT)/tests --cache-dir $(OUT)/.dmc-cache --maude $(MAUDE) $(if $(DMC_CHECK),--check)
+# With M2L=1, gen-dmc writes $(OUT)/.m2l/dmc-src and gen-maude2lean reads it and writes $(OUT)/src;
+# the derived tests load ../src/main, so they run on the M2L build. M2L_CHECK=1 (check-m2l) adds --check.
+DMC_OUT = $(if $(filter 1,$(M2L)),$(OUT)/.m2l/dmc-src,$(OUT)/src)
+GEN_M2L = python3 tools/gen-maude2lean.py $(OUT)/.m2l/dmc-src $(OUT)/src --cache-dir $(OUT)/.m2l-cache --maude $(MAUDE) $(if $(M2L_CHECK),--check) $(if $(filter 0,$(M2L_EQ)),--no-eq)
+GEN_DMC = python3 tools/gen-dmc.py $(STAGE)/src $(DMC_OUT) --tests $(STAGE)/tests --tests-out $(OUT)/tests --cache-dir $(OUT)/.dmc-cache --maude $(MAUDE) $(if $(DMC_CHECK),--check)
 
 # Everything that decides the final tree. config.want changes with every setting; .inputs
 # with the selected file list, so deleting a file (which no longer appears in the lists) rebuilds.
 FINAL_INPUTS := $(MAIN_SRC) $(SRC_FILES) $(TEST_SRCS) tools/select-main.awk mk/features.mk $(OUT)/config.want $(OUT)/.inputs
 FINAL_INPUTS += $(if $(filter 1,$(DMC)),tools/gen-dmc.py $(wildcard tools/dmc-lib/*))
+FINAL_INPUTS += $(if $(filter 1,$(M2L)),tools/gen-maude2lean.py)
+FINAL_INPUTS += $(if $(strip $(GHOST)),$(GHOST) tools/ghost.py tools/gen-dmc.py)
 
 # The cache is updated last, so a failed build never leaves bad settings behind.
 src: $(FINAL_STAMP)
-	@echo "config: NAME=$(NAME) $(foreach F,$(FEATURES),$(F)=$($(F))) WITHOUT='$(WITHOUT)' DMC=$(DMC)"
+	@echo "config: NAME=$(NAME) $(foreach F,$(FEATURES),$(F)=$($(F))) WITHOUT='$(WITHOUT)' DMC=$(DMC) M2L=$(M2L) M2L_EQ=$(M2L_EQ) GHOST='$(GHOST)'"
 	@cmp -s $(OUT)/config.want $(OUT)/config.mk || cp $(OUT)/config.want $(OUT)/config.mk
 
 # Stage, then the final tree, then the stage is removed. A failure before the touch
@@ -127,8 +161,9 @@ $(FINAL_STAMP): $(FINAL_INPUTS) | $(OUT)
 		-f tools/select-main.awk $(MAIN_SRC) > $(STAGE)/src/main.maude
 	$(Q)$(if $(SRC_FILES),cp $(SRC_FILES) $(STAGE)/src/)
 	$(Q)cp -R tests/. $(STAGE)/tests/
+	$(Q)$(if $(strip $(GHOST)),python3 tools/ghost.py $(STAGE)/src $(GHOST))
 	$(Q)if [ '$(DMC)' = 1 ]; then \
-		rm -rf $(OUT)/src && $(GEN_DMC); \
+		rm -rf $(OUT)/src $(OUT)/.m2l && $(GEN_DMC) $(if $(filter 1,$(M2L)),&& $(GEN_M2L)); \
 	else \
 		rm -rf $(OUT)/src && cp -R $(STAGE)/src $(OUT)/src && cp -R $(STAGE)/tests $(OUT)/tests; \
 	fi
@@ -154,8 +189,25 @@ dmc:
 	@$(MAKE) --no-print-directory DMC=1 src
 
 # Always regenerates (-B), then runs the ground checks. gen-dmc exits 2 on a mismatch.
+# Not with M2L=1: gen-dmc's load check reads the tests next to its output, which is .m2l/dmc-src there.
 check-dmc:
+	@if [ '$(M2L)' = 1 ]; then echo 'check-dmc: not with M2L=1 (use NAME= of a build with M2L=0)'; exit 1; fi
 	@$(MAKE) --no-print-directory -B DMC=1 DMC_CHECK=1 src
+
+# The M2L build is a cached setting too (M2L=1 stays until M2L=0 is given).
+m2l:
+	@$(MAKE) --no-print-directory DMC=1 M2L=1 src
+
+# Always regenerates (-B), then runs gen-maude2lean's checks (exit 2 on a mismatch, 3 on load warnings).
+check-m2l:
+	@$(MAKE) --no-print-directory -B DMC=1 M2L=1 M2L_CHECK=1 src
+
+# Lean translation of the M2L build (https://github.com/fadoss/maude2lean). Set MAUDE2LEAN in config.mk;
+# M2L_FLAGS are passed to it (e.g. --module TEE-BEHAVIOR).
+lean: src
+	@if [ '$(M2L)' != 1 ]; then echo 'make lean needs the M2L build (M2L=1)'; exit 1; fi
+	@mkdir -p $(OUT)/lean
+	cd $(OUT)/src && $(MAUDE2LEAN) main.maude $(M2L_FLAGS) -o $(abspath $(LEAN_OUT))
 
 # Static documentation site from src/ (tools/gen-docs.py). Independent of NAME and the features.
 # docs/overview.html is the hand-written body of index.html. docs/examples.json (tools/gen-examples.py)
@@ -168,6 +220,8 @@ help config:
 	@echo "features:"
 	@$(foreach F,$(FEATURES),echo '  $(F)=$($(F))';) echo '  WITHOUT=$(WITHOUT)'
 	@echo "  DMC=$(DMC)"
+	@echo "  M2L=$(M2L)  M2L_EQ=$(M2L_EQ)  (MAUDE2LEAN=$(MAUDE2LEAN))"
+	@echo "  GHOST=$(GHOST)"
 	@echo "  V=$(V)  (display only: not cached; V=1 streams test output)"
 	@echo "tests (relative to tests/):"
 	@echo "  api:    $(API_TESTS)"
@@ -179,6 +233,9 @@ help config:
 	@echo "  make test-checks  search/red checks (run-checks.py)"
 	@echo "  make dmc       same as DMC=1 (cached)"
 	@echo "  make check-dmc regenerate the DMC build and run its ground checks"
+	@echo "  make m2l       same as DMC=1 M2L=1 (cached): the maude2lean build"
+	@echo "  make check-m2l regenerate the M2L build and run its checks"
+	@echo "  make lean      translate the M2L build with maude2lean: $(LEAN_OUT)"
 	@echo "  make docs      build the documentation site in build/docs (open build/docs/index.html)"
 	@echo "  make clean     remove $(OUT)"
 	@echo "  make distclean remove build/"
@@ -197,7 +254,7 @@ $(OUT):
 # Gated so help/clean never create build directories.
 ifeq (,$(filter help config clean distclean,$(MAKECMDGOALS)))
 $(OUT)/config.want: FORCE | $(OUT)
-	@printf '%s\n' '# Generated by Makefile. Do not edit.' $(foreach F,$(FEATURES),'$(F) := $($(F))') 'WITHOUT := $(WITHOUT)' 'DMC := $(DMC)' > $@.tmp
+	@printf '%s\n' '# Generated by Makefile. Do not edit.' $(foreach F,$(FEATURES),'$(F) := $($(F))') 'WITHOUT := $(WITHOUT)' 'DMC := $(DMC)' 'M2L := $(M2L)' 'M2L_EQ := $(M2L_EQ)' 'GHOST := $(GHOST)' > $@.tmp
 	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv $@.tmp $@; fi
 
 # Selected input files (sorted), rewritten only when the list changes. A deleted or added file

@@ -180,3 +180,35 @@ search [1] in COMPLETION-TEST :
   < oid(0, testTa) : Storage | files : empty, counter : 0 >
   < oid(0, otherTa) : Storage | files : testFileId, counter : 6 >
   C .
+
+--- A delete through a handle without accessWriteMeta ends in a panic on every path: at init by
+--- delete-access-panic, or after the storage check by close-and-delete-persistent-top-level-fail.
+--- No final state keeps the TA normal.
+--- expect: no solution
+search [1] in COMPLETION-TEST :
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(CloseAndDeletePersistentObject1[# oid(101, testTa)]), storage : oid(0, testTa), counter : 0 >
+  < oid(0, testTa) : Storage | status : (normal).StorageStatus, files : testFileId, counter : 2 >
+  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId, open-handles : oh(oid(101, testTa), accessRead) >
+  < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)), flags : accessRead, pos : 0 >
+=>!
+  < testTa : TAKernel | status : (normal).AppStatus, TA-ATTS:AttributeSet > C .
+
+--- The same for a rename: at init by rename-access-panic, or at the handle by
+--- rename-persistent-top-level-check-handle-fail.
+--- expect: no solution
+search [1] in COMPLETION-TEST :
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(RenamePersistentObject[# oid(101, testTa) # newTestFileId]), storage : oid(0, testTa), counter : 0 >
+  < oid(0, testTa) : Storage | status : (normal).StorageStatus, files : testFileId, counter : 2 >
+  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId, open-handles : oh(oid(101, testTa), accessRead) >
+  < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)), flags : accessRead, pos : 0 >
+=>!
+  < testTa : TAKernel | status : (normal).AppStatus, TA-ATTS:AttributeSet > C .
+
+--- An open with an unsupported storageId is not rewritten to storagePrivate, so it cannot succeed.
+--- expect: no solution
+search [1] in COMPLETION-TEST :
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(OpenPersistentObject[# storagePerso # testFileId # accessRead]), storage : oid(0, testTa), counter : 3 >
+  < oid(0, testTa) : Storage | status : (normal).StorageStatus, files : testFileId, counter : 2 >
+  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId, open-handles : noHandles >
+=>*
+  < testTa : TAKernel | api-call : return(OpenPersistentObject[# success # H:Oid]), TA-ATTS:AttributeSet > C .

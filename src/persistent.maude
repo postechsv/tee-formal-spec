@@ -89,10 +89,10 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   op finishOpenPersistentHandle : -> ReqId [ctor] .
   op failOpenPersistentHandle : -> ReqId [ctor] .
 
-  --- open-persistent-default-private-storage: a request without a storageId is rewritten to use
-  --- storagePrivate.
+  --- open-persistent-default-private-storage: a request without a storageId (only the file and the
+  --- flags) is rewritten to use storagePrivate.  A request with a storageId is left to the rules below.
   rl [open-persistent-default-private-storage] :
-    < TK : TAKernel | api-call : init(OpenPersistentObject[ZsOpenPersistentObject0 # FILE # DATAFLAGS]) >
+    < TK : TAKernel | api-call : init(OpenPersistentObject[# FILE # DATAFLAGS]) >
     =>
     < TK : TAKernel | api-call : init(OpenPersistentObject[# storagePrivate # FILE # DATAFLAGS]) >
   .
@@ -544,6 +544,7 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   op renamePersistent : -> ReqId [ctor] .
   op renamePersistentOwner : -> ReqId [ctor] .
   op finishRenamePersistent : -> ReqId [ctor] .
+  op failRenamePersistent : -> ReqId [ctor] .
 
   --- rename-persistent-subroutine: the TA asks the storage for its status (getStatus).
   rl [rename-persistent-subroutine] :
@@ -583,6 +584,26 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
     < HANDLE : ObjHandle | >
     (msg renamePersistentOwner[# FILE] from TK to OI)
   if hasWriteMeta(DATAFLAGS)
+  .
+
+  --- rename-persistent-top-level-check-handle-fail: without accessWriteMeta the object is kept, and
+  --- failRenamePersistent is sent to the TA.
+  crl [rename-persistent-top-level-check-handle-fail] :
+    (msg renamePersistent[# FILE # SI] from TK to HANDLE)
+    < HANDLE : ObjHandle | flags : DATAFLAGS >
+    =>
+    < HANDLE : ObjHandle | >
+    (msg failRenamePersistent[] from HANDLE to TK)
+  if not hasWriteMeta(DATAFLAGS)
+  .
+
+  --- rename-persistent-panic: a failRenamePersistent reply panics the TA, as
+  --- close-and-delete-persistent-panic does for a delete.
+  rl [rename-persistent-panic] :
+    (msg failRenamePersistent[] from HANDLE to TK)
+    < TK : TAKernel | api-call : exec(RenamePersistentObject[PARAMS] , 2) >
+    =>
+    < TK : TAKernel | status : panic >
   .
 
   --- rename-persistent-top-level-update-owner: the object OI takes the new name FILE, and

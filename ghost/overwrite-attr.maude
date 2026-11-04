@@ -1,0 +1,101 @@
+--- Ghost state for "an existing persistent object is overwritten only if the overwrite flag is set",
+--- as a ghost attribute of the persistent object (ghost/overwrite.maude keeps it in a keyed ghost object
+--- pg(NEWPI) instead).
+---
+--- Ghost attribute of spec objects (declared by the carrier class OwAttrs, which has no objects):
+---   PersistObj  ow-by : how the object was created.  The *-new rules (no object of the file existed)
+---                       record fresh; the forwarded rules (the object of the file is replaced) record the
+---                       data access flags of the request.  Whether these flags contain overwrite is the
+---                       invariant's constraint, not the ghost's.
+--- The ghost rules only set the attribute of the object the target rule creates (nothing on their
+--- left-hand side), so the ghost never blocks a spec rule.
+---
+--- Build: make NAME=owa-core GHOST=ghost/overwrite-attr.maude DMC=1 CRYPTO=0 TRANSIENT=0 GENERIC=0
+---             DATA_STREAM=0 ENUMERATOR=0                                  (persistent API only)
+
+omod OVERWRITE-ATTR-GHOST is
+  pr PERSISTENT-OBJECT .
+  pr TEE-MSG .
+
+  sort OwBy .
+  op fresh : -> OwBy [ctor] .
+  op replaced : Set{DataAccessFlag} -> OwBy [ctor] .
+
+  class OwAttrs | ow-by : OwBy .
+
+  var NEWPI : Oid .
+  var FLAGS : Set{DataAccessFlag} .
+
+  rl [create-persist-pure-new create-persist-transform-new create-persist-persist-new] :
+    none
+    =>
+    < NEWPI : PersistObj | ow-by : fresh > .
+
+  rl [create-persist-pure create-persist-transform create-persist-persist] :
+    none
+    =>
+    < NEWPI : PersistObj | ow-by : replaced(FLAGS) > .
+endom
+
+--- Invariant predicate (a property module: written to ghost-overwrite-attr.maude, loaded after the spec
+--- files).  owOk(C): every persistent object made by a replacing create holds flags with overwrite, and so
+--- does every create that the storage has forwarded to an object (the next replacement).  The second part
+--- makes it inductive.  The imports are those of OVERWRITE-INV in ghost/overwrite.maude.
+omod OVERWRITE-INV is
+  pr TA-KERNEL-BEHAVIOR .
+  pr SESSION-BEHAVIOR .
+  pr GENERIC-OBJECT-BEHAVIOR .
+  pr TRANSIENT-OBJECT-BEHAVIOR .
+  pr PERSISTENT-OBJECT-BEHAVIOR .
+  pr DATA-STREAM-OBJECT-BEHAVIOR .
+  pr ENUMERATOR-OBJECT-BEHAVIOR .
+  pr CRYPTO-OPERATION-BEHAVIOR .
+  pr TRUST-APP-BEHAVIOR .
+  pr RICH-APP-BEHAVIOR .
+  pr TEE-CLIENT-API-BEHAVIOR .
+  pr TEE-INTERNAL-CLIENT-API-BEHAVIOR .
+  pr GENERAL-PANIC .
+  pr PERSISTENT-PANIC .
+  pr DATA-STREAM-PANIC .
+  pr CRYPTO-PANIC .
+  pr OVERWRITE-ATTR-GHOST .
+
+  var C : Configuration .
+  var R : Req .
+  var I : ReqId .
+  var FN : APIFuncId .
+  var AL : ArgList .
+  vars O S P H T : Oid .
+  var M : MethodId .
+  var F : FileName .
+  var FS : Set{DataAccessFlag} .
+  var D : List{Data} .
+  var N : Nat .
+
+  --- Messages go to reqOk; the argument lists of create are read by createOk, not by an owise case
+  --- analysis (gen-dmc does not split associative lists).
+  op owOk : Configuration -> Bool .
+  eq owOk(< O : PersistObj | ow-by : replaced(FS) > C) = (overwrite in FS) and owOk(C) .
+  eq owOk((msg R from S to P) C) = reqOk(R) and owOk(C) .
+  ---@dmc classes(Handle, PersistObj, TransObj, OwAttrs, App, TAKernel, Storage, TrustedOS, Device, Session, EnumeratorObject, CryptoOp)
+  ---@dmc exact-classes(CryptoObj)
+  ---@dmc owise recurse(sep=__, empty=none)
+  eq owOk(C) = true [owise] .
+
+  --- One equation per Req constructor.
+  op reqOk : Req -> Bool .
+  eq reqOk(I [ AL ]) = reqArgOk(I, AL) .
+  eq reqOk(I []) = true .
+  eq reqOk(invkTa[ FN AL ]) = true .
+  eq reqOk(invkTaRet[ AL ]) = true .
+
+  op reqArgOk : ReqId ArgList -> Bool .
+  eq reqArgOk(create, AL) = createOk(AL) .
+  ---@dmc owise enumerate(I)
+  eq reqArgOk(I, AL) = true [owise] .
+
+  --- The two create argument lists: from the TA (5 values) and forwarded by the storage (7 values).
+  op createOk : ArgList -> Bool .
+  eq createOk(# M # F # FS # H # D) = true .
+  eq createOk(# M # F # FS # H # D # N # T) = overwrite in FS .
+endom

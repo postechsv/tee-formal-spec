@@ -32,7 +32,7 @@ Options
                     the module cannot parse are skipped and counted; DMC results are read back through
                     the closed-sort numbering).  Then the target check: the same comparison for every owise
                     group in every target module that sees its function (main.maude modules, loaded modules
-                    no loaded module imports, and --target modules), with
+                    no loaded module imports such as ghost property modules, and --target modules), with
                     ground arguments from that module's signature (an Object element with every class
                     constant, superclasses too).  Mismatches go to <cache-dir>/target-mismatches.txt
   --target M[,M...] extra target module of the target check
@@ -41,6 +41,9 @@ Options
   --cache-dir DIR   bookkeeping directory: reflect.json (reflection cache), ground-*.in and check-build
                     (--check), and manifest.json. Default <out>/.dmc-cache. Only check-build is replaced.
   --maude PATH      Maude binary (default $MAUDE_BIN or the maude-alpha165 path)
+  --ghost FILE      compose the ghost file with the spec rules first (repeatable or comma-separated):
+                    the source dir is copied to <cache-dir>/ghost-src and composed there (see "Ghost
+                    composition" below and tools/ghost.py, which make GHOST=... runs on the stage)
 
 Directives (one per line, before the statement)
   ---@dmc close-sort(S=C)       (before `sort S .` or `sorts ... S ... .`)  the sort S gets the constructor
@@ -196,6 +199,18 @@ Automatic rules (no annotation)
     conditions; owise with two variables that siblings identify -> guard `not (A .=. B)`.
   * owise equations with a single sibling pattern constant are reported as errors unless annotated.
 Anything else raises an error at file:line asking for an annotation.
+
+Ghost composition (--ghost, tools/ghost.py, make GHOST=...)
+  A ghost file is one omod/mod: the ghost state (sorts, classes, ghost object identifiers) and ghost rules
+  written about the ghost only.  The label of a ghost rule names its target rules (several labels, globs
+  allowed).  Each target L => R if C becomes L Lg => R Rg if C /\\ Cg: Lg/Rg are the ghost objects of the
+  ghost rule, which may only hold ghost objects on its right-hand side (the spec state is not changed).
+  Variables: anchors (non-ghost components of the ghost left-hand side, matched against the target
+  left-hand side) bind theirs; a variable the target uses with the same name and sort is shared; the
+  others are local (renamed away from the target module's names).  The module without its rules goes
+  before the first target module, which imports it.  Ghost identifiers may contain variables (keyed
+  ghosts, e.g. pg(NEWPI)); a ghost rule with no ghost object on its left-hand side creates ghost objects.
+  Details: section "ghost composition" below.
 
 Cell engine (owise enumerate(...)/recurse/shapes).  A cell is a combination of argument shapes.  An
 argument is split only when a sibling equation has a constructor, constant, attribute or non-variable
@@ -3353,6 +3368,28 @@ def eqname_of(sort):
     return 'eq' + re.sub(r'\W', '', sort)
 
 
+def eq_recursive(gen, S):
+    """True when the `.=.` of S compares, through the `.=.` of constructor arguments, a term of S again
+    (oid(N, X) .=. oid(M, Y) calls X .=. Y).  Such equations are not [variant]: a recursive variant equation
+    breaks the finite variant property, and variant unification of X .=. Y does not terminate.  Arguments
+    compared by numEq, boolEq, subset, mapEq, expListEq or listEqX end the chain (those are not variant)."""
+    cache = gen.__dict__.setdefault('eq_rec_cache', {})
+    if S not in cache:
+        seen, todo, rec = set(), [S], False
+        while todo and not rec:
+            for d in ctor_doms(gen, todo.pop()):
+                if d in NUM_SORTS or d == 'Bool' or d == MAP_VN or d in LIST_EXP or '{' in d:
+                    continue
+                if d == S:
+                    rec = True
+                    break
+                if d not in seen:
+                    seen.add(d)
+                    todo.append(d)
+        cache[S] = rec
+    return cache[S]
+
+
 def eq_block(gen, S, kind, M, ctors=None):
     """Lines of the equality operator for sort S declared in module M (inserted after M's header).
     A constructor written by juxtaposition (`__`) is ambiguous inside `.=.` (the juxtaposition operators
@@ -3362,6 +3399,7 @@ def eq_block(gen, S, kind, M, ctors=None):
     if ctors is None:
         ctors = all_ctors
     op = '_.=._'
+    vattr = '' if eq_recursive(gen, S) else ' [variant]'
     juxt = any('__' in c['name'] for c in all_ctors) and kind != 'pairwise'
     if juxt:
         op = 'dm' + re.sub(r'\W', '', S) + 'Eq'
@@ -3370,18 +3408,22 @@ def eq_block(gen, S, kind, M, ctors=None):
         out.append('  op %s : %s %s -> Bool .' % (op, S, S))
         z1, z2 = 'DMZ%s1' % re.sub(r'\W', '', S), 'DMZ%s2' % re.sub(r'\W', '', S)
         out.append('  vars %s %s : %s .' % (z1, z2, S))
-        out.append('  eq %s .=. %s = %s(%s, %s) [variant] .' % (z1, z2, op, z1, z2))
+        out.append('  eq %s .=. %s = %s(%s, %s)%s .' % (z1, z2, op, z1, z2, vattr))
 
     def eq_lhs(a, b):
         return '%s(%s, %s)' % (op, a, b) if juxt else '%s .=. %s' % (a, b)
     if kind == 'pairwise':
-        out.append('  eq DMX:%s .=. DMX:%s = True [variant] .' % (S, S))
+        out.append('  eq DMX:%s .=. DMX:%s = True%s .' % (S, S, vattr))
         consts = [c for c in ctors if not c['doms']]
         for a in consts:
             for b in consts:
                 if a is not b:
-                    out.append('  eq %s = False [variant] .' % eq_lhs(a['name'], b['name']))
+                    out.append('  eq %s = False%s .' % (eq_lhs(a['name'], b['name']), vattr))
         return out
+    # the reflexive equation also for structural sorts: with a Nat argument (mkFileName(K)) the constructor
+    # equation gives numEq(K, K), which the built-in order does not reduce
+    if not juxt:
+        out.append('  eq DMX:%s .=. DMX:%s = True%s .' % (S, S, vattr))
     for c in ctors:
         n = len(c['doms'])
         va = ['DMA%d:%s' % (k + 1, s) for k, s in enumerate(c['doms'])]
@@ -3389,15 +3431,15 @@ def eq_block(gen, S, kind, M, ctors=None):
         lhs = render(c['name'], va, nested=True, rng=c['rng'])
         rhs_ = render(c['name'], vb, nested=True, rng=c['rng'])
         if n == 0:
-            out.append('  eq %s = True [variant] .' % eq_lhs(lhs, rhs_))
+            out.append('  eq %s = True%s .' % (eq_lhs(lhs, rhs_), vattr))
         else:
             parts = [arg_eq(gen, x, y, srt) for x, y, srt in zip(va, vb, c['doms'])]
-            out.append('  eq %s = %s [variant] .' % (eq_lhs(lhs, rhs_), ' and '.join(parts)))
+            out.append('  eq %s = %s%s .' % (eq_lhs(lhs, rhs_), ' and '.join(parts), vattr))
         for d in ctors:
             if d is c:
                 continue
             vd = ['DMC%d:%s' % (k + 1, s) for k, s in enumerate(d['doms'])]
-            out.append('  eq %s = False [variant] .' % eq_lhs(lhs, render(d['name'], vd, nested=True)))
+            out.append('  eq %s = False%s .' % (eq_lhs(lhs, render(d['name'], vd, nested=True)), vattr))
     return out
 
 
@@ -3647,7 +3689,7 @@ def sig_module(gen, S, after):
         home = 'CONFIGURATION' if S in gen.prelude_need else gen.sort_mod[S]
         imports = ['DM-BOOL', home]
         body = ['  op _.=._ : %s %s -> Bool .' % (S, S), '  var DMX : %s .' % S,
-                '  eq DMX .=. DMX = True [variant] .']
+                '  eq DMX .=. DMX = True%s .' % ('' if eq_recursive(gen, S) else ' [variant]')]
         name = sig_name(S)
         after.setdefault(anchor_module(gen, S), []).extend(dm_module(gen, name, imports, body))
         cache[S] = name
@@ -5386,6 +5428,687 @@ def in_scope(f, only, loaded):
     return f in loaded and (only is None or f in only)
 
 
+# ---------------------------------------------------------------- ghost composition
+#
+# A ghost file is one Maude module (omod or mod) with the ghost state (sorts, operators, classes, the
+# ghost object identifiers) and ghost rules.  A ghost rule is written about the ghost only; its label names
+# the spec rules it is composed with (several labels, separated by white space or commas; * and ? are
+# globs).  compose_ghosts rewrites a source tree in place:
+#   * the module without its rules is inserted before the first module that has a target rule, and every
+#     such module imports it (pr);
+#   * each target rule L => R if C becomes L Lg => R Rg if C /\ Cg, where Lg and Rg are the ghost objects
+#     of the ghost rule (objects of a class declared in the ghost module) and Cg its condition.
+# Variables of the ghost rule:
+#   * anchors: a component of the ghost left-hand side that is not a ghost object (a message, a spec
+#     object with some attributes) is matched against the components of the target left-hand side; its
+#     variables are bound to the matched subterms.  A target whose left-hand side does not match is skipped
+#     when it was selected by a glob, and an error when it was named exactly;
+#   * shared: a variable that the target rule uses with the same name and the same sort is that variable;
+#   * local: any other variable gets a name that the target module does not use (written V:Sort).
+# The ghost must not change the spec state: its right-hand side holds ghost objects only (no messages,
+# no spec objects).  The composed rule keeps the directives of the target (split, restrict, ...).
+# Keyed ghosts: the identifier of a ghost object may be a term over variables, such as pg(NEWPI), so
+# that there is one ghost object per spec object, file, session, ...  A ghost rule whose left-hand side
+# has no ghost object (`none`, or anchors only) creates the ghost objects of its right-hand side.  A ghost
+# that is only created, never read, cannot block a target rule, so it needs no presence invariant.
+
+OTF_RE = re.compile(r"(?<![\w\-'$#%:.])([A-Za-z][\w\-']*):([A-Za-z][\w\-']*(?:\{[^{}\s]*\})?)")
+IDENT_TOK_RE = re.compile(r"(?<![\w\-'$#%:.])([A-Za-z][\w\-']*)(?![\w\-'])")
+IMPORT_KW = ('pr', 'protecting', 'inc', 'including', 'ex', 'extending')
+
+
+def load_order(src):
+    """Loaded files in the order Maude reads their modules (a file after the files it loads)."""
+    order, seen = [], set()
+
+    def visit(m):
+        if m in seen:
+            return
+        seen.add(m)
+        path = os.path.join(src, m + '.maude')
+        if not os.path.exists(path):
+            return
+        with open(path, encoding='utf-8') as fh:
+            for ln in fh:
+                mm = re.match(r'^load\s+(\S+?)(?:\.maude)?\s*$', ln)
+                if mm:
+                    visit(mm.group(1))
+        order.append(m + '.maude')
+    visit('main')
+    return order
+
+
+def obj_end(toks, j):
+    d, p = 0, 0
+    for k in range(j, len(toks)):
+        t = toks[k][2]
+        if t in OPEN:
+            p += 1
+        elif t in CLOSE:
+            p -= 1
+        elif p == 0 and t == '<':
+            d += 1
+        elif p == 0 and t == '>':
+            d -= 1
+            if d == 0:
+                return k
+    raise GenError('unbalanced object: %s' % ' '.join(x[2] for x in toks[j:]))
+
+
+def fi_end(toks, j):
+    n, p = 0, 0
+    for k in range(j, len(toks)):
+        t = toks[k][2]
+        if t in OPEN:
+            p += 1
+        elif t in CLOSE:
+            p -= 1
+        elif p == 0 and t == 'if':
+            n += 1
+        elif p == 0 and t == 'fi':
+            n -= 1
+            if n == 0:
+                return k
+    raise GenError('if without fi')
+
+
+def config_items(text):
+    """Components of a configuration term (juxtaposition at depth 0): (...) groups, < ... > objects,
+    f(...) applications, if ... fi terms and single tokens."""
+    toks = tokenize(text)
+    items, k = [], 0
+    while k < len(toks):
+        a, b, t = toks[k]
+        if t == '(':
+            e = group_end(toks, k)
+        elif t == '<':
+            e = obj_end(toks, k)
+        elif t == 'if':
+            e = fi_end(toks, k)
+        elif k + 1 < len(toks) and toks[k + 1][2] == '(' and toks[k + 1][0] == b:
+            e = group_end(toks, k + 1)
+        else:
+            e = k
+        items.append(text[a:toks[e][1]])
+        k = e + 1
+    return items
+
+
+def obj_parts(item):
+    """< O : C | a1 : v1 , ... > -> (O, C, [(a, v)]), or None when item is not an object."""
+    s = item.strip()
+    if not (s.startswith('<') and s.endswith('>')):
+        return None
+    inner = s[1:-1].strip()
+    i = find_top(inner, ' : ')
+    j = find_top(inner, '|')
+    if i < 0 or j < i:
+        return None
+    attrs = []
+    for a in split_top(inner[j + 1:], ',', angles=True):
+        if not a.strip():
+            continue
+        k = find_top(a, ' : ')
+        if k < 0:
+            return None
+        attrs.append((a[:k].strip(), a[k + 3:].strip()))
+    return inner[:i].strip(), inner[i + 3:j].strip(), attrs
+
+
+def tmatch(p, t, vs, env):
+    """Matches of the pattern tokens p against the term tokens t (lists of strings); the tokens in vs
+    are variables, each bound to a non-empty balanced token run.  Yields environments (name -> tuple)."""
+    if not p:
+        if not t:
+            yield env
+        return
+    x = p[0]
+    if x in vs:
+        if x in env:
+            n = len(env[x])
+            if tuple(t[:n]) == env[x]:
+                for e in tmatch(p[1:], t[n:], vs, env):
+                    yield e
+            return
+        depth = 0
+        for k in range(len(t)):
+            if t[k] in OPEN:
+                depth += 1
+            elif t[k] in CLOSE:
+                depth -= 1
+            if depth < 0:
+                return
+            if depth == 0:
+                e = dict(env)
+                e[x] = tuple(t[:k + 1])
+                for r in tmatch(p[1:], t[k + 1:], vs, e):
+                    yield r
+        return
+    if t and t[0] == x:
+        for e in tmatch(p[1:], t[1:], vs, env):
+            yield e
+
+
+def toks_of(s):
+    return [x[2] for x in tokenize(strip_all(s))]
+
+
+def item_match(pat, tgt, vs, env):
+    po, to = obj_parts(pat), obj_parts(tgt)
+    if po is None or to is None:
+        if po is None and to is None:
+            for e in tmatch(toks_of(pat), toks_of(tgt), vs, env):
+                yield e
+        return
+    tattrs = dict(to[2])
+    if any(a not in tattrs for a, _ in po[2]):
+        return
+    pt = toks_of(po[0]) + ['|', po[1]] + [z for a, v in po[2] for z in ['|'] + toks_of(v)]
+    tt = toks_of(to[0]) + ['|', to[1]] + [z for a, v in po[2] for z in ['|'] + toks_of(tattrs[a])]
+    for e in tmatch(pt, tt, vs, env):
+        yield e
+
+
+def match_anchors(anchors, titems, vs, env, used=frozenset()):
+    if not anchors:
+        yield env
+        return
+    for k, ti in enumerate(titems):
+        if k in used:
+            continue
+        for e in item_match(anchors[0], ti, vs, env):
+            for r in match_anchors(anchors[1:], titems, vs, e, used | {k}):
+                yield r
+
+
+def otf_vars(text):
+    """On-the-fly variables V:Sort of text: {V: Sort}, and text with them written as plain V."""
+    found = {}
+    for m in OTF_RE.finditer(text):
+        found[m.group(1)] = m.group(2)
+    return found, OTF_RE.sub(lambda m: m.group(1), text)
+
+
+def subst_text(text, sub):
+    return IDENT_TOK_RE.sub(lambda m: sub.get(m.group(1), m.group(1)), text)
+
+
+class GhostModule(object):
+    def __init__(self, path):
+        self.path = path
+        with open(path, encoding='utf-8') as fh:
+            raw = fh.read()
+        lines = [t for t, _ in split_lines_keep(raw)]
+        units, kinds = scan_units(lines, path)
+        heads = [u for u in units if u.kind == 'head']
+        if not heads or heads[0].text.split()[0] not in ('omod', 'mod'):
+            raise GenError('%s: a ghost file starts with an omod or mod (the ghost module)' % path)
+        head = heads[0]
+        ends = [u for u in units if u.kind == 'end']
+        end0 = next(u for u in ends if u.start > head.start)
+        self.name = mod_name_of_head(head.text)
+        # property modules: the modules after the ghost module (invariant predicates over the spec and the
+        # ghost); they have no rules and go to ghost-<file>.maude, loaded after every spec file
+        self.props = lines[end0.end + 1:]
+        self.prop_names = [mod_name_of_head(u.text) for u in heads[1:]]
+        for u in units:
+            if u.kind == 'stmt' and u.start > end0.end and u.text.split()[0] in ('rl', 'crl'):
+                raise GenError('%s:%d: a property module has no rules' % (path, u.line))
+        self.vars, self.classes, self.imports, self.rules = {}, set(), [], []
+        self.gattrs = set()       # attributes of the ghost classes: ghost attributes of spec objects
+        drop = set()
+        for u in units:
+            if u.kind != 'stmt' or u.start > end0.end:
+                continue
+            t = u.text
+            w = t.split()[0]
+            if w in ('rl', 'crl'):
+                self.rules.append(u)
+                drop.update(range(u.start, u.end + 1))
+                k = u.start - 1
+                while k >= 0 and kinds[k] == 'dmc':
+                    drop.add(k)
+                    k -= 1
+            elif w in ('var', 'vars'):
+                m = re.match(r'^vars?\s+(.*?)\s*:\s*(\S+)\s*\.$', t)
+                if m:
+                    for nm in m.group(1).split():
+                        self.vars[nm] = m.group(2)
+            elif w == 'class':
+                cm = re.match(r'^class\s+([^\s|.]+)\s*(?:\|(.*))?\.$', t)
+                self.classes.add(cm.group(1))
+                for a in split_top(cm.group(2) or '', ','):
+                    if ':' in a:
+                        self.gattrs.add(a[:a.index(':')].strip())
+            elif w in IMPORT_KW:
+                self.imports.append(re.match(r'^\S+\s+([^\s{*.]+)', t).group(1))
+        if not self.rules:
+            raise GenError('%s: the ghost module %s has no rule' % (path, self.name))
+        if not self.classes:
+            raise GenError('%s: the ghost module %s declares no class (the ghost state)' % (path, self.name))
+        self.text = [lines[k] for k in range(head.start, end0.end + 1) if k not in drop]
+
+
+class GhostRule(object):
+    def __init__(self, gm, u):
+        self.where = '%s:%d' % (gm.path, u.line)
+        otf, text = otf_vars(u.text)
+        r = parse_rule(text)
+        if not r['label']:
+            raise GenError('%s: a ghost rule needs a label naming its target rules' % self.where)
+        self.globs = [x for x in re.split(r'[\s,]+', r['label']) if x]
+        self.vars = dict(gm.vars)
+        self.vars.update(otf)
+        self.cond = r['cond']
+        self.gattrs = gm.gattrs
+        self.anchors, self.lhs, self.attached = [], [], []
+        for it in config_items(r['lhs']):
+            if it.strip() == 'none':
+                continue
+            o = obj_parts(it)
+            if o is not None and o[1] in gm.classes:
+                self.lhs.append(it)
+            elif o is not None and any(a in gm.gattrs for a, _ in o[2]):
+                self.attached.append(o)
+            else:
+                self.anchors.append(it)
+        rest, self.updates = [], []
+        for it in config_items(r['rhs']):
+            o = obj_parts(it)
+            if o is not None and o[1] not in gm.classes and o[2] and all(a in gm.gattrs for a, _ in o[2]):
+                self.updates.append(o)
+            else:
+                rest.append(it)
+        self.rhs = ' '.join(x for x in rest if x.strip() != 'none') or 'none'
+        self.check_ghost_only(gm, self.rhs)
+        if not self.lhs and not self.attached and not self.updates and \
+                not any(obj_parts(it) is not None for it in config_items(self.rhs)):
+            raise GenError('%s: a ghost rule needs a ghost object on its left-hand side, or one that it '
+                           'creates on its right-hand side' % self.where)
+
+    def check_ghost_only(self, gm, text):
+        for it in config_items(text):
+            s = it.strip()
+            if s == 'none' or s in self.vars and self.vars[s] == 'Configuration':
+                continue
+            if s.startswith('if '):
+                f = find_if(s)
+                self.check_ghost_only(gm, f['then'])
+                self.check_ghost_only(gm, f['else'])
+                continue
+            if s.startswith('(') and strip_parens(s) != s:
+                self.check_ghost_only(gm, strip_parens(s))
+                continue
+            o = obj_parts(s)
+            if o is None or o[1] not in gm.classes:
+                raise GenError('%s: the right-hand side of a ghost rule may only hold ghost objects '
+                               '(classes %s) and ghost attributes (%s) of spec objects, not %s'
+                               % (self.where, ', '.join(sorted(gm.classes)), ', '.join(sorted(gm.gattrs)), s))
+
+
+def module_info(fi, units, head):
+    """Variables (name -> sort) and identifier tokens of the module whose header unit is head."""
+    vars_, idents = {}, set()
+    started = False
+    for u in units:
+        if u is head:
+            started = True
+            continue
+        if not started:
+            continue
+        if u.kind == 'end':
+            break
+        if u.kind != 'stmt':
+            continue
+        m = re.match(r'^vars?\s+(.*?)\s*:\s*(\S+)\s*\.$', u.text)
+        if m:
+            for nm in m.group(1).split():
+                vars_[nm] = m.group(2)
+        idents.update(IDENT_TOK_RE.findall(u.text))
+    return vars_, idents
+
+
+def seq_sort(sort):
+    """A sort whose terms are sequences (a variable of it may match several `#`/`,` separated items)."""
+    return sort in ('ArgList', 'Configuration', 'AttributeSet', 'KConfig', 'K') or \
+        re.match(r'^(Ne)?(List|Set|Map)\b', sort) is not None
+
+
+def single_term(toks):
+    """The token run toks is one term: it has no depth-0 `#` or `,` separator."""
+    d = 0
+    for t in toks:
+        if t in OPEN:
+            d += 1
+        elif t in CLOSE:
+            d -= 1
+        elif d == 0 and t in ('#', ','):
+            return False
+    return True
+
+
+def compose_one(gr, target, mvars, midents):
+    """Composed text of the target rule (a normalized rule text), or None when the anchors do not match."""
+    totf, _ = otf_vars(target)
+    r = parse_rule(target)
+    titems = config_items(r['lhs'])
+    vs = set(gr.vars)
+    envs = []
+    for e in match_anchors(gr.anchors, titems, vs, {}):
+        if not all(single_term(e[v]) for v in e if not seq_sort(gr.vars.get(v, ''))):
+            continue
+        if e not in envs:
+            envs.append(e)
+        if len(envs) > 1:
+            raise GenError('%s: the anchors match the rule [%s] in more than one way' % (gr.where, r['label']))
+    if not envs:
+        return None
+    env = envs[0]
+    # attached objects: a spec object of the ghost left-hand side with ghost attributes is the object of
+    # the target left-hand side that it matches (on its spec attributes); when none matches and its
+    # identifier is bound, it is a frame object added to the target (the TA of a handle-side rule)
+    att = []
+    for o in gr.attached:
+        spec = [(a, v) for a, v in o[2] if a not in gr.gattrs]
+        hits = []
+        for k, ti in enumerate(titems):
+            for e in item_match(obj_text(o[0], o[1], spec), ti, vs, env):
+                if (k, e) not in hits:
+                    hits.append((k, e))
+        if len(hits) > 1:
+            raise GenError('%s: the object %s matches the rule [%s] in more than one way'
+                           % (gr.where, o[0], r['label']))
+        if hits:
+            env = hits[0][1]
+            att.append((hits[0][0], o))
+        elif not spec and all(t not in vs or t in env for t in toks_of(o[0])):
+            att.append((None, o))
+        else:
+            return None
+    tsorts = dict(mvars)
+    tsorts.update(totf)
+    tnames = set(IDENT_TOK_RE.findall(OTF_RE.sub(lambda m: m.group(1), target)))
+    sub, used = {}, set(midents) | tnames
+    att_text = [obj_text(*o) for o in gr.attached]
+    ghost_text = ' '.join(gr.lhs + att_text + [obj_text(*o) for o in gr.updates] + [gr.rhs, gr.cond or ''])
+    for v in sorted(gr.vars):
+        if not mentions(ghost_text, v):
+            continue
+        if v in env:
+            val = ' '.join(env[v])
+            sub[v] = val if len(env[v]) == 1 or strip_all(val) != val else '(%s)' % val
+        elif v in tnames and tsorts.get(v) == gr.vars[v]:
+            sub[v] = '%s:%s' % (v, gr.vars[v]) if v in totf else v
+        else:
+            n, k = v, 1
+            while n in used:
+                n = '%s-g%s' % (v, '' if k == 1 else k)
+                k += 1
+            used.add(n)
+            sub[v] = '%s:%s' % (n, gr.vars[v])
+            bound = ' '.join(gr.lhs + att_text)
+            if not mentions(bound, v) and not re.search(r'(?<![\w\-\'])%s\s*:=' % re.escape(v), gr.cond or ''):
+                raise GenError('%s: variable %s is neither bound by the ghost left-hand side nor by the target '
+                               'rule [%s] (same name and sort)' % (gr.where, v, r['label']))
+    glhs = [subst_text(x, sub) for x in gr.lhs]
+    for g in glhs:
+        oid = obj_parts(g)[0]
+        for ti in titems:
+            o = obj_parts(ti)
+            if o is not None and norm(o[0]) == norm(oid):
+                raise GenError('%s: the target rule [%s] already has an object %s' % (gr.where, r['label'], oid))
+    sg = lambda attrs: [(a, subst_text(v, sub)) for a, v in attrs if a in gr.gattrs]
+    return {'lhs': ' '.join(glhs), 'rhs': subst_text(gr.rhs, sub),
+            'cond': subst_text(gr.cond, sub) if gr.cond else None,
+            'att': [(k, subst_text(o[0], sub), subst_text(o[1], sub), sg(o[2])) for k, o in att],
+            'upd': [(subst_text(o[0], sub), subst_text(o[1], sub), sg(o[2])) for o in gr.updates]}
+
+
+def obj_text(oid, cls, attrs):
+    return '< %s : %s | %s >' % (oid, cls, ' , '.join('%s : %s' % av for av in attrs))
+
+
+def with_attrs(item, attrs):
+    """The object item with the attributes attrs set (replaced when present, added otherwise)."""
+    o = obj_parts(item)
+    cur = list(o[2])
+    for a, v in attrs:
+        k = next((i for i, (b, _) in enumerate(cur) if b == a), None)
+        if k is None:
+            cur.append((a, v))
+        else:
+            cur[k] = (a, v)
+    return obj_text(o[0], o[1], cur)
+
+
+def apply_attached(r, pc, where):
+    """The rule r with the ghost attributes of pc put on its objects: the attached objects of the left-hand
+    side, the objects of the right-hand side with the same identifier (an object the rule creates gets its
+    initial ghost attributes this way), and the frame objects on both sides."""
+    r = dict(r)
+    litems = config_items(r['lhs'])
+    frames = []
+    for k, oid, cls, g in pc['att']:
+        if k is None:
+            litems.append(obj_text(oid, cls, g))
+            frames.append([oid, cls, False])
+        else:
+            litems[k] = with_attrs(litems[k], g)
+    ritems = config_items(r['rhs'])
+    for oid, cls, g in pc['upd']:
+        same = lambda x: toks_of(x) == toks_of(oid)
+        hit = [k for k, it in enumerate(ritems) if obj_parts(it) is not None and same(obj_parts(it)[0])]
+        fr = [f for f in frames if same(f[0])]
+        if len(hit) == 1:
+            ritems[hit[0]] = with_attrs(ritems[hit[0]], g)
+        elif not hit and fr:
+            ritems.append(obj_text(oid, fr[0][1], g))
+            fr[0][2] = True
+        else:
+            raise GenError('%s: the right-hand side of the rule [%s] has %d top-level objects %s'
+                           % (where, r['label'], len(hit), oid))
+    for f in frames:
+        if not f[2]:
+            ritems.append(obj_text(f[0], f[1], []))
+    r['lhs'] = ' '.join(litems)
+    r['rhs'] = ' '.join(x for x in ritems if x.strip() != 'none') or 'none'
+    return r
+
+
+def add_pieces(r, pc, where=''):
+    r = apply_attached(r, pc, where) if pc.get('att') or pc.get('upd') else dict(r)
+    if pc['lhs']:
+        r['lhs'] = '%s %s' % (r['lhs'], pc['lhs'])
+    if pc['rhs'].strip() != 'none':
+        r['rhs'] = pc['rhs'] if r['rhs'].strip() == 'none' else '%s %s' % (r['rhs'], pc['rhs'])
+    if pc['cond']:
+        r['cond'] = '%s /\\ %s' % (r['cond'], pc['cond']) if r['cond'] else pc['cond']
+    return r
+
+
+def insert_pieces(raw, r0, pcs, note):
+    """The raw lines of the rule r0 with the ghost pieces pcs inserted on lines of their own: the ghost
+    left-hand side before the `=>` line, the right-hand side before the condition (or the final `.`),
+    the condition at the end.  None when the layout is not `... / => ... / [if ...] / .`."""
+    code = [norm(code_part(x)) for x in raw]
+    ind = lambda x: re.match(r'^(\s*)', x).group(1)
+    ia = next((k for k, c in enumerate(code) if c.startswith('=>')), None)
+    if ia is None or ia == 0:
+        return None
+    last = max(k for k, c in enumerate(code) if c)
+    tail = None
+    if r0['cond']:
+        for k in range(last, ia, -1):
+            if code[k].startswith('if ') and norm(' '.join(code[k:last + 1])) == norm('if %s .' % r0['cond']):
+                tail = k
+                break
+    elif code[last] == '.':
+        tail = last
+    if tail is None:
+        return None
+    out = list(raw)
+    conds = [pc['cond'] for pc in pcs if pc['cond']]
+    if conds:
+        glue = ' /\\ '.join(conds)
+        if code[last] == '.':
+            out.insert(last, ind(raw[last]) + ('/\\ ' if r0['cond'] else 'if ') + glue)
+        elif r0['cond']:
+            cp = code_part(out[last]).rstrip()
+            out[last] = cp[:-1].rstrip() + ' /\\ ' + glue + ' .' + out[last][len(code_part(out[last])):]
+        else:
+            return None
+    rind = ind(raw[ia + 1]) if ia + 1 < tail else ind(raw[ia])
+    out.insert(tail, rind + ' '.join(pc['rhs'] for pc in pcs))
+    glhs = ' '.join(pc['lhs'] for pc in pcs if pc['lhs'])
+    if glhs:
+        out.insert(ia, ind(raw[ia]) + glhs)
+    out.insert(1, ind(raw[ia]) + '--- ' + note)
+    if conds and not r0['cond']:
+        out[0] = re.sub(r'^(\s*)rl\b', r'\1crl', out[0], count=1)
+    return out
+
+
+def render_composed(r, indent, note):
+    out = [indent + ('crl ' if r['cond'] else 'rl ') + ('[%s] :' % r['label'] if r['label'] else ':'),
+           indent + '  --- ' + note,
+           indent + '  ' + r['lhs'],
+           indent + '  =>',
+           indent + '  ' + r['rhs']]
+    if r['cond']:
+        out.append(indent + '  if ' + r['cond'])
+    out[-1] += (' ' + r['attrs'] if r['attrs'] else '') + ' .'
+    return out
+
+
+def compose_ghost_file(src, path):
+    gm = GhostModule(path)
+    grules = [GhostRule(gm, u) for u in gm.rules]
+    order = load_order(src)
+    fis, heads = {}, {}          # file -> FileInfo; module -> (file index, header unit)
+    for fx, f in enumerate(order):
+        with open(os.path.join(src, f), encoding='utf-8', newline='') as fh:
+            fi = FileInfo(f, fh.read())
+        fi.units, fi.kinds = scan_units([t for t, _ in fi.lines], f)
+        fis[f] = fi
+        for u in fi.units:
+            if u.kind == 'head' and u.text.split()[0] != 'view':
+                heads[mod_name_of_head(u.text)] = (fx, f, u)
+    if gm.name in heads:
+        raise GenError('%s: module %s already exists in %s' % (path, gm.name, heads[gm.name][1]))
+    edits = {}                   # file -> [(start, end_exclusive, lines)]
+    report, targets_mods = [], {}
+    hits = dict((id(gr), 0) for gr in grules)
+    for fx, f in enumerate(order):
+        fi = fis[f]
+        head = None
+        minfo = None
+        for u in fi.units:
+            if u.kind == 'head':
+                head = u if u.text.split()[0] != 'view' else None
+                minfo = module_info(fi, fi.units, head) if head is not None else None
+                continue
+            if u.kind != 'stmt' or head is None or u.text.split()[0] not in ('rl', 'crl'):
+                continue
+            label = parse_rule(u.text)['label']
+            if not label:
+                continue
+            r0 = parse_rule(u.text)
+            new, notes, pcs = r0, [], []
+            for gr in grules:
+                exact = label in gr.globs
+                if not exact and not any(fnmatch_label(label, g) for g in gr.globs):
+                    continue
+                pc = compose_one(gr, render_rule(new), minfo[0], minfo[1])
+                if pc is None:
+                    if exact:
+                        raise GenError('%s: the anchors of the ghost rule do not match the rule [%s] (%s:%d)'
+                                       % (gr.where, label, f, u.line))
+                    continue
+                hits[id(gr)] += 1
+                new = add_pieces(new, pc, gr.where)
+                pcs.append(pc)
+                notes.append(gr.where)
+            if not notes:
+                continue
+            raw = [fi.lines[k][0] for k in range(u.start, u.end + 1)]
+            note = 'ghost %s (%s)' % (gm.name, ', '.join(notes))
+            plain = not any(pc.get('att') or pc.get('upd') for pc in pcs)
+            lines_new = insert_pieces(raw, r0, pcs, note) if plain else None
+            if lines_new is None:
+                lines_new = render_composed(new, re.match(r'^(\s*)', raw[0]).group(1), note)
+            edits.setdefault(f, []).append((u.start, u.end + 1, lines_new))
+            mod = mod_name_of_head(head.text)
+            targets_mods[mod] = (fx, f, head)
+            report.append('%s [%s] %s:%d' % (gm.name, label, f, u.line))
+    for gr in grules:
+        if not hits[id(gr)]:
+            raise GenError('%s: no rule matches the labels %s' % (gr.where, ' '.join(gr.globs)))
+    # the ghost module goes before the first target module; its imports must be read before that point
+    fx0, f0, h0 = min(targets_mods.values(), key=lambda x: (x[0], x[2].start))
+    for imp in gm.imports:
+        if imp in targets_mods:
+            raise GenError('%s: the ghost module imports %s, a module with a target rule' % (path, imp))
+        if imp in heads and (heads[imp][0], heads[imp][2].start) > (fx0, h0.start):
+            raise GenError('%s: the ghost module imports %s, which is read after %s (%s)'
+                           % (path, imp, mod_name_of_head(h0.text), f0))
+    lines0 = fis[f0].lines
+    at = h0.start
+    while at > 0 and lines0[at - 1][0].strip().startswith(('---', '***')) and fis[f0].kinds[at - 1] != 'dmc':
+        at -= 1
+    edits.setdefault(f0, []).append((at, at, ['--- ghost module %s (%s)' % (gm.name, path)] + gm.text + ['']))
+    for nm in gm.prop_names:
+        if nm in heads:
+            raise GenError('%s: module %s already exists in %s' % (path, nm, heads[nm][1]))
+    if any(x.strip() for x in gm.props):
+        # a file of their own (main.maude is not transformed by gen-dmc), loaded after the spec files
+        pname = 'ghost-' + os.path.splitext(os.path.basename(path))[0]
+        if pname + '.maude' in fis:
+            raise GenError('%s: %s.maude already exists in %s' % (path, pname, src))
+        mlines = fis['main.maude'].lines
+        at = max(k for k, (t, _) in enumerate(mlines) if re.match(r'^load\s', t))
+        edits.setdefault('main.maude', []).append((at + 1, at + 1, ['load %s' % pname]))
+        eol = fis['main.maude'].eol
+        # imports of modules a feature build dropped (their files are not loaded) are left out
+        known = set(heads) | set(gm.prop_names) | {gm.name}
+        props, gone = [], []
+        for x in gm.props:
+            m = re.match(r'^\s*(?:pr|protecting|inc|including|ex|extending)\s+([A-Z][A-Z0-9-]*)\s*\.\s*$', x)
+            if m and m.group(1) not in known:
+                gone.append(m.group(1))
+            else:
+                props.append(x)
+        with open(os.path.join(src, pname + '.maude'), 'w', encoding='utf-8', newline='') as fh:
+            fh.write(eol.join(['--- property modules of ghost %s (%s)' % (gm.name, path)] + props) + eol)
+        if gone:
+            report.append('%s property modules: imports of missing modules dropped: %s' % (gm.name, ' '.join(gone)))
+        report.append('%s property modules %s -> %s.maude' % (gm.name, ' '.join(gm.prop_names), pname))
+    for mod, (fx, f, h) in targets_mods.items():
+        nxt = fis[f].lines[h.end + 1][0] if h.end + 1 < len(fis[f].lines) else ''
+        ind = re.match(r'^(\s*)', nxt).group(1) or '  '
+        edits.setdefault(f, []).append((h.end + 1, h.end + 1, [ind + 'pr %s .' % gm.name]))
+    for f, es in edits.items():
+        fi = fis[f]
+        lines = [t for t, _ in fi.lines]
+        for s, e, new in sorted(es, key=lambda x: (x[0], x[1]), reverse=True):
+            lines[s:e] = new
+        with open(os.path.join(src, f), 'w', encoding='utf-8', newline='') as fh:
+            fh.write(fi.eol.join(lines) + (fi.eol if fi.raw.endswith(('\n', '\r')) else ''))
+    return report
+
+
+def fnmatch_label(label, glob):
+    import fnmatch
+    return fnmatch.fnmatchcase(label, glob)
+
+
+def compose_ghosts(src, paths):
+    """Compose the ghost files with the rules of the source tree src (rewritten in place)."""
+    report = []
+    for p in paths:
+        report.extend(compose_ghost_file(src, p))
+    return report
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description='Generate the DM-Check-compatible build from annotated sources.')
     ap.add_argument('src')
@@ -5402,10 +6125,26 @@ def main(argv=None):
                     help='reflection cache, ground-check inputs and manifest.json (default: <out>/.dmc-cache)')
     ap.add_argument('--target', action='append', default=[],
                     help='extra target module of the --check owise comparison (repeatable, or comma-separated)')
+    ap.add_argument('--ghost', action='append', default=[],
+                    help='ghost file to compose with the spec rules (repeatable, or comma-separated)')
     args = ap.parse_args(argv)
     src = os.path.abspath(args.src)
     out = os.path.abspath(args.out)
     cache_dir = os.path.abspath(args.cache_dir) if args.cache_dir else os.path.join(out, '.dmc-cache')
+    ghosts = [os.path.abspath(p) for g in args.ghost for p in g.split(',') if p.strip()]
+    if ghosts:
+        staged = os.path.join(cache_dir, 'ghost-src')
+        if os.path.exists(staged):
+            shutil.rmtree(staged)
+        shutil.copytree(src, staged)
+        try:
+            ghost_report = compose_ghosts(staged, ghosts)
+        except GenError as ex:
+            sys.stderr.write('gen-dmc: ghost error: %s\n' % ex)
+            return 1
+        for line in ghost_report:
+            print('  ghost: %s' % line)
+        src = staged
     only = set(x.strip() for x in args.only.split(',')) if args.only else None
     os.makedirs(out, exist_ok=True)
     prev_manifest = None

@@ -21,6 +21,11 @@ mod COMPLETION-TEST is
   op serviceProg : -> Program .
   op addService : -> FuncId [ctor] .
   eq serviceProg = void addService (int srcKey, int destKey, int * res) { res := srcKey + destKey ; } .
+  --- allocBodyProg: the service allocService calls a TEE API in its body.
+  op allocBodyProg : -> Program .
+  op allocService : -> FuncId [ctor] .
+  eq allocBodyProg = void allocService(TEE-Handle * res) {
+      TEE-Result ret ; ret := AllocateTransientObject(# typeAes, # 256, res) ; } .
   op allocProg : -> Program .
   eq allocProg = syscalls TEE-Handle res ; TEE-Result ret ; ret := AllocateTransientObject(# typeAes, # 256, res) ; void main() { skip } .
 endm
@@ -96,14 +101,67 @@ search [1] in COMPLETION-TEST :
 --- A TA that panics while serving the request of RA testRa returns target-dead to testRa,
 --- and the TA is left with no client-service.
 search [1] in COMPLETION-TEST :
+  < testRa : RichApp | RAATTS:AttributeSet >
   < osId : TrustedOS | OSATTS:AttributeSet >
   < testTa : TrustedApp | status : panic, client-service : {testRa, addService}, TAATTS:AttributeSet >
   C
 =>1
   smcRet(testRa, # errorTargetDead)
+  < testRa : RichApp | RAATTS:AttributeSet >
   < osId : TrustedOS | OSATTS:AttributeSet >
   < testTa : TrustedApp | status : panic, client-service : none, TAATTS:AttributeSet >
   C .
+
+--- A TA otherTa that panics while serving the session request of the TA testTa answers through
+--- the session: target-dead with the origin TEE, and no SMC response.
+search [1] in COMPLETION-TEST :
+  < osId : TrustedOS | OSATTS:AttributeSet >
+  < oid(1, testTa) : Session | req : {oid(2, testTa), main, argNil, testTa}, ret : noRet, ta-id : otherTa >
+  < oid(2, testTa) : TaSessionHandle | oid : oid(1, testTa) >
+  < otherTa : TrustedApp | status : panic, client-service : {testTa, main}, TAATTS:AttributeSet >
+=>!
+  (msg finishReqInvoke[# main # (# originTee # errorTargetDead)] from oid(2, testTa) to testTa)
+  < osId : TrustedOS | OSATTS:AttributeSet >
+  < oid(1, testTa) : Session | req : noReq, ret : noRet, ta-id : otherTa >
+  < oid(2, testTa) : TaSessionHandle | oid : oid(1, testTa) >
+  < otherTa : TrustedApp | status : panic, client-service : none, TAATTS:AttributeSet > .
+--- expect: no solution
+search in COMPLETION-TEST :
+  < osId : TrustedOS | OSATTS:AttributeSet >
+  < oid(1, testTa) : Session | req : {oid(2, testTa), main, argNil, testTa}, ret : noRet, ta-id : otherTa >
+  < oid(2, testTa) : TaSessionHandle | oid : oid(1, testTa) >
+  < otherTa : TrustedApp | status : panic, client-service : {testTa, main}, TAATTS:AttributeSet >
+=>* smcRet(RI:Oid, RL:ArgList) C:Configuration .
+
+--- A finished service of otherTa answers the session request with the origin of the TA and success,
+--- before its output values.
+search [1] in COMPLETION-TEST :
+  < oid(1, testTa) : Session | req : {oid(2, testTa), addService, (# 10 # 12 # 0), testTa}, ret : noRet, ta-id : otherTa >
+  < oid(2, testTa) : TaSessionHandle | oid : oid(1, testTa) >
+  < otherTa : TrustedApp | proc : none, prog : serviceProg, client-service : none,
+      status : (normal).AppStatus, storage : oid(0, otherTa), os-kernel : osId,
+      counter : 0, api-call : noCall >
+=>!
+  (msg finishReqInvoke[# addService # (# originTrustedApp # success # 22)] from oid(2, testTa) to testTa)
+  C:Configuration .
+
+--- The finishReqInvoke answer returns TeeInvokeTACommand with its code, values and origin.
+search [1] in COMPLETION-TEST :
+  (msg finishReqInvoke[# main # (# originTee # errorTargetDead)] from oid(2, testTa) to testTa)
+  < testTa : TAKernel | api-call : final(TeeInvokeTACommand[# oid(2, testTa) # main # argNil]) >
+=>1
+  < testTa : TAKernel | api-call : return(TeeInvokeTACommand[# errorTargetDead # argNil # originTee]) > .
+
+--- A TA service function calls a TEE API in its body: the transient allocate returns success
+--- and the handle oid(1, testTa) to the output parameter res.
+search [1] in COMPLETION-TEST :
+  (msg invkTa[allocService (# null)] from testRa to testTa)
+  < testTa : TrustedApp | proc : none, prog : allocBodyProg, client-service : none,
+      status : (normal).AppStatus, storage : oid(0, testTa), os-kernel : osId,
+      counter : 0, api-call : noCall >
+=>!
+  (msg invkTaRet[# oid(1, testTa)] from testTa to testRa)
+  C:Configuration .
 
 --- A TA program calls one TEE API (a transient allocate) and runs to completion: the call
 --- returns success and the output handle is assigned to res (the handle is oid(1, testTa)).

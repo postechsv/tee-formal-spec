@@ -56,15 +56,29 @@ omod SESSION-BEHAVIOR is
   .
 
   --- handle-session-req (finish): once the TA RK has finished, its output values RET, read
-  --- from the final configuration KS, are stored as the return of the session request.  The
-  --- proc and client-service of the TA are cleared, and the request is reset to noReq.
+  --- from the final configuration KS, are stored as the return of the session request, after
+  --- the return origin TEE_ORIGIN_TRUSTED_APP and the return code success.  A service is a
+  --- void function, so a finished service succeeds ([Internal Core] 4.9.3: the code is the one
+  --- of the destination TA).  The proc and client-service of the TA are cleared, and the
+  --- request is reset to noReq.
   ---@dmc inline-match
   crl [handle-session-req] :
     < OI : Session | req : {HANDLE, FUNC, VL, TK} , ret : noRet , ta-id : RK >
     < RK : TrustedApp | proc : (k(.K) KS) , client-service : {TK , FUNC} , prog : P ,
                       status : (normal).AppStatus >
     =>
-    < OI : Session | req : noReq , ret : {HANDLE, FUNC, TK, RET} >
+    < OI : Session | req : noReq , ret : {HANDLE, FUNC, TK, (# originTrustedApp # success RET)} >
     < RK : TrustedApp | proc : none , client-service : none >
   if RET := getVals(getOutVars(getFuncParams(P , FUNC)) , KS) .
+
+  --- handle-session-req (panic): a TA RK that panics while it serves the session request of the
+  --- TA TK returns TEE_ERROR_TARGET_DEAD with the origin TEE_ORIGIN_TEE ([Internal Core] 4.9.3),
+  --- and it has no client-service afterwards.
+  rl [handle-session-req-panic] :
+    < OI : Session | req : {HANDLE, FUNC, VL, TK} , ret : noRet , ta-id : RK >
+    < RK : TrustedApp | status : panic , client-service : {TK , FUNC} >
+    =>
+    < OI : Session | req : noReq , ret : {HANDLE, FUNC, TK, (# originTee # errorTargetDead)} >
+    < RK : TrustedApp | client-service : none >
+  .
 endom

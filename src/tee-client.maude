@@ -6,6 +6,7 @@ omod TEE-CLIENT-API-BEHAVIOR is
   pr INVOKE-TA-CALL .
   pr TEE-OS-BEHAVIOR .
   pr TRUST-APP .
+  pr RICH-APP .
   pr RETURN-IMP-VALUE .
 
   vars KI RI : Oid .
@@ -98,11 +99,14 @@ omod TEE-CLIENT-API-BEHAVIOR is
 
 --- return-smc-request-panic: a TA that panics before answering returns target-dead to the RA
 --- of its request (its client-service {RI, FID}), and the TA has no client-service afterwards.
+--- The client is an RA: a TA client gets its answer through its session (handle-session-req).
   rl [return-smc-request-panic] :
     < TI : TrustedApp | status : panic, client-service : {RI , FID} >
+    < RI : RichApp | >
     < KI : TrustedOS | >
     =>
     < KI : TrustedOS | >
+    < RI : RichApp | >
     < TI : TrustedApp | status : panic, client-service : none >
     smcRet(RI, # errorTargetDead) .
 
@@ -134,6 +138,7 @@ omod TEE-INTERNAL-CLIENT-API-BEHAVIOR is
   --- var TEEID : TeeUUID .
   var PARAMS : ArgList .
   var RET : ReturnCode .
+  var RO : ReturnOrigin .
 
 ------------------------------------------------------------
 --- 'TEE_OpenTASession'
@@ -211,13 +216,14 @@ omod TEE-INTERNAL-CLIENT-API-BEHAVIOR is
     (msg finishReqInvoke[# FUNC # VL] from HANDLE to TK)
   .
 
-  --- invoke-ta-command-subroutine (finish): the finishReqInvoke message gives the return code
-  --- RET and the values VL to the final call of TeeInvokeTACommand, which becomes return.
+  --- invoke-ta-command-subroutine (finish): the finishReqInvoke message gives the return origin
+  --- RO, the return code RET and the values VL to the final call of TeeInvokeTACommand, which
+  --- becomes return.
   rl [invoke-ta-command-subroutine] :
-    (msg finishReqInvoke[# FUNC # (# RET VL)] from HANDLE to TK)
+    (msg finishReqInvoke[# FUNC # (# RO # RET VL)] from HANDLE to TK)
     < TK : TAKernel | api-call : final(TeeInvokeTACommand[# HANDLE ZsTeeInvokeTACommand1 ZsTeeInvokeTACommand2 ZrTeeInvokeTACommand]) >
     =>
-    < TK : TAKernel | api-call : return(TeeInvokeTACommand[# RET # VL]) >
+    < TK : TAKernel | api-call : return(TeeInvokeTACommand[# RET # VL # RO]) >
   .
 
 endom

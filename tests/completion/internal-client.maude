@@ -28,6 +28,18 @@ mod COMPLETION-TEST is
       TEE-Result ret ; ret := AllocateTransientObject(# typeAes, # 256, res) ; } .
   op allocProg : -> Program .
   eq allocProg = syscalls TEE-Handle res ; TEE-Result ret ; ret := AllocateTransientObject(# typeAes, # 256, res) ; void main() { skip } .
+  --- readProg: the service readService reads one fragment through the handle h given as argument.
+  op readProg : -> Program .
+  op readService : -> FuncId [ctor] .
+  eq readProg = TEE-Result 'c ; TEE-Buffer 'b ; int 'r ;
+                void readService(TEE-Handle 'h) { 'r := readObjData('h, # dataSize(1), 'c, 'b) ; } .
+  op objOfTestTa : -> Configuration .
+  eq objOfTestTa =
+    < oid(0, testTa) : Storage | status : (normal).StorageStatus, files : testFileId, counter : 2 >
+    < oid(5, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)), flags : accessRead, pos : 0 >
+    < oid(1, oid(0, testTa)) : PersistObj | type : pureData, usages : empty, max-size : 0,
+        attributes : empty, file-name : testFileId, data-stream : randomData,
+        open-handles : oh(oid(5, testTa), accessRead) > .
 endm
 
 --- TeeOpenTASession creates a top-level session handle linked to its owner.
@@ -177,3 +189,30 @@ search [1] in COMPLETION-TEST :
       client-service : none, status : (normal).AppStatus, api-call : noCall,
       TAATTS:AttributeSet >
   C .
+
+--- A TA may use only its own handles: otherTa, given the handle oid(5, testTa) of testTa by the RA,
+--- panics at the call of readObjData, and the data of testTa never reaches it.
+search [1] in COMPLETION-TEST :
+  (msg invkTa[readService (# oid(5, testTa))] from testRa to otherTa) objOfTestTa
+  < otherTa : TrustedApp | proc : none, prog : readProg, client-service : none,
+      status : (normal).AppStatus, storage : oid(0, otherTa), os-kernel : osId,
+      counter : 1, api-call : noCall >
+=>!
+  < otherTa : TrustedApp | status : panic, api-call : noCall, AS1:AttributeSet >
+  < oid(1, oid(0, testTa)) : PersistObj | data-stream : randomData, AS2:AttributeSet >
+  C .
+--- expect: no solution
+search in COMPLETION-TEST :
+  (msg invkTa[readService (# oid(5, testTa))] from testRa to otherTa) objOfTestTa
+  < otherTa : TrustedApp | proc : none, prog : readProg, client-service : none,
+      status : (normal).AppStatus, storage : oid(0, otherTa), os-kernel : osId,
+      counter : 1, api-call : noCall >
+=>* (msg retData[# D:Data] from oid(5, testTa) to otherTa) C .
+
+--- The owner testTa reads its own object through the same handle.
+search [1] in COMPLETION-TEST :
+  (msg invkTa[readService (# oid(5, testTa))] from testRa to testTa) objOfTestTa
+  < testTa : TrustedApp | proc : none, prog : readProg, client-service : none,
+      status : (normal).AppStatus, storage : oid(0, testTa), os-kernel : osId,
+      counter : 6, api-call : noCall >
+=>* < testTa : TrustedApp | api-call : return(readObjData[# success # randomData]), AS1:AttributeSet > C .

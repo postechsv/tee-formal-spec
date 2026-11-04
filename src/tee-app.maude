@@ -109,6 +109,46 @@ omod TRUST-APP-IMP-BEHAVIOR is
   var PL : ExpList .
   var IN : ExpList .
   var OUT : ExpList .
+  var TK : Oid .
+  var N : Nat .
+  var A : Arg .
+  var O : Oid .
+
+  --- ownArgs(TI, VL): every identifier in the arguments VL is a handle of TI (see ownHandle) or
+  --- null.  A TA instance may use only its own handles: each TA has its own storage and objects,
+  --- isolated from the other TAs.  The values passed through by TeeInvokeTACommand are one nested
+  --- value # VL, so they are not checked.
+  op ownArgs : Oid ArgList -> Bool .
+  eq ownArgs(TI, argNil) = true .
+  eq ownArgs(TI, (# O) VL) = ownHandle(TI, O) and ownArgs(TI, VL) .
+  ---@dmc owise recurse(sep=__, empty=argNil)
+  eq ownArgs(TI, A VL) = ownArgs(TI, VL) [owise] .
+
+  --- ownHandle(TI, O): O is a handle of TI, or null.  A handle of the TA kernel TI is named
+  --- oid(N, TI) (the fresh*Handle operators of HANDLE-AUX), or oid(N, oid(0, TI)) when the storage
+  --- oid(0, TI) of TI opened it on a persistent object (newOid(N, SI) in PERSISTENT).
+  op ownHandle : Oid Oid -> Bool .
+  eq ownHandle(TI, oid(N, TK)) = hOwner(TK) == TI .
+  eq ownHandle(TI, null) = true .
+  ---@dmc owise enumerate(arg2)
+  eq ownHandle(TI, O) = false [owise] .
+
+  --- hOwner(TK): the TA kernel that owns a handle oid(N, TK).  A TA kernel TI is a child of the
+  --- TrustedOS, so its own handles have TK = TI; the handles that its storage oid(M, TI) opened
+  --- have TK = oid(M, TI), one level deeper.
+  var M : Nat .
+  var P : Oid .
+  op hOwner : Oid -> Oid .
+  op hOwner1 : Nat Oid -> Oid .
+  eq hOwner(oid(N, P)) = hOwner1(N, P) .
+  ---@dmc owise enumerate(O)
+  eq hOwner(O) = O [owise] .
+  eq hOwner1(N, oid(M, O)) = oid(M, O) .
+  ---@dmc owise enumerate(P)
+  eq hOwner1(N, P) = oid(N, P) [owise] .
+
+  op ownCall : Call Oid -> Bool .
+  eq ownCall(TF[PARAMS], TI) = ownArgs(TI, PARAMS) .
 
 ------------------------------------------------------------
 --- IMP Semantics
@@ -131,14 +171,24 @@ omod TRUST-APP-IMP-BEHAVIOR is
 
   --- tee-api-call-accept: the $in task of a TEE API call, with the TA in normal status and
   --- no call in progress, accepts the call and sets its api-call to init.  The call itself
-  --- is run by the object rules of the TEE API.
-  rl [tee-api-call-accept] :
+  --- is run by the object rules of the TEE API.  A call with a handle of another TA is not
+  --- accepted (tee-api-call-foreign-handle-panic).
+  crl [tee-api-call-accept] :
     < TI : TrustedApp | proc : (k($in(VL) ~> $wait(TEEAPI) ~> K) KS) ,
                         api-call : noCall , status : (normal).AppStatus >
     =>
     < TI : TrustedApp | proc : (k($wait(TEEAPI) ~> K) KS) ,
                         api-call : init(makeCall(TEEAPI , VL)) >
-  .
+  if ownCall(makeCall(TEEAPI , VL), TI) .
+
+  --- tee-api-call-foreign-handle-panic: a TEE API call with a handle of another TA is a call with
+  --- an invalid handle, and it panics the TA, as null-handle-panic does for the null handle.
+  crl [tee-api-call-foreign-handle-panic] :
+    < TI : TrustedApp | proc : (k($in(VL) ~> $wait(TEEAPI) ~> K) KS) ,
+                        api-call : noCall , status : (normal).AppStatus >
+    =>
+    < TI : TrustedApp | status : panic >
+  if not ownCall(makeCall(TEEAPI , VL), TI) .
 
   --- tee-api-call-return: when the call has returned, the $out task is replaced by the
   --- statement makeReturnStmt(TEEAPI, RET, PARAMS, EL), which assigns the return values to

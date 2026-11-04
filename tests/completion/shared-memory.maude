@@ -1,0 +1,268 @@
+--- Shared memory of Memory Reference Parameters (src/shared-memory.maude): an RA invokes a TA
+--- service with a memory reference to its block blk, through the TrustedOS.
+load ../../src/main
+load ../cases/aux
+
+mod SHM-TEST is
+  pr TEE-BEHAVIOR .
+  pr TEE-IMP-BEHAVIOR .
+  pr TEST-AUX .
+
+  op sid : -> SessionId [ctor] .
+  op blk : -> Oid [ctor] .
+  ops buf x tb tz bv oh rc dd : -> Var [ctor] .
+  ops check fill copy : -> FuncId [ctor] .
+  var P : Program .
+  var F : FuncId .
+  var D : MemrefDir .
+  var AS : DataAlts .
+  var DL : List{Data} .
+
+  --- dfProg reads the input twice: the check and the use may see different data.
+  op dfProg : -> Program .
+  eq dfProg = void check(TEE-Memref buf, TEE-Buffer * res) {
+      if (shmData(buf) == # data(1)) { res := shmData(buf) ; } else { res := # noData ; } } .
+  --- safeProg reads the input once into private memory, then checks and uses the copy.
+  op safeProg : -> Program .
+  eq safeProg = void check(TEE-Memref buf, TEE-Buffer * res) {
+      TEE-Buffer x ; x := shmData(buf) ;
+      if (x == # data(1)) { res := x ; } else { res := # noData ; } } .
+  --- fillProg writes two fragments and returns the size 1.
+  op fillProg : -> Program .
+  eq fillProg = void fill(TEE-Memref buf, TEE-Buffer * res) {
+      shmWrite(buf, # (data(7) data(8))) ; shmSetSize(buf, # 1) ; res := # noData ; } .
+  --- overProg writes past the original size 2.
+  op overProg : -> Program .
+  eq overProg = void fill(TEE-Memref buf, TEE-Buffer * res) {
+      shmWrite(buf, # (data(7) data(8) data(9))) ; res := # noData ; } .
+  --- bigProg returns the size 5, larger than the original size 2.
+  op bigProg : -> Program .
+  eq bigProg = void fill(TEE-Memref buf, TEE-Buffer * res) {
+      shmWrite(buf, # data(7)) ; shmSetSize(buf, # 5) ; res := # noData ; } .
+
+  --- sizeProg answers a null reference with the required size 3.
+  op sizeProg : -> Program .
+  eq sizeProg = void fill(TEE-Memref buf, TEE-Buffer * res) {
+      if (shmSize(buf) == # 0) { shmSetSize(buf, # 3) ; } res := # noData ; } .
+  --- cmarProg returns data(5) when TEE_CheckMemoryAccessRights with the flags MA succeeds on
+  --- the reference, and data(6) otherwise.
+  op cmarProg : MemAccess -> Program .
+  var MA : MemAccess .
+  eq cmarProg(MA) = void check(TEE-Memref buf, TEE-Buffer * res) {
+      if (checkMemoryAccessRights(MA, buf) == # success) { res := # data(5) ; }
+      else { res := # data(6) ; } } .
+  --- privProg checks a private buffer without _ANY_OWNER.
+  op privProg : -> Program .
+  eq privProg = void check(TEE-Memref buf, TEE-Buffer * res) {
+      TEE-Buffer x ; x := shmData(buf) ;
+      if (checkMemoryAccessRights(macc(true, true, false), x) == # success) { res := # data(5) ; }
+      else { res := # data(6) ; } } .
+  --- oidProg passes the reference as the object identifier of TEE_OpenPersistentObject.
+  op oidProg : -> Program .
+  eq oidProg = void check(TEE-Memref buf, TEE-Buffer * res) {
+      TEE-Handle oh ; TEE-Result rc ;
+      rc := OpenPersistentObject(# storagePrivate, buf, # accessRead, oh) ; res := # noData ; } .
+  --- copyProg passes the reference to a buffer parameter, which reads it once.
+  op copyProg : -> Program .
+  eq copyProg = TEE-Buffer copy(TEE-Buffer dd) { return dd ; }
+      void check(TEE-Memref buf, TEE-Buffer * res) { res := copy(buf) ; } .
+
+  --- client(S): the RA testRa runs the program S, and has a session sid with testTa.
+  op client : Program Program -> Configuration .
+  vars P' S : Program .
+  eq client(S, P) =
+    < testRa : RichApp | prog : S, proc : mkConf(S) >
+    < osId : TrustedOS | sess : (sid |-> testTa) >
+    < testTa : TrustedApp | proc : none, prog : P, client-service : none,
+        status : (normal).AppStatus, api-call : noCall, counter : 0, storage : oid(0, testTa),
+        os-kernel : osId > .
+  --- allocProg(F, D', D, S): allocates a block of size 2 with the flags D' and the data
+  --- data(1), runs S (for example shmRogue), and calls F with a reference of direction D.
+  op allocProg : FuncId MemrefDir MemrefDir Stmt -> Program .
+  var D' : MemrefDir .
+  var ST : Stmt .
+  eq allocProg(F, D', D, ST) =
+    TEE-SharedMem bv ; TEE-Buffer res ;
+    bv := shmAlloc(# 2, D') ; shmFill(bv, # data(1)) ; ST
+    teecInvoke(# sid, # F, (memrefTo(bv, D), # noData), res) ; .
+  --- tmpProg(F, D): calls F with a temporary reference to tb (data(1), size 2).
+  op tmpProg : FuncId MemrefDir -> Program .
+  eq tmpProg(F, D) =
+    TEE-Buffer tb ; int tz ; TEE-Buffer res ;
+    tb := # data(1) ; tz := # 2 ;
+    teecInvoke(# sid, # F, (tmpref(tb, tz, D), # noData), res) ; .
+  --- nullProg(F): calls F with a null output reference; tz gets the returned size.
+  op nullProg : FuncId -> Program .
+  eq nullProg(F) =
+    int tz ; TEE-Buffer res ; tz := # 0 ;
+    teecInvoke(# sid, # F, (nullref(tz, mrOut), # noData), res) ; .
+
+  --- init(P, F, D, AS, DL): the RA testRa calls the service F of the TA testTa (program P) with
+  --- a memory reference of direction D to blk, which holds DL.  AS are the data a rogue client
+  --- writes (noAlt: a well-behaved client).  The RA stores the output res in location 0, and
+--- a finished RA has k(.K).
+  op init : Program FuncId MemrefDir DataAlts List{Data} -> Configuration .
+  eq init(P, F, D, AS, DL) =
+    < testRa : RichApp | prog : skip,
+        proc : (k($in(# sid # F memref(blk, D) # noData) ~> $wait(teecInvokeCommand) ~> $out(res))
+                env(res |-> 0) store(0 |-> # noData)) >
+    < blk : SharedMem | owner : testRa, mem-flags : mrInout, cview : DL, size : 2, ret-size : 0,
+                        tamper : AS >
+    < osId : TrustedOS | sess : (sid |-> testTa) >
+    < testTa : TrustedApp | proc : none, prog : P, client-service : none,
+        status : (normal).AppStatus, api-call : noCall, counter : 0, storage : oid(0, testTa),
+        os-kernel : osId > .
+endm
+
+--- With a well-behaved client, the double-fetch TA returns the data of the block.
+search [1] in SHM-TEST : init(dfProg, check, mrIn, noAlt, data(1)) =>! < testRa : RichApp | prog : skip, proc : (k(.K) env(res |-> 0) store(0 |-> # data(1))) > C:Configuration .
+
+--- With a rogue client that writes data(2), the double-fetch TA returns data(2) although it
+--- checked for data(1) ([Internal Core] 4.3, Security Considerations).
+search [1] in SHM-TEST : init(dfProg, check, mrIn, alt(data(2)), data(1)) =>! < testRa : RichApp | prog : skip, proc : (k(.K) env(res |-> 0) store(0 |-> # data(2))) > C:Configuration .
+
+--- The single-fetch TA never returns data(2), and returns data(1) or no data.
+--- expect: no solution
+search in SHM-TEST : init(safeProg, check, mrIn, alt(data(2)), data(1)) =>! < testRa : RichApp | prog : skip, proc : (k(.K) env(res |-> 0) store(0 |-> # data(2))) > C:Configuration .
+search [1] in SHM-TEST : init(safeProg, check, mrIn, alt(data(2)), data(1)) =>! < testRa : RichApp | prog : skip, proc : (k(.K) env(res |-> 0) store(0 |-> # data(1))) > C:Configuration .
+search [1] in SHM-TEST : init(safeProg, check, mrIn, alt(data(2)), data(1)) =>! < testRa : RichApp | prog : skip, proc : (k(.K) env(res |-> 0) store(0 |-> # (nil).List{Data})) > C:Configuration .
+
+--- Output synchronization ([Internal Core] Table 4-9): the TA wrote two fragments and returned
+--- the size 1, so the client sees the first fragment and the size 1.
+search [1] in SHM-TEST : init(fillProg, fill, mrInout, noAlt, data(1)) =>!
+  < blk : SharedMem | owner : testRa, mem-flags : mrInout, cview : data(7), size : 2, ret-size : 1,
+                      tamper : noAlt > C:Configuration .
+
+--- A size larger than the original size asks for a larger buffer: no data is synchronized.
+search [1] in SHM-TEST : init(bigProg, fill, mrOut, noAlt, data(1)) =>!
+  < blk : SharedMem | owner : testRa, mem-flags : mrInout, cview : data(1), size : 2, ret-size : 5,
+                      tamper : noAlt > C:Configuration .
+
+--- A write to an input reference panics the TA; the RA gets target-dead and keeps its data.
+search [1] in SHM-TEST : init(fillProg, fill, mrIn, noAlt, data(1)) =>!
+  < testRa : RichApp | prog : skip, proc : (k(.K) env(res |-> 0) store(0 |-> # errorTargetDead)) >
+  < blk : SharedMem | owner : testRa, mem-flags : mrInout, cview : data(1), size : 2, ret-size : 2,
+                      tamper : noAlt >
+  < testTa : TrustedApp | status : panic, AS:AttributeSet > C:Configuration .
+
+--- A write past the original size panics the TA.
+search [1] in SHM-TEST : init(overProg, fill, mrOut, noAlt, data(1)) =>!
+  < testTa : TrustedApp | status : panic, AS:AttributeSet > C:Configuration .
+
+--- No memory reference of the operation is left once the RA has its result.
+--- expect: no solution
+search in SHM-TEST : init(fillProg, fill, mrInout, noAlt, data(1)) =>!
+  < O:Oid : MemrefOp | AS:AttributeSet > C:Configuration .
+
+------------------------------------------------------------
+--- Client programs
+------------------------------------------------------------
+
+--- The RA allocates and fills a block, and a rogue thread may write data(2): the double-fetch
+--- TA returns data(2) to it.
+search [1] in SHM-TEST : client(allocProg(check, mrInout, mrIn, shmRogue(bv, # data(2)) ;), dfProg) =>!
+  < testRa : RichApp | prog : P:Program,
+      proc : (k(.K) env((res |-> L:Nat) ; ENV:Map{Var,Nat}) store((L:Nat |-> # data(2)) ; MEM:Map{Nat,Value?}) KS:KConfig) >
+  C:Configuration .
+--- Without the rogue thread it gets data(1).
+--- expect: no solution
+search in SHM-TEST : client(allocProg(check, mrInout, mrIn, skip), dfProg) =>!
+  < testRa : RichApp | prog : P:Program,
+      proc : (k(.K) env((res |-> L:Nat) ; ENV:Map{Var,Nat}) store((L:Nat |-> # data(2)) ; MEM:Map{Nat,Value?}) KS:KConfig) >
+  C:Configuration .
+
+--- An output reference to a block allocated for input only is rejected with
+--- TEEC_ERROR_BAD_PARAMETERS, and the TA does not run.
+search [1] in SHM-TEST : client(allocProg(fill, mrIn, mrOut, skip), fillProg) =>!
+  < testRa : RichApp | prog : P:Program,
+      proc : (k(.K) env((res |-> L:Nat) ; ENV:Map{Var,Nat}) store((L:Nat |-> # errorBadParameters) ; MEM:Map{Nat,Value?}) KS:KConfig) >
+  < testTa : TrustedApp | proc : none, AS:AttributeSet > C:Configuration .
+
+--- Temporary reference: the TA's output data(7) and size 1 go back to tb and tz.
+search [1] in SHM-TEST : client(tmpProg(fill, mrInout), fillProg) =>!
+  < testRa : RichApp | prog : P:Program,
+      proc : (k(.K) env((tb |-> L1:Nat) ; (tz |-> L2:Nat) ; ENV:Map{Var,Nat})
+              store((L1:Nat |-> # data(7)) ; (L2:Nat |-> # 1) ; MEM:Map{Nat,Value?}) KS:KConfig) >
+  C:Configuration .
+--- An input temporary reference keeps the client's data and size.
+search [1] in SHM-TEST : client(tmpProg(fill, mrIn), fillProg) =>!
+  < testRa : RichApp | prog : P:Program,
+      proc : (k(.K) env((tb |-> L1:Nat) ; (tz |-> L2:Nat) ; ENV:Map{Var,Nat})
+              store((L1:Nat |-> # data(1)) ; (L2:Nat |-> # 2) ; MEM:Map{Nat,Value?}) KS:KConfig) >
+  < testTa : TrustedApp | status : panic, AS:AttributeSet > C:Configuration .
+
+--- Null reference: the TA sees the size 0 and returns the required size 3, which goes to tz.
+search [1] in SHM-TEST : client(nullProg(fill), sizeProg) =>!
+  < testRa : RichApp | prog : P:Program,
+      proc : (k(.K) env((tz |-> L2:Nat) ; ENV:Map{Var,Nat}) store((L2:Nat |-> # 3) ; MEM:Map{Nat,Value?}) KS:KConfig) >
+  C:Configuration .
+
+------------------------------------------------------------
+--- TEE_CheckMemoryAccessRights and API parameters
+------------------------------------------------------------
+
+--- A memory reference fails the check without _ANY_OWNER ...
+search [1] in SHM-TEST : init(cmarProg(macc(true, false, false)), check, mrIn, noAlt, data(1)) =>!
+  < testRa : RichApp | prog : skip, proc : (k(.K) env(res |-> 0) store(0 |-> # data(6))) > C:Configuration .
+--- ... passes it for reading with _ANY_OWNER ...
+search [1] in SHM-TEST : init(cmarProg(macc(true, false, true)), check, mrIn, noAlt, data(1)) =>!
+  < testRa : RichApp | prog : skip, proc : (k(.K) env(res |-> 0) store(0 |-> # data(5))) > C:Configuration .
+--- ... and fails it for writing an input reference.
+search [1] in SHM-TEST : init(cmarProg(macc(true, true, true)), check, mrIn, noAlt, data(1)) =>!
+  < testRa : RichApp | prog : skip, proc : (k(.K) env(res |-> 0) store(0 |-> # data(6))) > C:Configuration .
+--- A private copy passes without _ANY_OWNER.
+search [1] in SHM-TEST : init(privProg, check, mrIn, noAlt, data(1)) =>!
+  < testRa : RichApp | prog : skip, proc : (k(.K) env(res |-> 0) store(0 |-> # data(5))) > C:Configuration .
+
+--- A reference passed for a buffer parameter is read once, so copy returns the data of one
+--- moment: data(1) or data(2).
+search [1] in SHM-TEST : init(copyProg, check, mrIn, alt(data(2)), data(1)) =>!
+  < testRa : RichApp | prog : skip, proc : (k(.K) env(res |-> 0) store(0 |-> # data(2))) > C:Configuration .
+search [1] in SHM-TEST : init(copyProg, check, mrIn, alt(data(2)), data(1)) =>!
+  < testRa : RichApp | prog : skip, proc : (k(.K) env(res |-> 0) store(0 |-> # data(1))) > C:Configuration .
+
+--- A reference passed as the object identifier of TEE_OpenPersistentObject ([in]) panics the TA.
+search [1] in SHM-TEST : init(oidProg, check, mrIn, noAlt, data(1)) =>!
+  < testRa : RichApp | prog : skip, proc : (k(.K) env(res |-> 0) store(0 |-> # errorTargetDead)) >
+  < testTa : TrustedApp | status : panic, AS:AttributeSet > C:Configuration .
+
+------------------------------------------------------------
+--- A TA calls another TA
+------------------------------------------------------------
+
+--- testTa sends reqInvoke for fill with a temporary reference to its location 0 (data(1),
+--- size 2 at location 1) through its session handle oid(2, testTa); otherTa serves it.  When
+--- finishReqInvoke reaches testTa, the output data(7) and size 1 are in its store.
+search [1] in SHM-TEST :
+  (msg reqInvoke[# fill # (tmem(0, 1, mrInout) # noData)] from testTa to oid(2, testTa))
+  < testTa : TrustedApp | proc : (k(.K) store((0 |-> # data(1)) ; (1 |-> # 2))), prog : skip,
+      client-service : none, status : (normal).AppStatus, api-call : noCall, counter : 3,
+      storage : oid(0, testTa), os-kernel : osId >
+  < oid(1, testTa) : Session | req : noReq, ret : noRet, ta-id : otherTa >
+  < oid(2, testTa) : TaSessionHandle | oid : oid(1, testTa) >
+  < otherTa : TrustedApp | proc : none, prog : fillProg, client-service : none,
+      status : (normal).AppStatus, api-call : noCall, counter : 0, storage : oid(0, otherTa),
+      os-kernel : osId >
+  =>!
+  (msg finishReqInvoke[RET:ArgList] from oid(2, testTa) to testTa)
+  < testTa : TrustedApp | proc : (k(.K) store((0 |-> # data(7)) ; (1 |-> # 1))), AS:AttributeSet >
+  C:Configuration .
+
+--- If otherTa panics (it writes to the input reference), testTa gets target-dead from the TEE, its
+--- buffer and size are unchanged, and no memory reference is left.
+search [1] in SHM-TEST :
+  (msg reqInvoke[# fill # (tmem(0, 1, mrIn) # noData)] from testTa to oid(2, testTa))
+  < testTa : TrustedApp | proc : (k(.K) store((0 |-> # data(1)) ; (1 |-> # 2))), prog : skip,
+      client-service : none, status : (normal).AppStatus, api-call : noCall, counter : 3,
+      storage : oid(0, testTa), os-kernel : osId >
+  < oid(1, testTa) : Session | req : noReq, ret : noRet, ta-id : otherTa >
+  < oid(2, testTa) : TaSessionHandle | oid : oid(1, testTa) >
+  < otherTa : TrustedApp | proc : none, prog : fillProg, client-service : none,
+      status : (normal).AppStatus, api-call : noCall, counter : 0, storage : oid(0, otherTa),
+      os-kernel : osId >
+  =>!
+  (msg finishReqInvoke[# fill # (# originTee # errorTargetDead)] from oid(2, testTa) to testTa)
+  < testTa : TrustedApp | proc : (k(.K) store((0 |-> # data(1)) ; (1 |-> # 2))), AS:AttributeSet >
+  < otherTa : TrustedApp | status : panic, AS':AttributeSet >
+  < oid(1, testTa) : Session | req : noReq, ret : noRet, ta-id : otherTa >
+  < oid(2, testTa) : TaSessionHandle | oid : oid(1, testTa) > .

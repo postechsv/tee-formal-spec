@@ -19,7 +19,7 @@
 #   FOO_REQUIRES := CRYPTO
 #   FOO_TESTS := api/test-foo.maude foo-checks.maude
 
-FEATURES := CRYPTO TRANSIENT PERSISTENT GENERIC DATA_STREAM ENUMERATOR
+FEATURES := CRYPTO TRANSIENT PERSISTENT GENERIC DATA_STREAM ENUMERATOR SHM
 
 # Cryptographic operations. The file is dropped with its panic module.
 CRYPTO ?= 1
@@ -71,3 +71,11 @@ ENUMERATOR_LOADS := enumerator
 ENUMERATOR_MODULES := ENUMERATOR-OBJECT-BEHAVIOR ENUMERATOR-OBJECT-TEE-CALL
 ENUMERATOR_REQUIRES := PERSISTENT
 ENUMERATOR_TESTS := api/test-enumerator.maude completion/enumerator.maude
+
+# Shared memory of Memory Reference Parameters (src/shared-memory.maude): memref arguments of
+# an SMC request become MemrefOp objects that the TA accesses with shmData/shmWrite.
+SHM ?= 1
+SHM_LOADS := shared-memory
+SHM_MODULES := SHARED-MEMORY-BEHAVIOR
+SHM_REQUIRES :=
+SHM_TESTS := completion/shared-memory.maude

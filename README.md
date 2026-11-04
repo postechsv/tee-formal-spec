@@ -6,6 +6,7 @@ An executable [Maude](https://maude.cs.illinois.edu/) specification of the Globa
 
 - Generic, transient, and persistent object APIs
 - Persistent data stream access and persistent object enumeration
+- Shared memory of memory reference parameters, with an optional rogue client (switchable with the `SHM` feature)
 - Cryptographic operations (switchable with the `CRYPTO` feature)
 - Programmer errors and invalid handles, modeled as panics
 - Model programs (`src/imp.maude`) whose calls are translated into TEE API calls (`src/tee-imp.maude`)
@@ -74,6 +75,7 @@ Features are defined in `mk/features.mk`. Each one is a variable set to `1` (on,
 | `GENERIC` | Generic object API | |
 | `DATA_STREAM` | Persistent data stream access | `PERSISTENT` |
 | `ENUMERATOR` | Persistent object enumeration | `PERSISTENT` |
+| `SHM` | Shared memory of memory reference parameters | |
 
 When a feature is off, its files are dropped from `src/main.maude` and its tests are skipped.
 
@@ -131,6 +133,7 @@ tee-formal-spec/
 | `persistent-panic.maude`, `data-stream-panic.maude`, `crypto-panic.maude` | Panics of the storage and cryptographic APIs |
 | `os.maude`, `os-service.maude` | Trusted OS and storage services |
 | `app.maude`, `ree-app.maude`, `tee-app.maude`, `tee-client.maude` | REE/TEE applications and client behavior |
+| `shared-memory.maude` | Shared memory blocks and memory references of operations: the client and TA views, their synchronization, and TA access |
 
 ### Program execution
 

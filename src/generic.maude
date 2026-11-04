@@ -36,6 +36,7 @@ omod GENERIC-OBJECT-BEHAVIOR is
   var DATASIZE : DataSize .
   var STREAMDATA : List{Data} .
   var HS : Configuration .
+  var OHS : OpenHandles .
   var STATUS : StorageStatus .
   var INFO : TeeObjectInfo .
   var PARAMS : ArgList .
@@ -444,12 +445,13 @@ omod GENERIC-OBJECT-BEHAVIOR is
   if not nullHandle(HANDLE)
   .
 
+  --- close-persistent-top-level-handle: the handle is removed, also from the open handles of its object.
   rl [close-persistent-top-level-handle] :
     (msg closeObject[] from TK to HANDLE)
-    < OI : PersistObj | >
+    < OI : PersistObj | open-handles : (oh(HANDLE, DATAFLAGS) OHS) >
     < HANDLE : ObjHandle | oid : OI >
     =>
-    < OI : PersistObj | >
+    < OI : PersistObj | open-handles : OHS >
     (msg finishCloseObject[] from OI to TK)
   .
 

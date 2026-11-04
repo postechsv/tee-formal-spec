@@ -43,7 +43,7 @@ search [1] in COMPLETION-TEST :
 --- OpenPersistentObject resolves an object through the handle's oid relation.
 search [1] in COMPLETION-TEST :
   (msg openPersistentHandle[# testFileId # accessRead # 3] from testTa to oid(0, testTa))
-  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId >
+  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId, open-handles : noHandles >
 =>*
   (msg finishOpenPersistentHandle[# oid(3, testTa)] from oid(0, testTa) to testTa)
   C .
@@ -52,29 +52,45 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   (msg openPersistentHandle[# testFileId # (accessRead,
                         shareRead) # 2] from testTa to oid(0, testTa))
-  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId >
+  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId,
+      open-handles : oh(oid(1, testTa), accessRead) >
   < oid(1, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
       flags : accessRead >
 =>*
   (msg failOpenPersistentHandle[] from oid(0, testTa) to testTa)
-  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId >
+  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId,
+      open-handles : oh(oid(1, testTa), accessRead) >
   < oid(1, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
       flags : accessRead > .
+
+--- ... and it cannot succeed: the check sees every open handle of the object.
+--- expect: no solution
+search [1] in COMPLETION-TEST :
+  (msg openPersistentHandle[# testFileId # (accessRead,
+                        shareRead) # 2] from testTa to oid(0, testTa))
+  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId,
+      open-handles : oh(oid(1, testTa), accessRead) >
+  < oid(1, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
+      flags : accessRead >
+=>*
+  (msg finishOpenPersistentHandle[# H:Oid] from oid(0, testTa) to testTa)
+  C .
 
 --- Opening is scoped to the TA's Storage even when another Storage contains
 --- an object with the same file identifier.
 search [1] in COMPLETION-TEST :
   (msg openPersistentHandle[# testFileId # accessRead # 4] from testTa to oid(0, otherTa))
-  < oid(0, oid(0, testTa)) : PersistObj | file-name : testFileId >
-  < oid(0, oid(0, otherTa)) : PersistObj | file-name : testFileId >
+  < oid(0, oid(0, testTa)) : PersistObj | file-name : testFileId, open-handles : noHandles >
+  < oid(0, oid(0, otherTa)) : PersistObj | file-name : testFileId, open-handles : noHandles >
 =>*
   (msg finishOpenPersistentHandle[# oid(4, testTa)] from oid(0, otherTa) to testTa)
   < oid(4, testTa) : ObjHandle |
       oid : oid(0, oid(0, otherTa)),
       flags : accessRead,
       pos : 0 >
-  < oid(0, oid(0, testTa)) : PersistObj | file-name : testFileId >
-  < oid(0, oid(0, otherTa)) : PersistObj | file-name : testFileId > .
+  < oid(0, oid(0, testTa)) : PersistObj | file-name : testFileId, open-handles : noHandles >
+  < oid(0, oid(0, otherTa)) : PersistObj | file-name : testFileId,
+      open-handles : oh(oid(4, testTa), accessRead) > .
 
 --- Overwrite removes only the old object in the TA's Storage namespace.
 search [1] in COMPLETION-TEST :
@@ -86,15 +102,27 @@ search [1] in COMPLETION-TEST :
   < testTa : TAKernel | api-call : return(createPersistent[# success # oid(0, oid(0, testTa))]), TA-ATTS:AttributeSet >
   < oid(0, oid(0, otherTa)) : PersistObj | file-name : testFileId, data-stream : nil, REST3:AttributeSet > C:Configuration .
 
---- CloseAndDelete invalidates every top-level handle that references the owner.
+--- CloseAndDelete removes the object and its handle.  A handle with accessWriteMeta is the only open
+--- handle of its object (the sharing rules), so no other handle refers to the object.
 search [1] in COMPLETION-TEST :
   (msg deletePersistent[# oid(0, testTa)] from testTa to oid(101, testTa))
-  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId >
+  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId,
+      open-handles : oh(oid(101, testTa), accessWriteMeta) >
   < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
       flags : accessWriteMeta >
-  < oid(102, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)) >
 =>*
   (msg finishDeletePersistent[# testFileId] from oid(101, testTa) to testTa) .
+
+--- A second open next to a handle with accessWriteMeta conflicts, so the delete above never leaves
+--- another handle behind.
+--- expect: no solution
+search [1] in COMPLETION-TEST :
+  (msg openPersistentHandle[# testFileId # accessRead # 2] from testTa to oid(0, testTa))
+  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId,
+      open-handles : oh(oid(101, testTa), accessWriteMeta) >
+=>*
+  (msg finishOpenPersistentHandle[# H:Oid] from oid(0, testTa) to testTa)
+  C .
 
 --- RenamePersistentObject authorizes through a top-level write-meta handle.
 search [1] in COMPLETION-TEST :

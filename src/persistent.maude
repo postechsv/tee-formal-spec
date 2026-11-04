@@ -27,7 +27,7 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   vars FILE FILE' : FileName .
   var TK : Oid .
   vars DATAFLAGS DATAFLAGS2 : Set{DataAccessFlag} .
-  var HS : Configuration .
+  var OHS : OpenHandles .
   var OBJUSAGES : Set{Usage} .
   var ATTRS : Set{CryptoAttribute} .
   vars OBJTYPE : Type .
@@ -35,9 +35,6 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   var STATUS : StorageStatus .
   var PARAMS : ArgList .
   var STORID : StorageIdentifier .
-  var OBJ : Object .
-  var MSG : Msg .
-  var PORTAL : Portal .
   var PI : Oid .
   var HI : Oid .
   var FLAGS : Set{DataAccessFlag} .
@@ -70,45 +67,13 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
          or ((shareWrite in DATAFLAGS)
              and (shareWrite in DATAFLAGS2))) .
 
-  --- persistentHandlesCompatible(OI, DATAFLAGS, HS): true when every object handle in HS
-  --- that refers to OI is compatible with DATAFLAGS under accessRightCheckingAux.
-  --- The model stores only Handle.oid -> resource links, so the check scans the whole
-  --- configuration instead of keeping a reverse handle set on the resource object.
-  op persistentHandlesCompatible : Oid Set{DataAccessFlag} Configuration -> Bool .
-  eq persistentHandlesCompatible(OI, DATAFLAGS, none) = true .
-  eq persistentHandlesCompatible(OI, DATAFLAGS,
-       < H : ObjHandle | oid : OI, flags : DATAFLAGS2 > HS) =
+  --- openHandlesCompatible(DATAFLAGS, OHS): true when a new handle with DATAFLAGS is compatible,
+  --- under accessRightCheckingAux, with every open handle OHS of the object.
+  op openHandlesCompatible : Set{DataAccessFlag} OpenHandles -> Bool .
+  eq openHandlesCompatible(DATAFLAGS, noHandles) = true .
+  eq openHandlesCompatible(DATAFLAGS, oh(H, DATAFLAGS2) OHS) =
      accessRightCheckingAux(DATAFLAGS, DATAFLAGS2)
-     and persistentHandlesCompatible(OI, DATAFLAGS, HS) .
----@dmc scope(TEE-BEHAVIOR, OVERWRITE-INV, LOST-UPDATE-INV)
----@dmc classes(TaSessionHandle, PropSetHandle, ObjHandle, ObjectEnumHandle, OpHandle, CryptoObj, App, TAKernel, Storage, TrustedOS, Device, Session, EnumeratorObject, CryptoOp)
----@dmc classes(OwAttrs, OwObj, LuAttrs)
----@dmc exact-classes(Handle)
----@dmc owise recurse(sep=__, empty=none)
-  eq persistentHandlesCompatible(OI, DATAFLAGS, OBJ HS) =
-     persistentHandlesCompatible(OI, DATAFLAGS, HS) [owise] .
-  eq persistentHandlesCompatible(OI, DATAFLAGS, MSG HS) =
-     persistentHandlesCompatible(OI, DATAFLAGS, HS) .
-  eq persistentHandlesCompatible(OI, DATAFLAGS, PORTAL HS) =
-     persistentHandlesCompatible(OI, DATAFLAGS, HS) .
-
-  --- removePersistentHandles(OI, HS): removes every object handle in HS that refers to OI.
-  --- The other elements of the configuration are kept.
-  op removePersistentHandles : Oid Configuration -> Configuration .
-  eq removePersistentHandles(OI, none) = none .
-  eq removePersistentHandles(OI, < H : ObjHandle | oid : OI > HS) =
-     removePersistentHandles(OI, HS) .
----@dmc scope(TEE-BEHAVIOR, OVERWRITE-INV, LOST-UPDATE-INV)
----@dmc classes(TaSessionHandle, PropSetHandle, ObjHandle, ObjectEnumHandle, OpHandle, CryptoObj, App, TAKernel, Storage, TrustedOS, Device, Session, EnumeratorObject, CryptoOp)
----@dmc classes(OwAttrs, OwObj, LuAttrs)
----@dmc exact-classes(Handle)
----@dmc owise recurse(sep=__, empty=none)
-  eq removePersistentHandles(OI, OBJ HS) =
-     OBJ removePersistentHandles(OI, HS) [owise] .
-  eq removePersistentHandles(OI, MSG HS) =
-     MSG removePersistentHandles(OI, HS) .
-  eq removePersistentHandles(OI, PORTAL HS) =
-     PORTAL removePersistentHandles(OI, HS) .
+     and openHandlesCompatible(DATAFLAGS, OHS) .
 
 
 ------------------------------------------------------------
@@ -178,31 +143,28 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
     (msg openPersistentHandle[# FILE # DATAFLAGS # N] from TK to SI)
   .
 
-  --- open-persistent-top-level-handle: when the flags are compatible with the other handles of the
-  --- object, a handle oid(N, TK) is created and finishOpenPersistentHandle is sent back to the TA.
+  --- open-persistent-top-level-handle: when the flags are compatible with the open handles of the
+  --- object, a handle oid(N, TK) is created and added to them, and finishOpenPersistentHandle is sent
+  --- back to the TA.
   crl [open-persistent-top-level-handle] :
     (msg openPersistentHandle[# FILE # DATAFLAGS # N] from TK to SI)
-    < oid(M, SI) : PersistObj | file-name : FILE >
-    HS
+    < oid(M, SI) : PersistObj | file-name : FILE , open-handles : OHS >
     =>
-    < oid(M, SI) : PersistObj | >
-    HS
+    < oid(M, SI) : PersistObj | open-handles : (oh(oid(N, TK), DATAFLAGS) OHS) >
     freshPersistentHandle(N, TK, DATAFLAGS, oid(M, SI))
     (msg finishOpenPersistentHandle[# oid(N, TK)] from SI to TK)
-  if persistentHandlesCompatible(oid(M, SI), DATAFLAGS, HS)
+  if openHandlesCompatible(DATAFLAGS, OHS)
   .
 
-  --- open-persistent-top-level-conflict: when the flags are not compatible with the handles of the
-  --- object, failOpenPersistentHandle is sent back to the TA.
+  --- open-persistent-top-level-conflict: when the flags are not compatible with the open handles of
+  --- the object, failOpenPersistentHandle is sent back to the TA.
   crl [open-persistent-top-level-conflict] :
     (msg openPersistentHandle[# FILE # DATAFLAGS # N] from TK to SI)
-    < oid(M, SI) : PersistObj | file-name : FILE >
-    HS
+    < oid(M, SI) : PersistObj | file-name : FILE , open-handles : OHS >
     =>
     < oid(M, SI) : PersistObj | >
-    HS
     (msg failOpenPersistentHandle[] from SI to TK)
-  if not persistentHandlesCompatible(oid(M, SI), DATAFLAGS, HS)
+  if not openHandlesCompatible(DATAFLAGS, OHS)
   .
 
   --- open-persistent-success: finishOpenPersistentHandle returns success with the new handle.
@@ -317,7 +279,8 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
     < SI : Storage | files : (FILE , FILES) , counter : N + 2 >
     < NEWHI : ObjHandle | oid : NEWPI , flags : FLAGS , pos : 0 >
     < NEWPI : PersistObj | type : pureData , usages : empty , max-size : 0 , attributes : empty ,
-                                 file-name : FILE , data-stream : DATA >
+                                 file-name : FILE , data-stream : DATA ,
+                                 open-handles : oh(NEWHI, FLAGS) >
     (msg createSuccess[# NEWHI] from NEWPI to TK)
   if not (FILE in FILES) /\ NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI)
   .
@@ -335,7 +298,8 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
     < SI : Storage | files : (FILE , FILES) , counter : N + 2 >
     < NEWHI : ObjHandle | oid : NEWPI , flags : FLAGS , pos : 0 >
     < NEWPI : PersistObj | type : TYPE , usages : USAGES , max-size : M ,
-                                 attributes : ATTRS , file-name : FILE , data-stream : DATA >
+                                 attributes : ATTRS , file-name : FILE , data-stream : DATA ,
+                                 open-handles : oh(NEWHI, FLAGS) >
     (msg createSuccess[# NEWHI] from NEWPI to TK)
   if not (FILE in FILES) /\ NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI)
   .
@@ -353,7 +317,8 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
     < OI : CryptoObj | > < HI : ObjHandle | >
     < NEWHI : ObjHandle | oid : NEWPI , flags : FLAGS , pos : 0 >
     < NEWPI : PersistObj | type : TYPE , usages : USAGES , max-size : M ,
-                                 attributes : ATTRS , file-name : FILE , data-stream : DATA >
+                                 attributes : ATTRS , file-name : FILE , data-stream : DATA ,
+                                 open-handles : oh(NEWHI, FLAGS) >
     (msg createSuccess[# NEWHI] from NEWPI to TK)
   if not (FILE in FILES) /\ NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI)
   .
@@ -370,7 +335,8 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
     =>
     < NEWHI : ObjHandle | oid : NEWPI , flags : FLAGS , pos : 0 >
     < NEWPI : PersistObj | type : pureData , usages : empty , max-size : 0 , attributes : empty ,
-                                 file-name : FILE , data-stream : DATA >
+                                 file-name : FILE , data-stream : DATA ,
+                                 open-handles : oh(NEWHI, FLAGS) >
     (msg createSuccess[# NEWHI] from NEWPI to TK)
   if NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI)
   .
@@ -386,7 +352,8 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
     =>
     < NEWHI : ObjHandle | oid : NEWPI , flags : FLAGS , pos : 0 >
     < NEWPI : PersistObj | type : TYPE , usages : USAGES , max-size : M ,
-                                 attributes : ATTRS , file-name : FILE , data-stream : DATA >
+                                 attributes : ATTRS , file-name : FILE , data-stream : DATA ,
+                                 open-handles : oh(NEWHI, FLAGS) >
     (msg createSuccess[# NEWHI] from NEWPI to TK)
   if NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI)
   .
@@ -403,7 +370,8 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
     < OI : CryptoObj | > < HI : ObjHandle | >
     < NEWHI : ObjHandle | oid : NEWPI , flags : FLAGS , pos : 0 >
     < NEWPI : PersistObj | type : TYPE , usages : USAGES , max-size : M ,
-                                 attributes : ATTRS , file-name : FILE , data-stream : DATA >
+                                 attributes : ATTRS , file-name : FILE , data-stream : DATA ,
+                                 open-handles : oh(NEWHI, FLAGS) >
     (msg createSuccess[# NEWHI] from NEWPI to TK)
   if NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI)
   .
@@ -486,19 +454,19 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
     (msg deletePersistent[# SI] from TK to HANDLE)
   .
 
-  --- hasWriteMeta(DATAFLAGS): true when DATAFLAGS contains accessWriteMeta.
+  --- hasWriteMeta(DATAFLAGS): true when DATAFLAGS contains accessWriteMeta, false otherwise.
   op hasWriteMeta : Set{DataAccessFlag} -> Bool .
-  eq hasWriteMeta((accessWriteMeta , DATAFLAGS)) = true .
+  eq hasWriteMeta(DATAFLAGS) = accessWriteMeta in DATAFLAGS .
 
   --- close-and-delete-persistent-top-level-start: when the handle has accessWriteMeta, the object
-  --- and every handle that refers to it are removed, and finishDeletePersistent is sent to the TA.
+  --- and its open handles are removed, and finishDeletePersistent is sent to the TA.  The sharing
+  --- rules make a handle with accessWriteMeta the only open handle of its object (accessRightCheckingAux
+  --- rejects accessWriteMeta on either side), so the open handles are this handle alone.
   crl [close-and-delete-persistent-top-level-start] :
     (msg deletePersistent[# SI] from TK to HANDLE)
-    < oid(M, SI) : PersistObj | file-name : FILE >
+    < oid(M, SI) : PersistObj | file-name : FILE , open-handles : oh(HANDLE, DATAFLAGS2) >
     < HANDLE : ObjHandle | oid : oid(M, SI), flags : DATAFLAGS >
-    HS
     =>
-    removePersistentHandles(oid(M, SI), HS)
     (msg finishDeletePersistent[# FILE] from HANDLE to TK)
   if hasWriteMeta(DATAFLAGS)
   .

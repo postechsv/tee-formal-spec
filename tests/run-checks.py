@@ -11,6 +11,8 @@ A command starts at the beginning of a line with "search", "red" or "reduce"
 (indentation is not allowed, so comment lines never match). Its result is
 expected to be:
   search         "Solution N (state M)"  (a "No solution." result fails)
+  search after a "--- expect: no solution" line
+                 "No solution."           (a solution fails)
   red, reduce    "result Bool: true"     (any other result fails)
 
 A file fails when Maude writes to stderr, prints "Warning:" or "Error:", or
@@ -35,6 +37,7 @@ import threading
 
 
 COMMAND = re.compile(r"^(search|red|reduce)\b")
+EXPECT_NONE = re.compile(r"^---\s*expect:\s*no solution\s*$")
 SEARCH_RESULT = re.compile(r"^(Solution \d+ \(state \d+\)|No solution\.)$", re.MULTILINE)
 REDUCE_RESULT = re.compile(r"^result .*$", re.MULTILINE)
 DIAGNOSTIC = re.compile(r"^(Warning|Error):", re.MULTILINE)
@@ -44,13 +47,14 @@ class CheckError(RuntimeError):
     pass
 
 
-def commands(lines: list[str]) -> list[tuple[int, str, str]]:
-    """Return (line number, keyword, first line) for each command."""
+def commands(lines: list[str]) -> list[tuple[int, str, str, bool]]:
+    """Return (line number, keyword, first line, no solution expected) for each command."""
     found = []
     for number, line in enumerate(lines, start=1):
         match = COMMAND.match(line)
         if match:
-            found.append((number, match.group(1), line.rstrip()))
+            none = number > 1 and EXPECT_NONE.match(lines[number - 2]) is not None
+            found.append((number, match.group(1), line.rstrip(), none))
     return found
 
 
@@ -120,9 +124,9 @@ def run_file(path: Path, maude: str, verbose: bool = False) -> bool:
         results = None
     else:
         results = {}
-        for (number, _, line), out in zip(searches, search_out):
-            results[number] = (line, out.startswith("Solution"))
-        for (number, _, line), out in zip(reduces, reduce_out):
+        for (number, _, line, none), out in zip(searches, search_out):
+            results[number] = (line, out.startswith("Solution") != none)
+        for (number, _, line, _), out in zip(reduces, reduce_out):
             results[number] = (line, out == "result Bool: true")
 
     if results is not None:

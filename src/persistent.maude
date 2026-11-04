@@ -253,17 +253,19 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
 
 
   --- create-persist-overwrite-check: when the file exists, the request is forwarded to the object
-  --- if the overwrite flag is set, and rejected with createFail otherwise.
+  --- if the overwrite flag is set, and rejected with createFail otherwise.  The object is the one of
+  --- the file in the storage SI, oid(M, SI).  The objects of a storage are visible only to its TA, see
+  --- [Internal Core] 5.1, so an object of the same name in the storage of another TA is not replaced.
   ---@dmc split
   crl [create-persist-overwrite-check] :
     (msg create[# METHOD # FILE # FLAGS # HI # DATA] from TK to SI)
-    < PI : PersistObj | file-name : FILE >
+    < oid(M, SI) : PersistObj | file-name : FILE >
     < SI : Storage | status : (normal).StorageStatus , files : FILES , counter : N >
     =>
-    < PI : PersistObj | >
+    < oid(M, SI) : PersistObj | >
     if not (overwrite in FLAGS)
     then < SI : Storage | > (msg createFail[] from SI to TK)
-    else < SI : Storage | counter : N + 2 > (msg create[# METHOD # FILE # FLAGS # HI # DATA # N # TK] from SI to PI) fi
+    else < SI : Storage | counter : N + 2 > (msg create[# METHOD # FILE # FLAGS # HI # DATA # N # TK] from SI to oid(M, SI)) fi
   if FILE in FILES
   .
 

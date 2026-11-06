@@ -1190,15 +1190,13 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   .
 
   --- set-operation-key-top-level-handle-success: when ALGO does not expect two keys and OBJTYPE,
-  --- OBJUSAGES and ATTRS are compatible with ALGO, MODE and KEYSIZE, the CryptoOp CI of HANDLE
-  --- takes ATTRS and the initial state, and installTopOperationKey is sent to HANDLE.
+  --- OBJUSAGES and ATTRS are compatible with ALGO, MODE and KEYSIZE, the CryptoOp takes
+  --- ATTRS and the initial state, and installTopOperationKey is sent to HANDLE.
   crl [set-operation-key-top-level-handle-success] :
     (msg reqSetOperationKey[# OBJTYPE # ATTRS # OBJUSAGES] from TK to HANDLE)
-    < HANDLE : OpHandle | oid : CI >
     < CI : CryptoOp | algorithm : ALGO , mode : MODE,
                              max-size : KEYSIZE, state : OS >
     =>
-    < HANDLE : OpHandle | >
     < CI : CryptoOp | attributes : ATTRS ,
                              state : initial >
     (msg installTopOperationKey[# CI # ATTRS] from TK to HANDLE)
@@ -1222,11 +1220,9 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- set-operation-key-top-level-handle-success fails, rejectTopOperationKey is sent to HANDLE.
   crl [set-operation-key-top-level-handle-fail] :
     (msg reqSetOperationKey[# OBJTYPE # ATTRS # OBJUSAGES] from TK to HANDLE)
-    < HANDLE : OpHandle | oid : CI >
     < CI : CryptoOp | algorithm : ALGO,
                              mode : MODE, max-size : KEYSIZE >
     =>
-    < HANDLE : OpHandle | >
     < CI : CryptoOp | >
     (msg rejectTopOperationKey[] from TK to HANDLE)
   if not (not expectsTwoKeys(ALGO) and algorithmObjectTypeCompatible(ALGO , OBJTYPE) and
@@ -1315,7 +1311,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- to KEY1.
   crl [set-operation-key2-subroutine] :
     < TK : TAKernel | api-call : init(SetOperationKey2[# HANDLE # KEY1 # KEY2]) >
-    < HANDLE : OpHandle | state : HS , oid : CI >
+    < HANDLE : OpHandle | state : HS >
     < CI : CryptoOp | algorithm : ALGO >
     => < TK : TAKernel | api-call : exec(SetOperationKey2[# HANDLE # KEY1 # KEY2] , 0) >
        < HANDLE : OpHandle | >
@@ -1453,16 +1449,14 @@ omod CRYPTO-OPERATION-BEHAVIOR is
        < OI : TransObj | > < KEY : ObjHandle | > .
 
   --- set-operation-key2-top-level-handle: when twoKeyCompatible, twoKeyMaterialCompatible and
-  --- twoKeyOperationSizeCompatible all hold, the CryptoOp CI of HANDLE takes both attribute sets and
-  --- the keys, and finishInstallTopOperationKeys is sent to HANDLE.
+  --- twoKeyOperationSizeCompatible all hold, the CryptoOp takes both attribute sets and the
+  --- keys, and finishInstallTopOperationKeys is sent to HANDLE.
   crl [set-operation-key2-top-level-handle] :
     (msg installOperationKeys[# OBJTYPE # OBJUSAGES # ATTRS # OBJTYPE2 # OBJUSAGES2 # ATTRS2] from TK to HANDLE)
-    < HANDLE : OpHandle | oid : CI >
     < CI : CryptoOp |
                              algorithm : ALGO, mode : MODE,
                              max-size : KEYSIZE >
-    => < HANDLE : OpHandle | >
-       < CI : CryptoOp | attributes : (ATTRS , ATTRS2) ,
+    => < CI : CryptoOp | attributes : (ATTRS , ATTRS2) ,
                               keys : key(ATTRS) key(ATTRS2) >
        (msg finishInstallTopOperationKeys[] from TK to HANDLE)
   if twoKeyCompatible(ALGO , MODE, OBJTYPE , OBJUSAGES, OBJTYPE2 , OBJUSAGES2) /\
@@ -1474,11 +1468,10 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- failSetOperationKey2 is sent from TK to HANDLE.
   crl [set-operation-key2-incompatible-key-panic] :
     (msg installOperationKeys[# OBJTYPE # OBJUSAGES # ATTRS # OBJTYPE2 # OBJUSAGES2 # ATTRS2] from TK to HANDLE)
-    < HANDLE : OpHandle | oid : CI >
     < CI : CryptoOp |
                              algorithm : ALGO, mode : MODE,
                              max-size : KEYSIZE >
-    => < HANDLE : OpHandle | > < CI : CryptoOp | > (msg failSetOperationKey2[] from TK to HANDLE)
+    => < CI : CryptoOp | > (msg failSetOperationKey2[] from TK to HANDLE)
   if not (twoKeyCompatible(ALGO , MODE, OBJTYPE , OBJUSAGES, OBJTYPE2 , OBJUSAGES2) and
           twoKeyMaterialCompatible(ALGO , ATTRS , ATTRS2) and
           twoKeyOperationSizeCompatible(ALGO , KEYSIZE , ATTRS , ATTRS2)) .
@@ -1538,17 +1531,15 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   .
 
   --- copy-operation-top-level-object: when copyFits holds for KATTRS and KEYS at KEYSIZE, the
-  --- target CryptoOp CI of HANDLE (the dstOperation, [Internal Core] 6.2.8) takes KATTRS, KEYS and
-  --- the state OS, and applyCopiedOperationHandle is sent to HANDLE.
+  --- target CryptoOp takes KATTRS, KEYS and the state OS, and applyCopiedOperationHandle is
+  --- sent to HANDLE.
   crl [copy-operation-top-level-object] :
     (msg reqCopyOperation[# opObjectAttr(ALGO , MODE , OS , KATTRS) # opHandleAttr(B1 , B2 , B3) # KEYS] from TK to HANDLE)
-    < HANDLE : OpHandle | oid : CI >
     < CI : CryptoOp |
                              algorithm : ALGO , mode : MODE ,
                              max-size : KEYSIZE ,
                              state : OS' >
     =>
-    < HANDLE : OpHandle | >
     < CI : CryptoOp | attributes : KATTRS ,
                              keys : KEYS , state : OS >
     (msg applyCopiedOperationHandle[# B1 # B2 # B3] from TK to HANDLE)
@@ -1560,12 +1551,10 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- TK.
   crl [copy-operation-incompatible-panic] :
     (msg reqCopyOperation[# opObjectAttr(ALGO , MODE , OS , KATTRS) # opHandleAttr(B1 , B2 , B3) # KEYS] from TK to HANDLE)
-    < HANDLE : OpHandle | oid : CI >
     < CI : CryptoOp |
                              algorithm : ALGO2 , mode : MODE2 ,
                              max-size : KEYSIZE >
     =>
-    < HANDLE : OpHandle | >
     < CI : CryptoOp | >
     (msg failCopyOperation[] from HANDLE to TK)
   if ALGO =/= ALGO2 or MODE =/= MODE2 or not copyFits(KATTRS , KEYS , KEYSIZE) .
@@ -2992,18 +2981,16 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < HANDLE : OpHandle | >
     (msg deriveTopTransient[# DERIVED] from TK to HANDLE) .
 
-  --- derive-key-top-level-transient: the uninitialized transient object OI of type typeGenericSecret
-  --- that DERIVED refers to (derivedKey, [Internal Core] 6.8.1) is initialized with a random
-  --- secretValue, and validateTopDeriveHandle with DERIVED is sent to HANDLE.
+  --- derive-key-top-level-transient: an uninitialized transient object OI of type typeGenericSecret
+  --- is initialized with a random secretValue, and validateTopDeriveHandle with DERIVED is sent to
+  --- HANDLE.
   rl [derive-key-top-level-transient] :
     (msg deriveTopTransient[# DERIVED] from TK to HANDLE)
-    < DERIVED : ObjHandle | oid : OI >
     < OI : TransObj |
                              initialized : false ,
                              type : typeGenericSecret ,
                              attributes : ATTRS >
     =>
-    < DERIVED : ObjHandle | >
     < OI : TransObj | initialized : true,
                              attributes : attr(secretValue , randomAttrVal) >
     (msg validateTopDeriveHandle[# DERIVED] from TK to HANDLE) .

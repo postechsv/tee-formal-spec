@@ -1,0 +1,56 @@
+--- Checks of the invisible-transition reduction (src/invisible-reduction.maude).  A state in which
+--- an invisible rule is enabled is reduced by the equations, so it is never reached by a search.
+load ../../src/main
+load ../cases/aux
+
+mod COMPLETION-INVISIBLE-TEST is
+  pr TEE-BEHAVIOR .
+  pr TEE-IMP-BEHAVIOR .
+  pr INVISIBLE-REDUCTION .
+  pr IMP-INVISIBLE-REDUCTION .
+  pr TEE-API-CALL-INVISIBLE-REDUCTION .
+  pr TEST-AUX .
+  var C : Configuration .
+endm
+
+--- G1, start rule: the call is answered without a rewrite step.
+search [1] in COMPLETION-INVISIBLE-TEST :
+  < testTa : TAKernel | api-call : init(isAlgorithmSupported[# algAesCtr # cryptoElementNone]) >
+=>*
+  < testTa : TAKernel | api-call : return(isAlgorithmSupported[# success]) > .
+
+--- expect: no solution
+search [1] in COMPLETION-INVISIBLE-TEST :
+  < testTa : TAKernel | api-call : init(isAlgorithmSupported[# algAesCtr # cryptoElementNone]) >
+=>*
+  < testTa : TAKernel | api-call : init(isAlgorithmSupported[# algAesCtr # cryptoElementNone]) > .
+
+--- G1, finish rule.
+search [1] in COMPLETION-INVISIBLE-TEST :
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(cipherDoFinal[# oid(1, testTa) # randomData]) >
+  (msg finishCipherDoFinal[# randomData] from oid(101, testTa) to testTa)
+=>*
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : return(cipherDoFinal[# success # randomData]) > .
+
+--- expect: no solution
+search [1] in COMPLETION-INVISIBLE-TEST :
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(cipherDoFinal[# oid(1, testTa) # randomData]) >
+  (msg finishCipherDoFinal[# randomData] from oid(101, testTa) to testTa)
+=>*
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(cipherDoFinal[# oid(1, testTa) # randomData]) >
+  C .
+
+--- G2: an if on a constant is reduced.
+--- expect: no solution
+search [1] in COMPLETION-INVISIBLE-TEST :
+  k(if (# true) {skip} else {skip} ~> .K) env(empty)
+=>*
+  k(if (# true) {skip} else {skip} ~> K:K) KS:KConfig .
+
+--- G3: the $in task of a call is accepted.
+--- expect: no solution
+search [1] in COMPLETION-INVISIBLE-TEST :
+  < testTa : TrustedApp | proc : k($in(# algAesCtr # cryptoElementNone) ~> $wait(isAlgorithmSupported)) ,
+                          api-call : noCall , status : (normal).AppStatus >
+=>*
+  < testTa : TrustedApp | proc : (k($in(VL:ArgList) ~> K:K) KS:KConfig) > .

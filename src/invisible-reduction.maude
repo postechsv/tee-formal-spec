@@ -1,0 +1,1236 @@
+--- This file defines the invisible-transition reduction of Section 8 of the paper: AP-invisible
+--- rewrite rules are turned into equations.  Each *-INVISIBLE module imports a behavior module and
+--- restates part of its rules as equations, so importing it has an effect only through the
+--- wrapper modules at the end of this file; nothing in the spec imports them.
+---
+---   G1 (the *-OBJECT-BEHAVIOR-INVISIBLE and CRYPTO-OPERATION-BEHAVIOR-INVISIBLE modules): the
+---      start and finish rules of the TEE API functions that affect a single TA object,
+---      excluding the rules that induce a panic.  A start rule has api-call : init(...) and
+---      consumes no message; a finish rule goes from api-call : final(...) to return(...).
+---   G2 (IMP-SEMANTICS-INVISIBLE): the K rules, excluding loops and function calls.
+---   G3 (TRUST-APP-IMP-BEHAVIOR-INVISIBLE): the rules that invoke TEE API functions.
+---
+--- The feature INVISIBLE (mk/features.mk, off by default) keeps this file out of a build.
+--- The equations are copies of the rules: when a rule changes, change its copy here too.
+
+--- @kind behavior
+--- @feature invisible
+omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
+  pr TRANSIENT-OBJECT-BEHAVIOR .
+
+  var N : Nat .
+  vars MAXOBJSIZE KEYSIZE : Nat .
+  var TK : Oid .
+  var OI : Oid .
+  vars HANDLE HANDLE1 HANDLE2 : Oid .
+  var ATTRS : Set{CryptoAttribute} .
+  vars IDS IDS2 : Set{AttrId} .
+  var ID : AttrId .
+  var REF : AttrId .
+  var VAL : AttrId .
+  var V : AttrValue .
+  vars OBJTYPE OBJTYPE' : Type .
+  vars OBJUSAGES OBJUSAGES' : Set{Usage} .
+  vars TYPE TYPE' : Type .
+  vars USAGES USAGES' : Set{Usage} .
+  var HI : Oid .
+  var O : Oid .
+  var B : Bool .
+  var ARGS : ArgList .
+  var PARAMS : ArgList .
+  var KEYSIZE' : Nat .
+
+  --- allocate-transient-success
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus ,
+                      api-call : init(allocateTransientObject[# OBJTYPE # MAXOBJSIZE]) ,
+                      counter : N  >
+    =
+    < TK : TAKernel | api-call : return(allocateTransientObject[# success # oid(N + 1 , TK)]) ,
+                      counter : N + 2 >
+    < oid(N , TK) : TransObj | type : OBJTYPE , max-size : MAXOBJSIZE ,
+                                        attributes : empty , usages : allObjectUsages,
+                                        initialized : false >
+    freshTransientHandle(N + 1 , TK , oid(N , TK))
+  if supported(OBJTYPE, MAXOBJSIZE)
+  .
+
+  --- allocate-transient-out-of-memory-err
+  eq
+    < TK : TAKernel | status : outOfMemory ,
+                      api-call : init(allocateTransientObject[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(allocateTransientObject[# errorOutOfMemory]) >
+  .
+
+  --- allocate-transient-not-supported-err
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus ,
+                      api-call : init(allocateTransientObject[# OBJTYPE # MAXOBJSIZE]) >
+    =
+    < TK : TAKernel | api-call : return(allocateTransientObject[# errorNotSupported]) >
+  if not supported(OBJTYPE, MAXOBJSIZE)
+  .
+
+  --- free-transient-not-null-subroutine
+  ceq
+    < TK : TAKernel | api-call : init(freeTransientObject[# HANDLE]) >
+    =
+    < TK : TAKernel | api-call : final(freeTransientObject[# HANDLE]) >
+    (msg deleteTransient[] from TK to HANDLE)
+  if not nullHandle(HANDLE)
+  .
+
+  --- free-transient-not-null-success
+  eq
+    (msg finishDeleteTransient[] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(freeTransientObject[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(freeTransientObject[# noReturnCode]) >
+  .
+
+  --- free-transient-null-success
+  ceq
+    < TK : TAKernel | api-call : init(freeTransientObject[# HANDLE]) >
+    =
+    < TK : TAKernel | api-call : return(freeTransientObject[# noReturnCode # null]) >
+  if nullHandle(HANDLE)
+  .
+
+  --- reset-transient-not-null-subroutine
+  ceq
+    < TK : TAKernel | api-call : init(resetTransientObject[# HANDLE]) >
+    =
+    < TK : TAKernel | api-call : final(resetTransientObject[# HANDLE]) >
+    (msg reqResetTransient[] from TK to HANDLE)
+  if not nullHandle(HANDLE)
+  .
+
+  --- reset-transient-not-null-success
+  eq
+    (msg retResetTransient[] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(resetTransientObject[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(resetTransientObject[# noReturnCode]) >
+  .
+
+  --- reset-transient-null-success
+  ceq
+    < TK : TAKernel | api-call : init(resetTransientObject[# HANDLE]) >
+    =
+    < TK : TAKernel | api-call : return(resetTransientObject[# noReturnCode]) >
+  if nullHandle(HANDLE)
+  .
+
+  --- populate-transient-subroutine
+  eq
+    < TK : TAKernel | api-call : init(populateTransientObject[# HANDLE # ATTRS]) >
+    =
+    < TK : TAKernel | api-call : final(populateTransientObject[# HANDLE # ATTRS]) >
+    (msg reqPopulateTransient[# ATTRS] from TK to HANDLE)
+  .
+
+  --- populate-transient-success
+  eq
+    (msg retPopulateTransient[] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(populateTransientObject[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(populateTransientObject[# success]) >
+  .
+
+  --- init-ref-attribute
+  ceq
+    < TK : TAKernel | api-call : init(initRefAttribute[# REF # V]) >
+    =
+    < TK : TAKernel | api-call : return(initRefAttribute[# noReturnCode # attr(REF , V)]) >
+  if (REF in refAttrIds) or (REF == secretValue)
+  .
+
+  --- init-value-attribute
+  ceq
+    < TK : TAKernel | api-call : init(initValueAttribute[# VAL # V]) >
+    =
+    < TK : TAKernel | api-call : return(initValueAttribute[# noReturnCode # attr(VAL , V)]) >
+  if VAL in valAttrIds
+  .
+
+  --- copy-object-attrs-get-attrs
+  eq
+    < TK : TAKernel | api-call : init(copyObjAttrs1[# HANDLE1 # HANDLE2]) >
+    =
+    < TK : TAKernel | api-call : exec(copyObjAttrs1[# HANDLE1 # HANDLE2] , 0) >
+    (msg getAttrs[] from TK to HANDLE2)
+  .
+
+  --- copy-object-attrs-success
+  eq
+    (msg setAttrsSuccess[] from HI to O)
+    < O : TAKernel | api-call : final(copyObjAttrs1[PARAMS]) , status : normal >
+    =
+    < O : TAKernel | api-call : return(copyObjAttrs1[# success]) >
+  .
+
+  --- generate-key-subroutine
+  eq
+    < TK : TAKernel | api-call : init(generateKey[# HANDLE # KEYSIZE # ATTRS]) >
+    =
+    < TK : TAKernel | api-call : final(generateKey[# HANDLE # KEYSIZE # ATTRS]) >
+    (msg reqGenerateKey[# KEYSIZE # ATTRS] from TK to HANDLE)
+  .
+
+  --- generate-key-success
+  eq
+    (msg retGenerateKey[] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(generateKey[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(generateKey[# success]) >
+  .
+
+endom
+
+--- @kind behavior
+--- @feature invisible
+omod PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
+  pr PERSISTENT-OBJECT-BEHAVIOR .
+
+  vars ZsCreatePersistentObject0 ZsCreatePersistentObject5 ZsOpenPersistentObject0 ZsOpenPersistentObject1 ZsOpenPersistentObject2 ZsRenamePersistentObject0 : Value .
+  vars ZrCreatePersistentObject ZrOpenPersistentObject ZrRenamePersistentObject : ArgList .
+  vars N M : Nat .
+  var SIDX : Oid .
+  vars HANDLE H OPTHANDLE OPT : Oid .
+  vars OI DI : Oid .
+  var SI : Oid .
+  vars FILE FILE' : FileName .
+  var TK : Oid .
+  vars DATAFLAGS DATAFLAGS2 : Set{DataAccessFlag} .
+  var OHS : OpenHandles .
+  var OBJUSAGES : Set{Usage} .
+  var ATTRS : Set{CryptoAttribute} .
+  vars OBJTYPE : Type .
+  var DATALIST : List{Data} .
+  var STATUS : StorageStatus .
+  var PARAMS : ArgList .
+  var STORID : StorageIdentifier .
+  var PI : Oid .
+  var HI : Oid .
+  var FLAGS : Set{DataAccessFlag} .
+  var FILES : Set{FileName} .
+  var METHOD : MethodId .
+  var NEWHI NEWPI NEWDS : Oid .
+  var TYPE : Type .
+  var USAGES : Set{Usage} .
+  var DATA : List{Data} .
+
+  --- open-persistent-subroutine
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus ,
+                      api-call : init(openPersistentObject[# STORID # FILE ZsOpenPersistentObject2 ZrOpenPersistentObject]) , storage : SI >
+    =
+    < TK : TAKernel | api-call : exec(openPersistentObject[# STORID # FILE ZsOpenPersistentObject2 ZrOpenPersistentObject] , 0) >
+    (msg getStatus[] from TK to SI)
+  if supportedStorage(STORID)
+  .
+
+  --- open-persistent-storage-id-not-found
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus ,
+                      api-call : init(openPersistentObject[# STORID ZsOpenPersistentObject1 ZsOpenPersistentObject2 ZrOpenPersistentObject]) >
+    =
+    < TK : TAKernel | api-call : return(openPersistentObject[# errorItemNotFound # null]) >
+  if not supportedStorage(STORID)
+  .
+
+  --- open-persistent-success
+  eq
+    (msg finishOpenPersistentHandle[# HANDLE] from SI to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(openPersistentObject[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(openPersistentObject[# success # HANDLE]) >
+  .
+
+  --- open-persistent-fail
+  eq
+    (msg failOpenPersistentHandle[] from SI to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(openPersistentObject[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(openPersistentObject[# errorAccessConflict # null]) >
+  .
+
+  --- open-persistent-memory-err
+  eq
+    < TK : TAKernel | status : outOfMemory , api-call : init(openPersistentObject[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(openPersistentObject[# errorOutOfMemory # null]) >
+  .
+
+  --- create-persistent-determine-case
+  eq
+    < TK : TAKernel | api-call : init(createPersistent[ZsCreatePersistentObject0 # FILE # FLAGS # HI # DATA ZsCreatePersistentObject5 # OPTHANDLE ZrCreatePersistentObject]) ,
+                      storage : SI , status : (normal).AppStatus >
+    =
+    < TK : TAKernel | api-call : final(createPersistent[ZsCreatePersistentObject0 # FILE # FLAGS # HI # DATA ZsCreatePersistentObject5 # OPTHANDLE ZrCreatePersistentObject]) >
+    (msg create[# chooseMethod((# FILE # FLAGS # HI # DATA), OPTHANDLE) # FILE # FLAGS # HI # DATA]
+       from TK to SI)
+  .
+
+  --- create-persist-success
+  eq
+    (msg createSuccess[# HI] from PI to TK)
+    < TK : TAKernel | api-call : final(createPersistent[PARAMS]), status : (normal).AppStatus >
+    =
+    < TK : TAKernel | api-call : return(createPersistent[# success # HI]) >
+  .
+
+  --- create-persist-fail
+  eq
+    (msg createFail[] from SI to TK)
+    < TK : TAKernel | api-call : final(createPersistent[PARAMS]), status : (normal).AppStatus >
+    =
+    < TK : TAKernel | api-call : return(createPersistent[# errorAccessConflict # null]) >
+  .
+
+  --- create-persist-mem-err
+  eq
+    < TK : TAKernel | status : outOfMemory , api-call : init(createPersistent[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(createPersistent[# errorOutOfMemory # null]) >
+  .
+
+  --- create-persist-mem-err-final
+  eq
+    < TK : TAKernel | status : outOfMemory , api-call : final(createPersistent[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(createPersistent[# errorOutOfMemory # null]) >
+  .
+
+  --- close-and-delete-persistent-subroutine
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(closeAndDeletePersistentObject1[# HANDLE]) , storage : SI >
+    =
+    < TK : TAKernel | api-call : exec(closeAndDeletePersistentObject1[# HANDLE] , 0) >
+    (msg getStatus[] from TK to SI)
+  if not nullHandle(HANDLE)
+  .
+
+  --- close-and-delete-persistent-success
+  eq
+    (msg acceptNotification[] from SI to TK)
+    < TK : TAKernel | api-call : final(closeAndDeletePersistentObject1[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(closeAndDeletePersistentObject1[# success]) >
+  .
+
+  --- close-and-delete-persistent-null-success
+  ceq
+    < TK : TAKernel | api-call : init(closeAndDeletePersistentObject1[# HANDLE]) >
+    =
+    < TK : TAKernel | api-call : return(closeAndDeletePersistentObject1[# success # HANDLE]) >
+  if nullHandle(HANDLE)
+  .
+
+  --- rename-persistent-subroutine
+  eq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(renamePersistentObject[ZsRenamePersistentObject0 # FILE ZrRenamePersistentObject]) , storage : SI >
+    =
+    < TK : TAKernel | api-call : exec(renamePersistentObject[ZsRenamePersistentObject0 # FILE ZrRenamePersistentObject] , 0) >
+    (msg getStatus[] from TK to SI)
+  .
+
+  --- rename-persistent-success
+  eq
+    (msg acceptNotification[] from SI to TK)
+    < TK : TAKernel | api-call : final(renamePersistentObject[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(renamePersistentObject[# success]) >
+  .
+
+endom
+
+--- @kind behavior
+--- @feature invisible
+omod GENERIC-OBJECT-BEHAVIOR-INVISIBLE is
+  pr GENERIC-OBJECT-BEHAVIOR .
+
+  var TK : Oid .
+  var N : Nat .
+  var SI : Oid .
+  var M : Nat .
+  var HANDLE : Oid .
+  vars OI DI : Oid .
+  var OBJTYPE : Type .
+  vars KEYSIZE MAXOBJSIZE : Nat .
+  vars OBJUSAGES OBJUSAGES' : Set{Usage} .
+  var ID : AttrId .
+  var V : AttrValue .
+  var ATTRS : Set{CryptoAttribute} .
+  var DATAFLAGS : Set{DataAccessFlag} .
+  var DATAPOS : DataPosition .
+  var DATASIZE : DataSize .
+  var STREAMDATA : List{Data} .
+  var HS : Configuration .
+  var OHS : OpenHandles .
+  var STATUS : StorageStatus .
+  var INFO : TeeObjectInfo .
+  var PARAMS : ArgList .
+  var AL : ArgList .
+
+  --- get-obj-info-subroutine
+  ceq
+    < TK : TAKernel | api-call : init(getObjectInfo1[# HANDLE]) , storage : SI >
+    =
+    < TK : TAKernel | api-call : exec(getObjectInfo1[# HANDLE] , 0) >
+    (msg reqObjectInfo[# SI] from TK to HANDLE)
+  if not nullHandle(HANDLE)
+  .
+
+  --- restrict-object-usage-subroutine
+  eq
+    < TK : TAKernel | api-call : init(restrictObjectUsage1[# HANDLE PARAMS]) >
+    =
+    < TK : TAKernel | api-call : exec(restrictObjectUsage1[# HANDLE PARAMS] , 0) >
+    (msg reqAttribute[] from TK to HANDLE)
+  .
+
+  --- restrict-object-usage-success
+  eq
+    (msg finishRestrictUsage[] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(restrictObjectUsage1[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(restrictObjectUsage1[# noReturnCode]) >
+  .
+
+  --- get-object-buffer-attribute-subroutine
+  ceq
+    < TK : TAKernel | api-call : init(getObjectBufferAttribute[# HANDLE # ID]) >
+    =
+    < TK : TAKernel | api-call : exec(getObjectBufferAttribute[# HANDLE # ID] , 0) >
+    (msg reqAttribute[] from TK to HANDLE)
+  if bufferType(ID)
+  .
+
+  --- get-object-value-attribute-subroutine
+  ceq
+    < TK : TAKernel | api-call : init(getObjectValueAttribute[# HANDLE # ID]) >
+    =
+    < TK : TAKernel | api-call : exec(getObjectValueAttribute[# HANDLE # ID] , 0) >
+    (msg reqAttribute[] from TK to HANDLE)
+  if valueType(ID)
+  .
+
+  --- close-object-not-null-subroutine
+  ceq
+    < TK : TAKernel | api-call : init(closeObject[# HANDLE]) >
+    =
+    < TK : TAKernel | api-call : final(closeObject[# HANDLE]) >
+    (msg reqCloseObject[] from TK to HANDLE)
+  if not nullHandle(HANDLE)
+  .
+
+  --- close-object-not-null-success
+  eq
+    (msg finishCloseObject[] from OI to TK)
+    < TK : TAKernel | api-call : final(closeObject[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(closeObject[# noReturnCode]) >
+  .
+
+  --- close-object-null-success
+  ceq
+    < TK : TAKernel | api-call : init(closeObject[# HANDLE]) >
+    =
+    < TK : TAKernel | api-call : return(closeObject[# noReturnCode # null]) >
+  if nullHandle(HANDLE)
+  .
+
+endom
+
+--- @kind behavior
+--- @feature invisible
+omod DATA-STREAM-OBJECT-BEHAVIOR-INVISIBLE is
+  pr DATA-STREAM-OBJECT-BEHAVIOR .
+
+  vars ZsReadObjectData1 : Value .
+  vars ZrReadObjectData : ArgList .
+  var TK : Oid .
+  vars OI DI : Oid .
+  var HANDLE : Oid .
+  var SI : Oid .
+  var M : Nat .
+  var N : Nat .
+  var DATAPOS : Nat .
+  var DATASIZE : DataSize .
+  var OFST : Int .
+  var WHENCE : SeekType .
+  var DATA : List{Data} .
+  var STREAM : List{Data} .
+  var D : Data .
+  var DATAFLAGS : Set{DataAccessFlag} .
+  var FLAGS : Set{DataAccessFlag} .
+  var STATUS : StorageStatus .
+  var HS : Configuration .
+  var HI : Oid .
+  var PI : Oid .
+  var PARAMS : ArgList .
+
+  --- read-object-data-get-storage-status
+  eq
+    < TK : TAKernel | status : (normal).AppStatus ,
+                      api-call : init(readObjData[# HI ZsReadObjectData1 ZrReadObjectData]) , storage : SI >
+    =
+    < TK : TAKernel | api-call : exec(readObjData[# HI ZsReadObjectData1 ZrReadObjectData] , 0) >
+    (msg getStatus[] from TK to SI)
+  .
+
+  --- read-object-data-success
+  eq
+    (msg retData[# DATA] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(readObjData[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(readObjData[# success # DATA]) >
+  .
+
+  --- write-object-data-subroutine
+  eq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(writeObjectData[PARAMS]) , storage : SI >
+    =
+    < TK : TAKernel | api-call : exec(writeObjectData[PARAMS] , 0) >
+    (msg getStatus[] from TK to SI)
+  .
+
+  --- write-object-data-success
+  eq
+    (msg finishWriteData[] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(writeObjectData[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(writeObjectData[# success]) >
+  .
+
+  --- truncate-object-data-subroutine
+  eq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(truncateObjectData[PARAMS]) , storage : SI >
+    =
+    < TK : TAKernel | api-call : exec(truncateObjectData[PARAMS] , 0) >
+    (msg getStatus[] from TK to SI)
+  .
+
+  --- truncate-object-data-success
+  eq
+    (msg finishTruncateData[] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(truncateObjectData[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(truncateObjectData[# success]) >
+  .
+
+  --- seek-object-data-subroutine
+  eq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(seekObjectData[PARAMS]) , storage : SI >
+    =
+    < TK : TAKernel | api-call : exec(seekObjectData[PARAMS] , 0) >
+    (msg getStatus[] from TK to SI)
+  .
+
+  --- seek-object-data-top-level-finish-overflow
+  eq
+    (msg seekObjectOverflowTop[] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(seekObjectData[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(seekObjectData[# errorOverflow]) >
+  .
+
+  --- seek-object-data-success
+  eq
+    (msg finishSeekData[] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(seekObjectData[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(seekObjectData[# success]) >
+  .
+
+endom
+
+--- @kind behavior
+--- @feature invisible
+omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
+  pr CRYPTO-OPERATION-BEHAVIOR .
+
+  vars ZsAsymmetricVerifyDigest0 ZsAsymmetricVerifyDigest1 ZsAsymmetricVerifyDigest2 ZsCopyOperation0 ZsGetOperationInfoMultiple0 ZsMACCompareFinal0 ZsMACCompareFinal1 ZsMACCompareFinal2 ZsSetOperationKey0 ZsSetOperationKey21 ZsSetOperationKey22 : Value .
+  vars ZrAEDecryptFinal ZrAEEncryptFinal ZrAEUpdate ZrAsymmetricDecrypt ZrAsymmetricEncrypt ZrAsymmetricSignDigest ZrAsymmetricVerifyDigest ZrCopyOperation ZrDigestDoFinal ZrDigestExtract ZrGetOperationInfoMultiple ZrMACCompareFinal ZrMACComputeFinal ZrSetOperationKey ZrSetOperationKey2 : ArgList .
+  vars B1 B2 B3 B1' B2' B3' : Bool .
+  vars N M P Q : Nat .
+  var TK : Oid .
+  vars CI OI OI2 : Oid .
+  vars HANDLE KEY : Oid .
+  vars KEY1 KEY2 DERIVED : Oid .
+  vars ALGO ALGO2 : Algorithm .
+  vars KEYS KEYS' : List{CryptoKey} .
+  vars MODE MODE2 : Mode .
+  var OC : OpClass .
+  vars OS OS' : State .
+  var HS : HandleState .
+  var HSF : Set{HandleFlag} .
+  vars ATTRS ATTRS2 : Set{CryptoAttribute} .
+  var SRC : Oid .
+  var OPOBJATTR : OpObjectAttr .
+  var OPHANDLEATTR : OpHandleAttr .
+  var OPINFOMULTI : TeeOperationInfoMultiple .
+  var PARAMS : ArgList .
+  vars KEYSIZE : Nat .
+  vars OBJTYPE OBJTYPE2 : Type .
+  vars OBJUSAGES OBJUSAGES2 : Set{Usage} .
+  vars DL DATA IV DIGEST : List{Data} .
+  var MAC : List{Data} .
+  var OPINFO : TeeOperationInfo .
+  var OPINFOKEYS : TeeOperationInfoKeyList .
+  var STATUS : StorageStatus .
+  var SI : Oid .
+  var ELEM : CryptoElement .
+  vars DATASIZE DATASIZE2 : DataSize .
+  var API : TeeApi .
+  var OPRESULT : List{Data} .
+  var CSTATE : State .
+  var KATTRS : Set{CryptoAttribute} .
+  vars AL AL2 : ArgList .
+  vars A A' : Arg .
+  vars CAP CAP2 DS2 : DataSize .
+  vars RGN RGN2 : BufferRegion .
+  vars NB MB PB QB : Nat .
+
+  --- alloc-oper-success
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus ,
+                      api-call : init(allocOperation[# ALGO # MODE # KEYSIZE]) ,
+                      counter : N >
+    =
+    < TK : TAKernel | api-call : return(allocOperation[# success # newOid(N + 1 , TK)]) ,
+                      counter : N + 2 >
+    < newOid(N , TK) : CryptoOp |
+                                        attributes : empty , keys : nil , max-size : KEYSIZE ,
+                                        acc-data : nil ,
+                                        algorithm : ALGO , mode : MODE ,
+                                        state : initial >
+    freshOperationHandle(N + 1 , TK , newOid(N , TK), getClass(ALGO))
+  if algoCompatible(ALGO , MODE)
+  .
+
+  --- alloc-oper-params-err
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus ,
+                      api-call : init(allocOperation[# ALGO # MODE # KEYSIZE]) >
+    =
+    < TK : TAKernel | api-call : return(allocOperation[# errorNotSupported]) >
+  if not algoCompatible(ALGO , MODE)
+  .
+
+  --- alloc-oper-mem-err
+  eq
+    < TK : TAKernel | status : outOfMemory ,
+                      api-call : init(allocOperation[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(allocOperation[# errorOutOfMemory]) >
+  .
+
+  --- free-operation-not-null-subroutine
+  ceq
+    < TK : TAKernel | api-call : init(freeOperation[# HANDLE]) >
+    =
+    < TK : TAKernel | api-call : final(freeOperation[# HANDLE]) >
+    (msg deleteOperationObject[] from TK to HANDLE)
+  if not nullHandle(HANDLE)
+  .
+
+  --- free-operation-not-null-success
+  eq
+    (msg finishDeleteOperationObject[] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(freeOperation[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(freeOperation[# noReturnCode]) >
+  .
+
+  --- free-operation-null-success
+  ceq
+    < TK : TAKernel | api-call : init(freeOperation[# HANDLE]) >
+    =
+    < TK : TAKernel | api-call : return(freeOperation[# noReturnCode # HANDLE]) >
+  if nullHandle(HANDLE)
+  .
+
+  --- get-operation-info-subroutine
+  eq
+    < TK : TAKernel | api-call : init(getOperationInfo[# HANDLE]) >
+    =
+    < TK : TAKernel | api-call : exec(getOperationInfo[# HANDLE] , 0) >
+    (msg reqOperationInfoMultiple[] from TK to HANDLE)
+  .
+
+  --- get-operation-info-multiple-subroutine
+  eq
+    < TK : TAKernel | api-call : init(getOperationInfoMultiple[# HANDLE ZrGetOperationInfoMultiple]) >
+    =
+    < TK : TAKernel | api-call : exec(getOperationInfoMultiple[# HANDLE ZrGetOperationInfoMultiple] , 0) >
+    (msg reqOperationInfoMultiple[] from TK to HANDLE)
+  .
+
+  --- reset-oper-req-reset
+  eq
+    < TK : TAKernel | api-call : init(resetOperation[# HANDLE]) , status : (normal).AppStatus >
+    =
+    < TK : TAKernel | api-call : final(resetOperation[# HANDLE]) >
+    (msg resetOp[# HANDLE] from TK to HANDLE)
+  .
+
+  --- reset-oper-success
+  eq
+    (msg finishResetOp[] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(resetOperation[PARAMS]) , status : (normal).AppStatus >
+    =
+    < TK : TAKernel | api-call : return(resetOperation[# noReturnCode]) >
+  .
+
+  --- set-operation-key-subroutine
+  ceq
+    < TK : TAKernel | api-call : init(setOperationKey[ZsSetOperationKey0 # KEY ZrSetOperationKey]) >
+    =
+    < TK : TAKernel | api-call : exec(setOperationKey[ZsSetOperationKey0 # KEY ZrSetOperationKey] , 0) >
+    (msg reqAttribute[] from TK to KEY)
+  if not nullHandle(KEY)
+  .
+
+  --- set-operation-key-success
+  eq
+    (msg finishSetOperationKey[] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(setOperationKey[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(setOperationKey[# success]) >
+  .
+
+  --- set-operation-key2-success
+  eq
+    (msg finishSetOperationKey2[] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(setOperationKey2[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(setOperationKey2[# success]) >
+  .
+
+  --- copy-operation-subroutine
+  eq
+    < TK : TAKernel | api-call : init(copyOperation[ZsCopyOperation0 # HANDLE ZrCopyOperation]) >
+    =
+    < TK : TAKernel | api-call : exec(copyOperation[ZsCopyOperation0 # HANDLE ZrCopyOperation] , 0) >
+    (msg reqOperationAttr[] from TK to HANDLE)
+  .
+
+  --- copy-operation-success
+  eq
+    (msg finishCopyOperation[] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(copyOperation[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(copyOperation[# noReturnCode]) >
+  .
+
+  --- is-algorithm-supported-success
+  ceq
+    < TK : TAKernel | api-call : init(isAlgorithmSupported[# ALGO # ELEM]) >
+    =
+    < TK : TAKernel | api-call : return(isAlgorithmSupported[# success]) >
+  if supportsElement(ALGO , ELEM)
+  .
+
+  --- is-algorithm-supported-fail
+  ceq
+    < TK : TAKernel | api-call : init(isAlgorithmSupported[# ALGO # ELEM]) >
+    =
+    < TK : TAKernel | api-call : return(isAlgorithmSupported[# errorNotSupported]) >
+  if not supportsElement(ALGO , ELEM)
+  .
+
+  --- digest-update-subroutine
+  eq
+    < TK : TAKernel | api-call : init(digestUpdate[# HANDLE # DATA]) >
+    =
+    < TK : TAKernel | api-call : final(digestUpdate[# HANDLE # DATA]) >
+    (msg reqDigestUpdate[# DATA] from TK to HANDLE)
+  .
+
+  --- digest-update-success
+  eq
+    (msg finishDigestUpdate[] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(digestUpdate[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(digestUpdate[# noReturnCode]) >
+  .
+
+  --- digest-do-final-subroutine
+  eq
+    < TK : TAKernel | api-call : init(digestDoFinal[# HANDLE # DATA]) >
+    =
+    < TK : TAKernel | api-call : final(digestDoFinal[# HANDLE # DATA]) >
+    (msg reqDigestDoFinal[# DATA] from TK to HANDLE)
+  .
+
+  --- digest-do-final-success
+  eq
+    (msg finishDigestDoFinal[# DATA] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(digestDoFinal[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(digestDoFinal[# success # DATA]) >
+  .
+
+  --- digest-extract-subroutine
+  eq
+    < TK : TAKernel | api-call : init(digestExtract[# HANDLE]) >
+    =
+    < TK : TAKernel | api-call : final(digestExtract[# HANDLE]) >
+    (msg reqDigestExtract[] from TK to HANDLE)
+  .
+
+  --- digest-extract-success
+  eq
+    (msg finishDigestExtract[# DATA] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(digestExtract[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(digestExtract[# success # DATA]) >
+  .
+
+  --- cipher-init-req-cipher-init
+  eq
+    < TK : TAKernel | api-call : init(cipherInit[# HANDLE # IV]) , status : (normal).AppStatus >
+    =
+    < TK : TAKernel | api-call : final(cipherInit[# HANDLE # IV]) >
+    (msg reqCipherInit[# IV] from TK to HANDLE)
+  .
+
+  --- cipher-init-success
+  eq
+    (msg finishCipherInit[] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(cipherInit[PARAMS]) , status : (normal).AppStatus >
+    =
+    < TK : TAKernel | api-call : return(cipherInit[# noReturnCode]) >
+  .
+
+  --- cipher-update-req-cipher
+  eq
+    < TK : TAKernel | api-call : init(cipherUpdate[# HANDLE # DATA]) , status : (normal).AppStatus >
+    =
+    < TK : TAKernel | api-call : final(cipherUpdate[# HANDLE # DATA]) >
+    (msg reqCipher[# HANDLE # DATA] from TK to HANDLE)
+  .
+
+  --- cipher-update-success
+  eq
+    (msg finishCipher[# OPRESULT] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(cipherUpdate[PARAMS]) , status : (normal).AppStatus >
+    =
+    < TK : TAKernel | api-call : return(cipherUpdate[# success # OPRESULT]) >
+  .
+
+  --- cipher-do-final-req-cipher-final
+  eq
+    < TK : TAKernel | api-call : init(cipherDoFinal[# HANDLE # DATA]) , status : (normal).AppStatus >
+    =
+    < TK : TAKernel | api-call : final(cipherDoFinal[# HANDLE # DATA]) >
+    (msg reqCipherFinal[# DATA] from TK to HANDLE)
+  .
+
+  --- cipher-do-final-success
+  eq
+    (msg finishCipherDoFinal[# OPRESULT] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(cipherDoFinal[PARAMS]) , status : (normal).AppStatus >
+    =
+    < TK : TAKernel | api-call : return(cipherDoFinal[# success # OPRESULT]) >
+  .
+
+  --- mac-init-subroutine
+  eq
+    < TK : TAKernel | api-call : init(macInit[# HANDLE # IV]) >
+    =
+    < TK : TAKernel | api-call : final(macInit[# HANDLE # IV]) >
+    (msg initOperation[# IV] from TK to HANDLE)
+  .
+
+  --- mac-init-success
+  eq
+    (msg finishInitOperation[] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(macInit[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(macInit[# noReturnCode]) >
+  .
+
+  --- mac-update-subroutine
+  eq
+    < TK : TAKernel | api-call : init(macUpdate[# HANDLE # DATA]) >
+    =
+    < TK : TAKernel | api-call : final(macUpdate[# HANDLE # DATA]) >
+    (msg reqMACUpdate[# DATA] from TK to HANDLE)
+  .
+
+  --- mac-update-success
+  eq
+    (msg finishMacUpdate[] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(macUpdate[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(macUpdate[# noReturnCode]) >
+  .
+
+  --- mac-compute-final-subroutine
+  eq
+    < TK : TAKernel | api-call : init(macComputeFinal[# HANDLE # DATA]) >
+    =
+    < TK : TAKernel | api-call : final(macComputeFinal[# HANDLE # DATA]) >
+    (msg reqMACComputeFinal[# DATA] from TK to HANDLE)
+  .
+
+  --- mac-compute-final-success
+  eq
+    (msg finishMacComputeFinal[# DATA] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(macComputeFinal[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(macComputeFinal[# success # DATA]) >
+  .
+
+  --- mac-compare-final-subroutine
+  eq
+    < TK : TAKernel | api-call : init(macCompareFinal[# HANDLE # DATA ZsMACCompareFinal2 ZrMACCompareFinal]) >
+    =
+    < TK : TAKernel | api-call : final(macCompareFinal[# HANDLE # DATA ZsMACCompareFinal2 ZrMACCompareFinal]) >
+    (msg reqMACComputeFinal[# DATA] from TK to HANDLE)
+  .
+
+  --- mac-compare-final-success
+  eq
+    (msg finishMacComputeFinal[# DATA] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(macCompareFinal[ZsMACCompareFinal0 ZsMACCompareFinal1 # MAC ZrMACCompareFinal]) >
+    =
+    < TK : TAKernel | api-call : return(macCompareFinal[# getReturnCode(DATA , MAC)]) >
+  .
+
+  --- ae-init-subroutine
+  eq
+    < TK : TAKernel | api-call : init(aeInit[# HANDLE # IV]) >
+    =
+    < TK : TAKernel | api-call : final(aeInit[# HANDLE # IV]) >
+    (msg initOperation[# IV] from TK to HANDLE)
+  .
+
+  --- ae-init-success
+  eq
+    (msg finishInitOperation[] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(aeInit[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(aeInit[# success]) >
+  .
+
+  --- ae-update-aad-subroutine
+  eq
+    < TK : TAKernel | api-call : init(aeUpdateAAD[# HANDLE # DATA]) >
+    =
+    < TK : TAKernel | api-call : final(aeUpdateAAD[# HANDLE # DATA]) >
+    (msg reqAEUpdateAAD[# DATA] from TK to HANDLE)
+  .
+
+  --- ae-update-aad-success
+  eq
+    (msg finishAEUpdateAAD[] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(aeUpdateAAD[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(aeUpdateAAD[# noReturnCode]) >
+  .
+
+  --- ae-update-subroutine
+  eq
+    < TK : TAKernel | api-call : init(aeUpdate[# HANDLE # DATA]) >
+    =
+    < TK : TAKernel | api-call : final(aeUpdate[# HANDLE # DATA]) >
+    (msg reqAEUpdate[# DATA] from TK to HANDLE)
+  .
+
+  --- ae-update-success
+  eq
+    (msg finishAEUpdate[# DATA] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(aeUpdate[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(aeUpdate[# success # DATA]) >
+  .
+
+  --- ae-encrypt-final-subroutine
+  eq
+    < TK : TAKernel | api-call : init(aeEncryptFinal[# HANDLE # DATA]) >
+    =
+    < TK : TAKernel | api-call : final(aeEncryptFinal[# HANDLE # DATA]) >
+    (msg reqAEEncryptFinal[# DATA] from TK to HANDLE)
+  .
+
+  --- ae-encrypt-final-success
+  eq
+    (msg finishAEEncryptFinal[# DATA # MAC] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(aeEncryptFinal[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(aeEncryptFinal[# success # DATA # MAC]) >
+  .
+
+  --- ae-decrypt-final-subroutine
+  eq
+    < TK : TAKernel | api-call : init(aeDecryptFinal[# HANDLE # DATA # MAC]) >
+    =
+    < TK : TAKernel | api-call : final(aeDecryptFinal[# HANDLE # DATA # MAC]) >
+    (msg reqAEDecryptFinal[# DATA # MAC] from TK to HANDLE)
+  .
+
+  --- ae-decrypt-final-success
+  eq
+    (msg finishAEDecryptFinal[# DATA # MAC # MAC] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(aeDecryptFinal[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(aeDecryptFinal[# success # DATA]) >
+  .
+
+  --- ae-decrypt-final-mac-invalid
+  ceq
+    (msg finishAEDecryptFinal[# DATA # MAC # DL] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(aeDecryptFinal[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(aeDecryptFinal[# errorMacInvalid]) >
+  if MAC =/= DL
+  .
+
+  --- asymmetric-encrypt-subroutine
+  eq
+    < TK : TAKernel | api-call : init(asymmetricEncrypt[# HANDLE # DATA]) >
+    =
+    < TK : TAKernel | api-call : final(asymmetricEncrypt[# HANDLE # DATA]) >
+    (msg asymEncrypt[# DATA] from TK to HANDLE)
+  .
+
+  --- asymmetric-encrypt-success
+  eq
+    (msg finishAsymEncrypt[# DATA] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(asymmetricEncrypt[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(asymmetricEncrypt[# success # DATA]) >
+  .
+
+  --- asymmetric-decrypt-subroutine
+  eq
+    < TK : TAKernel | api-call : init(asymmetricDecrypt[# HANDLE # DATA]) >
+    =
+    < TK : TAKernel | api-call : final(asymmetricDecrypt[# HANDLE # DATA]) >
+    (msg asymDecrypt[# DATA] from TK to HANDLE)
+  .
+
+  --- asymmetric-decrypt-success
+  eq
+    (msg finishAsymDecrypt[# DATA] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(asymmetricDecrypt[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(asymmetricDecrypt[# success # DATA]) >
+  .
+
+  --- asymmetric-sign-digest-subroutine
+  eq
+    < TK : TAKernel | api-call : init(asymmetricSignDigest[# HANDLE # DATA]) >
+    =
+    < TK : TAKernel | api-call : final(asymmetricSignDigest[# HANDLE # DATA]) >
+    (msg asymSignDigest[# DATA] from TK to HANDLE)
+  .
+
+  --- asymmetric-sign-digest-success
+  eq
+    (msg finishAsymSignDigest[# DATA] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(asymmetricSignDigest[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(asymmetricSignDigest[# success # DATA]) >
+  .
+
+  --- asymmetric-verify-digest-subroutine
+  eq
+    < TK : TAKernel | api-call : init(asymmetricVerifyDigest[# HANDLE # DATA ZsAsymmetricVerifyDigest2 ZrAsymmetricVerifyDigest]) >
+    =
+    < TK : TAKernel | api-call : final(asymmetricVerifyDigest[# HANDLE # DATA ZsAsymmetricVerifyDigest2 ZrAsymmetricVerifyDigest]) >
+    (msg asymVerifyDigest[# DATA] from TK to HANDLE)
+  .
+
+  --- asymmetric-verify-digest-success
+  eq
+    (msg finishAsymVerifyDigest[# DATA] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(asymmetricVerifyDigest[ZsAsymmetricVerifyDigest0 ZsAsymmetricVerifyDigest1 # DIGEST ZrAsymmetricVerifyDigest]) >
+    =
+    < TK : TAKernel | api-call : return(asymmetricVerifyDigest[# getReturnCodeOfDigest(DATA , DIGEST)]) >
+  .
+
+  --- derive-key-subroutine
+  eq
+    < TK : TAKernel | api-call : init(deriveKey[# HANDLE # ATTRS # DERIVED]) >
+    =
+    < TK : TAKernel | api-call : final(deriveKey[# HANDLE # ATTRS # DERIVED]) >
+       (msg reqDeriveKey[# ATTRS # DERIVED] from TK to HANDLE)
+  .
+
+  --- derive-key-success
+  eq
+    (msg finishDeriveKey[] from DERIVED to TK)
+    < TK : TAKernel | api-call : final(deriveKey[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(deriveKey[# noReturnCode]) >
+  .
+
+  --- generate-random-success
+  eq
+    < TK : TAKernel | api-call : init(generateRandom[PARAMS]) >
+    =
+    < TK : TAKernel | api-call : return(generateRandom[# noReturnCode # randomData]) >
+  .
+
+endom
+
+--- @kind behavior
+--- @feature invisible
+mod IMP-SEMANTICS-INVISIBLE is
+  pr IMP-SEMANTICS .
+
+  var N : Nat .
+  vars T T' : ImpType .
+  var ST : SType .
+  vars X X' Y : Var .
+  var XL : ExpList .
+  var PARAMS : ExpList .
+  vars K K' : K .
+  vars V V' : Value? .
+  vars ENV ENV' : Map{Var,Nat} .
+  vars SO SO1 SO2 : Map{Var,Nat} .
+  var MEM : Map{Nat,Value?} .
+  var B : Bool .
+  vars LN NI NN M : Nat .
+  var CB : ConcBType .
+  var TS : SType .
+  var NA : Nat .
+  var AL : Map{Nat,Nat} .
+  vars L L' I I' : Int .
+  vars E E' E1 E2 : Exp .
+  vars S S' : Stmt .
+  var SL : SList .
+  var F : FuncId .
+  var TEEAPI : TeeApi .
+  var SDCL : Map{SType,Stmt} .
+  var FDCL : Map{FuncSig,K} .
+  var BODY : K .
+  var STIT : StackItem .
+  var STACK : CallStack .
+  vars EL EL' : ExpList .
+  var LB : Label .
+  vars LM LM' : Map{Label,Stmt} .
+  var P : Program .
+  var FSIG : FuncSig .
+  var BT : BType .
+  var G : Map{Var,Nat} .
+  var VT : ConcBType .
+  var RT : RType .
+  var VA VS : Value .
+  var PX : PExp .
+  var PVL PEL : PVList .
+
+  --- lookup
+  eq
+    k({ X } ~> K) env((X |-> L) ; ENV) store((L |-> VS) ; MEM)
+    =
+    k({ VS } ~> K) env((X |-> L) ; ENV) store((L |-> VS) ; MEM)
+  .
+
+  --- lookup-lv
+  eq
+    k({ lvalue(X) } ~> K) env((X |-> L) ; ENV)
+    =
+    k({ loc(L) } ~> K) env((X |-> L) ; ENV)
+  .
+
+  --- assign
+  ceq
+    k(loc(L) := V ; ~> K) store((L |-> V') ; MEM)
+    =
+    k(K) store((L |-> V) ; MEM)
+  if not V :: SObj
+  .
+
+  --- if-true
+  eq
+    k(if (# true)  {S} else {S'} ~> K) env(ENV)
+    =
+    k(hoistK(getSList(S))  ~> S  ~> $restoreEnv(ENV) ~> K) env(ENV)
+  .
+
+  --- if-false
+  eq
+    k(if (# false) {S} else {S'} ~> K) env(ENV)
+    =
+    k(hoistK(getSList(S')) ~> S' ~> $restoreEnv(ENV) ~> K) env(ENV)
+  .
+
+endm
+
+--- @kind behavior
+--- @feature invisible
+omod TRUST-APP-IMP-BEHAVIOR-INVISIBLE is
+  pr TRUST-APP-IMP-BEHAVIOR .
+
+  var TI : Oid .
+  var K : K .
+  var TEEAPI : TeeApi .
+  var VL : ArgList .
+  var EL : ExpList .
+  var KS : KConfig .
+  var RET : ReturnCode? .
+  var PARAMS : ArgList .
+  var TF : TeeApi .
+  var PL : ExpList .
+  var IN : ExpList .
+  var OUT : ExpList .
+
+  --- tee-api-call
+  ceq
+    < TI : TrustedApp | proc : (k({ TF(EL) } ~> K) KS) ,
+                        api-call : noCall , status : (normal).AppStatus >
+    =
+    < TI : TrustedApp | proc : (k(zip(nil, zipL(PL, EL)) ~> invoke(getStub(TF)) ~> K) KS) >
+  if pSig(PL, IN, OUT) := getFuncParams(TF) /\ getStub(TF) =/= skip
+  .
+
+  --- tee-api-call-accept
+  eq
+    < TI : TrustedApp | proc : (k($in(VL) ~> $wait(TEEAPI) ~> K) KS) ,
+                        api-call : noCall , status : (normal).AppStatus >
+    =
+    < TI : TrustedApp | proc : (k($wait(TEEAPI) ~> K) KS) ,
+                        api-call : init(makeCall(TEEAPI , VL)) >
+  .
+
+  --- tee-api-call-return
+  eq
+    < TI : TrustedApp | proc : (k($wait(TEEAPI) ~> $out(EL) ~> K) KS) ,
+                        api-call : return(TEEAPI[# RET PARAMS]) >
+    =
+    < TI : TrustedApp | proc : (k(makeReturnStmt(TEEAPI, RET, PARAMS, EL) ~> K) KS) ,
+                        api-call : noCall >
+  .
+
+endom
+
+--- This module provides the invisible reductions of the TEE API rules (G1).
+
+--- @kind assembly
+--- @feature invisible
+mod INVISIBLE-REDUCTION is
+  pr GENERIC-OBJECT-BEHAVIOR-INVISIBLE .
+  pr TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE .
+  pr PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE .
+  pr DATA-STREAM-OBJECT-BEHAVIOR-INVISIBLE .
+  pr CRYPTO-OPERATION-BEHAVIOR-INVISIBLE .
+endm
+
+--- @kind assembly
+--- @feature invisible
+mod IMP-INVISIBLE-REDUCTION is
+  pr IMP-SEMANTICS-INVISIBLE .
+endm
+
+--- @kind assembly
+--- @feature invisible
+mod TEE-API-CALL-INVISIBLE-REDUCTION is
+  pr TRUST-APP-IMP-BEHAVIOR-INVISIBLE .
+endm

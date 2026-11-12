@@ -199,6 +199,7 @@ endfm
 --- @kind behavior
 --- @feature crypto
 omod CRYPTO-OPERATION-BEHAVIOR is
+  vars HSA DHA : AttributeSet .
   vars ZsAsymmetricVerifyDigest0 ZsAsymmetricVerifyDigest1 ZsAsymmetricVerifyDigest2 ZsCopyOperation0 ZsGetOperationInfoMultiple0 ZsMACCompareFinal0 ZsMACCompareFinal1 ZsMACCompareFinal2 ZsSetOperationKey0 ZsSetOperationKey21 ZsSetOperationKey22 : Value .
   vars ZrAEDecryptFinal ZrAEEncryptFinal ZrAEUpdate ZrAsymmetricDecrypt ZrAsymmetricEncrypt ZrAsymmetricSignDigest ZrAsymmetricVerifyDigest ZrCopyOperation ZrDigestDoFinal ZrDigestExtract ZrGetOperationInfoMultiple ZrMACCompareFinal ZrMACComputeFinal ZrSetOperationKey ZrSetOperationKey2 : ArgList .
   pr ID-GEN .
@@ -1194,9 +1195,11 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- ATTRS and the initial state, and installTopOperationKey is sent to HANDLE.
   crl [set-operation-key-top-level-handle-success] :
     (msg reqSetOperationKey[# OBJTYPE # ATTRS # OBJUSAGES] from TK to HANDLE)
+    < HANDLE : OpHandle | oid : CI >
     < CI : CryptoOp | algorithm : ALGO , mode : MODE,
                              max-size : KEYSIZE, state : OS >
     =>
+    < HANDLE : OpHandle | oid : CI >
     < CI : CryptoOp | attributes : ATTRS ,
                              state : initial >
     (msg installTopOperationKey[# CI # ATTRS] from TK to HANDLE)
@@ -1220,9 +1223,11 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- set-operation-key-top-level-handle-success fails, rejectTopOperationKey is sent to HANDLE.
   crl [set-operation-key-top-level-handle-fail] :
     (msg reqSetOperationKey[# OBJTYPE # ATTRS # OBJUSAGES] from TK to HANDLE)
+    < HANDLE : OpHandle | oid : CI , HSA:AttributeSet >
     < CI : CryptoOp | algorithm : ALGO,
                              mode : MODE, max-size : KEYSIZE >
     =>
+    < HANDLE : OpHandle | oid : CI , HSA >
     < CI : CryptoOp | >
     (msg rejectTopOperationKey[] from TK to HANDLE)
   if not (not expectsTwoKeys(ALGO) and algorithmObjectTypeCompatible(ALGO , OBJTYPE) and
@@ -1311,7 +1316,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- to KEY1.
   crl [set-operation-key2-subroutine] :
     < TK : TAKernel | api-call : init(setOperationKey2[# HANDLE # KEY1 # KEY2]) >
-    < HANDLE : OpHandle | state : HS >
+    < HANDLE : OpHandle | state : HS , oid : CI >
     < CI : CryptoOp | algorithm : ALGO >
     => < TK : TAKernel | api-call : exec(setOperationKey2[# HANDLE # KEY1 # KEY2] , 0) >
        < HANDLE : OpHandle | >
@@ -1453,10 +1458,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- keys, and finishInstallTopOperationKeys is sent to HANDLE.
   crl [set-operation-key2-top-level-handle] :
     (msg installOperationKeys[# OBJTYPE # OBJUSAGES # ATTRS # OBJTYPE2 # OBJUSAGES2 # ATTRS2] from TK to HANDLE)
+    < HANDLE : OpHandle | oid : CI , HSA:AttributeSet >
     < CI : CryptoOp |
                              algorithm : ALGO, mode : MODE,
                              max-size : KEYSIZE >
-    => < CI : CryptoOp | attributes : (ATTRS , ATTRS2) ,
+    => < HANDLE : OpHandle | oid : CI , HSA >
+       < CI : CryptoOp | attributes : (ATTRS , ATTRS2) ,
                               keys : key(ATTRS) key(ATTRS2) >
        (msg finishInstallTopOperationKeys[] from TK to HANDLE)
   if twoKeyCompatible(ALGO , MODE, OBJTYPE , OBJUSAGES, OBJTYPE2 , OBJUSAGES2) /\
@@ -1468,10 +1475,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- failSetOperationKey2 is sent from TK to HANDLE.
   crl [set-operation-key2-incompatible-key-panic] :
     (msg installOperationKeys[# OBJTYPE # OBJUSAGES # ATTRS # OBJTYPE2 # OBJUSAGES2 # ATTRS2] from TK to HANDLE)
+    < HANDLE : OpHandle | oid : CI , HSA:AttributeSet >
     < CI : CryptoOp |
                              algorithm : ALGO, mode : MODE,
                              max-size : KEYSIZE >
-    => < CI : CryptoOp | > (msg failSetOperationKey2[] from TK to HANDLE)
+    => < HANDLE : OpHandle | oid : CI , HSA >
+       < CI : CryptoOp | > (msg failSetOperationKey2[] from TK to HANDLE)
   if not (twoKeyCompatible(ALGO , MODE, OBJTYPE , OBJUSAGES, OBJTYPE2 , OBJUSAGES2) and
           twoKeyMaterialCompatible(ALGO , ATTRS , ATTRS2) and
           twoKeyOperationSizeCompatible(ALGO , KEYSIZE , ATTRS , ATTRS2)) .
@@ -1535,11 +1544,13 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- sent to HANDLE.
   crl [copy-operation-top-level-object] :
     (msg reqCopyOperation[# opObjectAttr(ALGO , MODE , OS , KATTRS) # opHandleAttr(B1 , B2 , B3) # KEYS] from TK to HANDLE)
+    < HANDLE : OpHandle | oid : CI , HSA:AttributeSet >
     < CI : CryptoOp |
                              algorithm : ALGO , mode : MODE ,
                              max-size : KEYSIZE ,
                              state : OS' >
     =>
+    < HANDLE : OpHandle | oid : CI , HSA >
     < CI : CryptoOp | attributes : KATTRS ,
                              keys : KEYS , state : OS >
     (msg applyCopiedOperationHandle[# B1 # B2 # B3] from TK to HANDLE)
@@ -1551,10 +1562,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- TK.
   crl [copy-operation-incompatible-panic] :
     (msg reqCopyOperation[# opObjectAttr(ALGO , MODE , OS , KATTRS) # opHandleAttr(B1 , B2 , B3) # KEYS] from TK to HANDLE)
+    < HANDLE : OpHandle | oid : CI , HSA:AttributeSet >
     < CI : CryptoOp |
                              algorithm : ALGO2 , mode : MODE2 ,
                              max-size : KEYSIZE >
     =>
+    < HANDLE : OpHandle | oid : CI , HSA >
     < CI : CryptoOp | >
     (msg failCopyOperation[] from HANDLE to TK)
   if ALGO =/= ALGO2 or MODE =/= MODE2 or not copyFits(KATTRS , KEYS , KEYSIZE) .
@@ -2986,11 +2999,13 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- HANDLE.
   rl [derive-key-top-level-transient] :
     (msg deriveTopTransient[# DERIVED] from TK to HANDLE)
+    < DERIVED : ObjHandle | oid : OI , DHA:AttributeSet >
     < OI : TransObj |
                              initialized : false ,
                              type : typeGenericSecret ,
                              attributes : ATTRS >
     =>
+    < DERIVED : ObjHandle | oid : OI , DHA >
     < OI : TransObj | initialized : true,
                              attributes : attr(secretValue , randomAttrVal) >
     (msg validateTopDeriveHandle[# DERIVED] from TK to HANDLE) .

@@ -49,10 +49,12 @@ omod SESSION-BEHAVIOR is
   --- mkConf(syscalls P, FUNC, VL) and records {TK, FUNC} as its client-service.
   rl [handle-session-req] :
     < OI : Session | req : {HANDLE, FUNC, VL, TK} , ta-id : RK >
-    < RK : TrustedApp | proc : none , client-service : none , prog : P , status : (normal).AppStatus >
+    < RK : TrustedApp | proc : none , client-service : none , prog : P , status : (normal).AppStatus ,
+                        running : false >
     =>
     < OI : Session | req : {HANDLE, FUNC, VL, TK} , ta-id : RK >
-    < RK : TrustedApp | proc : mkConf(syscalls P , FUNC , VL) , client-service : {TK , FUNC} >
+    < RK : TrustedApp | proc : mkConf(syscalls P , FUNC , VL) , client-service : {TK , FUNC} , state-changed : true ,
+                        running : true >
   .
 
   --- handle-session-req (finish): once the TA RK has finished, its output values RET, read
@@ -65,10 +67,10 @@ omod SESSION-BEHAVIOR is
   crl [handle-session-req] :
     < OI : Session | req : {HANDLE, FUNC, VL, TK} , ret : noRet , ta-id : RK >
     < RK : TrustedApp | proc : (k(.K) KS) , client-service : {TK , FUNC} , prog : P ,
-                      status : (normal).AppStatus >
+                      status : (normal).AppStatus , running : true >
     =>
     < OI : Session | req : noReq , ret : {HANDLE, FUNC, TK, (# originTrustedApp # success RET)} >
-    < RK : TrustedApp | proc : none , client-service : none >
+    < RK : TrustedApp | proc : none , client-service : none , state-changed : true , running : false >
   if RET := getVals(getOutVars(getFuncParams(P , FUNC)) , KS) .
 
   --- handle-session-req (panic): a TA RK that panics while it serves the session request of the

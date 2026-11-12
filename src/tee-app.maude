@@ -24,7 +24,11 @@ omod TRUST-APP is
   pr TA-KERNEL .
   pr CLIENT-SERVICE .
 
-  class TrustedApp | client-service : ClientService? .
+  --- state-changed (temporary): true after a start or a finish of the TA program, and false after an
+  --- API call is accepted or returns.  It was introduced in 8f8883b and removed in 1d07df5.
+  --- running: true from the start of a client request (handle-invoke-ta, handle-session-req) to
+  --- its finish, as in the paper artifact.  It was removed in 1d07df5 and restored for running.TA.
+  class TrustedApp | client-service : ClientService?, state-changed : Bool, running : Bool .
   subclass TrustedApp < App TAKernel .
 endom
 
@@ -68,10 +72,10 @@ omod TRUST-APP-BEHAVIOR is
   rl [handle-invoke-ta] :
     (msg invkTa[FID VL] from RI to TI)
     < TI : TrustedApp | proc : none , client-service : none ,
-                        prog : P , status : (normal).AppStatus >
+                        prog : P , status : (normal).AppStatus , running : false >
     =>
     < TI : TrustedApp | proc : mkConf(syscalls P , FID , VL) ,
-                        client-service : {RI , FID} >
+                        client-service : {RI , FID} , state-changed : true , running : true >
   .
 
   --- handle-invoke-ta-finish: when the program has finished, the output values of the
@@ -79,9 +83,10 @@ omod TRUST-APP-BEHAVIOR is
   ---@dmc inline-match
   crl [handle-invoke-ta-finish] :
     < TI : TrustedApp | proc : (k(.K) KS) , client-service : {RI , FID} ,
-                        prog : P , status : (normal).AppStatus >
+                        prog : P , status : (normal).AppStatus , running : true >
     =>
-    < TI : TrustedApp | proc : none , client-service : none >
+    < TI : TrustedApp | proc : none , client-service : none , state-changed : true ,
+                        running : false >
     (msg invkTaRet[RET] from TI to RI)
   if RET := getVals(getOutVars(getFuncParams(P , FID)), KS) .
 
@@ -137,7 +142,7 @@ omod TRUST-APP-IMP-BEHAVIOR is
                         api-call : noCall , status : (normal).AppStatus >
     =>
     < TI : TrustedApp | proc : (k($wait(TEEAPI) ~> K) KS) ,
-                        api-call : init(makeCall(TEEAPI , VL)) >
+                        api-call : init(makeCall(TEEAPI , VL)) , state-changed : false >
   .
 
   --- tee-api-call-return: when the call has returned, the $out task is replaced by the
@@ -148,7 +153,7 @@ omod TRUST-APP-IMP-BEHAVIOR is
                         api-call : return(TEEAPI[# RET PARAMS]) >
     =>
     < TI : TrustedApp | proc : (k(makeReturnStmt(TEEAPI, RET, PARAMS, EL) ~> K) KS) ,
-                        api-call : noCall >
+                        api-call : noCall , state-changed : false >
   .
 
 endom

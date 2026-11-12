@@ -22,6 +22,7 @@ omod RICH-APP-BEHAVIOR is
   pr TEE-CLIENT-FUNC .
   pr TEE-CLIENT-IMP-VALUE .
   pr ID-IMP-VALUE .
+  pr RETURN-IMP-VALUE .
 
   var RI : Oid .
   var K : K .
@@ -53,11 +54,23 @@ omod RICH-APP-BEHAVIOR is
   .
 
 --- invoke-ta-finish: the SMC response assigns the output values to the output expressions.
-  rl [invoke-ta-finish] :
+--- The response of a TA that panicked is handled by invoke-ta-finish-target-dead.
+  crl [invoke-ta-finish] :
     smcRet(RI, RET)
     < RI : RichApp | proc : (k($wait(TeecInvokeCommand) ~> $out(OUT) ~> K) KS) >
     =>
     < RI : RichApp | proc : (k(assign(OUT, RET) ~> K) KS) >
+  if RET =/= # errorTargetDead .
+
+--- invoke-ta-finish-target-dead: a TA that panicked answers with the return code
+--- TEE_ERROR_TARGET_DEAD only (return-smc-request-panic).  The code is stored into the first
+--- output, and the other outputs keep the values they had: an output is the client's memory,
+--- and after a panic the client only gets the return code.
+  rl [invoke-ta-finish-target-dead] :
+    smcRet(RI, # errorTargetDead)
+    < RI : RichApp | proc : (k($wait(TeecInvokeCommand) ~> $out((E , EL)) ~> K) KS) >
+    =>
+    < RI : RichApp | proc : (k(E := # errorTargetDead ; ~> K) KS) >
   .
 
 endom

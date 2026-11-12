@@ -66,10 +66,10 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 --- 'TEE_ReadObjectData'
 ------------------------------------------------------------
 
---- The 'TEE_ReadObjectData' function reads the first data fragment of the data stream of the persistent object.
+--- The 'TEE_ReadObjectData' function attempts to read size bytes from the data stream associated with the object into the buffer. 
 --- See page 171 of the G.P. documentation for more details.
---- The TA sends getStatus to the storage.  If the storage status is normal, the TA sends read to the handle, and the handle
---- returns the fragment with retData.  The read is destructive: it removes the fragment from the data stream.
+--- The TA sends getStatus to the storage, the storage answers retStatus.
+--- The TA then sends read to the handle, and the handle answers retData.
 
   op read : -> ReqId [ctor] .
   op retData : -> ReqId [ctor] .
@@ -92,21 +92,20 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   =>
     if STATUS == normal
     then < TK : TAKernel | api-call : final(readObjData[# HI ZsReadObjectData1 ZrReadObjectData]) >
-         (msg read[] from TK to HI)
+         (msg read[ZsReadObjectData1] from TK to HI)
     else < TK : TAKernel | api-call : return(readObjData[# storageErrCode(STATUS)]) > fi
   .
 
 
-  --- read-object-data-from-persist: the handle with accessRead removes the first fragment D from
-  --- the data stream of its object and returns it in retData.
-  rl [read-object-data-from-persist] :
-    (msg read[] from TK to HI)
-    < HI : ObjHandle | oid : PI , flags : (accessRead , FLAGS) >
-    < PI : PersistObj | data-stream : D STREAM >
-  =>
-    < HI : ObjHandle | >
-    < PI : PersistObj | data-stream : STREAM >
-    (msg retData[# D] from HI to TK)
+  crl [read-object-data-from-persist] :
+    (msg read[# DATASIZE] from TK to HANDLE)
+    < oid(M, SI) : PersistObj | data-stream : STREAM >
+    < HANDLE : ObjHandle | oid : oid(M, SI), flags : DATAFLAGS, pos : DATAPOS >
+    =>
+    < oid(M, SI) : PersistObj | >
+    < HANDLE : ObjHandle | pos : updatePos(DATAPOS, DATASIZE, sizeOfData(STREAM)) >
+    (msg retData[# read(DATAPOS, DATASIZE, STREAM)] from HANDLE to TK)
+  if isReadable(DATAFLAGS)
   .
 
   --- read-object-data-success: retData returns success with the fragment as data(DATA).

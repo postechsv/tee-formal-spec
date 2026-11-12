@@ -100,6 +100,20 @@ fmod DATA-STREAM-OPERATOR is
   op _+_ : DataSize DataSize -> DataSize .
   eq dataSize(N) + dataSize(M) = dataSize(N + M) .
 
+--- This operator tries to read input size amount of data from the data stream starting from the current data position.
+  op readAt : Nat List{Data} -> List{Data} .
+  eq readAt(0 , D DL) = D .
+  eq readAt(s(N) , D DL) = readAt(N , DL) .
+  eq readAt(N , nil) = nil .
+
+  op readAux : Nat Nat List{Data} -> List{Data} .
+  eq readAux(N , 0 , DL) = nil .
+  ---@dmc owise drop
+  eq readAux(N , s(M) , DL) = readAt(N , DL) readAux(N + 1 , M , DL) [owise] .
+
+  op read : Nat DataSize List{Data} -> List{Data} .
+  eq read(N , dataSize(M) , DL) = readAux(N , M , DL) .
+
   --- putAt: stores the fragment D at position N of the stream.  Data positions beyond the end of a
   --- stream are filled with zero fragments.
   op putAt : Nat Data List{Data} -> List{Data} .
@@ -123,6 +137,11 @@ fmod DATA-STREAM-OPERATOR is
   eq resizeStream(0 , DL) = nil .
   eq resizeStream(s(N) , nil) = zeroData resizeStream(N , nil) .
   eq resizeStream(s(N) , D DL) = D resizeStream(N , DL) .
+
+--- This operator updates data position indicator by input data size.
+  op updatePos : Nat DataSize DataSize -> Nat .
+  ceq updatePos(P , dataSize(N) , dataSize(M)) = M if P + N > M .
+   eq updatePos(P , dataSize(N) , dataSize(M)) = P + N [owise] .
 
   --- advancePos(P, dataSize(N)): P advanced by the number of fragments of a successful write.
   op advancePos : Nat DataSize -> Nat .

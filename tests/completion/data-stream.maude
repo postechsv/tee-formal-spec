@@ -17,15 +17,16 @@ mod COMPLETION-TEST is
   var P : Program .
   op rwService : -> FuncId [ctor] .
   op rwProg : -> Program .
-  eq rwProg = TEE-Result 'c ; TEE-Buffer 'b ; int 'r ;
-              'r := readObjData(# oid(5, testTa), # dataSize(1), 'c, 'b) ;
-              'r := writeObjectData(# oid(5, testTa), 'b, 'c) ;
+  eq rwProg = TEE-Result 'c ; TEE-Buffer 'b ; TEE-Result 'r ; TEE-Result 'w ;
+              'r := readObjData(# oid(5, testTa), # dataSize(1), 'b) ;
+              'w := writeObjectData(# oid(5, testTa), 'b) ;
               void rwService() { skip } .
 endm
 
---- A TA program calls readObjData and writeObjectData through their stubs: the request reads the
---- fragment randomData (removed from the stream) and writes it back at position 0, so the stream
---- is randomData again and the handle position is 1.  The TA answers the request with invkTaRet.
+--- A TA program calls readObjData and writeObjectData through their stubs: the read returns the
+--- fragment randomData at position 0 and moves the handle to 1; the write stores randomData at
+--- position 1, so the stream is randomData randomData and the handle position is 2.  The TA
+--- answers the request with invkTaRet.
 search [1] in COMPLETION-TEST :
   (msg invkTa[rwService argNil] from testRa to testTa)
   < testTa : TrustedApp | proc : none, prog : rwProg, client-service : none,
@@ -42,9 +43,9 @@ search [1] in COMPLETION-TEST :
   < oid(1, oid(0, testTa)) : PersistObj | data-stream : randomData, AS2:AttributeSet >
   C .
 
---- readObjData removes the first fragment of the data stream of a top-level persistent handle.
+--- readObjData reads size fragments from the handle position; the data stream is not changed.
 search [1] in COMPLETION-TEST :
-  (msg read[] from testTa to oid(101, testTa))
+  (msg read[# dataSize(1)] from testTa to oid(101, testTa))
   < oid(1, oid(0, testTa)) : PersistObj |
       data-stream : randomData >
   < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
@@ -53,7 +54,8 @@ search [1] in COMPLETION-TEST :
 =>*
   (msg retData[# randomData] from oid(101, testTa) to testTa)
   < oid(1, oid(0, testTa)) : PersistObj |
-      data-stream : nil >
+      data-stream : randomData >
+  < oid(101, testTa) : ObjHandle | pos : 1, AS3:AttributeSet >
   C .
 
 --- writeObjectData updates the top-level handle position and stream contents.

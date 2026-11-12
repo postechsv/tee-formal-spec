@@ -84,18 +84,19 @@ mod SHM-TEST is
   eq allocProg(F, D', D, ST) =
     TEE-SharedMem bv ; TEE-Buffer res ;
     bv := shmAlloc(# 2, D') ; shmFill(bv, # data(1)) ; ST
-    teecInvoke(# sid, # F, (memrefTo(bv, D), # noData), res) ; .
+    res := # noData ;
+    teecInvokeCommand(# sid, # F, (memrefTo(bv, D), & res)) ; .
   --- tmpProg(F, D): calls F with a temporary reference to tb (data(1), size 2).
   op tmpProg : FuncId MemrefDir -> Program .
   eq tmpProg(F, D) =
     TEE-Buffer tb ; int tz ; TEE-Buffer res ;
-    tb := # data(1) ; tz := # 2 ;
-    teecInvoke(# sid, # F, (tmpref(tb, tz, D), # noData), res) ; .
+    tb := # data(1) ; tz := # 2 ; res := # noData ;
+    teecInvokeCommand(# sid, # F, (tmpref(tb, tz, D), & res)) ; .
   --- nullProg(F): calls F with a null output reference; tz gets the returned size.
   op nullProg : FuncId -> Program .
   eq nullProg(F) =
-    int tz ; TEE-Buffer res ; tz := # 0 ;
-    teecInvoke(# sid, # F, (nullref(tz, mrOut), # noData), res) ; .
+    int tz ; TEE-Buffer res ; tz := # 0 ; res := # noData ;
+    teecInvokeCommand(# sid, # F, (nullref(tz, mrOut), & res)) ; .
 
   --- init(P, F, D, AS, DL): the RA testRa calls the service F of the TA testTa (program P) with
   --- a memory reference of direction D to blk, which holds DL.  AS are the data a rogue client

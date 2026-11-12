@@ -836,7 +836,6 @@ mod TEE-IMP-VALUE-TYPE is
   pr DATA-STREAM-OBJECT-IMP-VALUE .
   pr TEE-INTERNAL-CLIENT-IMP-VALUE .
 
-  var SC : Scope .
   var I : Int .
   var B : Bool .
   var X : SessionId .
@@ -863,26 +862,191 @@ mod TEE-IMP-VALUE-TYPE is
   var RO : ReturnOrigin .
   var TO : TaCancelTimeOut .
 
-  eq typeOfExp(SC, # X) = ty(TEE-SessionId) .
-  eq typeOfExp(SC, # H) = ty(TEE-Handle) .
-  eq typeOfExp(SC, # F) = ty(TEE-CommandId) .
-  eq typeOfExp(SC, # R) = ty(TEE-Result) .
-  eq typeOfExp(SC, # OT) = ty(TEE-ObjectType) .
-  eq typeOfExp(SC, # AT) = ty(TEE-Attributes) .
-  eq typeOfExp(SC, # AI) = ty(TEE-AttributeIds) .
-  eq typeOfExp(SC, # AC) = ty(TEE-AttrContent) .
-  eq typeOfExp(SC, # OU) = ty(TEE-Usages) .
-  eq typeOfExp(SC, # SI) = ty(TEE-StorageId) .
-  eq typeOfExp(SC, # DF) = ty(TEE-DataFlags) .
-  eq typeOfExp(SC, # DL) = ty(TEE-Buffer) .
-  eq typeOfExp(SC, # DS) = ty(TEE-Size) .
-  eq typeOfExp(SC, # FI) = ty(TEE-ObjectId) .
-  eq typeOfExp(SC, # DP) = ty(TEE-DataPosition) .
-  eq typeOfExp(SC, # SK) = ty(TEE-Whence) .
-  eq typeOfExp(SC, # PT) = ty(TEE-ParamTypes) .
-  eq typeOfExp(SC, # APP) = ty(TEE-AppId) .
-  eq typeOfExp(SC, # RO) = ty(TEE-ReturnOrigin) .
-  eq typeOfExp(SC, # TO) = ty(TEE-Timeout) .
+  eq tyV(# X) = ty(TEE-SessionId) .
+  eq tyV(# H) = ty(TEE-Handle) .
+  eq tyV(# F) = ty(TEE-CommandId) .
+  eq tyV(# R) = ty(TEE-Result) .
+  eq tyV(# OT) = ty(TEE-ObjectType) .
+  eq tyV(# ALG) = ty(TEE-Algorithm) .
+  eq tyV(# MD) = ty(TEE-OperationMode) .
+  eq tyV(# AT) = ty(TEE-Attributes) .
+  eq tyV(# AID) = ty(TEE-AttrId) .
+  eq tyV(# AI) = ty(TEE-AttributeIds) .
+  eq tyV(# AC) = ty(TEE-AttrContent) .
+  eq tyV(# OU) = ty(TEE-Usages) .
+  eq tyV(# SI) = ty(TEE-StorageId) .
+  eq tyV(# DF) = ty(TEE-DataFlags) .
+  eq tyV(# DL) = ty(TEE-Buffer) .
+  eq tyV(# DS) = ty(TEE-Size) .
+  eq tyV(# FI) = ty(TEE-ObjectId) .
+  eq tyV(# DP) = ty(TEE-DataPosition) .
+  eq tyV(# SK) = ty(TEE-Whence) .
+  eq tyV(# PT) = ty(TEE-ParamTypes) .
+  eq tyV(# APP) = ty(TEE-AppId) .
+  eq tyV(# RO) = ty(TEE-ReturnOrigin) .
+  eq tyV(# TO) = ty(TEE-Timeout) .
+endm
+
+------------------------------------------------------------
+--- Cryptographic operation syscalls (IMP stubs)
+------------------------------------------------------------
+
+--- @kind interface
+--- @feature crypto
+mod CRYPTO-OPERATION-SYSCALL is
+  pr TEE-API-IMP-PROG-AUX .
+  pr TEE-IMP-VALUE-TYPE .
+  pr CRYPTO-OPERATION-FUNC .
+
+  --- Each stub follows the conventions of the transient-object stubs above: input parameters
+  --- are the first list of @inArgs, output parameters are @outArgs, and @return gives the value
+  --- of the call.  The names and argument lists match the makeCall equations in cryptographic.maude.
+
+  op AllocOperationLib : -> Program .
+  eq AllocOperationLib
+  = defineSysCall(
+      TEE-Result allocOperation(TEE-Algorithm 'algo, TEE-OperationMode 'mode, int 'keySize, TEE-Handle * 'handle),
+      @inArgs('algo, 'mode, 'keySize),
+      @outArgs('ret, 'handle),
+      @body(skip),
+      @return('ret)
+  ) .
+
+  op FreeOperationLib : -> Program .
+  eq FreeOperationLib
+  = defineSysCall(
+      int freeOperation(TEE-Handle * 'handle),
+      @inArgs('handle),
+      @outArgs(nil),
+      @body(skip),
+      @return(# 1)
+  ) .
+
+  op ResetOperationLib : -> Program .
+  eq ResetOperationLib
+  = defineSysCall(
+      int resetOperation(TEE-Handle 'handle),
+      @inArgs('handle),
+      @outArgs(nil),
+      @body(skip),
+      @return(# 1)
+  ) .
+
+  op SetOperationKeyLib : -> Program .
+  eq SetOperationKeyLib
+  = defineSysCall(
+      TEE-Result setOperationKey(TEE-Handle 'opHandle, TEE-Handle 'keyHandle),
+      @inArgs('opHandle, 'keyHandle),
+      @outArgs('ret),
+      @body(skip),
+      @return('ret)
+  ) .
+
+  op CipherInitLib : -> Program .
+  eq CipherInitLib
+  = defineSysCall(
+      int cipherInit(TEE-Handle 'handle, TEE-Buffer 'iv),
+      @inArgs('handle, 'iv),
+      @outArgs(nil),
+      @body(skip),
+      @return(# 1)
+  ) .
+
+  op CipherUpdateLib : -> Program .
+  eq CipherUpdateLib
+  = defineSysCall(
+      TEE-Result cipherUpdate(TEE-Handle 'handle, TEE-Buffer 'src, TEE-Buffer * 'dest),
+      @inArgs('handle, 'src),
+      @outArgs('ret, 'dest),
+      @body(skip),
+      @return('ret)
+  ) .
+
+  op CryptoLibs : -> Program .
+  eq CryptoLibs =
+    AllocOperationLib
+    FreeOperationLib
+    ResetOperationLib
+    SetOperationKeyLib
+    CipherInitLib
+    CipherUpdateLib
+  .
+endm
+
+------------------------------------------------------------
+--- Transient and generic object syscalls (IMP stubs)
+------------------------------------------------------------
+
+--- @kind interface
+--- @feature imp
+mod OBJECT-SYSCALL is
+  pr TEE-API-IMP-PROG-AUX .
+  pr TEE-IMP-VALUE-TYPE .
+  pr TEE-IMP-STRUCT-DECL .
+  pr TRANSIENT-OBJECT-FUNC .
+  pr GENERIC-OBJECT-FUNC .
+
+  --- TEE_ObjectInfo (GP 5.3.2): the IMP struct type used by getObjectInfo1.
+  op TeeObjectInfo : -> ImpType [ctor] .
+
+  op PopulateTransientObjectLib : -> Program .
+  eq PopulateTransientObjectLib
+  = defineSysCall(
+      TEE-Result populateTransientObject(TEE-Handle 'handle, TEE-Attributes 'attrs),
+      @inArgs('handle, 'attrs),
+      @outArgs('ret),
+      @body(skip),
+      @return('ret)
+  ) .
+
+  op ResetTransientObjectLib : -> Program .
+  eq ResetTransientObjectLib
+  = defineSysCall(
+      int resetTransientObject(TEE-Handle 'handle),
+      @inArgs('handle),
+      @outArgs(nil),
+      @body(skip),
+      @return(# 1)
+  ) .
+
+  op CloseObjectLib : -> Program .
+  eq CloseObjectLib
+  = defineSysCall(
+      int closeObject(TEE-Handle 'handle),
+      @inArgs('handle),
+      @outArgs(nil),
+      @body(skip),
+      @return(# 1)
+  ) .
+
+  op InitRefAttributeLib : -> Program .
+  eq InitRefAttributeLib
+  = defineSysCall(
+      int initRefAttribute(TEE-AttrId 'id, TEE-Buffer 'value, TEE-Attributes * 'attr),
+      @inArgs('id, 'value),
+      @outArgs('attr),
+      @body(skip),
+      @return(# 1)
+  ) .
+
+  op GetObjectInfo1Lib : -> Program .
+  eq GetObjectInfo1Lib
+  = defineSysCall(
+      TEE-Result getObjectInfo1(TEE-Handle 'handle, (struct TeeObjectInfo) * 'info),
+      @inArgs('handle),
+      @outArgs('ret, 'info),
+      @body(skip),
+      @return('ret)
+  ) .
+
+  op ObjectLibs : -> Program .
+  eq ObjectLibs =
+    PopulateTransientObjectLib
+    ResetTransientObjectLib
+    CloseObjectLib
+    GetObjectInfo1Lib
+    InitRefAttributeLib
+  .
 endm
 
 --- @kind program
@@ -891,8 +1055,11 @@ mod TEE-API-IMP-PROGRAM is
   pr TEE-API-IMP-PROG-AUX .
   pr TEE-INTERNAL-CLIENT-CALL .
   pr TEE-IMP-VALUE-TYPE .
+  pr CRYPTO-OPERATION-SYSCALL .
+  pr OBJECT-SYSCALL .
 
   op Params : -> ImpType [ctor] .
+  op TeeObjectInfo : -> ImpType [ctor] .
 
   sort ParamSig .
 
@@ -905,9 +1072,21 @@ mod TEE-API-IMP-PROGRAM is
       int param4 ;
     } ;
 
+    struct TeeObjectInfo {
+      TEE-ObjectType objectType ;
+      TEE-Size objectSize ;
+      TEE-Size maxObjectSize ;
+      TEE-Usages objectUsage ;
+      TEE-Size dataSize ;
+      TEE-DataPosition dataPosition ;
+      TEE-DataFlags handleFlags ;
+    } ;
+
     TransientLibs
     PersistLibs
-    SessionLibs 
+    SessionLibs
+    CryptoLibs
+    ObjectLibs
   .
 
   vars F FN : FuncId .

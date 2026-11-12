@@ -66,8 +66,9 @@
 ---   shmRelease(E): releases the block E (TEEC_ReleaseSharedMemory);
 ---   memrefTo(E, D): a memory reference to the whole block E with direction D;
 ---   tmpref(X, Z, D), nullref(Z, D): temporary and null memory references;
----   teecInvoke(ES, EF, EL, OUT): TEEC_InvokeCommand of the command EF in the session ES with
----     the arguments EL; the output values are assigned to OUT.
+---   teecInvokeCommand(ES, EF, EL): TEEC_InvokeCommand of the command EF in the session ES with
+---     the arguments EL, where an output parameter is written &E; the output values are
+---     assigned to the outputs E.
 
 --- @kind program
 --- @feature shm
@@ -85,7 +86,12 @@ fmod SHARED-MEMORY-SYNTAX is
   op tmpref : Exp Exp MemrefDir -> Exp [ctor] .
   op nullref : Exp MemrefDir -> Exp [ctor] .
   op checkMemoryAccessRights : MemAccess Exp -> Exp [ctor] .
-  op teecInvoke : Exp Exp ExpList ExpList -> Exp [ctor] .
+  --- &E marks an output parameter of teecInvokeCommand, as &optHandle does in the paper's
+  --- parameter declarations (getFuncParams).
+  op &_ : Exp -> Exp [ctor] .
+  op teecInvokeCommand : Exp Exp ExpList -> Exp [ctor] .
+  op stripOut : ExpList -> ExpList .
+  op outArgs : ExpList -> ExpList .
 
   --- Contexts: $sh1(E) is the hole of a unary operator E, $sh2(E1, E2) the first operand
   --- of a binary one and $sh3(V, E2) the second.
@@ -172,8 +178,9 @@ mod SHARED-MEMORY-VALUE is
   op mref : Oid -> MrefValue [ctor] .
 
   ops TEE-Memref TEE-SharedMem : -> ConcBType [ctor] .
+  --- The typing context of TEE_CheckMemoryAccessRights (see the typing equations below).
+  op $tcmar : -> TItem [ctor] .
 
-  var SC : Scope .
   vars E E1 E2 ES EF Z : Exp .
   vars EL OUT : ExpList .
   var M : Oid .
@@ -187,47 +194,59 @@ mod SHARED-MEMORY-VALUE is
   eq k({ tmpref(loc(LB), loc(LZ), D) } ~> K) = k({ tmem(LB, LZ, D) } ~> K) .
   eq k({ nullref(loc(LZ), D) } ~> K) = k({ nmem(LZ, D) } ~> K) .
 
-  --- teecInvoke runs as the stub of TEEC_InvokeCommand: its inputs are evaluated ($inH), the
-  --- SMC request is sent by invoke-ta-smc, and invoke-ta-finish assigns the output values to
-  --- OUT.
-  eq k({ teecInvoke(ES, EF, EL, OUT) } ~> []; ~> K)
-   = k($inH(argNil, (ES, EF, EL)) ~> $wait(TeecInvokeCommand) ~> $out(OUT) ~> K) .
+  --- teecInvokeCommand(ES, EF, EL) runs as the stub of TEEC_InvokeCommand.  EL holds the
+  --- arguments of the command, where an output parameter is written &E.  All the arguments,
+  --- the outputs included with their current values, are evaluated ($inH) and sent by
+  --- invoke-ta-smc; invoke-ta-finish assigns the returned values to the outputs E.
+  var XL : ExpList .
+  eq stripOut(nil) = nil .
+  eq stripOut((& E , XL)) = E , stripOut(XL) .
+  eq stripOut((E , XL)) = E , stripOut(XL) [owise] .
+  eq outArgs(nil) = nil .
+  eq outArgs((& E , XL)) = E , outArgs(XL) .
+  eq outArgs((E , XL)) = outArgs(XL) [owise] .
+
+  eq k({ teecInvokeCommand(ES, EF, EL) } ~> []; ~> K)
+   = k($inH(argNil, (ES, EF, stripOut(EL))) ~> $wait(TeecInvokeCommand) ~> $out(outArgs(EL)) ~> K) .
 
   --- TEE_CheckMemoryAccessRights on a private buffer: the TA owns it, so it is accessible
   --- with any flags.
   ceq k({ checkMemoryAccessRights(MA, V) } ~> K) = k({ # success } ~> K) if not V :: MrefValue .
 
-  ceq typeOfExp(SC, shmData(E)) = ty(TEE-Buffer) if typeOfExp(SC, E) = ty(TEE-Memref) .
-  ceq typeOfExp(SC, shmSize(E)) = ty(int) if typeOfExp(SC, E) = ty(TEE-Memref) .
-  ceq typeOfExp(SC, shmWrite(E1, E2)) = ty(void)
-    if typeOfExp(SC, E1) = ty(TEE-Memref) /\ typeOfExp(SC, E2) = ty(TEE-Buffer) .
-  ceq typeOfExp(SC, shmSetSize(E1, E2)) = ty(void)
-    if typeOfExp(SC, E1) = ty(TEE-Memref) /\ typeOfExp(SC, E2) = ty(int) .
-  ceq typeOfExp(SC, checkMemoryAccessRights(MA, E)) = ty(TEE-Result)
-    if typeOfExp(SC, E) = ty(TEE-Memref) .
-  ceq typeOfExp(SC, checkMemoryAccessRights(MA, E)) = ty(TEE-Result)
-    if typeOfExp(SC, E) = ty(TEE-Buffer) .
-  ceq typeOfExp(SC, shmAlloc(E, D)) = ty(TEE-SharedMem) if typeOfExp(SC, E) = ty(int) .
-  ceq typeOfExp(SC, shmFill(E1, E2)) = ty(void)
-    if typeOfExp(SC, E1) = ty(TEE-SharedMem) /\ typeOfExp(SC, E2) = ty(TEE-Buffer) .
-  ceq typeOfExp(SC, shmRogue(E1, E2)) = ty(void)
-    if typeOfExp(SC, E1) = ty(TEE-SharedMem) /\ typeOfExp(SC, E2) = ty(TEE-Buffer) .
-  ceq typeOfExp(SC, shmView(E)) = ty(TEE-Buffer) if typeOfExp(SC, E) = ty(TEE-SharedMem) .
-  ceq typeOfExp(SC, shmRetSize(E)) = ty(int) if typeOfExp(SC, E) = ty(TEE-SharedMem) .
-  ceq typeOfExp(SC, shmRelease(E)) = ty(void) if typeOfExp(SC, E) = ty(TEE-SharedMem) .
-  ceq typeOfExp(SC, memrefTo(E, D)) = ty(TEE-Memref) if typeOfExp(SC, E) = ty(TEE-SharedMem) .
-  ceq typeOfExp(SC, tmpref(E, Z, D)) = ty(TEE-Memref)
-    if E :: LExp /\ typeOfExp(SC, E) = ty(TEE-Buffer) /\ Z :: LExp /\ typeOfExp(SC, Z) = ty(int) .
-  ceq typeOfExp(SC, nullref(Z, D)) = ty(TEE-Memref)
-    if Z :: LExp /\ typeOfExp(SC, Z) = ty(int) .
-  ceq typeOfExp(SC, teecInvoke(ES, EF, EL, OUT)) = ty(void)
-    if typeOfExp(SC, ES) = ty(TEE-SessionId) /\ typeOfExp(SC, EF) = ty(TEE-CommandId) .
+  --- Typing (IMP-TYPING): each operation types its operands left to right, checks them with
+  --- $tchk, and gives its result type with $tres, as a SIMPLE rule such as int + int => int.
+  eq tk($te(shmData(E)) ~> K) = tk($te(E) ~> $tchk(TEE-Memref) ~> $tres(TEE-Buffer) ~> K) .
+  eq tk($te(shmSize(E)) ~> K) = tk($te(E) ~> $tchk(TEE-Memref) ~> $tres(int) ~> K) .
+  eq tk($te(shmWrite(E1, E2)) ~> K)
+   = tk($te(E1) ~> $tchk(TEE-Memref) ~> $te(E2) ~> $tchk(TEE-Buffer) ~> $tres(void) ~> K) .
+  eq tk($te(shmSetSize(E1, E2)) ~> K)
+   = tk($te(E1) ~> $tchk(TEE-Memref) ~> $te(E2) ~> $tchk(int) ~> $tres(void) ~> K) .
+  --- TEE_CheckMemoryAccessRights takes a memory reference or a private buffer.
+  eq tk($te(checkMemoryAccessRights(MA, E)) ~> K) = tk($te(E) ~> $tcmar ~> K) .
+  eq tk(ty(TEE-Memref) ~> $tcmar ~> K) = tk(ty(TEE-Result) ~> K) .
+  eq tk(ty(TEE-Buffer) ~> $tcmar ~> K) = tk(ty(TEE-Result) ~> K) .
+  eq tk($te(shmAlloc(E, D)) ~> K) = tk($te(E) ~> $tchk(int) ~> $tres(TEE-SharedMem) ~> K) .
+  eq tk($te(shmFill(E1, E2)) ~> K)
+   = tk($te(E1) ~> $tchk(TEE-SharedMem) ~> $te(E2) ~> $tchk(TEE-Buffer) ~> $tres(void) ~> K) .
+  eq tk($te(shmRogue(E1, E2)) ~> K)
+   = tk($te(E1) ~> $tchk(TEE-SharedMem) ~> $te(E2) ~> $tchk(TEE-Buffer) ~> $tres(void) ~> K) .
+  eq tk($te(shmView(E)) ~> K) = tk($te(E) ~> $tchk(TEE-SharedMem) ~> $tres(TEE-Buffer) ~> K) .
+  eq tk($te(shmRetSize(E)) ~> K) = tk($te(E) ~> $tchk(TEE-SharedMem) ~> $tres(int) ~> K) .
+  eq tk($te(shmRelease(E)) ~> K) = tk($te(E) ~> $tchk(TEE-SharedMem) ~> $tres(void) ~> K) .
+  eq tk($te(memrefTo(E, D)) ~> K) = tk($te(E) ~> $tchk(TEE-SharedMem) ~> $tres(TEE-Memref) ~> K) .
+  --- A temporary memory reference names the client buffer and its size: both are lvalues.
+  eq tk($te(tmpref(E, Z, D)) ~> K)
+   = tk($tl(E) ~> $tchk(TEE-Buffer) ~> $tl(Z) ~> $tchk(int) ~> $tres(TEE-Memref) ~> K) .
+  eq tk($te(nullref(Z, D)) ~> K) = tk($tl(Z) ~> $tchk(int) ~> $tres(TEE-Memref) ~> K) .
+  --- The command arguments EL are not typed (an output is written &E).
+  eq tk($te(teecInvokeCommand(ES, EF, EL)) ~> K)
+   = tk($te(ES) ~> $tchk(TEE-SessionId) ~> $te(EF) ~> $tchk(TEE-CommandId) ~> $tres(void) ~> K) .
 
   --- A memory reference may be passed for a buffer parameter ([inbuf], [Internal Core] 3.4.3);
   --- it is read when the parameter is bound.  It may also be passed for an object
   --- identifier, which is an [in] parameter: the TA panics then (3.4.1).
-  ceq argOk(SC, E, TEE-Buffer) = true if typeOfExp(SC, E) = ty(TEE-Memref) .
-  ceq argOk(SC, E, TEE-ObjectId) = true if typeOfExp(SC, E) = ty(TEE-Memref) .
+  eq tk(ty(TEE-Memref) ~> $targ(TEE-Buffer) ~> K) = tk(K) .
+  eq tk(ty(TEE-Memref) ~> $targ(TEE-ObjectId) ~> K) = tk(K) .
 endm
 
 --- This module defines the shared memory blocks of the clients and the memory references of

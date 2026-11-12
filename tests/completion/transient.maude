@@ -19,13 +19,13 @@ endm
 
 --- Handles are top-level objects referenced by the reverse ID index.
 search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | api-call : init(ResetTransientObject[# oid(101, testTa)]) >
+  < testTa : TAKernel | api-call : init(resetTransientObject[# oid(101, testTa)]) >
   < oid(1, testTa) : TransObj | initialized : true,
       attributes : attr(secretValue, randomAttrVal),
       usages : usageEncrypt >
   < oid(101, testTa) : ObjHandle | oid : oid(1, testTa) >
 =>*
-  < testTa : TAKernel | api-call : return(ResetTransientObject[# noReturnCode]) >
+  < testTa : TAKernel | api-call : return(resetTransientObject[# noReturnCode]) >
   < oid(1, testTa) : TransObj | initialized : false,
       attributes : empty,
       usages : (usageExtractable, usageEncrypt,
@@ -85,56 +85,56 @@ search [1] in COMPLETION-TEST :
 --- GP 5.6.4: missing or unsupported attributes are programmer errors.
 search [1] in COMPLETION-TEST :
   (msg reqPopulateTransient[# (empty).Set{CryptoAttribute}] from testTa to oid(101, testTa))
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(PopulateTransientObject[# ZvHandle # ZvAttrs]) >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(populateTransientObject[# ZvHandle # ZvAttrs]) >
   < oid(1, testTa) : TransObj | type : typeAes >
   < oid(101, testTa) : ObjHandle | oid : oid(1, testTa) >
 =>1
-  < testTa : TAKernel | status : panic, api-call : final(PopulateTransientObject[# ZvHandle # ZvAttrs]) > C .
+  < testTa : TAKernel | status : panic, api-call : final(populateTransientObject[# ZvHandle # ZvAttrs]) > C .
 
 --- GP 5.6.4: the destination object must be uninitialized.
 search [1] in COMPLETION-TEST :
   (msg reqPopulateTransient[# (attr(secretValue, randomAttrVal)).Set{CryptoAttribute}] from testTa to oid(101, testTa))
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(PopulateTransientObject[# ZvHandle # ZvAttrs]) >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(populateTransientObject[# ZvHandle # ZvAttrs]) >
   < oid(1, testTa) : TransObj | type : typeAes >
   < oid(101, testTa) : ObjHandle | oid : oid(1, testTa) >
 =>1
-  < testTa : TAKernel | status : panic, api-call : final(PopulateTransientObject[# ZvHandle # ZvAttrs]) > C .
+  < testTa : TAKernel | status : panic, api-call : final(populateTransientObject[# ZvHandle # ZvAttrs]) > C .
 
 --- GP 5.6.7: an oversized key or missing mandatory generation parameters panic.
 search [1] in COMPLETION-TEST :
   (msg reqGenerateKey[# 256 # (empty).Set{CryptoAttribute}] from testTa to oid(101, testTa))
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(GenerateKey[# ZvHandle # ZvSize # ZvAttrs]) >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(generateKey[# ZvHandle # ZvSize # ZvAttrs]) >
   < oid(1, testTa) : TransObj | type : typeAes,
       max-size : 128 >
   < oid(101, testTa) : ObjHandle | oid : oid(1, testTa) >
 =>1
-  < testTa : TAKernel | status : panic, api-call : final(GenerateKey[# ZvHandle # ZvSize # ZvAttrs]) > C .
+  < testTa : TAKernel | status : panic, api-call : final(generateKey[# ZvHandle # ZvSize # ZvAttrs]) > C .
 
 search [1] in COMPLETION-TEST :
   (msg reqGenerateKey[# 0 # (empty).Set{CryptoAttribute}] from testTa to oid(101, testTa))
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(GenerateKey[# ZvHandle # ZvSize # ZvAttrs]) >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(generateKey[# ZvHandle # ZvSize # ZvAttrs]) >
   < oid(1, testTa) : TransObj | type : typeDhKeypair,
       max-size : 256 >
   < oid(101, testTa) : ObjHandle | oid : oid(1, testTa) >
 =>1
-  < testTa : TAKernel | status : panic, api-call : final(GenerateKey[# ZvHandle # ZvSize # ZvAttrs]) > C .
+  < testTa : TAKernel | status : panic, api-call : final(generateKey[# ZvHandle # ZvSize # ZvAttrs]) > C .
 
 --- GP 5.6.7: a Table 5-9-unsupported key size is a programmer error.
 search [1] in COMPLETION-TEST :
   (msg reqGenerateKey[# 64 # (empty).Set{CryptoAttribute}] from testTa to oid(101, testTa))
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(GenerateKey[# ZvHandle # ZvSize # ZvAttrs]) >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(generateKey[# ZvHandle # ZvSize # ZvAttrs]) >
   < oid(1, testTa) : TransObj | type : typeAes,
       max-size : 128 >
   < oid(101, testTa) : ObjHandle | oid : oid(1, testTa) >
 =>1
-  < testTa : TAKernel | status : panic, api-call : final(GenerateKey[# ZvHandle # ZvSize # ZvAttrs]) > C .
+  < testTa : TAKernel | status : panic, api-call : final(generateKey[# ZvHandle # ZvSize # ZvAttrs]) > C .
 
 --- GP 5.6.7: key generation requires an uninitialized transient object.
 search [1] in COMPLETION-TEST :
   (msg reqGenerateKey[# 128 # (empty).Set{CryptoAttribute}] from testTa to oid(101, testTa))
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(GenerateKey[# ZvHandle # ZvSize # ZvAttrs]) >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(generateKey[# ZvHandle # ZvSize # ZvAttrs]) >
   < oid(1, testTa) : TransObj | type : typeAes,
       max-size : 128 >
   < oid(101, testTa) : ObjHandle | oid : oid(1, testTa) >
 =>1
-  < testTa : TAKernel | status : panic, api-call : final(GenerateKey[# ZvHandle # ZvSize # ZvAttrs]) > C .
+  < testTa : TAKernel | status : panic, api-call : final(generateKey[# ZvHandle # ZvSize # ZvAttrs]) > C .

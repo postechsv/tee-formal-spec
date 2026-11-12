@@ -92,18 +92,18 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   --- open-persistent-default-private-storage: a request without a storageId (only the file and the
   --- flags) is rewritten to use storagePrivate.  A request with a storageId is left to the rules below.
   rl [open-persistent-default-private-storage] :
-    < TK : TAKernel | api-call : init(OpenPersistentObject[# FILE # DATAFLAGS]) >
+    < TK : TAKernel | api-call : init(openPersistentObject[# FILE # DATAFLAGS]) >
     =>
-    < TK : TAKernel | api-call : init(OpenPersistentObject[# storagePrivate # FILE # DATAFLAGS]) >
+    < TK : TAKernel | api-call : init(openPersistentObject[# storagePrivate # FILE # DATAFLAGS]) >
   .
 
   --- open-persistent-subroutine (request): a supported storage is asked for its status with
   --- getStatus, and the call waits in exec state 0.
   crl [open-persistent-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus ,
-                      api-call : init(OpenPersistentObject[# STORID # FILE ZsOpenPersistentObject2 ZrOpenPersistentObject]) , storage : SI >
+                      api-call : init(openPersistentObject[# STORID # FILE ZsOpenPersistentObject2 ZrOpenPersistentObject]) , storage : SI >
     =>
-    < TK : TAKernel | api-call : exec(OpenPersistentObject[# STORID # FILE ZsOpenPersistentObject2 ZrOpenPersistentObject] , 0) >
+    < TK : TAKernel | api-call : exec(openPersistentObject[# STORID # FILE ZsOpenPersistentObject2 ZrOpenPersistentObject] , 0) >
     (msg getStatus[] from TK to SI)
   if supportedStorage(STORID)
   .
@@ -114,9 +114,9 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   rl [open-persistent-status-normal] :
     (msg retStatus[# (normal).StorageStatus] from SI to TK)
     < TK : TAKernel | status : (normal).AppStatus ,
-                      api-call : exec(OpenPersistentObject[# STORID # FILE ZsOpenPersistentObject2 ZrOpenPersistentObject] , 0) , storage : SI >
+                      api-call : exec(openPersistentObject[# STORID # FILE ZsOpenPersistentObject2 ZrOpenPersistentObject] , 0) , storage : SI >
     =>
-    < TK : TAKernel | api-call : exec(OpenPersistentObject[# STORID # FILE ZsOpenPersistentObject2 ZrOpenPersistentObject] , 1) >
+    < TK : TAKernel | api-call : exec(openPersistentObject[# STORID # FILE ZsOpenPersistentObject2 ZrOpenPersistentObject] , 1) >
     (msg checkFileExist[# FILE] from TK to SI)
   .
 
@@ -124,9 +124,9 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   --- errorItemNotFound with a null handle.
   crl [open-persistent-storage-id-not-found] :
     < TK : TAKernel | status : (normal).AppStatus ,
-                      api-call : init(OpenPersistentObject[# STORID ZsOpenPersistentObject1 ZsOpenPersistentObject2 ZrOpenPersistentObject]) >
+                      api-call : init(openPersistentObject[# STORID ZsOpenPersistentObject1 ZsOpenPersistentObject2 ZrOpenPersistentObject]) >
     =>
-    < TK : TAKernel | api-call : return(OpenPersistentObject[# errorItemNotFound # null]) >
+    < TK : TAKernel | api-call : return(openPersistentObject[# errorItemNotFound # null]) >
   if not supportedStorage(STORID)
   .
 
@@ -135,10 +135,10 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   rl [open-persistent-subroutine] :
     (msg retFileExist[# true] from SI to TK)
     < TK : TAKernel | status : (normal).AppStatus ,
-                      api-call : exec(OpenPersistentObject[# STORID # FILE # DATAFLAGS] , 1) ,
+                      api-call : exec(openPersistentObject[# STORID # FILE # DATAFLAGS] , 1) ,
                       storage : SI , counter : N >
     =>
-    < TK : TAKernel | api-call : final(OpenPersistentObject[# STORID # FILE # DATAFLAGS]) ,
+    < TK : TAKernel | api-call : final(openPersistentObject[# STORID # FILE # DATAFLAGS]) ,
                       counter : N + 1 >
     (msg openPersistentHandle[# FILE # DATAFLAGS # N] from TK to SI)
   .
@@ -170,18 +170,18 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   --- open-persistent-success: finishOpenPersistentHandle returns success with the new handle.
   rl [open-persistent-success] :
     (msg finishOpenPersistentHandle[# HANDLE] from SI to TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-call : final(OpenPersistentObject[PARAMS]) >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(openPersistentObject[PARAMS]) >
     =>
-    < TK : TAKernel | api-call : return(OpenPersistentObject[# success # HANDLE]) >
+    < TK : TAKernel | api-call : return(openPersistentObject[# success # HANDLE]) >
   .
 
 
   --- open-persistent-fail: returns errorAccessConflict when the storage reports a conflict.
   rl [open-persistent-fail] :
     (msg failOpenPersistentHandle[] from SI to TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-call : final(OpenPersistentObject[PARAMS]) >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(openPersistentObject[PARAMS]) >
     =>
-    < TK : TAKernel | api-call : return(OpenPersistentObject[# errorAccessConflict # null]) >
+    < TK : TAKernel | api-call : return(openPersistentObject[# errorAccessConflict # null]) >
   .
 
 
@@ -189,17 +189,17 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   --- in the storage.
   rl [open-persistent-file-err] :
     (msg retFileExist[# false] from SI to TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-call : exec(OpenPersistentObject[PARAMS] , 1) >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : exec(openPersistentObject[PARAMS] , 1) >
     =>
-    < TK : TAKernel | api-call : return(OpenPersistentObject[# errorItemNotFound # null]) >
+    < TK : TAKernel | api-call : return(openPersistentObject[# errorItemNotFound # null]) >
   .
 
 
   --- open-persistent-memory-err: returns errorOutOfMemory when the status is outOfMemory.
   rl [open-persistent-memory-err] :
-    < TK : TAKernel | status : outOfMemory , api-call : init(OpenPersistentObject[PARAMS]) >
+    < TK : TAKernel | status : outOfMemory , api-call : init(openPersistentObject[PARAMS]) >
     =>
-    < TK : TAKernel | api-call : return(OpenPersistentObject[# errorOutOfMemory # null]) >
+    < TK : TAKernel | api-call : return(openPersistentObject[# errorOutOfMemory # null]) >
   .
 
 
@@ -207,9 +207,9 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   --- holds, e.g. errorCorruptObject or errorStorageNotAvailable.
   crl [open-persistent-storage-err] :
     (msg retStatus[# STATUS] from SI to TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-call : exec(OpenPersistentObject[PARAMS] , 0) >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : exec(openPersistentObject[PARAMS] , 0) >
     =>
-    < TK : TAKernel | api-call : return(OpenPersistentObject[# storageErrCode(STATUS) # null]) >
+    < TK : TAKernel | api-call : return(openPersistentObject[# storageErrCode(STATUS) # null]) >
   if abnormalStorage(STATUS)
   .
 
@@ -425,9 +425,9 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   --- close-and-delete-persistent-subroutine: a handle that is not null asks the storage for its
   --- status (getStatus).
   crl [close-and-delete-persistent-subroutine] :
-    < TK : TAKernel | status : (normal).AppStatus , api-call : init(CloseAndDeletePersistentObject1[# HANDLE]) , storage : SI >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(closeAndDeletePersistentObject1[# HANDLE]) , storage : SI >
     =>
-    < TK : TAKernel | api-call : exec(CloseAndDeletePersistentObject1[# HANDLE] , 0) >
+    < TK : TAKernel | api-call : exec(closeAndDeletePersistentObject1[# HANDLE] , 0) >
     (msg getStatus[] from TK to SI)
   if not nullHandle(HANDLE)
   .
@@ -436,10 +436,10 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   --- deletePersistent to the handle.
   rl [close-and-delete-persistent-top-level-start-ok] :
     (msg retStatus[# (normal).StorageStatus] from SI to TK)
-    < TK : TAKernel | api-call : exec(CloseAndDeletePersistentObject1[# HANDLE] , 0) ,
+    < TK : TAKernel | api-call : exec(closeAndDeletePersistentObject1[# HANDLE] , 0) ,
                       storage : SI >
     =>
-    < TK : TAKernel | api-call : exec(CloseAndDeletePersistentObject1[# HANDLE] , 1) >
+    < TK : TAKernel | api-call : exec(closeAndDeletePersistentObject1[# HANDLE] , 1) >
     (msg deletePersistent[# SI] from TK to HANDLE)
   .
 
@@ -447,10 +447,10 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   --- send deletePersistent to the handle.
   rl [close-and-delete-persistent-corrupt-subroutine] :
     (msg retStatus[# (corrupted).StorageStatus] from SI to TK)
-    < TK : TAKernel | api-call : exec(CloseAndDeletePersistentObject1[# HANDLE] , 0) ,
+    < TK : TAKernel | api-call : exec(closeAndDeletePersistentObject1[# HANDLE] , 0) ,
                       storage : SI >
     =>
-    < TK : TAKernel | api-call : exec(CloseAndDeletePersistentObject1[# HANDLE] , 1) >
+    < TK : TAKernel | api-call : exec(closeAndDeletePersistentObject1[# HANDLE] , 1) >
     (msg deletePersistent[# SI] from TK to HANDLE)
   .
 
@@ -488,18 +488,18 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   --- notifyFileDeletion to the storage.
   rl [close-and-delete-persistent-subroutine-notify] :
     (msg finishDeletePersistent[# FILE] from HANDLE to TK)
-    < TK : TAKernel | api-call : exec(CloseAndDeletePersistentObject1[PARAMS] , 1) , storage : SI >
+    < TK : TAKernel | api-call : exec(closeAndDeletePersistentObject1[PARAMS] , 1) , storage : SI >
     =>
-    < TK : TAKernel | api-call : final(CloseAndDeletePersistentObject1[PARAMS]) >
+    < TK : TAKernel | api-call : final(closeAndDeletePersistentObject1[PARAMS]) >
     (msg notifyFileDeletion[# FILE] from TK to SI)
   .
 
   --- close-and-delete-persistent-success: acceptNotification from the storage returns success.
   rl [close-and-delete-persistent-success] :
     (msg acceptNotification[] from SI to TK)
-    < TK : TAKernel | api-call : final(CloseAndDeletePersistentObject1[PARAMS]) >
+    < TK : TAKernel | api-call : final(closeAndDeletePersistentObject1[PARAMS]) >
     =>
-    < TK : TAKernel | api-call : return(CloseAndDeletePersistentObject1[# success]) >
+    < TK : TAKernel | api-call : return(closeAndDeletePersistentObject1[# success]) >
   .
 
 
@@ -507,7 +507,7 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   --- is not opened with accessWriteMeta.
   rl [close-and-delete-persistent-panic] :
     (msg failDeletePersistent[] from HANDLE to TK)
-    < TK : TAKernel | api-call : exec(CloseAndDeletePersistentObject1[PARAMS] , 1) >
+    < TK : TAKernel | api-call : exec(closeAndDeletePersistentObject1[PARAMS] , 1) >
     =>
     < TK : TAKernel | status : panic >
   .
@@ -516,9 +516,9 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   --- close-and-delete-persistent-null-success: with a null handle, nothing is deleted and success
   --- is returned with the handle.
   crl [close-and-delete-persistent-null-success] :
-    < TK : TAKernel | api-call : init(CloseAndDeletePersistentObject1[# HANDLE]) >
+    < TK : TAKernel | api-call : init(closeAndDeletePersistentObject1[# HANDLE]) >
     =>
-    < TK : TAKernel | api-call : return(CloseAndDeletePersistentObject1[# success # HANDLE]) >
+    < TK : TAKernel | api-call : return(closeAndDeletePersistentObject1[# success # HANDLE]) >
   if nullHandle(HANDLE)
   .
 
@@ -527,9 +527,9 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   --- errorStorageNotAvailable.
   rl [close-and-delete-persistent-storage-err] :
     (msg retStatus[# (notAvailable).StorageStatus] from SI to TK)
-    < TK : TAKernel | api-call : exec(CloseAndDeletePersistentObject1[PARAMS] , 0) >
+    < TK : TAKernel | api-call : exec(closeAndDeletePersistentObject1[PARAMS] , 0) >
     =>
-    < TK : TAKernel | api-call : return(CloseAndDeletePersistentObject1[# errorStorageNotAvailable]) >
+    < TK : TAKernel | api-call : return(closeAndDeletePersistentObject1[# errorStorageNotAvailable]) >
   .
 
 ------------------------------------------------------------
@@ -548,9 +548,9 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
 
   --- rename-persistent-subroutine: the TA asks the storage for its status (getStatus).
   rl [rename-persistent-subroutine] :
-    < TK : TAKernel | status : (normal).AppStatus , api-call : init(RenamePersistentObject[ZsRenamePersistentObject0 # FILE ZrRenamePersistentObject]) , storage : SI >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(renamePersistentObject[ZsRenamePersistentObject0 # FILE ZrRenamePersistentObject]) , storage : SI >
     =>
-    < TK : TAKernel | api-call : exec(RenamePersistentObject[ZsRenamePersistentObject0 # FILE ZrRenamePersistentObject] , 0) >
+    < TK : TAKernel | api-call : exec(renamePersistentObject[ZsRenamePersistentObject0 # FILE ZrRenamePersistentObject] , 0) >
     (msg getStatus[] from TK to SI)
   .
 
@@ -558,9 +558,9 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   --- exists (checkFileExist).
   rl [rename-persistent-status-normal] :
     (msg retStatus[# (normal).StorageStatus] from SI to TK)
-    < TK : TAKernel | api-call : exec(RenamePersistentObject[ZsRenamePersistentObject0 # FILE ZrRenamePersistentObject] , 0) , storage : SI >
+    < TK : TAKernel | api-call : exec(renamePersistentObject[ZsRenamePersistentObject0 # FILE ZrRenamePersistentObject] , 0) , storage : SI >
     =>
-    < TK : TAKernel | api-call : exec(RenamePersistentObject[ZsRenamePersistentObject0 # FILE ZrRenamePersistentObject] , 1) >
+    < TK : TAKernel | api-call : exec(renamePersistentObject[ZsRenamePersistentObject0 # FILE ZrRenamePersistentObject] , 1) >
     (msg checkFileExist[# FILE] from TK to SI)
   .
 
@@ -568,10 +568,10 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   --- with FILE to the handle.
   rl [rename-persistent-subroutine-ok] :
     (msg retFileExist[# false] from SI to TK)
-    < TK : TAKernel | api-call : exec(RenamePersistentObject[# HANDLE # FILE] , 1) ,
+    < TK : TAKernel | api-call : exec(renamePersistentObject[# HANDLE # FILE] , 1) ,
                       storage : SI >
     =>
-    < TK : TAKernel | api-call : exec(RenamePersistentObject[# HANDLE # FILE] , 2) >
+    < TK : TAKernel | api-call : exec(renamePersistentObject[# HANDLE # FILE] , 2) >
     (msg renamePersistent[# FILE # SI] from TK to HANDLE)
   .
 
@@ -601,7 +601,7 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   --- close-and-delete-persistent-panic does for a delete.
   rl [rename-persistent-panic] :
     (msg failRenamePersistent[] from HANDLE to TK)
-    < TK : TAKernel | api-call : exec(RenamePersistentObject[PARAMS] , 2) >
+    < TK : TAKernel | api-call : exec(renamePersistentObject[PARAMS] , 2) >
     =>
     < TK : TAKernel | status : panic >
   .
@@ -620,18 +620,18 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   --- notifyFileRename with the old and new names to the storage.
   rl [rename-persistent-subroutine-notify] :
     (msg finishRenamePersistent[# FILE'] from OI to TK)
-    < TK : TAKernel | api-call : exec(RenamePersistentObject[ZsRenamePersistentObject0 # FILE ZrRenamePersistentObject] , 2) , storage : SI >
+    < TK : TAKernel | api-call : exec(renamePersistentObject[ZsRenamePersistentObject0 # FILE ZrRenamePersistentObject] , 2) , storage : SI >
     =>
-    < TK : TAKernel | api-call : final(RenamePersistentObject[ZsRenamePersistentObject0 # FILE ZrRenamePersistentObject]) >
+    < TK : TAKernel | api-call : final(renamePersistentObject[ZsRenamePersistentObject0 # FILE ZrRenamePersistentObject]) >
     (msg notifyFileRename[# FILE' # FILE] from TK to SI)
   .
 
   --- rename-persistent-success: acceptNotification from the storage returns success.
   rl [rename-persistent-success] :
     (msg acceptNotification[] from SI to TK)
-    < TK : TAKernel | api-call : final(RenamePersistentObject[PARAMS]) >
+    < TK : TAKernel | api-call : final(renamePersistentObject[PARAMS]) >
     =>
-    < TK : TAKernel | api-call : return(RenamePersistentObject[# success]) >
+    < TK : TAKernel | api-call : return(renamePersistentObject[# success]) >
   .
 
 
@@ -639,9 +639,9 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   --- identifier already exists.
   rl [rename-persistent-access-conflict] :
     (msg retFileExist[# true] from SI to TK)
-    < TK : TAKernel | api-call : exec(RenamePersistentObject[PARAMS] , 1) >
+    < TK : TAKernel | api-call : exec(renamePersistentObject[PARAMS] , 1) >
     =>
-    < TK : TAKernel | api-call : return(RenamePersistentObject[# errorAccessConflict]) >
+    < TK : TAKernel | api-call : return(renamePersistentObject[# errorAccessConflict]) >
   .
 
 
@@ -649,9 +649,9 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
   --- holds, e.g. errorCorruptObject or errorStorageNotAvailable.
   crl [rename-persistent-storage-err] :
     (msg retStatus[# STATUS] from SI to TK)
-    < TK : TAKernel | api-call : exec(RenamePersistentObject[PARAMS] , 0) >
+    < TK : TAKernel | api-call : exec(renamePersistentObject[PARAMS] , 0) >
     =>
-    < TK : TAKernel | api-call : return(RenamePersistentObject[# storageErrCode(STATUS)]) >
+    < TK : TAKernel | api-call : return(renamePersistentObject[# storageErrCode(STATUS)]) >
   if abnormalStorage(STATUS)
   .
 

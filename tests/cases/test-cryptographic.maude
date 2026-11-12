@@ -7,29 +7,29 @@ mod CRYPTOGRAPHIC-TEST-CASES is
 
   op keyForCipherExists : -> Stmt [ctor] .
   eq keyForCipherExists = 
-    AllocateTransientObject(# typeAes, # 256 ; res, key) ;
-    InitRefAttribute(# secretValue, # randomAttrVal  ; attr) ;
-    PopulateTransientObject(key, attr  ; res) .
+    allocateTransientObject(# typeAes, # 256 ; res, key) ;
+    initRefAttribute(# secretValue, # randomAttrVal  ; attr) ;
+    populateTransientObject(key, attr  ; res) .
 
   op keySetOperationForCipherExists : -> Stmt [ctor] .
   eq keySetOperationForCipherExists = 
     keyForCipherExists ;
     allocOperation(# algAesCbcNopad, # modeEncrypt, # 256  ; res, op) ;
-    SetOperationKey(op, key ; res) ;
-    FreeTransientObject(key ; key) . --- To analyze results better
+    setOperationKey(op, key ; res) ;
+    freeTransientObject(key ; key) . --- To analyze results better
 
   op keyForMACExists : -> Stmt [ctor] .
   eq keyForMACExists = 
-    AllocateTransientObject(# typeHmacSha256, # 256 ; res, key) ;
-    InitRefAttribute(# secretValue, # randomAttrVal  ; attr) ;
-    PopulateTransientObject(key, attr  ; res) .
+    allocateTransientObject(# typeHmacSha256, # 256 ; res, key) ;
+    initRefAttribute(# secretValue, # randomAttrVal  ; attr) ;
+    populateTransientObject(key, attr  ; res) .
 
   op keySetOperationForMACExists : -> Stmt [ctor] .
   eq keySetOperationForMACExists = 
     keyForMACExists ;
     allocOperation(# algHmacSha256, # modeMac, # 256  ; res, op) ;
-    SetOperationKey(op, key ; res) ;
-    FreeTransientObject(key ; key) . --- To analyze results better
+    setOperationKey(op, key ; res) ;
+    freeTransientObject(key ; key) . --- To analyze results better
 
   eq testCryptoGeneric = 
     main () 
@@ -51,13 +51,13 @@ mod CRYPTOGRAPHIC-TEST-CASES is
       --- Test Case 1
       --- keyForCipherExists ;
       --- allocOperation(# algAesCbcNopad, # modeEncrypt, # 256  ; res, op) ;
-      --- SetOperationKey(op, key ; res) ;
+      --- setOperationKey(op, key ; res) ;
       --- return res
 
       --- For TEE_FreeOperation
       --- Test Case 1
       --- keySetOperationForCipherExists ;
-      --- FreeOperation(op ; op) ;
+      --- freeOperation(op ; op) ;
       --- return res
 
       --- For TEE_ResetOperation
@@ -114,29 +114,29 @@ mod CRYPTOGRAPHIC-TEST-CASES is
       --- For TEE_MACInit
       --- Test Case 1
       --- keySetOperationForMACExists ;
-      --- MACInit(op, iv ;) ;
+      --- macInit(op, iv ;) ;
       --- return res
 
       --- For TEE_MACUpdate
       --- Test Case 1
       --- keySetOperationForMACExists ;
-      --- MACInit(op, iv ;) ;
-      --- MACUpdate(op, chunk ;) ;
+      --- macInit(op, iv ;) ;
+      --- macUpdate(op, chunk ;) ;
       --- return res
 
       --- For TEE_MACComputeFinal
       --- Test Case 1
       --- keySetOperationForMACExists ;
-      --- MACInit(op, iv ;) ;
-      --- MACComputeFinal(op, message ; res, mac) ;
+      --- macInit(op, iv ;) ;
+      --- macComputeFinal(op, message ; res, mac) ;
       --- return mac
 
       --- For TEE_MACCompareFinal
       --- Test Case 1
       keySetOperationForMACExists ;
-      MACInit(op, iv ;) ;
+      macInit(op, iv ;) ;
       mac := # macValue(randomData, algHmacSha256, attr(secretValue,randomAttrVal)) ;
-      MACCompareFinal(op, message, mac ; res) ;
+      macCompareFinal(op, message, mac ; res) ;
       return res
     }
   .
@@ -147,7 +147,7 @@ mod CRYPTOGRAPHIC-TEST-CASES is
       var data ;
       --- For TEE_GenerateRandom
       --- Test Case 1
-      GenerateRandom(nil ; data) ;
+      generateRandom(nil ; data) ;
       return data
     }
   .

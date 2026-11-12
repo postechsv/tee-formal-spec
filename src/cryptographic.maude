@@ -1854,10 +1854,10 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- cipher-init-req-cipher-init: the call moves to final and reqCipherInit is sent to HANDLE.
   rl [cipher-init-req-cipher-init] :
-    < TK : TAKernel | api-call : init(cipherInit[# HANDLE]) , status : (normal).AppStatus >
+    < TK : TAKernel | api-call : init(cipherInit[# HANDLE # IV]) , status : (normal).AppStatus >
     =>
-    < TK : TAKernel | api-call : final(cipherInit[# HANDLE]) >
-    (msg reqCipherInit[] from TK to HANDLE) .
+    < TK : TAKernel | api-call : final(cipherInit[# HANDLE # IV]) >
+    (msg reqCipherInit[# IV] from TK to HANDLE) .
 
   --- cipher-init-initialize-success: when the handle has keySet and is of class clsCipher, the handle gains
   --- init, the operation state toggles between initial and active (other states are kept), and
@@ -1866,7 +1866,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     < HANDLE : OpHandle | oid : CI , state : handleState((keySet , HSF)) ,
                           opclass : clsCipher >
     < CI : CryptoOp | state : CSTATE >
-    (msg reqCipherInit[] from TK to HANDLE)
+    (msg reqCipherInit[# IV] from TK to HANDLE)
   => < HANDLE : OpHandle | state : handleState((init , keySet , HSF)) >
      < CI : CryptoOp | state : if CSTATE == initial then active
                                else (if CSTATE == active then initial else CSTATE fi) fi >
@@ -1877,7 +1877,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   crl [cipher-init-initialize-fail] :
     < HANDLE : OpHandle | oid : CI , state : handleState(HSF) , opclass : OC >
     < CI : CryptoOp | >
-    (msg reqCipherInit[] from TK to HANDLE)
+    (msg reqCipherInit[# IV] from TK to HANDLE)
   => < HANDLE : OpHandle | >
      < CI : CryptoOp | >
      (msg failCipherInit[] from HANDLE to TK)
@@ -3155,7 +3155,7 @@ mod CRYPTO-OPERATION-TEE-CALL is
   eq makeReturnStmt(digestExtract, RET, # DATASIZE, (E , E')) = $assign((# RET , # DATASIZE) , (E , E')) .
 
 --- Symmetric Cipher
-  eq makeCall(cipherInit , # HANDLE) = cipherInit[# HANDLE] .
+  eq makeCall(cipherInit , # HANDLE # DL) = cipherInit[# HANDLE # DL] .
   eq makeReturnStmt(cipherInit, noReturnCode, argNil, nil) = skip .
 
   eq makeCall(cipherUpdate , # HANDLE # DL) = cipherUpdate[# HANDLE # DL] .

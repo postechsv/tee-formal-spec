@@ -397,7 +397,7 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
     (msg reqPopulateTransient[# ATTRS] from TK to HANDLE)
     < TK : TAKernel | status : (normal).AppStatus ,
                       api-call : final(populateTransientObject[PARAMS]) >
-    < OI : TransObj | >
+    < OI : TransObj | initialized : true >
     < HANDLE : ObjHandle | oid : OI  >
     =>
     < TK : TAKernel | status : panic >
@@ -628,7 +628,7 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
     (msg reqGenerateKey[# KEYSIZE # ATTRS] from TK to HANDLE)
     < TK : TAKernel | status : (normal).AppStatus ,
                       api-call : final(generateKey[PARAMS]) >
-    < OI : TransObj | >
+    < OI : TransObj | initialized : true >
     < HANDLE : ObjHandle | oid : OI  >
     =>
     < TK : TAKernel | status : panic >
@@ -649,5 +649,16 @@ omod TRANSIENT-OBJECT-BEHAVIOR is
 
   --- op validParamValues : Type Set{CryptoAttribute} -> Bool .
   --- eq validParamValues(OBJTYPE , ATTRS) = true .
+
+  --- req-attribute-transient: a transient handle answers reqAttribute from a TA kernel with the
+  --- attributes, type and usages of its initialized object (retAttributeTr).  The object is kept.
+  rl [req-attribute-transient] :
+    (msg reqAttribute[] from TK to HANDLE)
+    < HANDLE : ObjHandle | oid : OI >
+    < OI : TransObj | initialized : true , type : OBJTYPE , attributes : ATTRS , usages : OBJUSAGES >
+    =>
+    < HANDLE : ObjHandle | oid : OI >
+    < OI : TransObj | initialized : true , type : OBJTYPE , attributes : ATTRS , usages : OBJUSAGES >
+    (msg retAttributeTr[# ATTRS # OBJTYPE # OBJUSAGES] from HANDLE to TK) .
 
 endom

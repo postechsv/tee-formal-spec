@@ -968,12 +968,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- get-operation-info-subroutine: getOperationInfo with a handle moves to final and requests the
   --- multiple operation info from HANDLE with reqOperationInfoMultiple.
-  rl [get-operation-info-subroutine] :
+  crl [get-operation-info-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(getOperationInfo[# HANDLE]) >
     =>
     < TK : TAKernel | api-call : final(getOperationInfo[# HANDLE]) >
     (msg reqOperationInfoMultiple[] from TK to HANDLE)
-  .
+  if not nullHandle(HANDLE) .
 
   --- req-operation-top-level-handle: the handle answers reqOperationAttr with retOperationAttr,
   --- carrying opObjectAttr, opHandleAttr and KEYS.
@@ -1006,12 +1006,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- get-operation-info-multiple-subroutine: getOperationInfoMultiple moves to final and requests
   --- the multiple operation info from HANDLE with reqOperationInfoMultiple.
-  rl [get-operation-info-multiple-subroutine] :
+  crl [get-operation-info-multiple-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(getOperationInfoMultiple[# HANDLE ZrGetOperationInfoMultiple]) >
     =>
     < TK : TAKernel | api-call : final(getOperationInfoMultiple[# HANDLE ZrGetOperationInfoMultiple]) >
     (msg reqOperationInfoMultiple[] from TK to HANDLE)
-  .
+  if not nullHandle(HANDLE) .
 
   --- req-operation-info-multiple: for an algorithm that expects two keys, the handle answers
   --- reqOperationInfoMultiple with retOperationInfoMultiple built from the keys in KEYS.
@@ -1085,11 +1085,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   op failResetOp : -> ReqId [ctor] .
 
   --- reset-oper-req-reset: the call moves to final and resetOp is sent to HANDLE.
-  rl [reset-oper-req-reset] :
+  crl [reset-oper-req-reset] :
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(resetOperation[# HANDLE]) >
     =>
     < TK : TAKernel | api-call : final(resetOperation[# HANDLE]) >
-    (msg resetOp[# HANDLE] from TK to HANDLE) .
+    (msg resetOp[# HANDLE] from TK to HANDLE)
+  if not nullHandle(HANDLE) .
 
   --- reset-oper-try-reset-success: when the handle has keySet, an active operation returns to
   --- initial and its acc-data is cleared, and finishResetOp is sent to TK.
@@ -1155,8 +1156,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
     =>
     < TK : TAKernel | api-call : final(setOperationKey[# HANDLE # KEY ZrSetOperationKey]) >
     (msg startSetOperationKey[# KEY # SI] from TK to HANDLE)
-  if not nullHandle(KEY)
-  .
+  if not nullHandle(KEY) and not nullHandle(HANDLE) .
 
   --- set-operation-key-req-attribute: HANDLE requests the attributes of KEY with reqAttribute and
   --- keeps the TA TK, KEY and SI in pendingSetOperationKey.
@@ -1691,12 +1691,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- digest-update-subroutine: TEE_DigestUpdate moves to final and sends reqDigestUpdate with DATA to
   --- HANDLE.
-  rl [digest-update-subroutine] :
+  crl [digest-update-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(digestUpdate[# HANDLE # DATA]) >
     =>
     < TK : TAKernel | api-call : final(digestUpdate[# HANDLE # DATA]) >
     (msg reqDigestUpdate[# DATA] from TK to HANDLE)
-  .
+  if not nullHandle(HANDLE) .
 
   --- digest-update-top-level-object: when the state is not extract, DATA is appended to acc-data
   --- and the state becomes active, and finishTopDigestUpdate is sent to HANDLE.
@@ -1746,12 +1746,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- digest-do-final-subroutine: TEE_DigestDoFinal moves to final and sends reqDigestDoFinal with DATA
   --- to HANDLE.
-  rl [digest-do-final-subroutine] :
+  crl [digest-do-final-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(digestDoFinal[# HANDLE # DATA]) >
     =>
     < TK : TAKernel | api-call : final(digestDoFinal[# HANDLE # DATA]) >
     (msg reqDigestDoFinal[# DATA] from TK to HANDLE)
-  .
+  if not nullHandle(HANDLE) .
 
   --- digest-do-final-top-level-capacity: when the output capacity fits digestResult of acc-data and
   --- DATA, the call moves to final and reqDigestDoFinal is sent to HANDLE.
@@ -1827,12 +1827,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   op finishDigestExtract : -> ReqId [ctor] .
 
   --- digest-extract-subroutine: TEE_DigestExtract moves to final and sends reqDigestExtract to HANDLE.
-  rl [digest-extract-subroutine] :
+  crl [digest-extract-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(digestExtract[# HANDLE]) >
     =>
     < TK : TAKernel | api-call : final(digestExtract[# HANDLE]) >
     (msg reqDigestExtract[] from TK to HANDLE)
-  .
+  if not nullHandle(HANDLE) .
 
   --- digest-extract-top-level-capacity: when the output capacity fits digestResult of acc-data, the
   --- call moves to final and reqDigestExtract is sent to HANDLE.
@@ -1910,11 +1910,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   op failCipherInit : -> ReqId [ctor] .
 
   --- cipher-init-req-cipher-init: the call moves to final and reqCipherInit is sent to HANDLE.
-  rl [cipher-init-req-cipher-init] :
+  crl [cipher-init-req-cipher-init] :
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(cipherInit[# HANDLE # IV]) >
     =>
     < TK : TAKernel | api-call : final(cipherInit[# HANDLE # IV]) >
-    (msg reqCipherInit[# IV] from TK to HANDLE) .
+    (msg reqCipherInit[# IV] from TK to HANDLE)
+  if not nullHandle(HANDLE) .
 
   --- cipher-init-initialize-success: when the handle has keySet and is of class clsCipher, the handle gains
   --- init, the operation state toggles between initial and active (other states are kept), and
@@ -1966,11 +1967,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   op failCipher : -> ReqId [ctor] .
 
   --- cipher-update-req-cipher: the call moves to final and reqCipher with DATA is sent to HANDLE.
-  rl [cipher-update-req-cipher] :
+  crl [cipher-update-req-cipher] :
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(cipherUpdate[# HANDLE # DATA]) >
     =>
     < TK : TAKernel | api-call : final(cipherUpdate[# HANDLE # DATA]) >
-    (msg reqCipher[# HANDLE # DATA] from TK to HANDLE) .
+    (msg reqCipher[# HANDLE # DATA] from TK to HANDLE)
+  if not nullHandle(HANDLE) .
 
   --- cipher-update-try-cipher-success: when the operation is active, the handle has init and
   --- keySet, and runOp succeeds on DATA, the CryptoOp and the handle are cleared, and
@@ -2028,11 +2030,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- cipher-do-final-req-cipher-final: the call moves to final and reqCipherFinal with DATA is sent
   --- to HANDLE.
-  rl [cipher-do-final-req-cipher-final] :
+  crl [cipher-do-final-req-cipher-final] :
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(cipherDoFinal[# HANDLE # DATA]) >
     =>
     < TK : TAKernel | api-call : final(cipherDoFinal[# HANDLE # DATA]) >
-    (msg reqCipherFinal[# DATA] from TK to HANDLE) .
+    (msg reqCipherFinal[# DATA] from TK to HANDLE)
+  if not nullHandle(HANDLE) .
 
   --- cipher-do-final-try-cipher-final-success: under the same conditions as
   --- cipher-update-try-cipher-success, the operation becomes initial, the handle loses init, and
@@ -2086,12 +2089,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   op finishInitOperation : -> ReqId [ctor] .
 
   --- mac-init-subroutine: TEE_MACInit moves to final and sends initOperation with IV to HANDLE.
-  rl [mac-init-subroutine] :
+  crl [mac-init-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(macInit[# HANDLE # IV]) >
     =>
     < TK : TAKernel | api-call : final(macInit[# HANDLE # IV]) >
     (msg initOperation[# IV] from TK to HANDLE)
-  .
+  if not nullHandle(HANDLE) .
 
   --- mac-init-success: finishInitOperation returns noReturnCode.
   rl [mac-init-success] :
@@ -2110,12 +2113,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   op finishMacUpdate : -> ReqId [ctor] .
 
   --- mac-update-subroutine: TEE_MACUpdate moves to final and sends reqMACUpdate with DATA to HANDLE.
-  rl [mac-update-subroutine] :
+  crl [mac-update-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(macUpdate[# HANDLE # DATA]) >
     =>
     < TK : TAKernel | api-call : final(macUpdate[# HANDLE # DATA]) >
     (msg reqMACUpdate[# DATA] from TK to HANDLE)
-  .
+  if not nullHandle(HANDLE) .
 
   --- mac-update-top-level-object: when the operation is active, DATA is appended to acc-data, and
   --- finishTopMacUpdate is sent to HANDLE.
@@ -2158,12 +2161,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- mac-compute-final-subroutine: TEE_MACComputeFinal moves to final and sends reqMACComputeFinal
   --- with DATA to HANDLE.
-  rl [mac-compute-final-subroutine] :
+  crl [mac-compute-final-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(macComputeFinal[# HANDLE # DATA]) >
     =>
     < TK : TAKernel | api-call : final(macComputeFinal[# HANDLE # DATA]) >
     (msg reqMACComputeFinal[# DATA] from TK to HANDLE)
-  .
+  if not nullHandle(HANDLE) .
 
   --- mac-compute-final-top-level-capacity: when the operation is active and the output capacity
   --- fits computeMAC of acc-data and DATA, the call moves to final and reqMACComputeFinal is sent to
@@ -2237,12 +2240,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- mac-compare-final-subroutine: TEE_MACCompareFinal moves to final and sends reqMACComputeFinal
   --- with DATA to HANDLE, so that the MAC of DATA is computed.
-  rl [mac-compare-final-subroutine] :
+  crl [mac-compare-final-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(macCompareFinal[# HANDLE # DATA ZsMACCompareFinal2 ZrMACCompareFinal]) >
     =>
     < TK : TAKernel | api-call : final(macCompareFinal[# HANDLE # DATA ZsMACCompareFinal2 ZrMACCompareFinal]) >
     (msg reqMACComputeFinal[# DATA] from TK to HANDLE)
-  .
+  if not nullHandle(HANDLE) .
 
   --- mac-compare-final-success: the computed MAC DATA is compared with MAC through getReturnCode,
   --- and the result is returned.
@@ -2258,12 +2261,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 ------------------------------------------------------------
 
   --- ae-init-subroutine: TEE_AEInit moves to final and sends initOperation with IV to HANDLE.
-  rl [ae-init-subroutine] :
+  crl [ae-init-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(aeInit[# HANDLE # IV]) >
     =>
     < TK : TAKernel | api-call : final(aeInit[# HANDLE # IV]) >
     (msg initOperation[# IV] from TK to HANDLE)
-  .
+  if not nullHandle(HANDLE) .
 
   --- ae-init-success: finishInitOperation returns success.
   rl [ae-init-success] :
@@ -2283,12 +2286,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- ae-update-aad-subroutine: TEE_AEUpdateAAD moves to final and sends reqAEUpdateAAD with DATA to
   --- HANDLE.
-  rl [ae-update-aad-subroutine] :
+  crl [ae-update-aad-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(aeUpdateAAD[# HANDLE # DATA]) >
     =>
     < TK : TAKernel | api-call : final(aeUpdateAAD[# HANDLE # DATA]) >
     (msg reqAEUpdateAAD[# DATA] from TK to HANDLE)
-  .
+  if not nullHandle(HANDLE) .
 
   --- ae-update-aad-top-level-object: when the operation is initial, DATA is appended to acc-data,
   --- and finishTopAEUpdateAAD is sent to HANDLE.
@@ -2330,12 +2333,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   op finishAEUpdate : -> ReqId [ctor] .
 
   --- ae-update-subroutine: TEE_AEUpdate moves to final and sends reqAEUpdate with DATA to HANDLE.
-  rl [ae-update-subroutine] :
+  crl [ae-update-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(aeUpdate[# HANDLE # DATA]) >
     =>
     < TK : TAKernel | api-call : final(aeUpdate[# HANDLE # DATA]) >
     (msg reqAEUpdate[# DATA] from TK to HANDLE)
-  .
+  if not nullHandle(HANDLE) .
 
   --- ae-update-top-level-capacity: when runOp succeeds on KATTRS and DL DATA, the output capacity
   --- fits OPRESULT and the buffers do not overlap, the call moves to final and reqAEUpdate is sent
@@ -2420,10 +2423,11 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- ae-encrypt-final-subroutine: TEE_AEEncryptFinal moves to final and sends reqAEEncryptFinal with
   --- DATA to HANDLE.
-  rl [ae-encrypt-final-subroutine] :
+  crl [ae-encrypt-final-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(aeEncryptFinal[# HANDLE # DATA]) >
     => < TK : TAKernel | api-call : final(aeEncryptFinal[# HANDLE # DATA]) >
-    (msg reqAEEncryptFinal[# DATA] from TK to HANDLE) .
+    (msg reqAEEncryptFinal[# DATA] from TK to HANDLE)
+  if not nullHandle(HANDLE) .
 
   --- ae-encrypt-final-top-level-capacity: for an encrypting operation, the output capacity (if any)
   --- must fit OPRESULT and the tag capacity (if any) must fit computeMAC of acc-data and DATA. When
@@ -2510,10 +2514,11 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- ae-decrypt-final-subroutine: TEE_AEDecryptFinal moves to final and sends reqAEDecryptFinal with
   --- DATA and MAC to HANDLE.
-  rl [ae-decrypt-final-subroutine] :
+  crl [ae-decrypt-final-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(aeDecryptFinal[# HANDLE # DATA # MAC]) >
     => < TK : TAKernel | api-call : final(aeDecryptFinal[# HANDLE # DATA # MAC]) >
-    (msg reqAEDecryptFinal[# DATA # MAC] from TK to HANDLE) .
+    (msg reqAEDecryptFinal[# DATA # MAC] from TK to HANDLE)
+  if not nullHandle(HANDLE) .
 
   --- ae-decrypt-final-top-level-capacity: when runOp succeeds in modeDecrypt and the output
   --- capacity fits OPRESULT, the call moves to final and reqAEDecryptFinal is sent to HANDLE.
@@ -2602,12 +2607,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- asymmetric-encrypt-subroutine: TEE_AsymmetricEncrypt moves to final and sends asymEncrypt with
   --- DATA to HANDLE.
-  rl [asymmetric-encrypt-subroutine] :
+  crl [asymmetric-encrypt-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(asymmetricEncrypt[# HANDLE # DATA]) >
     =>
     < TK : TAKernel | api-call : final(asymmetricEncrypt[# HANDLE # DATA]) >
     (msg asymEncrypt[# DATA] from TK to HANDLE)
-  .
+  if not nullHandle(HANDLE) .
 
   --- asymmetric-encrypt-top-level-capacity: when the output capacity fits the RSA key size in bytes
   --- and DATA is a valid encryption input, the call moves to final and asymEncrypt is sent to
@@ -2718,12 +2723,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- asymmetric-decrypt-subroutine: TEE_AsymmetricDecrypt moves to final and sends asymDecrypt with
   --- DATA to HANDLE.
-  rl [asymmetric-decrypt-subroutine] :
+  crl [asymmetric-decrypt-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(asymmetricDecrypt[# HANDLE # DATA]) >
     =>
     < TK : TAKernel | api-call : final(asymmetricDecrypt[# HANDLE # DATA]) >
     (msg asymDecrypt[# DATA] from TK to HANDLE)
-  .
+  if not nullHandle(HANDLE) .
 
   --- asymmetric-decrypt-top-level-capacity: when runOp succeeds in modeDecrypt, the ciphertext has
   --- the RSA key size and is valid for ALGO, and the output capacity fits OPRESULT, the call moves
@@ -2869,12 +2874,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- asymmetric-sign-digest-subroutine: TEE_AsymmetricSignDigest moves to final and sends
   --- asymSignDigest with DATA to HANDLE.
-  rl [asymmetric-sign-digest-subroutine] :
+  crl [asymmetric-sign-digest-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(asymmetricSignDigest[# HANDLE # DATA]) >
     =>
     < TK : TAKernel | api-call : final(asymmetricSignDigest[# HANDLE # DATA]) >
     (msg asymSignDigest[# DATA] from TK to HANDLE)
-  .
+  if not nullHandle(HANDLE) .
 
   --- asymmetric-sign-digest-top-level-capacity: when the output capacity fits
   --- signatureSize(KEYSIZE), the call moves to final and asymSignDigest is sent to HANDLE.
@@ -2965,12 +2970,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- asymmetric-verify-digest-subroutine: TEE_AsymmetricVerifyDigest moves to final and sends
   --- asymVerifyDigest with DATA to HANDLE.
-  rl [asymmetric-verify-digest-subroutine] :
+  crl [asymmetric-verify-digest-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(asymmetricVerifyDigest[# HANDLE # DATA ZsAsymmetricVerifyDigest2 ZrAsymmetricVerifyDigest]) >
     =>
     < TK : TAKernel | api-call : final(asymmetricVerifyDigest[# HANDLE # DATA ZsAsymmetricVerifyDigest2 ZrAsymmetricVerifyDigest]) >
     (msg asymVerifyDigest[# DATA] from TK to HANDLE)
-  .
+  if not nullHandle(HANDLE) .
 
   --- asymmetric-verify-digest-top-level-object: in modeVerify, when DATA has a valid digest length
   --- for ALGO, the CryptoOp and the handle are cleared, and finishTopAsymVerifyDigest
@@ -3035,10 +3040,11 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 
   --- derive-key-subroutine: TEE_DeriveKey moves to final and sends reqDeriveKey with ATTRS and DERIVED
   --- to HANDLE.
-  rl [derive-key-subroutine] :
+  crl [derive-key-subroutine] :
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(deriveKey[# HANDLE # ATTRS # DERIVED]) >
     => < TK : TAKernel | api-call : final(deriveKey[# HANDLE # ATTRS # DERIVED]) >
-       (msg reqDeriveKey[# ATTRS # DERIVED] from TK to HANDLE) .
+       (msg reqDeriveKey[# ATTRS # DERIVED] from TK to HANDLE)
+  if not nullHandle(HANDLE) .
 
   --- derive-key-top-level-operation: when the operation mode is modeDerive, the CryptoOp is
   --- cleared, and deriveTopTransient with DERIVED is sent to HANDLE.

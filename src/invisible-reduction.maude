@@ -15,7 +15,8 @@
 ---      object side; a step that the spec splits into several rules has all of them.  Rules of
 ---      behavior that the artifact does not have, and the API functions without artifact G
 ---      rules, stay rules.
---- The mapping is recorded in docs/invisible-g/decisions.tsv of tee-formal-analysis.
+--- The rules are the [invisible] rules of case-studies/mqttz/mqttz.toml of tee-formal-analysis,
+--- and the file is generated from them by its tools/gen-invisible.py.
 ---
 --- The feature INVISIBLE (mk/features.mk of tee-formal-analysis, off by default) keeps this file
 --- out of a build.
@@ -548,11 +549,12 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
   .
 
   --- populate-transient-subroutine
-  eq
+  ceq
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(populateTransientObject[# HANDLE # ATTRS]) >
   =
     < TK : TAKernel | api-call : final(populateTransientObject[# HANDLE # ATTRS]) >
     (msg reqPopulateTransient[# ATTRS] from TK to HANDLE)
+  if not nullHandle(HANDLE)
   .
 
   --- populate-transient-top-level-handle
@@ -1027,11 +1029,12 @@ omod DATA-STREAM-OBJECT-BEHAVIOR-INVISIBLE is
   var PARAMS : ArgList .
 
   --- read-object-data-get-storage-status
-  eq
+  ceq
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(readObjData[# HI ZsReadObjectData1 ZrReadObjectData]) , storage : SI >
   =
     < TK : TAKernel | api-call : exec(readObjData[# HI ZsReadObjectData1 ZrReadObjectData] , 0) >
     (msg getStatus[] from TK to SI)
+  if not nullHandle(HI)
   .
 
   --- read-object-data-storage-status-check
@@ -1066,11 +1069,12 @@ omod DATA-STREAM-OBJECT-BEHAVIOR-INVISIBLE is
   .
 
   --- write-object-data-subroutine
-  eq
-    < TK : TAKernel | status : (normal).AppStatus , api-call : init(writeObjectData[PARAMS]) , storage : SI >
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(writeObjectData[# HANDLE PARAMS]) , storage : SI >
   =
-    < TK : TAKernel | api-call : exec(writeObjectData[PARAMS] , 0) >
+    < TK : TAKernel | api-call : exec(writeObjectData[# HANDLE PARAMS] , 0) >
     (msg getStatus[] from TK to SI)
+  if not nullHandle(HANDLE)
   .
 
   --- write-object-data-subroutine
@@ -1232,11 +1236,12 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
   .
 
   --- reset-oper-req-reset
-  eq
+  ceq
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(resetOperation[# HANDLE]) >
   =
     < TK : TAKernel | api-call : final(resetOperation[# HANDLE]) >
     (msg resetOp[# HANDLE] from TK to HANDLE)
+  if not nullHandle(HANDLE)
   .
 
   --- reset-oper-try-reset-success
@@ -1264,7 +1269,7 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
   =
     < TK : TAKernel | api-call : final(setOperationKey[# HANDLE # KEY ZrSetOperationKey]) >
     (msg startSetOperationKey[# KEY # SI] from TK to HANDLE)
-  if not nullHandle(KEY)
+  if not nullHandle(KEY) and not nullHandle(HANDLE)
   .
 
   --- set-operation-key-req-attribute
@@ -1388,11 +1393,12 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
   .
 
   --- cipher-init-req-cipher-init
-  eq
+  ceq
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(cipherInit[# HANDLE # IV]) >
   =
     < TK : TAKernel | api-call : final(cipherInit[# HANDLE # IV]) >
     (msg reqCipherInit[# IV] from TK to HANDLE)
+  if not nullHandle(HANDLE)
   .
 
   --- cipher-init-initialize-success
@@ -1427,11 +1433,12 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
   .
 
   --- cipher-update-req-cipher
-  eq
+  ceq
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(cipherUpdate[# HANDLE # DATA]) >
   =
     < TK : TAKernel | api-call : final(cipherUpdate[# HANDLE # DATA]) >
     (msg reqCipher[# HANDLE # DATA] from TK to HANDLE)
+  if not nullHandle(HANDLE)
   .
 
   --- cipher-update-try-cipher-success
@@ -1484,12 +1491,7 @@ endom
 omod PERSISTENT-PANIC-INVISIBLE is
   pr PERSISTENT-PANIC .
 
-  vars ZsRenamePersistentObject1 : Value .
-  vars ZrCloseAndDeletePersistentObject1 ZrRenamePersistentObject : ArgList .
   var TK : Oid .
-  var HANDLE : Oid .
-  var PARAMS : ArgList .
-  var DATAFLAGS : Set{DataAccessFlag} .
   var ARGS : ArgList .
   var SI : Oid .
   var STATUS : StorageStatus .

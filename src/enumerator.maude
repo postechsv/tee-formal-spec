@@ -173,8 +173,7 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(resetPersistentObjectEnumerator[# HANDLE]) >
     =>
     < TK : TAKernel | api-call : return(resetPersistentObjectEnumerator[# noReturnCode]) >
-  if nullHandle(HANDLE)
-  .
+  if nullHandle(HANDLE) .
 
 ------------------------------------------------------------
 --- 'TEE_StartPersistentObjectEnumerator'
@@ -195,8 +194,7 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
     =>
     < TK : TAKernel | api-call : exec(startPersistentObjectEnumerator[# HANDLE # STORID] , 0) >
     (msg getStatus[] from TK to SI)
-  if supportedStorage(STORID)
-  .
+  if supportedStorage(STORID) and not nullHandle(HANDLE) .
 
   --- start-enumerator-storage-id-not-found: an unsupported storage identifier returns
   --- errorItemNotFound.
@@ -204,8 +202,7 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(startPersistentObjectEnumerator[# HANDLE # STORID]) >
     =>
     < TK : TAKernel | api-call : return(startPersistentObjectEnumerator[# errorItemNotFound]) >
-  if not supportedStorage(STORID)
-  .
+  if not supportedStorage(STORID) and not nullHandle(HANDLE) .
 
   --- start-enumerator-status-normal: Stage 0.  A normal storage status makes the TA ask the storage
   --- for its file list (getPersistentList, stage 1).
@@ -282,12 +279,12 @@ omod ENUMERATOR-OBJECT-BEHAVIOR is
   op retNextObject : -> ReqId [ctor] .
 
   --- get-next-persistent-subroutine (request): the TA asks the storage for its status (getStatus).
-  rl [get-next-persistent-subroutine] :
-    < TK : TAKernel | status : (normal).AppStatus , api-call : init(getNextPersistentObject[PARAMS]) , storage : SI >
+  crl [get-next-persistent-subroutine] :
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(getNextPersistentObject[# HANDLE PARAMS]) , storage : SI >
     =>
-    < TK : TAKernel | api-call : exec(getNextPersistentObject[PARAMS] , 0) >
+    < TK : TAKernel | api-call : exec(getNextPersistentObject[# HANDLE PARAMS] , 0) >
     (msg getStatus[] from TK to SI)
-  .
+  if not nullHandle(HANDLE) .
 
   --- get-next-persistent-subroutine (status): a normal status makes the TA send reqNextObjectId
   --- to the handle.

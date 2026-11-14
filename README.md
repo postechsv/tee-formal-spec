@@ -1,71 +1,28 @@
 # TEE Formal Specification
 
-An executable [Maude](https://maude.cs.illinois.edu/) specification of the GlobalPlatform TEE Internal Core API. It models successful API calls, error returns, panics, storage conditions, and the state transitions of cryptographic operations, together with the trusted application (TA) kernel and the storage and OS services that the API calls depend on. `src/main.maude` is the entry point for the specification.
+An executable [Maude](https://maude.cs.illinois.edu/) specification of the GlobalPlatform TEE Internal Core API. It models successful API calls, error returns, panics, storage conditions, and the state transitions of cryptographic operations, together with the trusted application (TA) kernel and the storage and OS services that the API calls depend on.
+
+This repository holds the specification only. Building variants of it, transforming it (DM-Check, maude2lean, ghost composition), running its test suites and analyzing applications on top of it is done in [tee-formal-analysis](https://github.com/postechsv/tee-formal-analysis), which includes this repository as a submodule.
 
 ## Features
 
 - Generic, transient, and persistent object APIs
 - Persistent data stream access and persistent object enumeration
-- Shared memory of memory reference parameters, with an optional rogue client (switchable with the `SHM` feature)
-- Cryptographic operations (switchable with the `CRYPTO` feature)
+- Shared memory of memory reference parameters, with an optional rogue client
+- Cryptographic operations
 - Programmer errors and invalid handles, modeled as panics
 - Model programs (`src/imp.maude`) whose calls are translated into TEE API calls (`src/tee-imp.maude`)
-- Build variants that drop feature groups or individual modules
+- The invisible-transition reduction of the paper (`src/invisible-reduction.maude`)
 
-## Requirements
+## Using the specification
 
-- Maude 3
-- GNU Make
-- Python 3 (for the test runners and the DM-Check generator)
-
-`make` reads the Maude path from `MAUDE` in a `config.mk` file at the repository root. This file is gitignored, so each user creates it:
-
-```make
-# config.mk
-MAUDE := /path/to/maude
-```
-
-Alternatively, set the `MAUDE_BIN` environment variable. The Python test runner looks for Maude in this order: `MAUDE_BIN`, a sibling `tee-formal-analysis/3rd_party` (or `zenodo/tee-formal-analysis/3rd_party`) binary, then `maude` on `PATH`.
-
-`make lean` runs [maude2lean](https://github.com/fadoss/maude2lean); set `MAUDE2LEAN := /path/to/maude2lean` in `config.mk` when it is not on `PATH`.
-
-## Quick start
-
-Build the default configuration and run both test suites:
+`src/main.maude` is the entry point and needs only Maude 3:
 
 ```bash
-make            # build build/default/src and build/default/tests
-make test       # build, then run the API suite and the check suite
-make help       # list features, test selection, and current values
+maude src/main.maude
 ```
 
-Build variants use a separate build directory selected with `NAME`:
-
-```bash
-make NAME=nocrypto CRYPTO=0 test   # without the cryptographic operation APIs
-make NAME=t WITHOUT=MODULE         # drop a module; MODULE must be a pr line in src/main.maude
-make DMC=1                         # DM-Check-compatible build (tools/gen-dmc.py)
-make NAME=t DMC=1 M2L=1            # maude2lean-compatible build (tools/gen-maude2lean.py on the DMC build)
-make NAME=t lean                   # translate the M2L build to Lean (build/t/lean/TeeSpec.lean)
-make V=1 test                      # stream the Maude output of each test file
-```
-
-Run one suite or clean up:
-
-```bash
-make test-api                # API-level black-box searches (tests/api)
-make test-checks             # completion and GlobalPlatform conformance checks
-make check-dmc               # regenerate the DM-Check build and run its ground checks
-make check-m2l               # regenerate the maude2lean build and run its checks
-make clean NAME=default      # remove build/default
-make distclean               # remove build/
-```
-
-Each build directory `build/$(NAME)/` holds a copy of the selected `src/` and `tests/` trees (or the DM-Check output with `DMC=1`) and the settings used for the build. Settings are cached in `build/$(NAME)/config.mk`.
-
-## Feature selection
-
-Features are defined in `mk/features.mk`. Each one is a variable set to `1` (on, the default) or `0` (off), for example `make CRYPTO=0`.
+The API groups below are feature groups: tee-formal-analysis can build the specification without some of them (`make CRYPTO=0`), which drops their files from `src/main.maude` and their tests.
 
 | Feature | Covers | Requires |
 | --- | --- | --- |
@@ -77,33 +34,21 @@ Features are defined in `mk/features.mk`. Each one is a variable set to `1` (on,
 | `ENUMERATOR` | Persistent object enumeration | `PERSISTENT` |
 | `SHM` | Shared memory of memory reference parameters | |
 
-When a feature is off, its files are dropped from `src/main.maude` and its tests are skipped.
-
 ## Repository layout
 
 ```text
 tee-formal-spec/
-├── Makefile              # build driver and test targets
-├── mk/
-│   └── features.mk       # feature table
-├── src/                  # Maude specification
+├── src/                  # Maude specification (src/main.maude loads it)
 ├── tests/
 │   ├── api/              # API-level black-box searches (test-*.maude)
-│   ├── cases/            # API-specific test cases (not run by make)
+│   ├── cases/            # API-specific test cases
 │   ├── completion/       # completion regressions, one file per API group
 │   ├── gp-conformance/   # GlobalPlatform conformance reductions, one file per module group
-│   ├── run-api-suite.py  # runner for tests/api
-│   └── run-checks.py     # runner for completion/ and gp-conformance/
-├── tools/
-│   ├── select-main.awk   # filter that builds src/main.maude for a feature selection
-│   ├── gen-dmc.py        # DM-Check generator
-│   ├── gen-maude2lean.py # maude2lean pass over the DM-Check build (sort tests -> predicates)
-│   └── gen-docs.py       # documentation site generator (make docs)
+│   └── main.maude        # shared test modules
+├── docs/annotations.md   # the machine-readable module annotations of src/
 ├── LICENSE
 └── README.md
 ```
-
-`build/` is created by `make` and is not tracked.
 
 ### API behavior models
 
@@ -158,28 +103,16 @@ Handles are top-level objects in the configuration rather than nested inside the
 
 `tee-panic.maude` evaluates invalid handles and other GlobalPlatform programmer errors against the active `TAKernel` call state and top-level handle objects. A panic path converges to `status : panic` on the `TAKernel`, with the API call in a finished state.
 
-## Documentation site
-
-`make docs` builds a static HTML site from `src/` into `build/docs/` (generated by `tools/gen-docs.py`, standard library only):
-
-```bash
-make docs                                     # build build/docs and check its links
-xdg-open build/docs/index.html                # or open the file in a browser
-python3 tools/gen-docs.py --src src --out build/docs --check   # the same, run directly
-```
-
-The index page's body is the hand-written fragment `docs/overview.html`, in which `[[op:Name]]`-style macros (`mod`, `sort`, `class`, `op`, `rule`, `attr`, `file`; optional `|text`) become links and unknown targets fail the build; the generator adds the site chrome and a table of the files. The site opens from `file://` and needs no network access. It has one page per `src/*.maude` file, where every identifier links to its definition and doc comments appear as prose; and index pages for modules and views, sorts and classes (with class attributes), operators, and rule and equation labels. `--check` verifies every local link and `#anchor`, and exits nonzero if one is missing.
-
 ## Testing
 
-The test groups are:
+The test files are plain Maude:
 
-- `tests/api`: black-box searches that verify external API calls and returns (`make test-api`)
-- `tests/completion/<group>.maude`: checks that completed paths converge to final success, error, or panic states (`make test-checks`)
-- `tests/gp-conformance/<group>.maude`: focused reductions derived from GlobalPlatform tables and clauses (`make test-checks`)
-- `tests/cases`: API-specific test cases; not run by the make targets
+- `tests/api`: black-box searches that verify external API calls and returns
+- `tests/completion/<group>.maude`: checks that completed paths converge to final success, error, or panic states
+- `tests/gp-conformance/<group>.maude`: focused reductions derived from GlobalPlatform tables and clauses
+- `tests/cases`: API-specific test cases
 
-`make test` runs the API suite and the check suite. Each runs even if the other fails, and the exit status is nonzero if either fails. Without `V=1`, only summary lines are printed, for example `[test-suite] API-level: ...` and `[checks] FILE: ...`.
+In tee-formal-analysis, `make test` builds the specification and runs the API suite and the check suite on it (`make test-api`, `make test-checks`).
 
 ## License
 

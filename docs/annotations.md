@@ -2,7 +2,7 @@
 
 Every module in `src/*.maude` carries a machine-readable annotation. The annotation is a
 Maude comment, so it does not change the specification. The documentation generator
-(`tools/gen-docs.py`) uses it to group modules by role and to link related modules.
+(`tools/gen-docs.py` of tee-formal-analysis) uses it to group modules by role and to link related modules.
 
 ## Format
 
@@ -46,7 +46,7 @@ data, constants.
 ## Feature groups
 
 `@feature` names the API group a module belongs to. Groups follow the feature names in
-`mk/features.mk`, written in lower case with hyphens:
+`mk/features.mk` of tee-formal-analysis, written in lower case with hyphens:
 
 | `@feature` | `mk/features.mk` feature |
 |---|---|

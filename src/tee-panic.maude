@@ -82,11 +82,12 @@ omod GENERAL-PANIC is
 
   --- null-handle-panic: an init call of an API whose handle argument HANDLE is the null handle
   --- panics the TA when nullHandlePanics(API) holds.  The TA status becomes panic, and the
-  --- api-call is left unchanged.
+  --- api-call becomes noCall, so no rule of the call continues: like a panic of the paper
+  --- artifact, the call ends without a return value.  The other panic rules of an init call
+  --- whose conditions do not exclude the normal rules of the call do the same.
   crl [null-handle-panic] :
-    < TK : TAKernel | status : (normal).AppStatus,
-                      api-call : init(API[# HANDLE PARAMS]) >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(API[# HANDLE PARAMS]) >
     =>
-    < TK : TAKernel | status : panic >
+    < TK : TAKernel | status : panic , api-call : noCall >
   if nullHandle(HANDLE) and nullHandlePanics(API) .
 endom

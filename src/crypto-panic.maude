@@ -52,10 +52,10 @@ omod CRYPTO-PANIC is
   --- operation-api-class-mismatch-panic: the operation class OC is assigned to OpHandle.  A class mismatch
   --- is a programmer error and sets the kernel status to panic before an operation-specific rule runs.
   ceq [operation-api-class-mismatch-panic] :
-    < TK : TAKernel | status : (normal).AppStatus, api-call : init(API[# HANDLE PARAMS]) >
+    < TK : TAKernel | api-call : init(API[# HANDLE PARAMS]) >
     < HANDLE : OpHandle | oid : CI, opclass : OC >
     =
-    < TK : TAKernel | status : panic >
+    < TK : TAKernel | status : panic , api-call : noCall >
     < HANDLE : OpHandle | >
   if not operationClassCompatible(API, OC) .
 
@@ -66,7 +66,7 @@ omod CRYPTO-PANIC is
   --- the two-key API. A handle in the init state makes TEE_SetOperationKey2 set the kernel status
   --- to panic.
   rl [set-operation-key2-initialized-panic] :
-    < TK : TAKernel | status : (normal).AppStatus, api-call : init(setOperationKey2[# HANDLE PARAMS]) >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(setOperationKey2[# HANDLE PARAMS]) >
     < HANDLE : OpHandle | state : handleState((init, HSF)) >
     =>
     < TK : TAKernel | status : panic >

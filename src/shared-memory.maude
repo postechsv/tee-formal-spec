@@ -519,19 +519,20 @@ omod SHARED-MEMORY-BEHAVIOR is
   if writable(D) /\ size(DL) <= N0 .
 
   --- shm-write-input, shm-write-overflow: a write to an input memory reference, or past its
-  --- original size, is a programmer error: the TA panics and its program stops.
+  --- original size, is a programmer error: the TA panics.  Its program is left at the write, which
+  --- no rule continues (as the other panic rules leave the call).
   rl [shm-write-input] :
     < TI : TrustedApp | proc : (k({ shmWrite(mref(O), # DL) } ~> K) KS), status : (normal).AppStatus >
     < O : MemrefOp | dir : mrIn >
     =>
-    < TI : TrustedApp | proc : (k(.K) KS), status : panic >
+    < TI : TrustedApp | status : panic >
     < O : MemrefOp | > .
 
   crl [shm-write-overflow] :
     < TI : TrustedApp | proc : (k({ shmWrite(mref(O), # DL) } ~> K) KS), status : (normal).AppStatus >
     < O : MemrefOp | size0 : N0 >
     =>
-    < TI : TrustedApp | proc : (k(.K) KS), status : panic >
+    < TI : TrustedApp | status : panic >
     < O : MemrefOp | >
   if N0 < size(DL) .
 
@@ -566,7 +567,7 @@ omod SHARED-MEMORY-BEHAVIOR is
     < TI : TrustedApp | proc : (k(bind((pv(TEE-ObjectId Y, mref(O)), PVL)) ~> K) KS),
                         status : (normal).AppStatus >
     =
-    < TI : TrustedApp | proc : (k(.K) KS), status : panic > .
+    < TI : TrustedApp | status : panic > .
 
   --- shm-tamper: a rogue client changes the data of a live memory reference to its block to one
   --- of the alternatives of the block.

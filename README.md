@@ -2,7 +2,7 @@
 
 An executable [Maude](https://maude.cs.illinois.edu/) specification of the GlobalPlatform TEE Internal Core API. It models successful API calls, error returns, panics, storage conditions, and the state transitions of cryptographic operations, together with the trusted application (TA) kernel and the storage and OS services that the API calls depend on.
 
-This repository holds the specification only. Building variants of it, transforming it (DM-Check, maude2lean, ghost composition), running its test suites and analyzing applications on top of it is done in [tee-formal-analysis](https://github.com/postechsv/tee-formal-analysis), which includes this repository as a submodule.
+This repository holds the specification, its build (feature selection) and its test suites. Transforming it (DM-Check, maude2lean, ghost composition) and analyzing applications on top of it is done in [tee-formal-analysis](https://github.com/postechsv/tee-formal-analysis), which fetches a revision of this repository and builds it with `make`.
 
 ## Features
 
@@ -22,7 +22,24 @@ This repository holds the specification only. Building variants of it, transform
 maude src/main.maude
 ```
 
-The API groups below are feature groups: tee-formal-analysis can build the specification without some of them (`make CRYPTO=0`), which drops their files from `src/main.maude` and their tests.
+## Building
+
+`make` builds a feature configuration of the specification into `build/<NAME>/` (GNU Make, Python 3):
+
+```bash
+make                         # build/default/src and build/default/tests
+make NAME=t CRYPTO=0         # a build without the cryptographic operation API
+make NAME=t test             # build, then run the API suite and the check suite on it
+make help                    # features, settings and targets
+```
+
+Set the Maude binary in `config.mk` (gitignored) for the tests:
+
+```make
+MAUDE := /path/to/maude
+```
+
+The API groups below are feature groups (`features.mk`): a build without some of them (`make CRYPTO=0`) drops their files from `src/main.maude` and their tests.
 
 | Feature | Covers | Requires |
 | --- | --- | --- |
@@ -46,6 +63,11 @@ tee-formal-spec/
 │   ├── gp-conformance/   # GlobalPlatform conformance reductions, one file per module group
 │   └── main.maude        # shared test modules
 ├── docs/annotations.md   # the machine-readable module annotations of src/
+├── tools/
+│   ├── build/            # select-main.awk: src/main.maude of a feature configuration
+│   └── test/             # the test runners (run-api-suite.py, run-checks.py)
+├── Makefile              # build, tests
+├── features.mk           # feature groups a build can drop
 ├── LICENSE
 └── README.md
 ```
@@ -112,7 +134,7 @@ The test files are plain Maude:
 - `tests/gp-conformance/<group>.maude`: focused reductions derived from GlobalPlatform tables and clauses
 - `tests/cases`: API-specific test cases
 
-In tee-formal-analysis, `make test` builds the specification and runs the API suite and the check suite on it (`make test-api`, `make test-checks`).
+`make test` builds the specification and runs the API suite and the check suite on it (`make test-api`, `make test-checks`).
 
 ## License
 

@@ -20,52 +20,52 @@ mod SHM-TEST is
 
   --- dfProg reads the input twice: the check and the use may see different data.
   op dfProg : -> Program .
-  eq dfProg = void check(TEE-Memref buf, TEE-Buffer * res) {
+  eq dfProg = void check(TEE-Memref buf, TEE-Buffer & res) {
       if (shmData(buf) == # data(1)) { res := shmData(buf) ; } else { res := # noData ; } } .
   --- safeProg reads the input once into private memory, then checks and uses the copy.
   op safeProg : -> Program .
-  eq safeProg = void check(TEE-Memref buf, TEE-Buffer * res) {
+  eq safeProg = void check(TEE-Memref buf, TEE-Buffer & res) {
       TEE-Buffer x ; x := shmData(buf) ;
       if (x == # data(1)) { res := x ; } else { res := # noData ; } } .
   --- fillProg writes two fragments and returns the size 1.
   op fillProg : -> Program .
-  eq fillProg = void fill(TEE-Memref buf, TEE-Buffer * res) {
+  eq fillProg = void fill(TEE-Memref buf, TEE-Buffer & res) {
       shmWrite(buf, # (data(7) data(8))) ; shmSetSize(buf, # 1) ; res := # noData ; } .
   --- overProg writes past the original size 2.
   op overProg : -> Program .
-  eq overProg = void fill(TEE-Memref buf, TEE-Buffer * res) {
+  eq overProg = void fill(TEE-Memref buf, TEE-Buffer & res) {
       shmWrite(buf, # (data(7) data(8) data(9))) ; res := # noData ; } .
   --- bigProg returns the size 5, larger than the original size 2.
   op bigProg : -> Program .
-  eq bigProg = void fill(TEE-Memref buf, TEE-Buffer * res) {
+  eq bigProg = void fill(TEE-Memref buf, TEE-Buffer & res) {
       shmWrite(buf, # data(7)) ; shmSetSize(buf, # 5) ; res := # noData ; } .
 
   --- sizeProg answers a null reference with the required size 3.
   op sizeProg : -> Program .
-  eq sizeProg = void fill(TEE-Memref buf, TEE-Buffer * res) {
+  eq sizeProg = void fill(TEE-Memref buf, TEE-Buffer & res) {
       if (shmSize(buf) == # 0) { shmSetSize(buf, # 3) ; } res := # noData ; } .
   --- cmarProg returns data(5) when TEE_CheckMemoryAccessRights with the flags MA succeeds on
   --- the reference, and data(6) otherwise.
   op cmarProg : MemAccess -> Program .
   var MA : MemAccess .
-  eq cmarProg(MA) = void check(TEE-Memref buf, TEE-Buffer * res) {
+  eq cmarProg(MA) = void check(TEE-Memref buf, TEE-Buffer & res) {
       if (checkMemoryAccessRights(MA, buf) == # success) { res := # data(5) ; }
       else { res := # data(6) ; } } .
   --- privProg checks a private buffer without _ANY_OWNER.
   op privProg : -> Program .
-  eq privProg = void check(TEE-Memref buf, TEE-Buffer * res) {
+  eq privProg = void check(TEE-Memref buf, TEE-Buffer & res) {
       TEE-Buffer x ; x := shmData(buf) ;
       if (checkMemoryAccessRights(macc(true, true, false), x) == # success) { res := # data(5) ; }
       else { res := # data(6) ; } } .
   --- oidProg passes the reference as the object identifier of TEE_OpenPersistentObject.
   op oidProg : -> Program .
-  eq oidProg = void check(TEE-Memref buf, TEE-Buffer * res) {
+  eq oidProg = void check(TEE-Memref buf, TEE-Buffer & res) {
       TEE-Handle oh ; TEE-Result rc ;
       rc := openPersistentObject(# storagePrivate, buf, # accessRead, oh) ; res := # noData ; } .
   --- copyProg passes the reference to a buffer parameter, which reads it once.
   op copyProg : -> Program .
   eq copyProg = TEE-Buffer copy(TEE-Buffer dd) { return dd ; }
-      void check(TEE-Memref buf, TEE-Buffer * res) { res := copy(buf) ; } .
+      void check(TEE-Memref buf, TEE-Buffer & res) { res := copy(buf) ; } .
 
   --- client(S): the RA testRa runs the program S, and has a session sid with testTa.
   op client : Program Program -> Configuration .

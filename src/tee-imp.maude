@@ -72,12 +72,13 @@ fmod TEE-API-IMP-PROG-AUX is
         return E ;
       ) [owise] .
 
-  --- A stub whose first output parameter is 'ret also declares 'ret.  The return code is the
-  --- first of the values that F returns, and $out assigns it to 'ret like any other output.
+  --- A stub whose first output parameter is 'ret also declares 'ret, of the return type T.  The
+  --- return code is the first of the values that F returns, and $out assigns it to 'ret like
+  --- any other output.
   eq defineSysCall(T F(XL), @inArgs(IN), @outArgs(('ret, OUT)), @body(S), @return(E))
    = $libFun(T F(XL),
         $sig(IN, ('ret, OUT)) ~>
-        alloc(auto 'ret) ~>
+        alloc(T 'ret) ~>
         $inH(argNil, IN) ~>
         $wait(F) ~>
         $out(('ret, OUT)) ~>
@@ -321,7 +322,7 @@ mod TRANSIENT-OBJECT-TEE-CALL is
   op AllocateTransientObjectLib : -> Program .
   eq AllocateTransientObjectLib 
   = defineSysCall(
-      TEE-Result allocateTransientObject(TEE-ObjectType 'objType, int 'size, TEE-Handle * 'handle),
+      TEE-Result allocateTransientObject(TEE-ObjectType 'objType, int 'size, TEE-Handle & 'handle),
       @inArgs('objType, 'size),                 --- should match with the makeCall              
       @outArgs('ret, 'handle),                  --- should match with the makeReturnStmt
       @body(skip),
@@ -340,7 +341,7 @@ mod TRANSIENT-OBJECT-TEE-CALL is
   op FreeTransientObjectLib : -> Program .
   eq FreeTransientObjectLib 
   = defineSysCall(
-      int freeTransientObject(TEE-Handle * 'handle),
+      int freeTransientObject(TEE-Handle & 'handle),
       @inArgs('handle),                     --- should match with the makeCall              
       @outArgs(nil),                        --- should match with the makeReturnStmt
       @body(skip),
@@ -420,7 +421,7 @@ mod PERSISTENT-OBJECT-TEE-CALL is
   op OpenPersistentObjectLib : -> Program .
   eq OpenPersistentObjectLib 
   = defineSysCall(
-      TEE-Result openPersistentObject(TEE-StorageId 'storageId, TEE-ObjectId 'fileId, TEE-DataFlags 'dataFlags, TEE-Handle * 'handle),
+      TEE-Result openPersistentObject(TEE-StorageId 'storageId, TEE-ObjectId 'fileId, TEE-DataFlags 'dataFlags, TEE-Handle & 'handle),
       @inArgs('storageId, 'fileId, 'dataFlags), --- should match with the makeCall              
       @outArgs('ret, 'handle),                  --- should match with the makeReturnStmt
       @body(skip),
@@ -440,7 +441,7 @@ mod PERSISTENT-OBJECT-TEE-CALL is
   = defineSysCall(
       TEE-Result createPersistent(TEE-StorageId 'storageId, TEE-ObjectId 'fileId, 
                                  TEE-DataFlags 'dataFlags, TEE-Handle 'handle, TEE-Buffer 'data, TEE-Size 'size, 
-                                 TEE-Handle * 'optHandle),                   --- signature 
+                                 TEE-Handle & 'optHandle),                   --- signature 
       @inArgs('storageId, 'fileId, 'dataFlags, 'handle, 'data, 'size, 'optHandle),                   
       @outArgs('ret, 'optHandle),                  
       @body(skip),
@@ -459,7 +460,7 @@ mod PERSISTENT-OBJECT-TEE-CALL is
   op CloseAndDeletePersistentObjectLib : -> Program .
   eq CloseAndDeletePersistentObjectLib 
   = defineSysCall(
-      TEE-Result closeAndDeletePersistentObject1(TEE-Handle * 'handle),
+      TEE-Result closeAndDeletePersistentObject1(TEE-Handle & 'handle),
       @inArgs('handle),                         --- should match with the makeCall              
       @outArgs('ret, 'handle),                  --- should match with the makeReturnStmt
       @body(skip),
@@ -482,7 +483,7 @@ mod PERSISTENT-OBJECT-TEE-CALL is
   op ReadObjectDataLib : -> Program .
   eq ReadObjectDataLib
   = defineSysCall(
-      TEE-Result readObjData(TEE-Handle 'obj, TEE-Size 'size, TEE-Buffer * 'buf),
+      TEE-Result readObjData(TEE-Handle 'obj, TEE-Size 'size, TEE-Buffer & 'buf),
       @inArgs('obj, 'size),
       @outArgs('ret, 'buf),
       @body(skip),
@@ -502,7 +503,7 @@ mod PERSISTENT-OBJECT-TEE-CALL is
   op TruncateObjectDataLib : -> Program .
   eq TruncateObjectDataLib
   = defineSysCall(
-      int truncateObjectData(TEE-Handle 'obj, TEE-Size 'size, TEE-Result * 'code),
+      int truncateObjectData(TEE-Handle 'obj, TEE-Size 'size, TEE-Result & 'code),
       @inArgs('obj, 'size),
       @outArgs('code),
       @body(skip),
@@ -512,7 +513,7 @@ mod PERSISTENT-OBJECT-TEE-CALL is
   op SeekObjectDataLib : -> Program .
   eq SeekObjectDataLib
   = defineSysCall(
-      int seekObjectData(TEE-Handle 'obj, int 'offset, TEE-Whence 'whence, TEE-Result * 'code),
+      int seekObjectData(TEE-Handle 'obj, int 'offset, TEE-Whence 'whence, TEE-Result & 'code),
       @inArgs('obj, 'offset, 'whence),
       @outArgs('code),
       @body(skip),
@@ -522,7 +523,7 @@ mod PERSISTENT-OBJECT-TEE-CALL is
   op RenamePersistentObjectLib : -> Program .
   eq RenamePersistentObjectLib
   = defineSysCall(
-      int renamePersistentObject(TEE-Handle 'obj, TEE-ObjectId 'newId, TEE-Result * 'code),
+      int renamePersistentObject(TEE-Handle 'obj, TEE-ObjectId 'newId, TEE-Result & 'code),
       @inArgs('obj, 'newId),
       @outArgs('code),
       @body(skip),
@@ -784,7 +785,7 @@ mod TEE-INTERNAL-CLIENT-CALL is
   op TeeOpenTASessionLib : -> Program .
   eq TeeOpenTASessionLib 
   = defineSysCall(
-      int TeeOpenTASession(TEE-AppId 'dest, TEE-Timeout 'TO, TEE-Result * 'code, TEE-Handle * 'handle, TEE-ReturnOrigin * 'orig),
+      int TeeOpenTASession(TEE-AppId 'dest, TEE-Timeout 'TO, TEE-Result & 'code, TEE-Handle & 'handle, TEE-ReturnOrigin & 'orig),
       @inArgs('dest, 'TO),                   
       @outArgs('code, 'handle, 'orig),       
       @body(skip),            
@@ -806,7 +807,7 @@ mod TEE-INTERNAL-CLIENT-CALL is
   op TeeInvokeTACommandLib : -> Program .
   eq TeeInvokeTACommandLib 
   = defineSysCall(
-      TEE-Result TeeInvokeTACommand(TEE-Handle * 'sess, TEE-CommandId 'cmd, TEE-Params * 'params, TEE-ReturnOrigin * 'orig),
+      TEE-Result TeeInvokeTACommand(TEE-Handle & 'sess, TEE-CommandId 'cmd, TEE-Params & 'params, TEE-ReturnOrigin & 'orig),
       @inArgs('sess, 'cmd, 'params),                  
       @outArgs('ret, 'params, 'orig),                
       @body(skip),    
@@ -905,7 +906,7 @@ mod CRYPTO-OPERATION-SYSCALL is
   op AllocOperationLib : -> Program .
   eq AllocOperationLib
   = defineSysCall(
-      TEE-Result allocOperation(TEE-Algorithm 'algo, TEE-OperationMode 'mode, int 'keySize, TEE-Handle * 'handle),
+      TEE-Result allocOperation(TEE-Algorithm 'algo, TEE-OperationMode 'mode, int 'keySize, TEE-Handle & 'handle),
       @inArgs('algo, 'mode, 'keySize),
       @outArgs('ret, 'handle),
       @body(skip),
@@ -915,7 +916,7 @@ mod CRYPTO-OPERATION-SYSCALL is
   op FreeOperationLib : -> Program .
   eq FreeOperationLib
   = defineSysCall(
-      int freeOperation(TEE-Handle * 'handle),
+      int freeOperation(TEE-Handle & 'handle),
       @inArgs('handle),
       @outArgs(nil),
       @body(skip),
@@ -955,7 +956,7 @@ mod CRYPTO-OPERATION-SYSCALL is
   op CipherUpdateLib : -> Program .
   eq CipherUpdateLib
   = defineSysCall(
-      TEE-Result cipherUpdate(TEE-Handle 'handle, TEE-Buffer 'src, TEE-Buffer * 'dest),
+      TEE-Result cipherUpdate(TEE-Handle 'handle, TEE-Buffer 'src, TEE-Buffer & 'dest),
       @inArgs('handle, 'src),
       @outArgs('ret, 'dest),
       @body(skip),
@@ -1022,7 +1023,7 @@ mod OBJECT-SYSCALL is
   op InitRefAttributeLib : -> Program .
   eq InitRefAttributeLib
   = defineSysCall(
-      int initRefAttribute(TEE-AttrId 'id, TEE-Buffer 'value, TEE-Attributes * 'attr),
+      int initRefAttribute(TEE-AttrId 'id, TEE-Buffer 'value, TEE-Attributes & 'attr),
       @inArgs('id, 'value),
       @outArgs('attr),
       @body(skip),
@@ -1032,7 +1033,7 @@ mod OBJECT-SYSCALL is
   op GetObjectInfo1Lib : -> Program .
   eq GetObjectInfo1Lib
   = defineSysCall(
-      TEE-Result getObjectInfo1(TEE-Handle 'handle, (struct TeeObjectInfo) * 'info),
+      TEE-Result getObjectInfo1(TEE-Handle 'handle, (struct TeeObjectInfo) & 'info),
       @inArgs('handle),
       @outArgs('ret, 'info),
       @body(skip),

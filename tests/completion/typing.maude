@@ -15,6 +15,7 @@ mod TYPING-TEST is
   op setx : -> FuncId [ctor] .
   op lbl : -> Label [ctor] .
   op Pt : -> ImpType [ctor] .
+  op Qt : -> ImpType [ctor] .
   var ENV : Map{Var,Nat} .
   var MEM : Map{Nat,Value?} .
   var L : Nat .
@@ -26,13 +27,16 @@ red wellTyped(int x ; x := # 1 ;) .
 red wellTyped(int x ; bool b ; b := # true ; if(b){ x := # 1 ; }else{ x := # 2 ; }) .
 red wellTyped(int fId(int p) { return p + # 1 ; } int x ; x := fId(# 2) ;) .
 red wellTyped(struct Pt { int a ; } ; struct Pt s ; int x ; s . a := # 3 ; x := s . a ;) .
-red wellTyped(auto x ; x := # 1 ; int y ; y := x ;) .
-red wellTyped(int setx(int * p) { p := # 1 ; return # 1 ; } int x ; x := setx(x) ;) .
+--- A block may declare a name of an outer scope again; the inner one hides it (C11 6.2.1p4).
+red wellTyped(int x ; x := # 1 ; if(# true){ int x ; x := # 2 ; }else{ skip }) .
+--- A struct member may be a struct.
+red wellTyped(struct Pt { int a ; } ; struct Qt { struct Pt p ; } ; struct Qt s ; int x ; s . p . a := # 1 ; x := s . p . a ;) .
+red wellTyped(int setx(int & p) { p := # 1 ; return # 1 ; } int x ; x := setx(x) ;) .
 red wellTyped(syscalls TEE-Handle h ; TEE-Result r ; r := allocateTransientObject(# typeAes, # 256, h) ;) .
 --- Arrays: a literal index inside 0 <= I < N, a non-literal index, an element as a by-reference argument.
 red wellTyped(int[3] a ; a[# 0] := # 1 ; int x ; x := a[# 2] ;) .
 red wellTyped(int[3] a ; int i ; i := # 1 ; a[i] := # 5 ; int x ; x := a[i] + a[# 0] ;) .
-red wellTyped(int[2] a ; int setx(int * p) { p := # 1 ; return # 1 ; } int x ; x := setx(a[# 1]) ;) .
+red wellTyped(int[2] a ; int setx(int & p) { p := # 1 ; return # 1 ; } int x ; x := setx(a[# 1]) ;) .
 --- By-value struct parameter: the argument is a struct of the parameter's type.
 red wellTyped(struct Pt { int a ; } ; int fId(struct Pt p) { return # 1 ; } struct Pt s ; int x ; x := fId(s) ;) .
 
@@ -45,12 +49,15 @@ red (wellTyped(int x ; x := # 1 ; if(# 1){skip}else{skip}) == true) == false .
 red (wellTyped(int x ; x := y ;) == true) == false .
 --- Declarations.
 red (wellTyped(int x ; int x ;) == true) == false .
-red (wellTyped(auto x ;) == true) == false .
+--- A parameter and a local of the function body share one scope (C11 6.2.1p4).
+red (wellTyped(int fId(int p) { int p ; return # 1 ; }) == true) == false .
+--- A name is declared once in a block.
+red (wellTyped(int x ; if(# true){ int y ; int y ; }else{ skip }) == true) == false .
 --- Functions: arity, argument and return types, by-reference argument, call before definition.
 red (wellTyped(int fId(int p) { return p ; } int x ; x := fId(# 1, # 2) ;) == true) == false .
 red (wellTyped(int fId(int p) { return p ; } int x ; x := fId(# true) ;) == true) == false .
 red (wellTyped(int fId(int p) { return # true ; } int x ; x := fId(# 1) ;) == true) == false .
-red (wellTyped(int setx(int * p) { p := # 1 ; return # 1 ; } int x ; x := setx(# 1) ;) == true) == false .
+red (wellTyped(int setx(int & p) { p := # 1 ; return # 1 ; } int x ; x := setx(# 1) ;) == true) == false .
 red (wellTyped(int x ; x := fId(# 1) ; int fId(int p) { return p ; }) == true) == false .
 --- Structs: no struct/int mixing, no undeclared members.
 red (wellTyped(struct Pt { int a ; } ; struct Pt s ; int x ; x := s ;) == true) == false .
@@ -74,9 +81,9 @@ red (wellTyped(int[3] a ; int x ; x := a ;) == true) == false .
 red (wellTyped(int[3] a ; int[3] b ; a := b ;) == true) == false .
 red (wellTyped(int[3] a ; int[3] b ; bool c ; c := a == b ;) == true) == false .
 red (wellTyped(int[3] fId() { int[3] q ; return q ; }) == true) == false .
---- An array is not a parameter (by value, or by reference through an element pointer).
+--- An array is not a parameter (by value, or by reference).
 red (wellTyped(int[3] a ; int fId(int[3] p) { return # 1 ; } int x ; x := fId(a) ;) == true) == false .
-red (wellTyped(int fId(int[3] * p) { return # 1 ; }) == true) == false .
+red (wellTyped(int fId(int[3] & p) { return # 1 ; }) == true) == false .
 --- An array is not a struct member.
 red (wellTyped(struct Pt { int[2] a ; } ;) == true) == false .
 

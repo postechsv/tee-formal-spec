@@ -91,10 +91,10 @@ search [1] in IMP-SEM-TEST : mkConf(int qx ; qx := # 1 ; int qf() { int qy ; qy 
 search [1] in IMP-SEM-TEST : mkConf(int qfact(int qn) { if (qn <= # 1) { return # 1 ; } else { skip } int qr ; qr := qfact(qn - # 1) ; return qn * qr ; } int qx ; qx := qfact(# 5) ;) =>* k(.K) env((qx |-> L) ; ENV) store((L |-> # 120) ; MEM) KS:KConfig .
 
 --- By-reference parameter: the callee writes the caller's variable.
-search [1] in IMP-SEM-TEST : mkConf(int qsetx(int * qp) { qp := # 1 ; return # 1 ; } int qx ; qx := # 0 ; qx := qsetx(qx) ;) =>* k(.K) env((qx |-> L) ; ENV) store((L |-> # 1) ; MEM) KS:KConfig .
+search [1] in IMP-SEM-TEST : mkConf(int qsetx(int & qp) { qp := # 1 ; return # 1 ; } int qx ; qx := # 0 ; qx := qsetx(qx) ;) =>* k(.K) env((qx |-> L) ; ENV) store((L |-> # 1) ; MEM) KS:KConfig .
 
 --- By-reference swap of two caller variables.
-search [1] in IMP-SEM-TEST : mkConf(int qswap(int * qa, int * qbb) { int qt ; qt := qa ; qa := qbb ; qbb := qt ; return # 0 ; } int qx ; int qy ; qx := # 1 ; qy := # 2 ; int qr ; qr := qswap(qx, qy) ;) =>* k(.K) env((qx |-> L) ; (qy |-> L') ; ENV) store((L |-> # 2) ; (L' |-> # 1) ; MEM) KS:KConfig .
+search [1] in IMP-SEM-TEST : mkConf(int qswap(int & qa, int & qbb) { int qt ; qt := qa ; qa := qbb ; qbb := qt ; return # 0 ; } int qx ; int qy ; qx := # 1 ; qy := # 2 ; int qr ; qr := qswap(qx, qy) ;) =>* k(.K) env((qx |-> L) ; (qy |-> L') ; ENV) store((L |-> # 2) ; (L' |-> # 1) ; MEM) KS:KConfig .
 
 ------------------------------------------------------------
 --- Structs.
@@ -164,7 +164,7 @@ search [1] in IMP-SEM-TEST : mkConf(int[3] qv ; int qi ; qi := # 1 ; qv[qi] := #
 --- A loop fills and sums the elements: qv = 1, 2, 3 and qs = 6.
 search [1] in IMP-SEM-TEST : mkConf(int[3] qv ; int qi ; int qs ; qi := # 0 ; qs := # 0 ; while (qi <= # 2) { qv[qi] := qi + # 1 ; qs := qs + qv[qi] ; qi := qi + # 1 ; }) =>* k(.K) env((qi |-> 3) ; (qs |-> 4) ; ENV) store((0 |-> # 1) ; (1 |-> # 2) ; (2 |-> # 3) ; (3 |-> # 3) ; (4 |-> # 6) ; MEM) KS:KConfig .
 --- An element passed by reference: the callee writes qv[1].
-search [1] in IMP-SEM-TEST : mkConf(int qsetx(int * qp) { qp := # 9 ; return # 1 ; } int[2] qv ; qv[# 1] := # 0 ; int qr ; qr := qsetx(qv[# 1]) ;) =>* k(.K) env((qv |-> 0) ; (qr |-> 2) ; ENV) store((1 |-> # 9) ; (2 |-> # 1) ; MEM) KS:KConfig .
+search [1] in IMP-SEM-TEST : mkConf(int qsetx(int & qp) { qp := # 9 ; return # 1 ; } int[2] qv ; qv[# 1] := # 0 ; int qr ; qr := qsetx(qv[# 1]) ;) =>* k(.K) env((qv |-> 0) ; (qr |-> 2) ; ENV) store((1 |-> # 9) ; (2 |-> # 1) ; MEM) KS:KConfig .
 --- A literal index outside the bounds is rejected by mkConf; an index held in a variable
 --- is checked at run time, and an out-of-range one is stuck.
 red (mkConf(int[2] qv ; qv[# 2] := # 1 ;) == illTyped) == true .

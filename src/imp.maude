@@ -18,15 +18,13 @@ fmod IMP-BTYPE is
 
   sort BType .
   subsort BType < ImpType .
-  --- Concrete base types: every base type except void and auto.
+  --- Concrete base types: every base type except void.
   sort ConcBType .
   subsort ConcBType < BType .
 
   op int : -> ConcBType [ctor] .
-  op float : -> ConcBType [ctor] .
   op bool : -> ConcBType [ctor] .
   op void : -> BType [ctor] .
-  op auto : -> BType [ctor] .
 endfm
 
 --- @kind program
@@ -51,9 +49,8 @@ fmod IMP-REF-TYPE is
 
   sort RType .
   subsort RType < ImpType .
-  --- T is a type => T* is a type.
-  --- T is a type => T& is a type.
-  op _* : ImpType -> RType [ctor] .
+  --- T is a type => T& is a type: the type of a call-by-reference parameter &x (the paper,
+  --- Section 2.3.2, Fig. 4, and getFuncParams in Appendix D.2).
   op _& : ImpType -> RType [ctor] .
 endfm
 
@@ -505,7 +502,6 @@ fmod IMP-TYPING is
   op $tidx : Exp -> TItem [ctor] .
   op $tstmt : -> TItem [ctor] .
   op $tasg : Exp -> TItem [ctor] .
-  op $tauto : Var -> TItem [ctor] .
   op $tret : -> TItem [ctor] .
   op $tif : Stmt Stmt -> TItem [ctor] .
   op $twhile : Stmt -> TItem [ctor] .
@@ -520,7 +516,11 @@ fmod IMP-TYPING is
   ---           its definition (SIMPLE: gtenv, shared by all tasks),
   ---   tret    the return type (SIMPLE: returnType),
   ---   tfacts  the signatures, struct definitions and labels in scope,
-  ---   tpend   the pending names (declared later in an enclosing block).
+  ---   tpend   the pending names (declared later in an enclosing block),
+  ---   tscope  the names declared in the current scope (a block, a function body with its
+  ---           parameters, or the top level).  A name is declared once per scope; an inner
+  ---           block may declare a name of an outer scope again, which hides it (C11 6.2.1p4;
+  ---           SIMPLE: Rho[X <- T]).
   sorts TKind TMode TCell TCells Task Tasks .
   ops tkTop tkFun tkBlk : -> TKind [ctor] .
   ops tmTop tmBody : -> TMode [ctor] .
@@ -534,6 +534,7 @@ fmod IMP-TYPING is
   op tret : ImpType -> TCell [ctor] .
   op tfacts : Facts -> TCell [ctor] .
   op tpend : Map{Var,Bool} -> TCell [ctor] .
+  op tscope : Map{Var,Bool} -> TCell [ctor] .
   subsort Task < Tasks .
   op noTask : -> Tasks [ctor] .
   op __ : Tasks Tasks -> Tasks [ctor assoc comm id: noTask] .
@@ -556,7 +557,7 @@ fmod IMP-TYPING is
   var F F' : Facts .
   var ST : SType .
   var SL : SList .
-  var PM PM' : Map{Var,Bool} .
+  var PM PM' SC : Map{Var,Bool} .
   vars K K' : K .
   var CB : ConcBType .
   var NA : Nat .
@@ -565,11 +566,6 @@ fmod IMP-TYPING is
   var KD : TKind .
 
   --- Maps and facts.
-  --- Types a variable may have once declared (everything but auto).
-  sort NonAuto .
-  subsort NonAuto < ImpType .
-  subsort ConcBType SType RType AType < NonAuto .
-
   op lookupT : Var Map{Var,ImpType} -> TypeR .
   eq lookupT(X, (X |-> T) ; L) = ty(T) .
 
@@ -602,12 +598,10 @@ fmod IMP-TYPING is
   op sigOfDecl : FuncId Facts -> FuncSig .
   eq sigOfDecl(FID, fsig(T FID(PARAMS)) % F) = T FID(PARAMS) .
 
-  --- A parameter of array type (by value, or as the pointee of U * or U &) is rejected.
+  --- A parameter of array type (by value, or as the referenced type of U &) is rejected.
   op arrPar : ImpType -> Bool .
   ceq arrPar(T) = true if T :: AType /\ not T :: RType .
   ceq arrPar(T) = false if not T :: AType /\ not T :: RType .
-  ceq arrPar(U *) = true if U :: AType .
-  ceq arrPar(U *) = false if not U :: AType .
   ceq arrPar(U &) = true if U :: AType .
   ceq arrPar(U &) = false if not U :: AType .
   op noArrParams : ExpList -> Bool .
@@ -619,16 +613,17 @@ fmod IMP-TYPING is
   ceq idxOk(# I, NA) = true if I >= 0 /\ I < NA .
   ceq idxOk(E, NA) = true if not E :: Value .
 
-  --- Parameters: a by-reference parameter names the pointee inside the callee.
+  --- Parameters: a by-reference parameter U & X names an object of type U inside the callee.
   op bindParams : ExpList -> Map{Var,ImpType} .
   eq bindParams(nil) = empty .
   ceq bindParams((T X, PARAMS)) = insert(X, T, bindParams(PARAMS)) if not T :: RType .
-  eq bindParams((U * X, PARAMS)) = insert(X, U, bindParams(PARAMS)) .
   eq bindParams((U & X, PARAMS)) = insert(X, U, bindParams(PARAMS)) .
 
-  op noAuto : Map{Var,ImpType} -> Bool .
-  eq noAuto(empty) = true .
-  ceq noAuto((X |-> T) ; L) = true if T :: NonAuto /\ noAuto(L) = true .
+  --- paramScope(PARAMS): the parameter names, the first names declared in the scope of a
+  --- function body (C11 6.2.1p4: the parameters and the outermost block share one scope).
+  op paramScope : ExpList -> Map{Var,Bool} .
+  eq paramScope(nil) = empty .
+  eq paramScope((T X, PARAMS)) = insert(X, true, paramScope(PARAMS)) .
 
   --- Declarations.  A struct member is a base type or a struct (okDecl); a variable may
   --- also be an array of N > 0 elements (okVar).
@@ -648,10 +643,6 @@ fmod IMP-TYPING is
   eq hasLab(LB, lab(LB) % F) = true .
   op hasTLab : Label Facts -> Bool .
   eq hasTLab(LB, tlab(LB) % F) = true .
-
-  --- autoLocal(E, L): E is a local auto variable that has no type yet.
-  op autoLocal : Exp Map{Var,ImpType} -> Bool .
-  eq autoLocal(E, L) = E :: Var and lookupT(E, L) == ty(auto) .
 
   ------------------------------------------------------------
   --- Strictness: an operand is typed, then checked ($tchk), then the next operand is
@@ -676,14 +667,13 @@ fmod IMP-TYPING is
   eq tk($te(V) ~> K) = tk(tyV(V) ~> K) .
 
   --- Variables.  SIMPLE: <k> X => T </k> <tenv>... X |-> T ...</tenv>, and the gtenv when X is
-  --- not local.  An auto variable that is declared but not yet assigned, and a pending name,
-  --- have no type.
+  --- not local.  A pending name has no type.
   ceq task(tk($te(X) ~> K) tenv(L) tpend(PM) C)
     = task(tk(ty(T) ~> K) tenv(L) tpend(PM) C)
-    if isTrue(PM[X]) = false /\ ty(T) := lookupT(X, L) /\ T :: NonAuto .
+    if isTrue(PM[X]) = false /\ ty(T) := lookupT(X, L) .
   ceq task(tk($te(X) ~> K) tenv(L) tglob(G) tpend(PM) C)
     = task(tk(ty(T) ~> K) tenv(L) tglob(G) tpend(PM) C)
-    if isTrue(PM[X]) = false /\ $hasMapping(L, X) = false /\ ty(T) := lookupT(X, G) /\ T :: NonAuto .
+    if isTrue(PM[X]) = false /\ $hasMapping(L, X) = false /\ ty(T) := lookupT(X, G) .
 
   --- Operators.  SIMPLE: int + int => int, int <= int => bool, T == T => bool,
   --- bool && bool => bool, ! bool => bool.
@@ -715,8 +705,8 @@ fmod IMP-TYPING is
 
   --- Calls.  SIMPLE: (Ts -> T)(Ts) => T.  A top-level call needs a definition before it,
   --- see sigOfDef; a body sees every signature, see sigOfDecl.  A by-value parameter takes a value
-  --- of its type (a base type or a struct, which is copied); a by-reference parameter U * or
-  --- U & takes an lvalue of type U (ltype).  An array is never a parameter.
+  --- of its type (a base type or a struct, which is copied); a by-reference parameter U & takes
+  --- an lvalue of type U (ltype).  An array is never a parameter.
   ceq task(tk($te(FID(EL)) ~> K) tmode(tmTop) tfacts(F) C)
     = task(tk($targs(PARAMS, EL) ~> $tres(T) ~> K) tmode(tmTop) tfacts(F) C)
     if T FID(PARAMS) := sigOfDef(FID, F) .
@@ -725,8 +715,6 @@ fmod IMP-TYPING is
     if T FID(PARAMS) := sigOfDecl(FID, F) .
   ceq tk($targs((T X, PARAMS), (E, EL)) ~> K) = tk($te(E) ~> $targ(T) ~> $targs(PARAMS, EL) ~> K)
     if not T :: RType /\ not T :: AType .
-  ceq tk($targs((U * X, PARAMS), (E, EL)) ~> K) = tk($tl(E) ~> $tchk(U) ~> $targs(PARAMS, EL) ~> K)
-    if not U :: AType .
   ceq tk($targs((U & X, PARAMS), (E, EL)) ~> K) = tk($tl(E) ~> $tchk(U) ~> $targs(PARAMS, EL) ~> K)
     if not U :: AType .
   eq tk($targs(nil, nil) ~> K) = tk(K) .
@@ -743,24 +731,17 @@ fmod IMP-TYPING is
 
   --- Declarations.  SIMPLE: <k> T X; => stmt </k> <tenv> Rho => Rho[X <- T] </tenv>, and for
   --- the top task <gtenv> requires notBool(X in keys(Rho)).  Here a name is declared once per
-  --- scope in every task, and reaching its declaration makes it not pending.
-  ceq task(tk((T X ;) ~> K) tenv(L) tpend(PM) tfacts(F) C)
-    = task(tk(stmt ~> K) tenv(insert(X, T, L)) tpend(insert(X, false, PM)) tfacts(F) C)
-    if $hasMapping(L, X) = false /\ okVar(T, F) = true .
-  ceq task(tk((auto X ;) ~> K) tenv(L) tpend(PM) C)
-    = task(tk(stmt ~> K) tenv(insert(X, auto, L)) tpend(insert(X, false, PM)) C)
-    if $hasMapping(L, X) = false .
+  --- scope (tscope); a declaration in an inner block hides a name of an outer scope.  Reaching
+  --- the declaration makes the name not pending.
+  ceq task(tk((T X ;) ~> K) tenv(L) tpend(PM) tscope(SC) tfacts(F) C)
+    = task(tk(stmt ~> K) tenv(insert(X, T, L)) tpend(insert(X, false, PM)) tscope(insert(X, true, SC))
+           tfacts(F) C)
+    if $hasMapping(SC, X) = false /\ okVar(T, F) = true .
 
-  --- Assignment.  SIMPLE: context (HOLE => ltype(HOLE)) = _, and T = T => T.  An auto
-  --- variable (not in SIMPLE) takes the type of the first value assigned.  A struct is
+  --- Assignment.  SIMPLE: context (HOLE => ltype(HOLE)) = _, and T = T => T.  A struct is
   --- assigned from a struct of the same type (copied member by member).  An array is not
   --- assigned.
-  ceq task(tk((X := E ;) ~> K) tenv(L) C) = task(tk($te(E) ~> $tauto(X) ~> K) tenv(L) C)
-    if lookupT(X, L) = ty(auto) .
-  ceq task(tk(ty(T) ~> $tauto(X) ~> K) tenv(L) C) = task(tk(stmt ~> K) tenv(insert(X, T, L)) C)
-    if T :: ConcBType .
-  ceq task(tk((E1 := E2 ;) ~> K) tenv(L) C) = task(tk($tl(E1) ~> $tasg(E2) ~> K) tenv(L) C)
-    if not autoLocal(E1, L) .
+  eq tk((E1 := E2 ;) ~> K) = tk($tl(E1) ~> $tasg(E2) ~> K) .
   ceq tk(ty(T) ~> $tasg(E2) ~> K) = tk($te(E2) ~> $tchk(T) ~> stmt ~> K) if not T :: AType .
 
   --- Expression statements (calls for their effect).  SIMPLE: _:Type; => stmt.
@@ -770,16 +751,16 @@ fmod IMP-TYPING is
   --- Conditionals and loops.  SIMPLE: if (bool) block else block => stmt, and
   --- while (bool) block => stmt, where a block {S} => block spawns a task with the same tenv
   --- and returnType.  Here each branch is such a task (tkBlk), which also gets the pending
-  --- names of its own declarations.  Its declarations are not kept after it.
+  --- names of its own declarations and a new scope.  Its declarations are not kept after it.
   eq tk(if(E){S}else{S'} ~> K) = tk($te(E) ~> $tchk(bool) ~> $tif(S, S') ~> K) .
   eq tk(while(E){S} ~> K) = tk($te(E) ~> $tchk(bool) ~> $twhile(S) ~> K) .
-  eq task(tkind(KD) tk($tif(S, S') ~> K) tpend(PM) C)
-    = task(tkind(KD) tk(stmt ~> K) tpend(PM) C)
-      task(tkind(tkBlk) tk(S) tpend(addDecls(PM, declsOf(getSList(S)))) C)
-      task(tkind(tkBlk) tk(S') tpend(addDecls(PM, declsOf(getSList(S')))) C) .
-  eq task(tkind(KD) tk($twhile(S) ~> K) tpend(PM) C)
-    = task(tkind(KD) tk(stmt ~> K) tpend(PM) C)
-      task(tkind(tkBlk) tk(S) tpend(addDecls(PM, declsOf(getSList(S)))) C) .
+  eq task(tkind(KD) tk($tif(S, S') ~> K) tpend(PM) tscope(SC) C)
+    = task(tkind(KD) tk(stmt ~> K) tpend(PM) tscope(SC) C)
+      task(tkind(tkBlk) tk(S) tpend(addDecls(PM, declsOf(getSList(S)))) tscope(empty) C)
+      task(tkind(tkBlk) tk(S') tpend(addDecls(PM, declsOf(getSList(S')))) tscope(empty) C) .
+  eq task(tkind(KD) tk($twhile(S) ~> K) tpend(PM) tscope(SC) C)
+    = task(tkind(KD) tk(stmt ~> K) tpend(PM) tscope(SC) C)
+      task(tkind(tkBlk) tk(S) tpend(addDecls(PM, declsOf(getSList(S)))) tscope(empty) C) .
   --- SIMPLE: a finished task with a tenv is dissolved.
   eq task(tkind(tkBlk) tk(stmt) C) = noTask .
 
@@ -812,10 +793,10 @@ fmod IMP-TYPING is
   ceq task(tk((T FID(PARAMS) {S}) ~> K) tmode(tmTop) tenv(L) tfacts(F) C)
     = task(tk(stmt ~> K) tmode(tmTop) tenv(L) tfacts(fdef(T FID(PARAMS)) % F) C)
       task(tkind(tkFun) tmode(tmBody) tk(S) tenv(bindParams(PARAMS)) tglob(L) tret(T)
-           tfacts(F % collectB(getSList(S))) tpend(declsOf(getSList(S))))
+           tfacts(F % collectB(getSList(S))) tpend(declsOf(getSList(S))) tscope(paramScope(PARAMS)))
     if not FID :: TeeApi /\ not T :: AType /\ noArrParams(PARAMS) = true .
-  --- A finished function body has no auto variable left without a type.
-  ceq task(tkind(tkFun) tk(stmt) tenv(L) C) = noTask if noAuto(L) = true .
+  --- A finished function body is dissolved.
+  eq task(tkind(tkFun) tk(stmt) C) = noTask .
 
   --- Trusted library function (TEE API stub, $libFun from defineSysCall): its body
   --- is not checked, only its signature is recorded.  The checker accepts it only for
@@ -848,13 +829,11 @@ fmod IMP-TYPING is
   eq collectB(nilElem) = nofact .
 
   --- The program is the k cell of the top task.  SIMPLE: <k> $PGM:Stmt </k> in one task.  It
-  --- is well typed when the top task has finished, every spawned task has been dissolved,
-  --- and no top-level auto variable is left without a type.
+  --- is well typed when the top task has finished and every spawned task has been dissolved.
   ceq wellTyped(P) = true
-    if task(tkind(tkTop) tk(stmt) tenv(L) C)
+    if task(tkind(tkTop) tk(stmt) C)
          := task(tkind(tkTop) tmode(tmTop) tk(P) tenv(empty) tglob(empty) tret(noRet)
-                 tfacts(collectF(P)) tpend(empty))
-    /\ noAuto(L) = true .
+                 tfacts(collectF(P)) tpend(empty) tscope(empty)) .
 endfm
 
 --- Evaluation contexts
@@ -1021,8 +1000,7 @@ fmod IMP-STRICTNESS is
    eq k({ V } ~> return []; ~> K) = k(return V ; ~> K) .
 
 --- Call-by-value & call-by-reference: zip.  A value parameter heats its
---- argument e; a reference parameter (U * x or U & x, the same in the semantics) heats
---- lvalue(e).  The value that comes back is cooled into the pair.  A pair whose argument
+--- argument e; a reference parameter (U & x, the paper's &x) heats lvalue(e).  The value that comes back is cooled into the pair.  A pair whose argument
 --- is already a value is taken as it is.
   var PX : PExp .
   var PVL PEL : PVList .
@@ -1376,11 +1354,10 @@ mod IMP-SEMANTICS is
   rl [while]: k(while (E) {S} ~> K)
   => k(if (E) {(S while (E) {S})} else {skip} ~> K) .
 
-  --- assn, assn-u, assn-s, assnA: a declaration reached in the normal flow resets its hoisted
+  --- assn, assn-s, assnA: a declaration reached in the normal flow resets its hoisted
   --- object (see reset-s, reset-b and resetA) and does not allocate again.  The rules are split
-  --- by sort (base type, auto, struct, array), so no rule carries a type condition.
+  --- by sort (base type, struct, array), so no rule carries a type condition.
   eq [assn]:     k({ CB X } ~> K) = k($reset(X) ~> K) .
-  eq [assn-u]:   k({ auto X } ~> K) = k($reset(X) ~> K) .
   eq [assn-s]:   k({ TS X } ~> K) = k($reset(X) ~> K) .
   eq [assnA]:    k({ (CB [ NA ]) X } ~> K) = k($resetA(X) ~> K) .
   eq [resetA]:   k($resetA(X) ~> K) env((X |-> LN) ; ENV) arrlen((LN |-> NA) ; AL) store(MEM)
@@ -1431,8 +1408,8 @@ mod IMP-SEMANTICS is
 
 --- Function call.  fCall, fExec, bindV, bindR, fRetn and fQuit are rules: they
 --- push or pop frames, or enter a body.  The argument pairs are heated by zip (see
---- IMP-STRICTNESS).  Parameters are typed: T x is passed by value, and U * x or U & x
---- by reference (the two are the same in the semantics).
+--- IMP-STRICTNESS).  Parameters are typed: T x is passed by value (bindV), and U & x by
+--- reference (bindR).
 
   crl [fCall]: k({ F(EL) } ~> K) fdecl(((T F(PARAMS) |-> BODY) , FDCL))
   => k(zip(nil, zipL(PARAMS, EL)) ~> invoke(BODY) ~> K) fdecl(((T F(PARAMS) |-> BODY) , FDCL))

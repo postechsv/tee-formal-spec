@@ -1098,7 +1098,7 @@ fmod IMP-AUX is
   vars X Y : Var .
   var T : ImpType .
   var ENV E : Map{Var,Nat} .
-  vars SO SO1 SO2 : Map{Var,Nat} .
+  vars SO SO1 SO2 SOT SOS : Map{Var,Nat} .
   var N1 : Nat .
   var V : Value? .
   var MEM : Map{Nat,Value?} .
@@ -1203,19 +1203,30 @@ fmod IMP-AUX is
   ---@dmc owise cond(Y =/= X)
   eq getOffSet(T Y ; S, X, N) = getOffSet(S, X, N + 1) [owise] .
 
-  --- Member-wise copy of a struct: the value of each member of SO2 is stored at
-  --- the location of the same member of SO1.
+  --- Member-wise copy of a struct (C11 6.5.16.1p2: the value of the right operand replaces the
+  --- object): the value of each member of SO2 is stored at the location of the same member of
+  --- SO1.  A member that is itself a struct keeps its own locations and is copied member-wise
+  --- in the same way, so the copy shares no location with the source.
   op copyMembers : Map{Var,Nat} Map{Var,Nat} Map{Nat,Value?} -> Map{Nat,Value?} .
   op memLoc : Var Map{Var,Nat} -> Nat .
   op memVal : Nat Map{Nat,Value?} -> Value? .
   eq memLoc(X, (X |-> N) ; SO) = N .
   eq memVal(N, (N |-> V) ; MEM) = V .
   eq copyMembers(empty, SO2, MEM) = MEM .
+  ceq copyMembers((X |-> N1) ; SO1, SO2, MEM)
+   = copyMembers(SO1, SO2, copyMembers(SOT, SOS, MEM))
+   if sobj(SOT) := memVal(N1, MEM) /\ sobj(SOS) := memVal(memLoc(X, SO2), MEM) .
+  ceq copyMembers((X |-> N1) ; SO1, SO2, MEM)
+   = copyMembers(SO1, SO2, insert(N1, memVal(memLoc(X, SO2), MEM), MEM))
+   if not memVal(N1, MEM) :: SObj .
+  --- Reset of the members of a struct to undef (a declaration reached again, C11 6.2.4p6).  A
+  --- member that is itself a struct keeps its object and its members are reset.
   op resetMembers : Map{Var,Nat} Map{Nat,Value?} -> Map{Nat,Value?} .
   eq resetMembers(empty, MEM) = MEM .
-  eq resetMembers((X |-> N1) ; SO, MEM) = resetMembers(SO, insert(N1, undef, MEM)) .
-  eq copyMembers((X |-> N1) ; SO1, SO2, MEM)
-   = copyMembers(SO1, SO2, insert(N1, memVal(memLoc(X, SO2), MEM), MEM)) .
+  ceq resetMembers((X |-> N1) ; SO, MEM) = resetMembers(SO, resetMembers(SOT, MEM))
+   if sobj(SOT) := memVal(N1, MEM) .
+  ceq resetMembers((X |-> N1) ; SO, MEM) = resetMembers(SO, insert(N1, undef, MEM))
+   if not memVal(N1, MEM) :: SObj .
 
   var PXZ : PExp .
   var PLZ ELZ : ExpList .

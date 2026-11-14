@@ -20,6 +20,7 @@ mod IMP-SEM-TEST is
   op qsetx : -> FuncId [ctor] .
   op qswap : -> FuncId [ctor] .
   op qPt : -> ImpType [ctor] .
+  op qQ : -> ImpType [ctor] .
   var ENV : Map{Var,Nat} .
   var MEM : Map{Nat,Value?} .
   var L L' : Nat .
@@ -146,8 +147,15 @@ search [1] in IMP-SEM-TEST : mkConf(int qi ; qi := # 0 ; lab1 : int qy ; if (qi 
 search [1] in IMP-SEM-TEST : mkConf(struct qPt { int qa ; } ; int qi ; qi := # 0 ; lab1 : struct qPt qs ; if (qi == # 0) { qs . qa := # 5 ; qi := # 1 ; goto lab1 ; } else { skip } int qx ; qx := qs . qa ;) =>! k({ loc(L) . qa } ~> K:K) KS:KConfig .
 --- A struct local of a function body is hoisted and assigned through its member.
 search [1] in IMP-SEM-TEST : mkConf(struct qPt { int qa ; } ; int qf() { struct qPt qs ; qs . qa := # 4 ; return qs . qa ; } int qx ; qx := qf() ;) =>* k(.K) env((qx |-> L) ; ENV) store((L |-> # 4) ; MEM) KS:KConfig .
---- An auto variable is hoisted with the other top-level declarations.
-search [1] in IMP-SEM-TEST : mkConf(int qy ; auto qx ; qx := # 1 ; qy := qx ;) =>* k(.K) env((qx |-> L) ; (qy |-> L') ; ENV) store((L |-> # 1) ; (L' |-> # 1) ; MEM) KS:KConfig .
+--- A block declaration hides a top-level variable of the same name (C11 6.2.1p4); after the
+--- block the top-level x is visible again.  x = 1, y = 2.
+search [1] in IMP-SEM-TEST : mkConf(int qx ; int qy ; qx := # 1 ; if (# true) { int qx ; qx := # 2 ; qy := qx ; } else { skip }) =>* k(.K) env((qx |-> L) ; (qy |-> L') ; ENV) store((L |-> # 1) ; (L' |-> # 2) ; MEM) KS:KConfig .
+--- A nested struct: t := s copies the inner struct member-wise (C11 6.5.16.1p2), so updating
+--- t.n.a does not change s.n.a.  x = s.n.a = 1, y = t.n.a = 5.
+search [1] in IMP-SEM-TEST : mkConf(struct qPt { int qa ; } ; struct qQ { struct qPt qn ; } ; struct qQ qs ; struct qQ qt ; int qx ; int qy ; qs . qn . qa := # 1 ; qt := qs ; qt . qn . qa := # 5 ; qx := qs . qn . qa ; qy := qt . qn . qa ;) =>* k(.K) env((qx |-> L) ; (qy |-> L') ; ENV) store((L |-> # 1) ; (L' |-> # 5) ; MEM) KS:KConfig .
+--- A nested struct declaration reached again keeps its inner object: the inner member is reset
+--- to undef and can be written again.  x = 7.
+search [1] in IMP-SEM-TEST : mkConf(struct qPt { int qa ; } ; struct qQ { struct qPt qn ; } ; int qi ; int qx ; qi := # 0 ; lab1 : struct qQ qs ; if (qi == # 0) { qs . qn . qa := # 5 ; qi := # 1 ; goto lab1 ; } else { skip } qs . qn . qa := # 7 ; qx := qs . qn . qa ;) =>* k(.K) env((qx |-> L) ; ENV) store((L |-> # 7) ; MEM) KS:KConfig .
 --- A declaration in a while body is allocated on each entry of the body and holds its value there: s = 0+1+2 = 3.
 search [1] in IMP-SEM-TEST : mkConf(int qi ; qi := # 0 ; int qs ; qs := # 0 ; while (qi <= # 2) { int qy ; qy := qi ; qs := qs + qy ; qi := qi + # 1 ; }) =>* k(.K) env((qi |-> L) ; (qs |-> L') ; ENV) store((L |-> # 3) ; (L' |-> # 3) ; MEM) KS:KConfig .
 

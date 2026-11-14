@@ -75,7 +75,7 @@ mod SHM-TEST is
     < osId : TrustedOS | sess : (sid |-> testTa) >
     < testTa : TrustedApp | proc : none, prog : P, client-service : none,
         status : (normal).AppStatus, api-call : noCall, counter : 0, storage : oid(0, testTa),
-        os-kernel : osId, state-changed : false , state-changed : false > .
+        os-kernel : osId, state-changed : false , running : false > .
   --- allocProg(F, D', D, S): allocates a block of size 2 with the flags D' and the data
   --- data(1), runs S (for example shmRogue), and calls F with a reference of direction D.
   op allocProg : FuncId MemrefDir MemrefDir Stmt -> Program .
@@ -112,7 +112,7 @@ mod SHM-TEST is
     < osId : TrustedOS | sess : (sid |-> testTa) >
     < testTa : TrustedApp | proc : none, prog : P, client-service : none,
         status : (normal).AppStatus, api-call : noCall, counter : 0, storage : oid(0, testTa),
-        os-kernel : osId, state-changed : false , state-changed : false > .
+        os-kernel : osId, state-changed : false , running : false > .
 endm
 
 --- With a well-behaved client, the double-fetch TA returns the data of the block.
@@ -238,12 +238,12 @@ search [1] in SHM-TEST :
   (msg reqInvoke[# fill # (tmem(0, 1, mrInout) # noData)] from testTa to oid(2, testTa))
   < testTa : TrustedApp | proc : (k(.K) store((0 |-> # data(1)) ; (1 |-> # 2))), prog : skip,
       client-service : none, status : (normal).AppStatus, api-call : noCall, counter : 3,
-      storage : oid(0, testTa), os-kernel : osId >
+      storage : oid(0, testTa), os-kernel : osId , state-changed : false , running : true >
   < oid(1, testTa) : Session | req : noReq, ret : noRet, ta-id : otherTa >
   < oid(2, testTa) : TaSessionHandle | oid : oid(1, testTa) >
   < otherTa : TrustedApp | proc : none, prog : fillProg, client-service : none,
       status : (normal).AppStatus, api-call : noCall, counter : 0, storage : oid(0, otherTa),
-      os-kernel : osId , state-changed : false >
+      os-kernel : osId , state-changed : false , running : false >
   =>!
   (msg finishReqInvoke[RET:ArgList] from oid(2, testTa) to testTa)
   < testTa : TrustedApp | proc : (k(.K) store((0 |-> # data(7)) ; (1 |-> # 1))), AS:AttributeSet >
@@ -255,12 +255,12 @@ search [1] in SHM-TEST :
   (msg reqInvoke[# fill # (tmem(0, 1, mrIn) # noData)] from testTa to oid(2, testTa))
   < testTa : TrustedApp | proc : (k(.K) store((0 |-> # data(1)) ; (1 |-> # 2))), prog : skip,
       client-service : none, status : (normal).AppStatus, api-call : noCall, counter : 3,
-      storage : oid(0, testTa), os-kernel : osId >
+      storage : oid(0, testTa), os-kernel : osId , state-changed : false , running : true >
   < oid(1, testTa) : Session | req : noReq, ret : noRet, ta-id : otherTa >
   < oid(2, testTa) : TaSessionHandle | oid : oid(1, testTa) >
   < otherTa : TrustedApp | proc : none, prog : fillProg, client-service : none,
       status : (normal).AppStatus, api-call : noCall, counter : 0, storage : oid(0, otherTa),
-      os-kernel : osId , state-changed : false >
+      os-kernel : osId , state-changed : false , running : false >
   =>!
   (msg finishReqInvoke[# fill # (# originTee # errorTargetDead)] from oid(2, testTa) to testTa)
   < testTa : TrustedApp | proc : (k(.K) store((0 |-> # data(1)) ; (1 |-> # 2))), AS:AttributeSet >

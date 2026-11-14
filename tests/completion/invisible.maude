@@ -14,32 +14,41 @@ mod COMPLETION-INVISIBLE-TEST is
   var C : Configuration .
 endm
 
---- G1, start rule: the call is answered without a rewrite step.
+--- G follows the artifact: only the API functions with rules in the artifact G have invisible
+--- rules (see the header of src/invisible-reduction.maude).  CipherUpdate is one of them.
+
+--- Start rule (cipher-update-req-cipher): the call is sent to the handle without a rewrite step.
 search [1] in COMPLETION-INVISIBLE-TEST :
-  < testTa : TAKernel | api-call : init(isAlgorithmSupported[# algAesCtr # cryptoElementNone]) >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(cipherUpdate[# oid(101, testTa) # randomData]) >
 =>*
-  < testTa : TAKernel | api-call : return(isAlgorithmSupported[# success]) > .
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(cipherUpdate[# oid(101, testTa) # randomData]) >
+  (msg reqCipher[# oid(101, testTa) # randomData] from testTa to oid(101, testTa)) .
 
 --- expect: no solution
 search [1] in COMPLETION-INVISIBLE-TEST :
-  < testTa : TAKernel | api-call : init(isAlgorithmSupported[# algAesCtr # cryptoElementNone]) >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(cipherUpdate[# oid(101, testTa) # randomData]) >
 =>*
-  < testTa : TAKernel | api-call : init(isAlgorithmSupported[# algAesCtr # cryptoElementNone]) > .
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(cipherUpdate[# oid(101, testTa) # randomData]) > C .
 
---- G1, finish rule.
+--- Finish rule (cipher-update-success).
 search [1] in COMPLETION-INVISIBLE-TEST :
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(cipherDoFinal[# oid(1, testTa) # randomData]) >
-  (msg finishCipherDoFinal[# randomData] from oid(101, testTa) to testTa)
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(cipherUpdate[# oid(101, testTa) # randomData]) >
+  (msg finishCipher[# randomData] from oid(101, testTa) to testTa)
 =>*
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : return(cipherDoFinal[# success # randomData]) > .
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : return(cipherUpdate[# success # randomData]) > .
 
 --- expect: no solution
 search [1] in COMPLETION-INVISIBLE-TEST :
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(cipherDoFinal[# oid(1, testTa) # randomData]) >
-  (msg finishCipherDoFinal[# randomData] from oid(101, testTa) to testTa)
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(cipherUpdate[# oid(101, testTa) # randomData]) >
+  (msg finishCipher[# randomData] from oid(101, testTa) to testTa)
 =>*
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(cipherDoFinal[# oid(1, testTa) # randomData]) >
-  C .
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(cipherUpdate[# oid(101, testTa) # randomData]) > C .
+
+--- IsAlgorithmSupported has no rules in the artifact G: its start state is a state.
+search [1] in COMPLETION-INVISIBLE-TEST :
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(isAlgorithmSupported[# algAesCtr # cryptoElementNone]) >
+=>*
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(isAlgorithmSupported[# algAesCtr # cryptoElementNone]) > .
 
 --- G2: an if on a constant is reduced.
 --- expect: no solution

@@ -1292,14 +1292,11 @@ mod IMP-SEMANTICS is
 --- IMP Semantics
 ------------------------------------------------------------
 
---- Policy (see README, Program Execution Semantics).  An equation is used for a
---- step that is local to one TA, deterministic and terminating: it runs to normal
---- form and does not change the frame stack or the TEE interface.  A rule is used
---- for a step that matters for interleaving or may not terminate:
----   * while unrolling (an unbounded loop would make equational reduction diverge);
----   * call entry, argument binding and return (they push and pop frames);
----   * steps that interact with the TEE (tee-app.maude, tee-api-call.maude,
----     $wait, $in, $out, ree-app.maude).
+--- Policy.  A K rule of the paper (Section 2.3: lookup, lookup-lv, assign, if-true,
+--- if-false, while, fCall, fExec, bindV, bindR, fRetn, fQuit, and the alloc rule of bindV)
+--- is a rewrite rule here.  Whether a rule is a visible step of the model is not decided
+--- here: the invisible-transition reduction (the paper, Section 8.1; invisible-reduction.maude)
+--- turns a set G of rules into equations.  Heating and cooling (IMP-STRICTNESS) are equations.
 --- Equations never overlap: each left-hand side is a distinct head of the k cell,
 --- and where two left-hand sides share a head their conditions are disjoint.
 
@@ -1316,8 +1313,8 @@ mod IMP-SEMANTICS is
   --- member-read takes the value of the member, and member-lvalue gives its location.
   ceq [member-read]: k({ loc(L) . X } ~> K) store((L |-> sobj((X |-> N) ; SO)) ; (N |-> V) ; MEM)
    = k({ V } ~> K) store((L |-> sobj((X |-> N) ; SO)) ; (N |-> V) ; MEM) if V :: Value .
-  eq [member-lvalue]: k({ lvalue(loc(L) . X) } ~> K) store((L |-> sobj((X |-> N) ; SO)) ; MEM)
-   = k({ loc(N) } ~> K) store((L |-> sobj((X |-> N) ; SO)) ; MEM) .
+  rl [member-lvalue]: k({ lvalue(loc(L) . X) } ~> K) store((L |-> sobj((X |-> N) ; SO)) ; MEM)
+   => k({ loc(N) } ~> K) store((L |-> sobj((X |-> N) ; SO)) ; MEM) .
 
   --- assign: stores the evaluated value V at location L.  The entry (L |-> V') must exist,
   --- since alloc always runs before an assignment.
@@ -1327,25 +1324,26 @@ mod IMP-SEMANTICS is
   eq k(loc(L) := sobj(SO2) ; ~> K) store((L |-> sobj(SO1)) ; MEM)
    = k(K) store((L |-> sobj(SO1)) ; copyMembers(SO1, SO2, MEM)) .
 
---- Arithmetic, comparison and logical operators on values.  Division by zero has
---- no equation: the program is stuck there.
-  eq k({ # I + # I'    } ~> K) = k({ # (I + I')   } ~> K) .
-  eq k({ # I - # I'    } ~> K) = k({ # (I - I')   } ~> K) .
-  eq k({ # I * # I'    } ~> K) = k({ # (I * I')   } ~> K) .
-  ceq k({ # I / # I'   } ~> K) = k({ # (I quo I') } ~> K) if I' =/= 0 .
-  eq k({ # I <= # I'   } ~> K) = k({ # (I <= I')  } ~> K) .
+--- Arithmetic, comparison and logical operators on values (rules, as in the artifact).
+--- Division by zero has no rule: the program is stuck there.
+  rl [op-plus]:      k({ # I + # I'    } ~> K) => k({ # (I + I')   } ~> K) .
+  rl [op-minus]:     k({ # I - # I'    } ~> K) => k({ # (I - I')   } ~> K) .
+  rl [op-times]:     k({ # I * # I'    } ~> K) => k({ # (I * I')   } ~> K) .
+  crl [op-div]:      k({ # I / # I'    } ~> K) => k({ # (I quo I') } ~> K) if I' =/= 0 .
+  rl [op-leq]:       k({ # I <= # I'   } ~> K) => k({ # (I <= I')  } ~> K) .
   ---@dmc restrict(V=Value,V'=Value)
-  eq k({ V == V'       } ~> K) = k({ # (V == V')  } ~> K) .
+  rl [op-eq]:        k({ V == V'       } ~> K) => k({ # (V == V')  } ~> K) .
   --- Short-circuit: the right operand is evaluated only when the left one does not decide.
-  eq k({ # true  && E  } ~> K) = k({ E            } ~> K) .
-  eq k({ # false && E  } ~> K) = k({ # false      } ~> K) .
-  eq k({ # true  || E  } ~> K) = k({ # true       } ~> K) .
-  eq k({ # false || E  } ~> K) = k({ E            } ~> K) .
-  eq k({ ! (# B)       } ~> K) = k({ # (not B)    } ~> K) .
+  rl [op-and-true]:  k({ # true  && E  } ~> K) => k({ E            } ~> K) .
+  rl [op-and-false]: k({ # false && E  } ~> K) => k({ # false      } ~> K) .
+  rl [op-or-true]:   k({ # true  || E  } ~> K) => k({ # true       } ~> K) .
+  rl [op-or-false]:  k({ # false || E  } ~> K) => k({ E            } ~> K) .
+  rl [op-not]:       k({ ! (# B)       } ~> K) => k({ # (not B)    } ~> K) .
 
---- Sequencing.  A sequence is split into its statements (K items).
-  eq k(skip ~> K) = k(K) .
-  eq k(K ~> S S' ~> K') = k(K ~> S ~> S' ~> K') .
+--- Sequencing (rules, as in the artifact).  A sequence at the top of the k cell is split into
+--- its statements (K items).
+  rl [skip]: k(skip ~> K) => k(K) .
+  rl [seq]:  k(S S' ~> K) => k(S ~> S' ~> K) .
 
 --- Labels and goto.  goto LB: the continuation becomes the rest of the sequence
 --- from LB (lookupLab), and the environment is the one of the outermost block being
@@ -1390,22 +1388,25 @@ mod IMP-SEMANTICS is
   eq [sMemDecl]: k($loc(L) ~> $member(Y) ~> $decl(SL | SO) ~> K) = k($decl(SL | ((Y |-> L) ; SO)) ~> K) .
 
 --- alloc
+  --- allocA, alloc and allocObj are rules: allocation takes a new location in the store, a step
+  --- of the program ("handled by a separate rule", the paper, Section 2.3.2).  Whether the step
+  --- is visible is decided by the invisible-transition reduction (invisible-reduction.maude).
   --- An array of NA elements takes NA consecutive locations from nextLoc; its length is
   --- recorded in arrlen.  Its elements are undef.
-  eq [allocA]:   k($alloc(CB [ NA ]) ~> K) store(MEM) nextLoc(LN) arrlen(AL)
-              = k($loc(LN) ~> K) store(setUndef(LN, NA, MEM)) nextLoc(LN + NA) arrlen(insert(LN, NA, AL)) .
+  rl [allocA]:   k($alloc(CB [ NA ]) ~> K) store(MEM) nextLoc(LN) arrlen(AL)
+              => k($loc(LN) ~> K) store(setUndef(LN, NA, MEM)) nextLoc(LN + NA) arrlen(insert(LN, NA, AL)) .
   --- alloc, allocObj: a scalar object (or the object of a struct) takes the next location from
   --- nextLoc, and that location is undef.
-  eq [alloc]:    k($alloc(BT) ~> K) store(MEM) nextLoc(L) = k($loc(L) ~> K) store(insert(L, undef, MEM)) nextLoc(L + 1) .
-  eq [allocObj]: k($allocObj ~> K) store(MEM) nextLoc(L) = k($loc(L) ~> K) store(insert(L, undef, MEM)) nextLoc(L + 1) .
+  rl [alloc]:    k($alloc(BT) ~> K) store(MEM) nextLoc(L) => k($loc(L) ~> K) store(insert(L, undef, MEM)) nextLoc(L + 1) .
+  rl [allocObj]: k($allocObj ~> K) store(MEM) nextLoc(L) => k($loc(L) ~> K) store(insert(L, undef, MEM)) nextLoc(L + 1) .
   eq k(alloc(T X) ~> K) = k($alloc(T) ~> $setLoc(X) ~> K) .
   eq [decl]:     k($loc(L) ~> $setLoc(X) ~> K) env(ENV) = k(K) env(insert(X, L, ENV)) .
 
---- function & structure declaration
-  eq k(FSIG {S} ~> K) fdecl(FDCL) = k(K) fdecl(insert(FSIG, S, FDCL)) .
+--- function & structure declaration (rules, as in the artifact)
+  rl [fdecl]: k(FSIG {S} ~> K) fdecl(FDCL) => k(K) fdecl(insert(FSIG, S, FDCL)) .
   --- $libFun: a trusted library body (TEE API stub) is recorded in fdecl like a user body.
-  eq k($libFun(FSIG, BODY) ~> K) fdecl(FDCL) = k(K) fdecl(insert(FSIG, BODY, FDCL)) .
-  eq k(struct T {S} ; ~> K) sdecl(SDCL) = k(K) sdecl(insert(struct T, S, SDCL)) .
+  rl [fdecl-lib]: k($libFun(FSIG, BODY) ~> K) fdecl(FDCL) => k(K) fdecl(insert(FSIG, BODY, FDCL)) .
+  rl [sdecl]: k(struct T {S} ; ~> K) sdecl(SDCL) => k(K) sdecl(insert(struct T, S, SDCL)) .
 
   --- elem: the element NI of the array at location LN is loc(LN + NI) when NI is below the array
   --- length NN (arrlen).  The check is a value test, not a static type condition; otherwise no
@@ -1465,6 +1466,6 @@ mod IMP-SEMANTICS is
 --- $assign(EL, EL'): stores the values of EL pairwise into the lvalues of EL' (the first list holds
 --- the values, the second the lvalues).  It is how the output arguments of a TEE syscall are
 --- written back (makeReturnStmt in tee-imp.maude).
-  eq k($assign((E,EL), (E',EL')) ~> K) = k(E' := E ; ~> $assign(EL, EL') ~> K) .
-  eq k($assign(EL, nil) ~> K) = k(K) .
+  rl [assign-list]:     k($assign((E,EL), (E',EL')) ~> K) => k(E' := E ; ~> $assign(EL, EL') ~> K) .
+  rl [assign-list-end]: k($assign(EL, nil) ~> K) => k(K) .
 endm

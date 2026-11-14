@@ -75,7 +75,7 @@ mod SHM-TEST is
     < osId : TrustedOS | sess : (sid |-> testTa) >
     < testTa : TrustedApp | proc : none, prog : P, client-service : none,
         status : (normal).AppStatus, api-call : noCall, counter : 0, storage : oid(0, testTa),
-        os-kernel : osId, state-changed : false , running : false > .
+        os-kernel : osId > .
   --- allocProg(F, D', D, S): allocates a block of size 2 with the flags D' and the data
   --- data(1), runs S (for example shmRogue), and calls F with a reference of direction D.
   op allocProg : FuncId MemrefDir MemrefDir Stmt -> Program .
@@ -112,7 +112,7 @@ mod SHM-TEST is
     < osId : TrustedOS | sess : (sid |-> testTa) >
     < testTa : TrustedApp | proc : none, prog : P, client-service : none,
         status : (normal).AppStatus, api-call : noCall, counter : 0, storage : oid(0, testTa),
-        os-kernel : osId, state-changed : false , running : false > .
+        os-kernel : osId > .
 endm
 
 --- With a well-behaved client, the double-fetch TA returns the data of the block.
@@ -144,11 +144,11 @@ search [1] in SHM-TEST : init(fillProg, fill, mrIn, noAlt, data(1)) =>!
   < testRa : RichApp | prog : skip, proc : (k(.K) env(res |-> 0) store(0 |-> # errorTargetDead)) >
   < blk : SharedMem | owner : testRa, mem-flags : mrInout, cview : data(1), size : 2, ret-size : 2,
                       tamper : noAlt >
-  < testTa : TrustedApp | status : panic, AS:AttributeSet , state-changed : false > C:Configuration .
+  < testTa : TrustedApp | status : panic, AS:AttributeSet > C:Configuration .
 
 --- A write past the original size panics the TA.
 search [1] in SHM-TEST : init(overProg, fill, mrOut, noAlt, data(1)) =>!
-  < testTa : TrustedApp | status : panic, AS:AttributeSet , state-changed : false > C:Configuration .
+  < testTa : TrustedApp | status : panic, AS:AttributeSet > C:Configuration .
 
 --- No memory reference of the operation is left once the RA has its result.
 --- expect: no solution
@@ -177,7 +177,7 @@ search in SHM-TEST : client(allocProg(check, mrInout, mrIn, skip), dfProg) =>!
 search [1] in SHM-TEST : client(allocProg(fill, mrIn, mrOut, skip), fillProg) =>!
   < testRa : RichApp | prog : P:Program,
       proc : (k(.K) env((res |-> L:Nat) ; ENV:Map{Var,Nat}) store((L:Nat |-> # errorBadParameters) ; MEM:Map{Nat,Value?}) KS:KConfig) >
-  < testTa : TrustedApp | proc : none, AS:AttributeSet , state-changed : false > C:Configuration .
+  < testTa : TrustedApp | proc : none, AS:AttributeSet > C:Configuration .
 
 --- Temporary reference: the TA's output data(7) and size 1 go back to tb and tz.
 search [1] in SHM-TEST : client(tmpProg(fill, mrInout), fillProg) =>!
@@ -190,7 +190,7 @@ search [1] in SHM-TEST : client(tmpProg(fill, mrIn), fillProg) =>!
   < testRa : RichApp | prog : P:Program,
       proc : (k(.K) env((tb |-> L1:Nat) ; (tz |-> L2:Nat) ; ENV:Map{Var,Nat})
               store((L1:Nat |-> # data(1)) ; (L2:Nat |-> # 2) ; MEM:Map{Nat,Value?}) KS:KConfig) >
-  < testTa : TrustedApp | status : panic, AS:AttributeSet , state-changed : false > C:Configuration .
+  < testTa : TrustedApp | status : panic, AS:AttributeSet > C:Configuration .
 
 --- Null reference: the TA sees the size 0 and returns the required size 3, which goes to tz.
 search [1] in SHM-TEST : client(nullProg(fill), sizeProg) =>!
@@ -225,7 +225,7 @@ search [1] in SHM-TEST : init(copyProg, check, mrIn, alt(data(2)), data(1)) =>!
 --- A reference passed as the object identifier of TEE_OpenPersistentObject ([in]) panics the TA.
 search [1] in SHM-TEST : init(oidProg, check, mrIn, noAlt, data(1)) =>!
   < testRa : RichApp | prog : skip, proc : (k(.K) env(res |-> 0) store(0 |-> # errorTargetDead)) >
-  < testTa : TrustedApp | status : panic, AS:AttributeSet , state-changed : false > C:Configuration .
+  < testTa : TrustedApp | status : panic, AS:AttributeSet > C:Configuration .
 
 ------------------------------------------------------------
 --- A TA calls another TA
@@ -238,12 +238,12 @@ search [1] in SHM-TEST :
   (msg reqInvoke[# fill # (tmem(0, 1, mrInout) # noData)] from testTa to oid(2, testTa))
   < testTa : TrustedApp | proc : (k(.K) store((0 |-> # data(1)) ; (1 |-> # 2))), prog : skip,
       client-service : none, status : (normal).AppStatus, api-call : noCall, counter : 3,
-      storage : oid(0, testTa), os-kernel : osId , state-changed : false , running : true >
+      storage : oid(0, testTa), os-kernel : osId >
   < oid(1, testTa) : Session | req : noReq, ret : noRet, ta-id : otherTa >
   < oid(2, testTa) : TaSessionHandle | oid : oid(1, testTa) >
   < otherTa : TrustedApp | proc : none, prog : fillProg, client-service : none,
       status : (normal).AppStatus, api-call : noCall, counter : 0, storage : oid(0, otherTa),
-      os-kernel : osId , state-changed : false , running : false >
+      os-kernel : osId >
   =>!
   (msg finishReqInvoke[RET:ArgList] from oid(2, testTa) to testTa)
   < testTa : TrustedApp | proc : (k(.K) store((0 |-> # data(7)) ; (1 |-> # 1))), AS:AttributeSet >
@@ -255,15 +255,15 @@ search [1] in SHM-TEST :
   (msg reqInvoke[# fill # (tmem(0, 1, mrIn) # noData)] from testTa to oid(2, testTa))
   < testTa : TrustedApp | proc : (k(.K) store((0 |-> # data(1)) ; (1 |-> # 2))), prog : skip,
       client-service : none, status : (normal).AppStatus, api-call : noCall, counter : 3,
-      storage : oid(0, testTa), os-kernel : osId , state-changed : false , running : true >
+      storage : oid(0, testTa), os-kernel : osId >
   < oid(1, testTa) : Session | req : noReq, ret : noRet, ta-id : otherTa >
   < oid(2, testTa) : TaSessionHandle | oid : oid(1, testTa) >
   < otherTa : TrustedApp | proc : none, prog : fillProg, client-service : none,
       status : (normal).AppStatus, api-call : noCall, counter : 0, storage : oid(0, otherTa),
-      os-kernel : osId , state-changed : false , running : false >
+      os-kernel : osId >
   =>!
   (msg finishReqInvoke[# fill # (# originTee # errorTargetDead)] from oid(2, testTa) to testTa)
   < testTa : TrustedApp | proc : (k(.K) store((0 |-> # data(1)) ; (1 |-> # 2))), AS:AttributeSet >
-  < otherTa : TrustedApp | status : panic, AS':AttributeSet , state-changed : true >
+  < otherTa : TrustedApp | status : panic, AS':AttributeSet >
   < oid(1, testTa) : Session | req : noReq, ret : noRet, ta-id : otherTa >
   < oid(2, testTa) : TaSessionHandle | oid : oid(1, testTa) > .

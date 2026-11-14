@@ -5,41 +5,67 @@
 --- @related DATA-STREAM-OBJECT-BEHAVIOR
 --- @feature data-stream
 omod DATA-STREAM-PANIC is
-  vars ZsReadObjectData1 ZsTruncateObjectData1 ZsWriteObjectData1 : Value .
-  vars ZrReadObjectData ZrTruncateObjectData ZrWriteObjectData : ArgList .
   inc GENERAL-PANIC .
+  pr DATA-STREAM-OBJECT-BEHAVIOR .
 
   var TK : Oid .
   var HANDLE : Oid .
+  var ARGS : ArgList .
   var PARAMS : ArgList .
   var DATAFLAGS : Set{DataAccessFlag} .
 
-  --- Persistent data-stream access rights are preconditions.  Violating them
-  --- panics before the normal storage request can be issued.
-  --- read-access-panic: readObjData on a handle without accessRead panics the TA.
-  crl [read-access-panic] :
-    < TK : TAKernel | status : (normal).AppStatus , api-call : init(readObjData[# HANDLE ZsReadObjectData1 ZrReadObjectData]) >
-    < HANDLE : ObjHandle | flags : DATAFLAGS >
-    =>
-    < TK : TAKernel | status : panic , api-call : noCall >
-    < HANDLE : ObjHandle | >
-  if not (accessRead in DATAFLAGS) .
+  --- Persistent data-stream access rights are checked by the handle when it gets the request,
+  --- after the storage check: the handle rules of DATA-STREAM-OBJECT-BEHAVIOR need the right, and
+  --- the rules below answer a handle without it with a failure, which panics the TA.
+  op failReadData : -> ReqId [ctor] .
+  op failWriteData : -> ReqId [ctor] .
+  op failTruncateData : -> ReqId [ctor] .
 
-  --- write-access-panic: writeObjectData on a handle without accessWrite panics the TA.
-  crl [write-access-panic] :
-    < TK : TAKernel | status : (normal).AppStatus , api-call : init(writeObjectData[# HANDLE ZsWriteObjectData1 ZrWriteObjectData]) >
+  --- read-object-data-access-fail: a handle without accessRead refuses the read.
+  crl [read-object-data-access-fail] :
+    (msg read[ARGS] from TK to HANDLE)
     < HANDLE : ObjHandle | flags : DATAFLAGS >
     =>
-    < TK : TAKernel | status : panic , api-call : noCall >
     < HANDLE : ObjHandle | >
-  if not (accessWrite in DATAFLAGS) .
+    (msg failReadData[] from HANDLE to TK)
+  if not isReadable(DATAFLAGS) .
 
-  --- truncate-access-panic: truncateObjectData on a handle without accessWrite panics the TA.
-  crl [truncate-access-panic] :
-    < TK : TAKernel | status : (normal).AppStatus , api-call : init(truncateObjectData[# HANDLE ZsTruncateObjectData1 ZrTruncateObjectData]) >
+  --- read-access-panic: a refused read panics the TA.
+  rl [read-access-panic] :
+    (msg failReadData[] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(readObjData[PARAMS]) >
+    =>
+    < TK : TAKernel | status : panic > .
+
+  --- write-object-data-access-fail: a handle without accessWrite refuses the write.
+  crl [write-object-data-access-fail] :
+    (msg reqWriteObjectData[ARGS] from TK to HANDLE)
     < HANDLE : ObjHandle | flags : DATAFLAGS >
     =>
-    < TK : TAKernel | status : panic , api-call : noCall >
     < HANDLE : ObjHandle | >
-  if not (accessWrite in DATAFLAGS) .
+    (msg failWriteData[] from HANDLE to TK)
+  if not isWritable(DATAFLAGS) .
+
+  --- write-access-panic: a refused write panics the TA.
+  rl [write-access-panic] :
+    (msg failWriteData[] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(writeObjectData[PARAMS]) >
+    =>
+    < TK : TAKernel | status : panic > .
+
+  --- truncate-object-data-access-fail: a handle without accessWrite refuses the truncation.
+  crl [truncate-object-data-access-fail] :
+    (msg reqTruncateObjectData[ARGS] from TK to HANDLE)
+    < HANDLE : ObjHandle | flags : DATAFLAGS >
+    =>
+    < HANDLE : ObjHandle | >
+    (msg failTruncateData[] from HANDLE to TK)
+  if not isWritable(DATAFLAGS) .
+
+  --- truncate-access-panic: a refused truncation panics the TA.
+  rl [truncate-access-panic] :
+    (msg failTruncateData[] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(truncateObjectData[PARAMS]) >
+    =>
+    < TK : TAKernel | status : panic > .
 endom

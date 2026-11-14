@@ -9,9 +9,12 @@
 --- size_t, the enumerations) are int, so object types, algorithms, modes, flags, sizes and
 --- origins are ints.  The structs of the API whose content the model does not show are opaque
 --- types: TEE-Attribute (TEE_Attribute; an attribute array is one value), TEE-Param (TEE_Param;
---- the four parameters are one value), TEE-UUID and TEEC-Session.  TEE-Buffer, TEE-ObjectId,
---- TEE-AttributeIds and TEE-AttrContent stand for the buffers of the API, which are pointers
---- in C.
+--- the four parameters are one value), TEE-UUID and TEEC-Session.
+--- A buffer of the API (data, an object identifier, an attribute value) is a void * to an object
+--- of type char that holds the whole content (see char in IMP-BTYPE): a stub reads an input
+--- buffer with inBuf (inId for an object identifier) and writes an output buffer through deref.
+--- The content values (data, file names, attribute values) are chars, and an array of
+--- attribute identifiers is an int.
 --- @kind data
 --- @feature imp
 fmod TEE-IMP-TYPE is
@@ -25,7 +28,6 @@ fmod TEE-IMP-TYPE is
   eq TEE-TASessionHandle = (struct TeeTASessionHandle) * .
   eq TEE-ObjectEnumHandle = (struct TeeObjectEnumHandle) * .
   ops TEE-Attribute TEE-Param TEE-UUID TEEC-Session : -> ConcBType [ctor] .
-  ops TEE-Buffer TEE-ObjectId TEE-AttributeIds TEE-AttrContent : -> ConcBType [ctor] .
 endfm
 
 ------------------------------------------------------------
@@ -376,6 +378,9 @@ mod TRANSIENT-OBJECT-TEE-CALL is
   --- secretValue is an AttrId that is a reference attribute (see refAttrIds).
   eq makeCall(initRefAttribute , # secretValue # V) = initRefAttribute[# secretValue # V] .
   ceq makeCall(initRefAttribute , # REF # attrContentData(V)) = initRefAttribute[# REF # V] if (REF in refAttrIds) or (REF == secretValue) .
+  --- A buffer that TEE_Malloc filled with zeros (zeroData, see malloc in tools/ta2imp.py) gives a
+  --- key whose bytes the model does not track: an arbitrary value, randomAttrVal.
+  ceq makeCall(initRefAttribute , # REF # zeroData) = initRefAttribute[# REF # randomAttrVal] if (REF in refAttrIds) or (REF == secretValue) .
   eq makeReturnStmt(initRefAttribute, noReturnCode, # ATTRS, E) = $assign(# ATTRS , E) .
 
   eq makeCall(initValueAttribute , # VAL # V) = initValueAttribute[# VAL # V] .
@@ -433,8 +438,8 @@ mod PERSISTENT-OBJECT-TEE-CALL is
   op OpenPersistentObjectLib : -> Program .
   eq OpenPersistentObjectLib 
   = defineSysCall(
-      TEE-Result openPersistentObject(int 'storageId, TEE-ObjectId 'fileId, int 'dataFlags, TEE-ObjectHandle & 'handle),
-      @inArgs('storageId, 'fileId, 'dataFlags), --- should match with the makeCall              
+      TEE-Result openPersistentObject(int 'storageId, void * 'fileId, int 'dataFlags, TEE-ObjectHandle & 'handle),
+      @inArgs('storageId, inId('fileId), 'dataFlags), --- should match with the makeCall              
       @outArgs('ret, 'handle),                  --- should match with the makeReturnStmt
       @body(skip),
       @return('ret)
@@ -451,10 +456,10 @@ mod PERSISTENT-OBJECT-TEE-CALL is
   op CreatePersistentObjectLib : -> Program .
   eq CreatePersistentObjectLib 
   = defineSysCall(
-      TEE-Result createPersistent(int 'storageId, TEE-ObjectId 'fileId,
-                                 int 'dataFlags, TEE-ObjectHandle 'handle, TEE-Buffer 'data, int 'size,
+      TEE-Result createPersistent(int 'storageId, void * 'fileId,
+                                 int 'dataFlags, TEE-ObjectHandle 'handle, void * 'data, int 'size,
                                  TEE-ObjectHandle & 'optHandle),                   --- signature 
-      @inArgs('storageId, 'fileId, 'dataFlags, 'handle, 'data, 'size, 'optHandle),                   
+      @inArgs('storageId, inId('fileId), 'dataFlags, 'handle, inBuf('data), 'size, 'optHandle),                   
       @outArgs('ret, 'optHandle),                  
       @body(skip),
       @return('ret)                                                        --- return
@@ -495,9 +500,9 @@ mod PERSISTENT-OBJECT-TEE-CALL is
   op ReadObjectDataLib : -> Program .
   eq ReadObjectDataLib
   = defineSysCall(
-      TEE-Result readObjData(TEE-ObjectHandle 'obj, int 'size, TEE-Buffer & 'buf),
+      TEE-Result readObjData(TEE-ObjectHandle 'obj, int 'size, void * 'buf),
       @inArgs('obj, 'size),
-      @outArgs('ret, 'buf),
+      @outArgs('ret, deref('buf)),
       @body(skip),
       @return('ret)
   ) .
@@ -505,8 +510,8 @@ mod PERSISTENT-OBJECT-TEE-CALL is
   op WriteObjectDataLib : -> Program .
   eq WriteObjectDataLib
   = defineSysCall(
-      TEE-Result writeObjectData(TEE-ObjectHandle 'obj, TEE-Buffer 'buf),
-      @inArgs('obj, 'buf),
+      TEE-Result writeObjectData(TEE-ObjectHandle 'obj, void * 'buf),
+      @inArgs('obj, inBuf('buf)),
       @outArgs('ret),
       @body(skip),
       @return('ret)
@@ -535,8 +540,8 @@ mod PERSISTENT-OBJECT-TEE-CALL is
   op RenamePersistentObjectLib : -> Program .
   eq RenamePersistentObjectLib
   = defineSysCall(
-      int renamePersistentObject(TEE-ObjectHandle 'obj, TEE-ObjectId 'newId, TEE-Result & 'code),
-      @inArgs('obj, 'newId),
+      int renamePersistentObject(TEE-ObjectHandle 'obj, void * 'newId, TEE-Result & 'code),
+      @inArgs('obj, inId('newId)),
       @outArgs('code),
       @body(skip),
       @return(# 1)
@@ -889,14 +894,14 @@ mod TEE-IMP-VALUE-TYPE is
   eq tyV(# MD) = ty(int) .
   eq tyV(# AT) = ty(TEE-Attribute) .
   eq tyV(# AID) = ty(int) .
-  eq tyV(# AI) = ty(TEE-AttributeIds) .
-  eq tyV(# AC) = ty(TEE-AttrContent) .
+  eq tyV(# AI) = ty(int) .
+  eq tyV(# AC) = ty(char) .
   eq tyV(# OU) = ty(int) .
   eq tyV(# SI) = ty(int) .
   eq tyV(# DF) = ty(int) .
-  eq tyV(# DL) = ty(TEE-Buffer) .
+  eq tyV(# DL) = ty(char) .
   eq tyV(# DS) = ty(int) .
-  eq tyV(# FI) = ty(TEE-ObjectId) .
+  eq tyV(# FI) = ty(char) .
   eq tyV(# DP) = ty(int) .
   eq tyV(# SK) = ty(int) .
   eq tyV(# PT) = ty(int) .
@@ -963,8 +968,8 @@ mod CRYPTO-OPERATION-SYSCALL is
   op CipherInitLib : -> Program .
   eq CipherInitLib
   = defineSysCall(
-      int cipherInit(TEE-OperationHandle 'handle, TEE-Buffer 'iv),
-      @inArgs('handle, 'iv),
+      int cipherInit(TEE-OperationHandle 'handle, void * 'iv),
+      @inArgs('handle, inBuf('iv)),
       @outArgs(nil),
       @body(skip),
       @return(# 1)
@@ -973,9 +978,9 @@ mod CRYPTO-OPERATION-SYSCALL is
   op CipherUpdateLib : -> Program .
   eq CipherUpdateLib
   = defineSysCall(
-      TEE-Result cipherUpdate(TEE-OperationHandle 'handle, TEE-Buffer 'src, TEE-Buffer & 'dest),
-      @inArgs('handle, 'src),
-      @outArgs('ret, 'dest),
+      TEE-Result cipherUpdate(TEE-OperationHandle 'handle, void * 'src, void * 'dest),
+      @inArgs('handle, inBuf('src)),
+      @outArgs('ret, deref('dest)),
       @body(skip),
       @return('ret)
   ) .
@@ -1040,8 +1045,8 @@ mod OBJECT-SYSCALL is
   op InitRefAttributeLib : -> Program .
   eq InitRefAttributeLib
   = defineSysCall(
-      int initRefAttribute(int 'id, TEE-Buffer 'value, TEE-Attribute & 'attr),
-      @inArgs('id, 'value),
+      int initRefAttribute(int 'id, void * 'value, TEE-Attribute & 'attr),
+      @inArgs('id, inBuf('value)),
       @outArgs('attr),
       @body(skip),
       @return(# 1)

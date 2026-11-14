@@ -213,3 +213,17 @@ search [1] in IMP-SEM-TEST : mkConf(struct qPt { int qa ; } ; struct qPt qs ; in
 
 --- A pointer and a reference parameter in one call: both reach the caller's objects.
 search [1] in IMP-SEM-TEST : mkConf(int qf(int * qp, int & qv) { deref(qp) := # 1 ; qv := # 2 ; return # 0 ; } int qx ; int qy ; int qz ; qz := qf(addr(qx), qy) ;) =>* k(.K) env((qx |-> L) ; (qy |-> L') ; ENV) store((L |-> # 1) ; (L' |-> # 2) ; MEM) KS:KConfig .
+
+------------------------------------------------------------
+--- malloc (TEE_Malloc): an object in the frame of the calling function.
+------------------------------------------------------------
+
+--- An object allocated by malloc is filled by a callee through a pointer parameter, and the
+--- caller reads it back: qx = 9.
+search [1] in IMP-SEM-TEST : mkConf(int qf(int * qp) { deref(qp) := # 9 ; return # 0 ; } int * qp ; int qx ; int qz ; qp := malloc(# 0) ; qz := qf(qp) ; qx := deref(qp) ;) =>* k(.K) env((qx |-> L) ; ENV) store((L |-> # 9) ; MEM) KS:KConfig .
+
+--- A copy of the pointer shares the buffer, as in C: a write through qbb is read through qp.
+search [1] in IMP-SEM-TEST : mkConf(int * qp ; int * qbb ; int qx ; qp := malloc(# 1) ; qbb := qp ; deref(qbb) := # 4 ; qx := deref(qp) ;) =>* k(.K) env((qx |-> L) ; ENV) store((L |-> # 4) ; MEM) KS:KConfig .
+
+--- Reassigning a pointer parameter does not touch the caller's buffer: qx = 1.
+search [1] in IMP-SEM-TEST : mkConf(int qf(int * qp) { qp := malloc(# 7) ; deref(qp) := # 8 ; return # 0 ; } int * qp ; int qx ; int qz ; qp := malloc(# 1) ; qz := qf(qp) ; qx := deref(qp) ;) =>* k(.K) env((qx |-> L) ; ENV) store((L |-> # 1) ; MEM) KS:KConfig .

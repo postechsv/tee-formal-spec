@@ -32,15 +32,15 @@
 --- attribute of the block.  An empty tamper (noAlt) is a well-behaved client.
 ---
 --- Deviations from the specification:
----   * The parameters of a TA command are the typed parameters of its IMP function, with
----     the type TEE-Memref for a memory reference.  There is no paramTypes with four
----     TEE_Param slots, so a parameter type mismatch is not modeled.
+---   * The parameters of a TA command are the typed parameters of its IMP function.  A memory
+---     reference is a pointer, params[i].memref.buffer, of type char * (or void *).  There is no
+---     paramTypes with four TEE_Param slots, so a parameter type mismatch is not modeled.
 ---   * Partial memory references over a part of a block are not modeled: a part is a block
 ---     of its own.
----   * A read or write of the TA reads or writes the whole datum at once.  A memory
----     reference passed to an [inbuf] parameter of a TEE API is read once, when the
----     parameter is bound.  A memory reference cannot be passed to an [outbuf] parameter: the
----     TA writes the output to private memory and then to the memory reference.
+---   * A read or write of the TA reads or writes the whole datum at once.  Every read through
+---     the pointer (deref, or a TEE API that reads an [inbuf] parameter) fetches the data again,
+---     so the data may differ between two reads.  A TEE API writes an [outbuf] parameter
+---     through the pointer.
 ---   * Only registered blocks have a rogue client; the client buffers of temporary
 ---     references do not change during the operation.
 ---   * A write to an input memory reference, and a write past the original size, are
@@ -50,10 +50,9 @@
 ---   * A registered reference to a block of another client is stuck in the SMC request.
 
 --- This module defines the IMP syntax of shared memory.
---- In a TA:
----   shmData(E): the data of the memory reference E (params[i].memref.buffer);
+--- In a TA, a memory reference E is the pointer params[i].memref.buffer:
+---   deref(E): its data (*E), read or written as an lvalue;
 ---   shmSize(E): its size (params[i].memref.size);
----   shmWrite(E, E'): writes the data E' to the memory reference E;
 ---   shmSetSize(E, E'): sets the size of E to E', the size returned to the client;
 ---   checkMemoryAccessRights(macc(R, W, A), E): TEE_CheckMemoryAccessRights with the flags
 ---     TEE_MEMORY_ACCESS_READ (R), _WRITE (W) and _ANY_OWNER (A) on the buffer E.
@@ -67,8 +66,8 @@
 ---   memrefTo(E, D): a memory reference to the whole block E with direction D;
 ---   tmpref(X, Z, D), nullref(Z, D): temporary and null memory references;
 ---   teecInvokeCommand(ES, EF, EL): TEEC_InvokeCommand of the command EF in the session ES with
----     the arguments EL, where an output parameter is written &E; the output values are
----     assigned to the outputs E.
+---     the arguments EL, where an output parameter is written addr(E) (&E in C); the output
+---     values are assigned to the outputs E.
 
 --- @kind program
 --- @feature shm
@@ -80,16 +79,12 @@ fmod SHARED-MEMORY-SYNTAX is
   sort MemAccess .
   op macc : Bool Bool Bool -> MemAccess [ctor] .
 
-  ops shmData shmSize shmView shmRetSize shmRelease : Exp -> Exp [ctor] .
-  ops shmWrite shmSetSize shmFill shmRogue : Exp Exp -> Exp [ctor] .
+  ops shmSize shmView shmRetSize shmRelease : Exp -> Exp [ctor] .
+  ops shmSetSize shmFill shmRogue : Exp Exp -> Exp [ctor] .
   ops shmAlloc memrefTo : Exp MemrefDir -> Exp [ctor] .
   op tmpref : Exp Exp MemrefDir -> Exp [ctor] .
   op nullref : Exp MemrefDir -> Exp [ctor] .
   op checkMemoryAccessRights : MemAccess Exp -> Exp [ctor] .
-  --- &E marks an output parameter of teecInvokeCommand, as &optHandle does in the paper's
-  --- parameter declarations (getFuncParams).  Its precedence (31) is above that of a
-  --- parameter declaration T X (30), so U & X parses only as the reference type U & with X.
-  op &_ : Exp -> Exp [ctor prec 31] .
   op teecInvokeCommand : Exp Exp ExpList -> Exp [ctor] .
   op stripOut : ExpList -> ExpList .
   op outArgs : ExpList -> ExpList .
@@ -112,7 +107,6 @@ fmod SHARED-MEMORY-SYNTAX is
 
   --- Strictness: the operands are evaluated left to right, as in IMP-STRICTNESS.  The
   --- operator waits in the context with $shHole in place of the operand.
-  ceq k({ shmData(E) } ~> K) = k({ E } ~> $sh1(shmData($shHole)) ~> K) if not E :: Value .
   ceq k({ shmSize(E) } ~> K) = k({ E } ~> $sh1(shmSize($shHole)) ~> K) if not E :: Value .
   ceq k({ shmView(E) } ~> K) = k({ E } ~> $sh1(shmView($shHole)) ~> K) if not E :: Value .
   ceq k({ shmRetSize(E) } ~> K) = k({ E } ~> $sh1(shmRetSize($shHole)) ~> K) if not E :: Value .
@@ -121,7 +115,6 @@ fmod SHARED-MEMORY-SYNTAX is
   ceq k({ memrefTo(E, D) } ~> K) = k({ E } ~> $sh1(memrefTo($shHole, D)) ~> K) if not E :: Value .
   ceq k({ checkMemoryAccessRights(MA, E) } ~> K)
     = k({ E } ~> $sh1(checkMemoryAccessRights(MA, $shHole)) ~> K) if not E :: Value .
-  eq k({ V } ~> $sh1(shmData($shHole)) ~> K) = k({ shmData(V) } ~> K) .
   eq k({ V } ~> $sh1(shmSize($shHole)) ~> K) = k({ shmSize(V) } ~> K) .
   eq k({ V } ~> $sh1(shmView($shHole)) ~> K) = k({ shmView(V) } ~> K) .
   eq k({ V } ~> $sh1(shmRetSize($shHole)) ~> K) = k({ shmRetSize(V) } ~> K) .
@@ -131,19 +124,15 @@ fmod SHARED-MEMORY-SYNTAX is
   eq k({ V } ~> $sh1(checkMemoryAccessRights(MA, $shHole)) ~> K)
     = k({ checkMemoryAccessRights(MA, V) } ~> K) .
 
-  ceq k({ shmWrite(E1, E2) } ~> K) = k({ E1 } ~> $sh2(shmWrite($shHole, E2), E2) ~> K) if not E1 :: Value .
   ceq k({ shmSetSize(E1, E2) } ~> K) = k({ E1 } ~> $sh2(shmSetSize($shHole, E2), E2) ~> K) if not E1 :: Value .
   ceq k({ shmFill(E1, E2) } ~> K) = k({ E1 } ~> $sh2(shmFill($shHole, E2), E2) ~> K) if not E1 :: Value .
   ceq k({ shmRogue(E1, E2) } ~> K) = k({ E1 } ~> $sh2(shmRogue($shHole, E2), E2) ~> K) if not E1 :: Value .
-  eq k({ V1 } ~> $sh2(shmWrite($shHole, E2), E2) ~> K) = k({ shmWrite(V1, E2) } ~> K) .
   eq k({ V1 } ~> $sh2(shmSetSize($shHole, E2), E2) ~> K) = k({ shmSetSize(V1, E2) } ~> K) .
   eq k({ V1 } ~> $sh2(shmFill($shHole, E2), E2) ~> K) = k({ shmFill(V1, E2) } ~> K) .
   eq k({ V1 } ~> $sh2(shmRogue($shHole, E2), E2) ~> K) = k({ shmRogue(V1, E2) } ~> K) .
-  ceq k({ shmWrite(V1, E2) } ~> K) = k({ E2 } ~> $sh3(V1, shmWrite(V1, $shHole)) ~> K) if not E2 :: Value .
   ceq k({ shmSetSize(V1, E2) } ~> K) = k({ E2 } ~> $sh3(V1, shmSetSize(V1, $shHole)) ~> K) if not E2 :: Value .
   ceq k({ shmFill(V1, E2) } ~> K) = k({ E2 } ~> $sh3(V1, shmFill(V1, $shHole)) ~> K) if not E2 :: Value .
   ceq k({ shmRogue(V1, E2) } ~> K) = k({ E2 } ~> $sh3(V1, shmRogue(V1, $shHole)) ~> K) if not E2 :: Value .
-  eq k({ V2 } ~> $sh3(V1, shmWrite(V1, $shHole)) ~> K) = k({ shmWrite(V1, V2) } ~> K) .
   eq k({ V2 } ~> $sh3(V1, shmSetSize(V1, $shHole)) ~> K) = k({ shmSetSize(V1, V2) } ~> K) .
   eq k({ V2 } ~> $sh3(V1, shmFill(V1, $shHole)) ~> K) = k({ shmFill(V1, V2) } ~> K) .
   eq k({ V2 } ~> $sh3(V1, shmRogue(V1, $shHole)) ~> K) = k({ shmRogue(V1, V2) } ~> K) .
@@ -171,14 +160,17 @@ mod SHARED-MEMORY-VALUE is
   pr TEE-CLIENT-FUNC .
   pr CONFIGURATION .
 
+  --- mref(O) is a pointer (params[i].memref.buffer): deref reads and writes the shared memory.
   sort MrefValue .
-  subsort MrefValue < Value .
+  subsort MrefValue < Ptr .
   op memref : Oid MemrefDir -> Value [ctor] .
   op tmem : Nat Nat MemrefDir -> Value [ctor] .
   op nmem : Nat MemrefDir -> Value [ctor] .
   op mref : Oid -> MrefValue [ctor] .
 
-  ops TEE-Memref TEEC-SharedMemory : -> ConcBType [ctor] .
+  --- TEEC-SharedMemory is a block of a client (TEEC_SharedMemory), and TEEC-Parameter a parameter
+  --- of a client operation (TEEC_Parameter): a registered, temporary or null memory reference.
+  ops TEEC-SharedMemory TEEC-Parameter : -> ConcBType [ctor] .
   --- The typing context of TEE_CheckMemoryAccessRights (see the typing equations below).
   op $tcmar : -> TItem [ctor] .
 
@@ -196,15 +188,15 @@ mod SHARED-MEMORY-VALUE is
   eq k({ nullref(loc(LZ), D) } ~> K) = k({ nmem(LZ, D) } ~> K) .
 
   --- teecInvokeCommand(ES, EF, EL) runs as the stub of TEEC_InvokeCommand.  EL holds the
-  --- arguments of the command, where an output parameter is written &E.  All the arguments,
+  --- arguments of the command, where an output parameter is written addr(E).  All the arguments,
   --- the outputs included with their current values, are evaluated ($inH) and sent by
   --- invoke-ta-smc; invoke-ta-finish assigns the returned values to the outputs E.
   var XL : ExpList .
   eq stripOut(nil) = nil .
-  eq stripOut((& E , XL)) = E , stripOut(XL) .
+  eq stripOut((addr(E) , XL)) = E , stripOut(XL) .
   eq stripOut((E , XL)) = E , stripOut(XL) [owise] .
   eq outArgs(nil) = nil .
-  eq outArgs((& E , XL)) = E , outArgs(XL) .
+  eq outArgs((addr(E) , XL)) = E , outArgs(XL) .
   eq outArgs((E , XL)) = outArgs(XL) [owise] .
 
   eq k({ teecInvokeCommand(ES, EF, EL) } ~> []; ~> K)
@@ -216,38 +208,34 @@ mod SHARED-MEMORY-VALUE is
 
   --- Typing (IMP-TYPING): each operation types its operands left to right, checks them with
   --- $tchk, and gives its result type with $tres, as a SIMPLE rule such as int + int => int.
-  eq tk($te(shmData(E)) ~> K) = tk($te(E) ~> $tchk(TEE-Memref) ~> $tres(TEE-Buffer) ~> K) .
-  eq tk($te(shmSize(E)) ~> K) = tk($te(E) ~> $tchk(TEE-Memref) ~> $tres(int) ~> K) .
-  eq tk($te(shmWrite(E1, E2)) ~> K)
-   = tk($te(E1) ~> $tchk(TEE-Memref) ~> $te(E2) ~> $tchk(TEE-Buffer) ~> $tres(void) ~> K) .
+  --- The size of a memory reference is read and set through its pointer (a char *).
+  eq tk($te(shmSize(E)) ~> K) = tk($te(E) ~> $tchk(char *) ~> $tres(int) ~> K) .
   eq tk($te(shmSetSize(E1, E2)) ~> K)
-   = tk($te(E1) ~> $tchk(TEE-Memref) ~> $te(E2) ~> $tchk(int) ~> $tres(void) ~> K) .
-  --- TEE_CheckMemoryAccessRights takes a memory reference or a private buffer.
+   = tk($te(E1) ~> $tchk(char *) ~> $te(E2) ~> $tchk(int) ~> $tres(void) ~> K) .
+  --- TEE_CheckMemoryAccessRights takes a pointer: a memory reference or a private buffer.
+  var T : ImpType .
   eq tk($te(checkMemoryAccessRights(MA, E)) ~> K) = tk($te(E) ~> $tcmar ~> K) .
-  eq tk(ty(TEE-Memref) ~> $tcmar ~> K) = tk(ty(TEE-Result) ~> K) .
-  eq tk(ty(TEE-Buffer) ~> $tcmar ~> K) = tk(ty(TEE-Result) ~> K) .
+  eq tk(ty(T *) ~> $tcmar ~> K) = tk(ty(TEE-Result) ~> K) .
   eq tk($te(shmAlloc(E, D)) ~> K) = tk($te(E) ~> $tchk(int) ~> $tres(TEEC-SharedMemory) ~> K) .
   eq tk($te(shmFill(E1, E2)) ~> K)
-   = tk($te(E1) ~> $tchk(TEEC-SharedMemory) ~> $te(E2) ~> $tchk(TEE-Buffer) ~> $tres(void) ~> K) .
+   = tk($te(E1) ~> $tchk(TEEC-SharedMemory) ~> $te(E2) ~> $tchk(char) ~> $tres(void) ~> K) .
   eq tk($te(shmRogue(E1, E2)) ~> K)
-   = tk($te(E1) ~> $tchk(TEEC-SharedMemory) ~> $te(E2) ~> $tchk(TEE-Buffer) ~> $tres(void) ~> K) .
-  eq tk($te(shmView(E)) ~> K) = tk($te(E) ~> $tchk(TEEC-SharedMemory) ~> $tres(TEE-Buffer) ~> K) .
+   = tk($te(E1) ~> $tchk(TEEC-SharedMemory) ~> $te(E2) ~> $tchk(char) ~> $tres(void) ~> K) .
+  eq tk($te(shmView(E)) ~> K) = tk($te(E) ~> $tchk(TEEC-SharedMemory) ~> $tres(char) ~> K) .
   eq tk($te(shmRetSize(E)) ~> K) = tk($te(E) ~> $tchk(TEEC-SharedMemory) ~> $tres(int) ~> K) .
   eq tk($te(shmRelease(E)) ~> K) = tk($te(E) ~> $tchk(TEEC-SharedMemory) ~> $tres(void) ~> K) .
-  eq tk($te(memrefTo(E, D)) ~> K) = tk($te(E) ~> $tchk(TEEC-SharedMemory) ~> $tres(TEE-Memref) ~> K) .
+  eq tk($te(memrefTo(E, D)) ~> K) = tk($te(E) ~> $tchk(TEEC-SharedMemory) ~> $tres(TEEC-Parameter) ~> K) .
   --- A temporary memory reference names the client buffer and its size: both are lvalues.
   eq tk($te(tmpref(E, Z, D)) ~> K)
-   = tk($tl(E) ~> $tchk(TEE-Buffer) ~> $tl(Z) ~> $tchk(int) ~> $tres(TEE-Memref) ~> K) .
-  eq tk($te(nullref(Z, D)) ~> K) = tk($tl(Z) ~> $tchk(int) ~> $tres(TEE-Memref) ~> K) .
+   = tk($tl(E) ~> $tchk(char) ~> $tl(Z) ~> $tchk(int) ~> $tres(TEEC-Parameter) ~> K) .
+  eq tk($te(nullref(Z, D)) ~> K) = tk($tl(Z) ~> $tchk(int) ~> $tres(TEEC-Parameter) ~> K) .
   --- The command arguments EL are not typed (an output is written &E).
   eq tk($te(teecInvokeCommand(ES, EF, EL)) ~> K)
    = tk($te(ES) ~> $tchk(TEEC-Session) ~> $te(EF) ~> $tchk(int) ~> $tres(void) ~> K) .
 
-  --- A memory reference may be passed for a buffer parameter ([inbuf], [Internal Core] 3.4.3);
-  --- it is read when the parameter is bound.  It may also be passed for an object
-  --- identifier, which is an [in] parameter: the TA panics then (3.4.1).
-  eq tk(ty(TEE-Memref) ~> $targ(TEE-Buffer) ~> K) = tk(K) .
-  eq tk(ty(TEE-Memref) ~> $targ(TEE-ObjectId) ~> K) = tk(K) .
+  --- A TEE API stub reads an input buffer that is a memory reference from the shared memory, by
+  --- the rule shm-read.
+  eq k({ mref(M) } ~> $inbuf ~> K) = k({ mref(M) } ~> $read ~> K) .
 endm
 
 --- This module defines the shared memory blocks of the clients and the memory references of
@@ -491,10 +479,10 @@ omod SHARED-MEMORY-BEHAVIOR is
 --- TA access
 ------------------------------------------------------------
 
-  --- shm-read: the TA reads the data of a live memory reference.  This is a rule: the data
-  --- may change between two reads (shm-tamper).
+  --- shm-read: the TA reads the data of a live memory reference, through deref or a TEE API
+  --- input buffer.  This is a rule: the data may change between two reads (shm-tamper).
   rl [shm-read] :
-    < TI : TrustedApp | proc : (k({ shmData(mref(O)) } ~> K) KS), status : (normal).AppStatus >
+    < TI : TrustedApp | proc : (k({ mref(O) } ~> $read ~> K) KS), status : (normal).AppStatus >
     < O : MemrefOp | tview : TL >
     =>
     < TI : TrustedApp | proc : (k({ # TL } ~> K) KS) >
@@ -508,13 +496,14 @@ omod SHARED-MEMORY-BEHAVIOR is
     < TI : TrustedApp | proc : (k({ # N } ~> K) KS) >
     < O : MemrefOp | > .
 
-  --- shm-write: the TA writes the data DL to an output or input-output memory reference.  The
-  --- TA may write in the range of the original size ([Internal Core] 4.3.6.4).
+  --- shm-write: the TA writes the data DL to an output or input-output memory reference, by an
+  --- assignment through the pointer or as the output buffer of a TEE API.  The TA may write in the
+  --- range of the original size ([Internal Core] 4.3.6.4).
   crl [shm-write] :
-    < TI : TrustedApp | proc : (k({ shmWrite(mref(O), # DL) } ~> K) KS), status : (normal).AppStatus >
+    < TI : TrustedApp | proc : (k(mref(O) := # DL ; ~> K) KS), status : (normal).AppStatus >
     < O : MemrefOp | dir : D, size0 : N0 >
     =>
-    < TI : TrustedApp | proc : (k({ # 0 } ~> K) KS) >
+    < TI : TrustedApp | proc : (k(K) KS) >
     < O : MemrefOp | tview : DL >
   if writable(D) /\ size(DL) <= N0 .
 
@@ -522,14 +511,14 @@ omod SHARED-MEMORY-BEHAVIOR is
   --- original size, is a programmer error: the TA panics.  Its program is left at the write, which
   --- no rule continues (as the other panic rules leave the call).
   rl [shm-write-input] :
-    < TI : TrustedApp | proc : (k({ shmWrite(mref(O), # DL) } ~> K) KS), status : (normal).AppStatus >
+    < TI : TrustedApp | proc : (k(mref(O) := # DL ; ~> K) KS), status : (normal).AppStatus >
     < O : MemrefOp | dir : mrIn >
     =>
     < TI : TrustedApp | status : panic >
     < O : MemrefOp | > .
 
   crl [shm-write-overflow] :
-    < TI : TrustedApp | proc : (k({ shmWrite(mref(O), # DL) } ~> K) KS), status : (normal).AppStatus >
+    < TI : TrustedApp | proc : (k(mref(O) := # DL ; ~> K) KS), status : (normal).AppStatus >
     < O : MemrefOp | size0 : N0 >
     =>
     < TI : TrustedApp | status : panic >
@@ -554,18 +543,10 @@ omod SHARED-MEMORY-BEHAVIOR is
     < TI : TrustedApp | proc : (k({ # accessRes(W, A, D) } ~> K) KS) >
     < O : MemrefOp | > .
 
-  --- shm-bind-buffer: a memory reference passed for a buffer parameter is read once, when the
-  --- parameter is bound.  shm-bind-object-id: a memory reference passed for an object
-  --- identifier ([in], [Internal Core] 3.4.1) panics the TA.
-  eq [shm-bind-buffer] :
-    < TI : TrustedApp | proc : (k(bind((pv(TEE-Buffer Y, mref(O)), PVL)) ~> K) KS) >
-    < O : MemrefOp | tview : TL >
-    =
-    < TI : TrustedApp | proc : (k(bind((pv(TEE-Buffer Y, # TL), PVL)) ~> K) KS) >
-    < O : MemrefOp | > .
-  eq [shm-bind-object-id] :
-    < TI : TrustedApp | proc : (k(bind((pv(TEE-ObjectId Y, mref(O)), PVL)) ~> K) KS),
-                        status : (normal).AppStatus >
+  --- shm-object-id: a memory reference passed to a TEE API for an object identifier ([in],
+  --- [Internal Core] 3.4.1) panics the TA when the stub reads it.
+  eq [shm-object-id] :
+    < TI : TrustedApp | proc : (k({ mref(O) } ~> $inid ~> K) KS), status : (normal).AppStatus >
     =
     < TI : TrustedApp | status : panic > .
 

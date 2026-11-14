@@ -29,6 +29,10 @@ fmod IMP-BTYPE is
   --- of any type.  A pointer is a scalar, so a pointer type is a concrete base type: a variable,
   --- a struct member or a by-value parameter may have it.  Its values are locations loc(L).
   op _* : ImpType -> ConcBType [ctor prec 20] .
+  --- char: the type of the content of a buffer.  The model does not show the bytes of a buffer:
+  --- a buffer is one object of type char that holds its whole content (a TEE data value), and a
+  --- char * points to it.
+  op char : -> ConcBType [ctor] .
 endfm
 
 --- @kind program
@@ -227,7 +231,12 @@ fmod IMP-LVALUE is
   subsort SObj < Value .
   op sobj : Map{Var,Nat} -> SObj [ctor] .
   op lvalue : Exp -> Exp [ctor] .
-  op loc : Nat -> Value [ctor] .
+  --- Pointer values: a location loc(L) of the store, or the null pointer nullptr (C NULL).
+  --- Other kinds of pointers (memory references of the shared memory) are added to Ptr.
+  sort Ptr .
+  subsort Ptr < Value .
+  op loc : Nat -> Ptr [ctor] .
+  op nullptr : -> Ptr [ctor] .
   op ref : Nat -> Value [ctor] .
 endfm
 
@@ -263,6 +272,15 @@ fmod IMP-EXP is
   --- reference parameter U & X, and * with multiplication.
   op addr : Exp -> Exp [ctor] .
   op deref : Exp -> LExp [ctor] .
+  --- malloc(E): a new object that holds the value of E, and its address (a void *).  It stands
+  --- for TEE_Malloc, whose memory the model allocates in the frame of the calling function:
+  --- the object lives until that function returns (see IMP-SEMANTICS).  E is the initial
+  --- content, as the model has no sizes.
+  op malloc : Exp -> Exp [ctor] .
+  --- inBuf(E), inId(E): the content of the buffer that the pointer E points to, read by a TEE API
+  --- stub for an input buffer or an object identifier (see defineSysCall).  A value that is not
+  --- a pointer is a content itself.  Internal to the stubs; a program does not use them.
+  ops inBuf inId : Exp -> Exp [ctor] .
   op _->_ : Exp Var -> LExp [ctor gather(E e) prec 30] .
   eq E -> X = deref(E) . X .
   op __ : ImpType Var -> PExp [ctor prec 30] .
@@ -520,7 +538,7 @@ fmod IMP-TYPING is
   op $twhile : Stmt -> TItem [ctor] .
   --- $tptr: the address of the lvalue just typed.  $tderef: the object the pointer just typed
   --- points to.
-  ops $tptr $tderef : -> TItem [ctor] .
+  ops $tptr $tderef $tmal : -> TItem [ctor] .
 
   --- Tasks.  SIMPLE: <tasks> <task*> <k/> <tenv?/> <returnType?/> </task> </tasks> <gtenv/>.
   --- A task here has the cells
@@ -728,6 +746,10 @@ fmod IMP-TYPING is
   ceq tk(ty(T) ~> $tptr ~> K) = tk(ty(T *) ~> K) if not T :: AType .
   eq tk($te(deref(E)) ~> K) = tk($te(E) ~> $tderef ~> K) .
   ceq tk(ty(T *) ~> $tderef ~> K) = tk(ty(T) ~> K) if T =/= void .
+  --- malloc returns a void * (C11 7.22.3.4), whatever the type of its initial content.  The null
+  --- pointer is a void * too (see IMP-AUX).
+  eq tk($te(malloc(E)) ~> K) = tk($te(E) ~> $tmal ~> K) .
+  ceq tk(ty(T) ~> $tmal ~> K) = tk(ty(void *) ~> K) if not T :: AType .
 
   --- Array element.  SIMPLE: (T[])[int, Ts] => T[Ts].  The index must be an int; a literal
   --- index is checked against the bounds (0 <= I < N).  A non-literal index is not checked
@@ -889,6 +911,8 @@ fmod IMP-EVAL-CONTEXT is
   --- Array index: the array operand (a location) is heated, then the index.
   op $idxA : Exp -> KLabel [ctor] .
   op $idxI : Value -> KLabel [ctor] .
+  --- malloc, inBuf and inId wait for their operand.
+  ops $mallocC $inbuf $inid : -> KLabel [ctor] .
 
   --- op lvalue : Exp -> KLabel [ctor] .
   op `{lvalue(`[`])`} : -> KLabel [ctor] .
@@ -1068,6 +1092,21 @@ fmod IMP-STRICTNESS is
   eq k({ lvalue(deref(E)) } ~> K)       = k({ E } ~> K) .
   eq k({ deref(E) } ~> K)               = k({ lvalue(deref(E)) } ~> $read ~> K) .
 
+--- malloc(E) evaluates its initial content E (see the malloc rule in IMP-SEMANTICS).
+  ceq k({ malloc(E) } ~> K)             = k({ E } ~> $mallocC ~> K) if not E :: Value .
+   eq k({ V } ~> $mallocC ~> K)         = k({ malloc(V) } ~> K) .
+
+--- inBuf(E), inId(E): E is evaluated; a location is read ($read), and a value that is not a
+--- pointer is the content itself.  The null pointer and the other kinds of pointers are handled
+--- where they are defined (TEE-IMP, shared memory).
+  var PL : Nat .
+  eq k({ inBuf(E) } ~> K)               = k({ E } ~> $inbuf ~> K) .
+  eq k({ inId(E) } ~> K)                = k({ E } ~> $inid ~> K) .
+  eq k({ loc(PL) } ~> $inbuf ~> K)      = k({ loc(PL) } ~> $read ~> K) .
+  eq k({ loc(PL) } ~> $inid ~> K)       = k({ loc(PL) } ~> $read ~> K) .
+  ceq k({ V } ~> $inbuf ~> K)           = k({ V } ~> K) if not V :: Ptr .
+  ceq k({ V } ~> $inid ~> K)            = k({ V } ~> K) if not V :: Ptr .
+
 --- Input parameters of a TEE API stub: $inH heats each input name to its value and cools
 --- the value into the list of values (see defineSysCall in tee-imp.maude).
   var IVL : ArgList .
@@ -1154,6 +1193,9 @@ fmod IMP-AUX is
 ------------------------------------------------------------
 --- Auxiliary Functions
 ------------------------------------------------------------
+
+  --- The null pointer is a void * (NULL, C11 7.19p3).
+  eq tyV(nullptr) = ty(void *) .
 
   --- mkConf(P): the initial configuration of P, only if P is well typed.  An ill-typed
   --- program yields the error term illTyped.
@@ -1444,6 +1486,11 @@ mod IMP-SEMANTICS is
   rl [alloc]:    k($alloc(BT) ~> K) store(MEM) nextLoc(L) => k($loc(L) ~> K) store(insert(L, undef, MEM)) nextLoc(L + 1) .
   rl [allocObj]: k($allocObj ~> K) store(MEM) nextLoc(L) => k($loc(L) ~> K) store(insert(L, undef, MEM)) nextLoc(L + 1) .
   eq k(alloc(T X) ~> K) = k($alloc(T) ~> $setLoc(X) ~> K) .
+  --- malloc: a new object in the frame of the running function, which holds the value VA, and
+  --- its address.  Like the locals, it is gone when the function returns (fRetn and fQuit
+  --- restore nextLoc), so a program must not use its address after that: tools/ta2imp.py
+  --- rejects a TA whose TEE_Malloc pointer is returned or stored outside the function.
+  rl [malloc]:   k({ malloc(VA) } ~> K) store(MEM) nextLoc(L) => k({ loc(L) } ~> K) store(insert(L, VA, MEM)) nextLoc(L + 1) .
   eq [decl]:     k($loc(L) ~> $setLoc(X) ~> K) env(ENV) = k(K) env(insert(X, L, ENV)) .
 
 --- function & structure declaration (rules, as in the artifact)

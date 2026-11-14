@@ -3,18 +3,9 @@
 --- part of its rules as equations, so importing it has an effect only through the wrapper
 --- modules at the end of this file; nothing in the spec imports them.
 ---
---- The set of rules follows the G of the paper artifact (tee-formal-analysis, spec/src
---- *-INVISIBLE modules), rule by rule:
----   K rules: those whose artifact counterpart is in the artifact G.  Not in G: the memory
----      read (lookup) and write (assign) and the allocations (alloc, allocObj, allocA), as the
----      artifact keeps leval(loc(L)), loc(L) := V and var X as rules; op-or-true and
----      op-or-false (the artifact G has no || rule); op-minus (the artifact has no -).
----   TEE API call rules: tee-api-call, tee-api-call-accept, tee-api-call-return.
----   TEE API rules: for the API functions that have rules in the artifact G (the functions
----      MQT-TZ uses), the rules of each step that the artifact G contains, on the TA and on the
----      object side; a step that the spec splits into several rules has all of them.  Rules of
----      behavior that the artifact does not have, and the API functions without artifact G
----      rules, stay rules.
+--- The set of rules is the G of Section 8.1 of the paper: G1, the start and finish rules of the
+--- TEE API functions on the TA object alone that do not panic it; G2, the K rules except loops
+--- and function calls; G3, the TEE API call rules.
 --- The rules are the [invisible] rules of case-studies/mqttz/mqttz.toml of tee-formal-analysis,
 --- and the file is generated from them by its tools/gen-invisible.py.
 ---
@@ -68,6 +59,12 @@ mod IMP-SEMANTICS-INVISIBLE is
   var PX : PExp .
   var PVL PEL : PVList .
 
+  --- lookup
+  eq
+   k({ X } ~> K) env((X |-> L) ; ENV) store((L |-> VS) ; MEM)
+  = k({ VS } ~> K) env((X |-> L) ; ENV) store((L |-> VS) ; MEM)
+  .
+
   --- lookup-lv
   eq
    k({ lvalue(X) } ~> K) env((X |-> L) ; ENV)
@@ -80,10 +77,22 @@ mod IMP-SEMANTICS-INVISIBLE is
   = k({ loc(N) } ~> K) store((L |-> sobj((X |-> N) ; SO)) ; MEM)
   .
 
+  --- assign
+  ceq
+   k(loc(L) := V ; ~> K) store((L |-> V') ; MEM)
+  = k(K) store((L |-> V) ; MEM) if not V :: SObj
+  .
+
   --- op-plus
   eq
       k({ # I + # I'    } ~> K)
   = k({ # (I + I')   } ~> K)
+  .
+
+  --- op-minus
+  eq
+     k({ # I - # I'    } ~> K)
+  = k({ # (I - I')   } ~> K)
   .
 
   --- op-times
@@ -122,6 +131,18 @@ mod IMP-SEMANTICS-INVISIBLE is
   = k({ # false      } ~> K)
   .
 
+  --- op-or-true
+  eq
+   k({ # true  || E  } ~> K)
+  = k({ # true       } ~> K)
+  .
+
+  --- op-or-false
+  eq
+  k({ # false || E  } ~> K)
+  = k({ E            } ~> K)
+  .
+
   --- op-not
   eq
        k({ ! (# B)       } ~> K)
@@ -152,10 +173,22 @@ mod IMP-SEMANTICS-INVISIBLE is
   = k(hoistK(getSList(S')) ~> S' ~> $restoreEnv(ENV) ~> K) env(ENV)
   .
 
-  --- while
+  --- allocA
   eq
-   k(while (E) {S} ~> K)
-  = k(if (E) {(S while (E) {S})} else {skip} ~> K)
+   k($alloc(CB [ NA ]) ~> K) store(MEM) nextLoc(LN) arrlen(AL)
+  = k($loc(LN) ~> K) store(setUndef(LN, NA, MEM)) nextLoc(LN + NA) arrlen(insert(LN, NA, AL))
+  .
+
+  --- alloc
+  eq
+    k($alloc(BT) ~> K) store(MEM) nextLoc(L)
+  = k($loc(L) ~> K) store(insert(L, undef, MEM)) nextLoc(L + 1)
+  .
+
+  --- allocObj
+  eq
+   k($allocObj ~> K) store(MEM) nextLoc(L)
+  = k($loc(L) ~> K) store(insert(L, undef, MEM)) nextLoc(L + 1)
   .
 
   --- fdecl
@@ -174,49 +207,6 @@ mod IMP-SEMANTICS-INVISIBLE is
   eq
    k(struct T {S} ; ~> K) sdecl(SDCL)
   = k(K) sdecl(insert(struct T, S, SDCL))
-  .
-
-  --- fCall
-  ceq
-   k({ F(EL) } ~> K) fdecl(((T F(PARAMS) |-> BODY) , FDCL))
-  = k(zip(nil, zipL(PARAMS, EL)) ~> invoke(BODY) ~> K) fdecl(((T F(PARAMS) |-> BODY) , FDCL))
-  if not F :: TeeApi
-  .
-
-  --- fExec
-  eq
-   k(zip(PVL, nil) ~> invoke(BODY) ~> K) env(ENV) genv(G) stack(STACK) nextLoc(N) labels(LM)
-  = k(bind(PVL) ~> hoistBody(BODY)) env(G) genv(G) stack(item(ENV, LM, K, N) |> STACK) nextLoc(N) labels(bodyLabels(BODY))
-  .
-
-  --- bindV
-  eq
-   k(bind((pv(VT X, VA), PVL)) ~> K)
-  = k(alloc(VT X) ~> X := VA ; ~> bind(PVL) ~> K)
-  .
-
-  --- bindR
-  eq
-   k(bind((pv(RT X, loc(L)), PVL)) ~> K) env(ENV)
-  = k(bind(PVL) ~> K) env(insert(X, L, ENV))
-  .
-
-  --- bindS
-  eq
-   k(bind((pv(ST X, VA), PVL)) ~> K)
-  = k(alloc(ST X) ~> X := VA ; ~> bind(PVL) ~> K)
-  .
-
-  --- fRetn
-  eq
-   k(return V ; ~> K) env(ENV) stack(item(ENV',LM',K',L') |> STACK) nextLoc(L) labels(LM)
-  = k({ V } ~> K') env(ENV') stack(STACK) nextLoc(L') labels(LM')
-  .
-
-  --- fQuit
-  eq
-   k(.K) env(ENV) stack(item(ENV',LM',K',L') |> STACK) nextLoc(L) labels(LM)
-  = k(K') env(ENV') stack(STACK) nextLoc(L') labels(LM')
   .
 
   --- assign-list
@@ -317,67 +307,39 @@ omod GENERIC-OBJECT-BEHAVIOR-INVISIBLE is
   if not nullHandle(HANDLE)
   .
 
-  --- get-obj-info-transient-top-level-handle
-  eq
-    (msg reqObjectInfo[# SI] from TK to HANDLE)
-    < oid(N , TK) : TransObj |
-                             type : OBJTYPE , max-size : MAXOBJSIZE ,
-                             attributes : ATTRS , usages : OBJUSAGES >
-    < HANDLE : ObjHandle | oid : oid(N , TK) >
-  =
-    < oid(N , TK) : TransObj | >
-    < HANDLE : ObjHandle | >
-    (msg retObjectInfoTr[# OBJTYPE # keySize(ATTRS) # MAXOBJSIZE # OBJUSAGES] from HANDLE to TK)
-  .
-
-  --- get-obj-info-transient-success
-  eq
-    (msg retObjectInfoTr[# OBJTYPE # KEYSIZE # MAXOBJSIZE # OBJUSAGES] from HANDLE to TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-call : exec(getObjectInfo1[PARAMS] , 0) >
-  =
-    < TK : TAKernel | api-call : return(getObjectInfo1[# success # teeObjectInfo(OBJTYPE , KEYSIZE , MAXOBJSIZE , OBJUSAGES , dataSize(0) , pos(0) , empty)]) >
-  .
-
-  --- get-obj-info-persistent-top-level-handle
-  eq
-    (msg reqObjectInfo[# SI] from TK to HANDLE)
-    < oid(M, SI) : PersistObj |
-                              type : OBJTYPE, max-size : MAXOBJSIZE,
-                              attributes : ATTRS, usages : OBJUSAGES,
-                              data-stream : STREAMDATA >
-    < HANDLE : ObjHandle | oid : oid(M, SI), flags : DATAFLAGS,
-                              pos : N >
-  =
-    < oid(M, SI) : PersistObj | >
-    < HANDLE : ObjHandle | >
-    (msg retObjectInfoPr[# OBJTYPE # keySize(ATTRS) # MAXOBJSIZE # OBJUSAGES #
-                           sizeOfData(STREAMDATA) # pos(N) # DATAFLAGS] from HANDLE to TK)
-  .
-
-  --- get-obj-info-persistent-subroutine
-  eq
-    (msg retObjectInfoPr[# OBJTYPE # KEYSIZE # MAXOBJSIZE # OBJUSAGES # DATASIZE # DATAPOS # DATAFLAGS] from HANDLE to TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-call : exec(getObjectInfo1[PARAMS] , 0) , storage : SI >
-  =
-    < TK : TAKernel | api-call : exec(getObjectInfo1[PARAMS # teeObjectInfo(OBJTYPE , KEYSIZE , MAXOBJSIZE , OBJUSAGES , DATASIZE , DATAPOS , DATAFLAGS)] , 1) >
-    (msg getStatus[] from TK to SI)
-  .
-
-  --- get-obj-info-persistent-success
-  eq
-    (msg retStatus[# (normal).StorageStatus] from SI to TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-call : exec(getObjectInfo1[PARAMS # INFO] , 1) >
-  =
-    < TK : TAKernel | api-call : return(getObjectInfo1[# success # INFO]) >
-  .
-
-  --- get-obj-info-abnormal-storage-err
+  --- restrict-object-usage-request
   ceq
-    (msg retStatus[# STATUS] from SI to TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-call : exec(getObjectInfo1[PARAMS] , 1) >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(restrictObjectUsage1[# HANDLE PARAMS]) >
   =
-    < TK : TAKernel | api-call : return(getObjectInfo1[# storageErrCode(STATUS)]) >
-  if abnormalStorage(STATUS)
+    < TK : TAKernel | api-call : exec(restrictObjectUsage1[# HANDLE PARAMS] , 0) >
+    (msg reqAttribute[] from TK to HANDLE)
+  if not nullHandle(HANDLE)
+  .
+
+  --- restrict-object-usage-success
+  eq
+    (msg finishRestrictUsage[] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(restrictObjectUsage1[PARAMS]) >
+  =
+    < TK : TAKernel | api-call : return(restrictObjectUsage1[# noReturnCode]) >
+  .
+
+  --- get-object-buffer-attribute-request
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(getObjectBufferAttribute[# HANDLE # ID]) >
+  =
+    < TK : TAKernel | api-call : exec(getObjectBufferAttribute[# HANDLE # ID] , 0) >
+    (msg reqAttribute[] from TK to HANDLE)
+  if bufferType(ID) and not nullHandle(HANDLE)
+  .
+
+  --- get-object-value-attribute-request
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(getObjectValueAttribute[# HANDLE # ID]) >
+  =
+    < TK : TAKernel | api-call : exec(getObjectValueAttribute[# HANDLE # ID] , 0) >
+    (msg reqAttribute[] from TK to HANDLE)
+  if valueType(ID) and not nullHandle(HANDLE)
   .
 
   --- close-object-not-null-subroutine
@@ -387,25 +349,6 @@ omod GENERIC-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TAKernel | api-call : final(closeObject[# HANDLE]) >
     (msg reqCloseObject[] from TK to HANDLE)
   if not nullHandle(HANDLE)
-  .
-
-  --- close-persistent-top-level-handle
-  eq
-    (msg reqCloseObject[] from TK to HANDLE)
-    < OI : PersistObj | open-handles : (oh(HANDLE, DATAFLAGS) OHS) >
-    < HANDLE : ObjHandle | oid : OI >
-  =
-    < OI : PersistObj | open-handles : OHS >
-    (msg finishCloseObject[] from OI to TK)
-  .
-
-  --- close-transient-top-level-handle
-  eq
-    (msg reqCloseObject[] from TK to HANDLE)
-    < OI : TransObj | >
-    < HANDLE : ObjHandle | oid : OI >
-  =
-    (msg finishCloseObject[] from OI to TK)
   .
 
   --- close-object-not-null-success
@@ -494,21 +437,20 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
   if not nullHandle(HANDLE)
   .
 
-  --- free-transient-top-level-handle
-  eq
-    (msg deleteTransient[] from TK to HANDLE)
-    < OI : TransObj | >
-    < HANDLE : ObjHandle | oid : OI >
-  =
-    (msg finishDeleteTransient[] from HANDLE to TK)
-  .
-
   --- free-transient-not-null-success
   eq
     (msg finishDeleteTransient[] from HANDLE to TK)
     < TK : TAKernel | status : (normal).AppStatus , api-call : final(freeTransientObject[PARAMS]) >
   =
     < TK : TAKernel | api-call : return(freeTransientObject[# noReturnCode]) >
+  .
+
+  --- free-transient-null-success
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(freeTransientObject[# HANDLE]) >
+  =
+    < TK : TAKernel | api-call : return(freeTransientObject[# noReturnCode # null]) >
+  if nullHandle(HANDLE)
   .
 
   --- reset-transient-not-null-subroutine
@@ -518,18 +460,6 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TAKernel | api-call : final(resetTransientObject[# HANDLE]) >
     (msg reqResetTransient[] from TK to HANDLE)
   if not nullHandle(HANDLE)
-  .
-
-  --- reset-transient-top-level-handle
-  eq
-    (msg reqResetTransient[] from TK to HANDLE)
-    < OI : TransObj | >
-    < HANDLE : ObjHandle | oid : OI >
-  =
-    < OI : TransObj | initialized : false,
-                             attributes : empty , usages : allObjectUsages >
-    < HANDLE : ObjHandle | >
-    (msg retResetTransient[] from HANDLE to TK)
   .
 
   --- reset-transient-not-null-success
@@ -557,20 +487,6 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
   if not nullHandle(HANDLE)
   .
 
-  --- populate-transient-top-level-handle
-  ceq
-    (msg reqPopulateTransient[# ATTRS] from TK to HANDLE)
-    < OI : TransObj | initialized : false,
-                             type : OBJTYPE >
-    < HANDLE : ObjHandle | oid : OI  >
-  =
-    < OI : TransObj | initialized : true,
-                             attributes : ATTRS >
-    < HANDLE : ObjHandle | >
-    (msg retPopulateTransient[] from HANDLE to TK)
-  if checkCompatible(OBJTYPE , ATTRS)
-  .
-
   --- populate-transient-success
   eq
     (msg retPopulateTransient[] from HANDLE to TK)
@@ -587,48 +503,20 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
   if (REF in refAttrIds) or (REF == secretValue)
   .
 
+  --- init-value-attribute
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(initValueAttribute[# VAL # V]) >
+  =
+    < TK : TAKernel | api-call : return(initValueAttribute[# noReturnCode # attr(VAL , V)]) >
+  if VAL in valAttrIds
+  .
+
   --- copy-object-attrs-get-attrs
   eq
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(copyObjAttrs1[# HANDLE1 # HANDLE2]) >
   =
     < TK : TAKernel | api-call : exec(copyObjAttrs1[# HANDLE1 # HANDLE2] , 0) >
     (msg getAttrs[] from TK to HANDLE2)
-  .
-
-  --- copy-object-attrs-try-ret-attrs
-  eq
-    (msg getAttrs[] from TK to HANDLE)
-    < HANDLE : ObjHandle | oid : OI >
-    < OI : TransObj | type : TYPE , attributes : ATTRS ,
-                      usages : USAGES , initialized : B >
-  =
-    < HANDLE : ObjHandle | >
-    < OI : TransObj | >
-    (msg (if B then retAttrs[# TYPE # ATTRS # USAGES] else getAttrsFail[] fi) from HANDLE to TK)
-  .
-
-  --- copy-object-attrs-req-set-attrs
-  eq
-    (msg retAttrs[ARGS] from HANDLE to TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-call : exec(copyObjAttrs1[# HI # HANDLE] , 0) >
-  =
-    < TK : TAKernel | api-call : final(copyObjAttrs1[# HI # HANDLE]) >
-    (msg setAttrs[ARGS] from TK to HI)
-  .
-
-  --- copy-object-attrs-copy-attrs
-  eq
-    (msg setAttrs[# TYPE' # ATTRS # USAGES'] from O to HI)
-    < OI : TransObj | type : TYPE , usages : USAGES , initialized : false >
-    < HI : ObjHandle | oid : OI >
-  =
-    (if typeCompatible(TYPE' , TYPE)
-     then < OI : TransObj | usages : intersection(USAGES , USAGES') ,
-                                   initialized : true , attributes : ATTRS >
-          (msg setAttrsSuccess[] from HI to O)
-     else < OI : TransObj | >
-          (msg setAttrsFail[] from HI to O) fi)
-    < HI : ObjHandle | >
   .
 
   --- copy-object-attrs-success
@@ -639,15 +527,21 @@ omod TRANSIENT-OBJECT-BEHAVIOR-INVISIBLE is
     < O : TAKernel | api-call : return(copyObjAttrs1[# success]) >
   .
 
-  --- req-attribute-transient
-  eq
-    (msg reqAttribute[] from TK to HANDLE)
-    < HANDLE : ObjHandle | oid : OI >
-    < OI : TransObj | initialized : true , type : OBJTYPE , attributes : ATTRS , usages : OBJUSAGES >
+  --- generate-key-subroutine
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(generateKey[# HANDLE # KEYSIZE # ATTRS]) >
   =
-    < HANDLE : ObjHandle | oid : OI >
-    < OI : TransObj | initialized : true , type : OBJTYPE , attributes : ATTRS , usages : OBJUSAGES >
-    (msg retAttributeTr[# ATTRS # OBJTYPE # OBJUSAGES] from HANDLE to TK)
+    < TK : TAKernel | api-call : final(generateKey[# HANDLE # KEYSIZE # ATTRS]) >
+    (msg reqGenerateKey[# KEYSIZE # ATTRS] from TK to HANDLE)
+  if not nullHandle(HANDLE)
+  .
+
+  --- generate-key-success
+  eq
+    (msg retGenerateKey[] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(generateKey[PARAMS]) >
+  =
+    < TK : TAKernel | api-call : return(generateKey[# success]) >
   .
 
 endom
@@ -685,7 +579,14 @@ omod PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
   var USAGES : Set{Usage} .
   var DATA : List{Data} .
 
-  --- open-persistent-subroutine
+  --- open-persistent-default-private-storage
+  eq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(openPersistentObject[# FILE # DATAFLAGS]) >
+  =
+    < TK : TAKernel | api-call : init(openPersistentObject[# storagePrivate # FILE # DATAFLAGS]) >
+  .
+
+  --- open-persistent-request
   ceq
     < TK : TAKernel | status : (normal).AppStatus ,
                       api-call : init(openPersistentObject[# STORID # FILE ZsOpenPersistentObject2 ZrOpenPersistentObject]) , storage : SI >
@@ -695,47 +596,13 @@ omod PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
   if supportedStorage(STORID)
   .
 
-  --- open-persistent-status-normal
-  eq
-    (msg retStatus[# (normal).StorageStatus] from SI to TK)
-    < TK : TAKernel | status : (normal).AppStatus ,
-                      api-call : exec(openPersistentObject[# STORID # FILE ZsOpenPersistentObject2 ZrOpenPersistentObject] , 0) , storage : SI >
-  =
-    < TK : TAKernel | api-call : exec(openPersistentObject[# STORID # FILE ZsOpenPersistentObject2 ZrOpenPersistentObject] , 1) >
-    (msg checkFileExist[# FILE] from TK to SI)
-  .
-
-  --- open-persistent-subroutine
-  eq
-    (msg retFileExist[# true] from SI to TK)
-    < TK : TAKernel | status : (normal).AppStatus ,
-                      api-call : exec(openPersistentObject[# STORID # FILE # DATAFLAGS] , 1) ,
-                      storage : SI , counter : N >
-  =
-    < TK : TAKernel | api-call : final(openPersistentObject[# STORID # FILE # DATAFLAGS]) ,
-                      counter : N + 1 >
-    (msg openPersistentHandle[# FILE # DATAFLAGS # N] from TK to SI)
-  .
-
-  --- open-persistent-top-level-handle
+  --- open-persistent-storage-id-not-found
   ceq
-    (msg openPersistentHandle[# FILE # DATAFLAGS # N] from TK to SI)
-    < oid(M, SI) : PersistObj | file-name : FILE , open-handles : OHS >
+    < TK : TAKernel | status : (normal).AppStatus ,
+                      api-call : init(openPersistentObject[# STORID ZsOpenPersistentObject1 ZsOpenPersistentObject2 ZrOpenPersistentObject]) >
   =
-    < oid(M, SI) : PersistObj | open-handles : (oh(oid(N, TK), DATAFLAGS) OHS) >
-    freshPersistentHandle(N, TK, DATAFLAGS, oid(M, SI))
-    (msg finishOpenPersistentHandle[# oid(N, TK)] from SI to TK)
-  if openHandlesCompatible(DATAFLAGS, OHS)
-  .
-
-  --- open-persistent-top-level-conflict
-  ceq
-    (msg openPersistentHandle[# FILE # DATAFLAGS # N] from TK to SI)
-    < oid(M, SI) : PersistObj | file-name : FILE , open-handles : OHS >
-  =
-    < oid(M, SI) : PersistObj | >
-    (msg failOpenPersistentHandle[] from SI to TK)
-  if not openHandlesCompatible(DATAFLAGS, OHS)
+    < TK : TAKernel | api-call : return(openPersistentObject[# errorItemNotFound # null]) >
+  if not supportedStorage(STORID)
   .
 
   --- open-persistent-success
@@ -754,24 +621,9 @@ omod PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TAKernel | api-call : return(openPersistentObject[# errorAccessConflict # null]) >
   .
 
-  --- open-persistent-file-err
-  eq
-    (msg retFileExist[# false] from SI to TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-call : exec(openPersistentObject[PARAMS] , 1) >
-  =
-    < TK : TAKernel | api-call : return(openPersistentObject[# errorItemNotFound # null]) >
-  .
-
   --- open-persistent-memory-err
   eq
     < TK : TAKernel | status : outOfMemory , api-call : init(openPersistentObject[PARAMS]) >
-  =
-    < TK : TAKernel | api-call : return(openPersistentObject[# errorOutOfMemory # null]) >
-  .
-
-  --- open-persistent-memory-err-exec
-  eq
-    < TK : TAKernel | status : outOfMemory , api-call : exec(openPersistentObject[PARAMS], N) >
   =
     < TK : TAKernel | api-call : return(openPersistentObject[# errorOutOfMemory # null]) >
   .
@@ -783,15 +635,6 @@ omod PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TAKernel | api-call : return(openPersistentObject[# errorOutOfMemory # null]) >
   .
 
-  --- open-persistent-storage-err
-  ceq
-    (msg retStatus[# STATUS] from SI to TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-call : exec(openPersistentObject[PARAMS] , 0) >
-  =
-    < TK : TAKernel | api-call : return(openPersistentObject[# storageErrCode(STATUS) # null]) >
-  if abnormalStorage(STATUS)
-  .
-
   --- create-persistent-determine-case
   eq
     < TK : TAKernel | api-call : init(createPersistent[ZsCreatePersistentObject0 # FILE # FLAGS # HI # DATA ZsCreatePersistentObject5 # OPTHANDLE ZrCreatePersistentObject]) ,
@@ -800,79 +643,6 @@ omod PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TAKernel | api-call : final(createPersistent[ZsCreatePersistentObject0 # FILE # FLAGS # HI # DATA ZsCreatePersistentObject5 # OPTHANDLE ZrCreatePersistentObject]) >
     (msg create[# chooseMethod((# FILE # FLAGS # HI # DATA), OPTHANDLE) # FILE # FLAGS # HI # DATA]
        from TK to SI)
-  .
-
-  --- create-persist-overwrite-check
-  ceq
-    (msg create[# METHOD # FILE # FLAGS # HI # DATA] from TK to SI)
-    < PI : PersistObj | file-name : FILE >
-    < SI : Storage | status : (normal).StorageStatus , files : FILES , counter : N >
-  =
-    < PI : PersistObj | >
-    if not (overwrite in FLAGS)
-    then < SI : Storage | > (msg createFail[] from SI to TK)
-    else < SI : Storage | counter : N + 2 > (msg create[# METHOD # FILE # FLAGS # HI # DATA # N # TK] from SI to PI) fi
-  if FILE in FILES
-  .
-
-  --- create-persist-pure-new
-  ceq
-    (msg create[# pure # FILE # FLAGS # HI # DATA] from TK to SI)
-    < SI : Storage | status : (normal).StorageStatus , files : FILES , counter : N >
-  =
-    < SI : Storage | files : (FILE , FILES) , counter : N + 2 >
-    < NEWHI : ObjHandle | oid : NEWPI , flags : FLAGS , pos : 0 >
-    < NEWPI : PersistObj | type : pureData , usages : empty , max-size : 0 , attributes : empty ,
-                                 file-name : FILE , data-stream : DATA ,
-                                 open-handles : oh(NEWHI, FLAGS) >
-    (msg createSuccess[# NEWHI] from NEWPI to TK)
-  if not (FILE in FILES) /\ NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI)
-  .
-
-  --- create-persist-persist-new
-  ceq
-    (msg create[# persist # FILE # FLAGS # HI # DATA] from TK to SI)
-    < HI : ObjHandle | oid : OI >
-    < OI : CryptoObj | type : TYPE , usages : USAGES , max-size : M , attributes : ATTRS >
-    < SI : Storage | status : (normal).StorageStatus , files : FILES , counter : N >
-  =
-    < SI : Storage | files : (FILE , FILES) , counter : N + 2 >
-    < OI : CryptoObj | > < HI : ObjHandle | >
-    < NEWHI : ObjHandle | oid : NEWPI , flags : FLAGS , pos : 0 >
-    < NEWPI : PersistObj | type : TYPE , usages : USAGES , max-size : M ,
-                                 attributes : ATTRS , file-name : FILE , data-stream : DATA ,
-                                 open-handles : oh(NEWHI, FLAGS) >
-    (msg createSuccess[# NEWHI] from NEWPI to TK)
-  if not (FILE in FILES) /\ NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI)
-  .
-
-  --- create-persist-pure
-  ceq
-    (msg create[# pure # FILE # FLAGS # HI # DATA # N # TK] from SI to PI)
-    < PI : PersistObj | file-name : FILE >
-  =
-    < NEWHI : ObjHandle | oid : NEWPI , flags : FLAGS , pos : 0 >
-    < NEWPI : PersistObj | type : pureData , usages : empty , max-size : 0 , attributes : empty ,
-                                 file-name : FILE , data-stream : DATA ,
-                                 open-handles : oh(NEWHI, FLAGS) >
-    (msg createSuccess[# NEWHI] from NEWPI to TK)
-  if NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI)
-  .
-
-  --- create-persist-persist
-  ceq
-    (msg create[# persist # FILE # FLAGS # HI # DATA # N # TK] from SI to PI)
-    < PI : PersistObj | file-name : FILE >
-    < HI : ObjHandle | oid : OI >
-    < OI : CryptoObj | type : TYPE , usages : USAGES , max-size : M , attributes : ATTRS >
-  =
-    < OI : CryptoObj | > < HI : ObjHandle | >
-    < NEWHI : ObjHandle | oid : NEWPI , flags : FLAGS , pos : 0 >
-    < NEWPI : PersistObj | type : TYPE , usages : USAGES , max-size : M ,
-                                 attributes : ATTRS , file-name : FILE , data-stream : DATA ,
-                                 open-handles : oh(NEWHI, FLAGS) >
-    (msg createSuccess[# NEWHI] from NEWPI to TK)
-  if NEWHI := newOid(N, SI) /\ NEWPI := newOid(N + 1, SI)
   .
 
   --- create-persist-success
@@ -914,61 +684,12 @@ omod PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
   if not nullHandle(HANDLE)
   .
 
-  --- close-and-delete-persistent-top-level-start-ok
-  eq
-    (msg retStatus[# (normal).StorageStatus] from SI to TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-call : exec(closeAndDeletePersistentObject1[# HANDLE] , 0) ,
-                      storage : SI >
-  =
-    < TK : TAKernel | api-call : exec(closeAndDeletePersistentObject1[# HANDLE] , 1) >
-    (msg deletePersistent[# SI] from TK to HANDLE)
-  .
-
-  --- close-and-delete-persistent-top-level-start
-  ceq
-    (msg deletePersistent[# SI] from TK to HANDLE)
-    < oid(M, SI) : PersistObj | file-name : FILE , open-handles : oh(HANDLE, DATAFLAGS2) >
-    < HANDLE : ObjHandle | oid : oid(M, SI), flags : DATAFLAGS >
-  =
-    (msg finishDeletePersistent[# FILE] from HANDLE to TK)
-  if hasWriteMeta(DATAFLAGS)
-  .
-
-  --- close-and-delete-persistent-top-level-fail
-  ceq
-    (msg deletePersistent[# SI] from TK to HANDLE)
-    < oid(M, SI) : PersistObj | >
-    < HANDLE : ObjHandle | oid : oid(M, SI), flags : DATAFLAGS >
-  =
-    < oid(M, SI) : PersistObj | >
-    < HANDLE : ObjHandle | >
-    (msg failDeletePersistent[] from HANDLE to TK)
-  if not hasWriteMeta(DATAFLAGS)
-  .
-
-  --- close-and-delete-persistent-subroutine-notify
-  eq
-    (msg finishDeletePersistent[# FILE] from HANDLE to TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-call : exec(closeAndDeletePersistentObject1[PARAMS] , 1) , storage : SI >
-  =
-    < TK : TAKernel | api-call : final(closeAndDeletePersistentObject1[PARAMS]) >
-    (msg notifyFileDeletion[# FILE] from TK to SI)
-  .
-
   --- close-and-delete-persistent-success
   eq
     (msg acceptNotification[] from SI to TK)
     < TK : TAKernel | status : (normal).AppStatus , api-call : final(closeAndDeletePersistentObject1[PARAMS]) >
   =
     < TK : TAKernel | api-call : return(closeAndDeletePersistentObject1[# success]) >
-  .
-
-  --- close-and-delete-persistent-panic
-  eq
-    (msg failDeletePersistent[] from HANDLE to TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-call : exec(closeAndDeletePersistentObject1[PARAMS] , 1) >
-  =
-    < TK : TAKernel | status : panic >
   .
 
   --- close-and-delete-persistent-null-success
@@ -979,23 +700,21 @@ omod PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE is
   if nullHandle(HANDLE)
   .
 
-  --- close-and-delete-persistent-storage-err
-  eq
-    (msg retStatus[# (notAvailable).StorageStatus] from SI to TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-call : exec(closeAndDeletePersistentObject1[PARAMS] , 0) >
+  --- rename-persistent-subroutine
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(renamePersistentObject[# HANDLE # FILE ZrRenamePersistentObject]) , storage : SI >
   =
-    < TK : TAKernel | api-call : return(closeAndDeletePersistentObject1[# errorStorageNotAvailable]) >
+    < TK : TAKernel | api-call : exec(renamePersistentObject[# HANDLE # FILE ZrRenamePersistentObject] , 0) >
+    (msg getStatus[] from TK to SI)
+  if not nullHandle(HANDLE)
   .
 
-  --- copy-object-attrs-try-ret-attrs-persistent
+  --- rename-persistent-success
   eq
-    (msg getAttrs[] from TK to HANDLE)
-    < HANDLE : ObjHandle | oid : OI >
-    < OI : PersistObj | type : TYPE , attributes : ATTRS , usages : USAGES >
+    (msg acceptNotification[] from SI to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(renamePersistentObject[PARAMS]) >
   =
-    < HANDLE : ObjHandle | >
-    < OI : PersistObj | >
-    (msg retAttrs[# TYPE # ATTRS # USAGES] from HANDLE to TK)
+    < TK : TAKernel | api-call : return(renamePersistentObject[# success]) >
   .
 
 endom
@@ -1037,29 +756,6 @@ omod DATA-STREAM-OBJECT-BEHAVIOR-INVISIBLE is
   if not nullHandle(HI)
   .
 
-  --- read-object-data-storage-status-check
-  eq
-    (msg retStatus[# STATUS] from SI to TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-call : exec(readObjData[# HI ZsReadObjectData1 ZrReadObjectData] , 0) >
-  =
-    if STATUS == normal
-    then < TK : TAKernel | api-call : final(readObjData[# HI ZsReadObjectData1 ZrReadObjectData]) >
-         (msg read[ZsReadObjectData1] from TK to HI)
-    else < TK : TAKernel | api-call : return(readObjData[# storageErrCode(STATUS)]) > fi
-  .
-
-  --- read-object-data-from-persist
-  ceq
-    (msg read[# DATASIZE] from TK to HANDLE)
-    < oid(M, SI) : PersistObj | data-stream : STREAM >
-    < HANDLE : ObjHandle | oid : oid(M, SI), flags : DATAFLAGS, pos : DATAPOS >
-  =
-    < oid(M, SI) : PersistObj | >
-    < HANDLE : ObjHandle | pos : updatePos(DATAPOS, DATASIZE, sizeOfData(STREAM)) >
-    (msg retData[# read(DATAPOS, DATASIZE, STREAM)] from HANDLE to TK)
-  if isReadable(DATAFLAGS)
-  .
-
   --- read-object-data-success
   eq
     (msg retData[# DATA] from HANDLE to TK)
@@ -1068,35 +764,13 @@ omod DATA-STREAM-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TAKernel | api-call : return(readObjData[# success # DATA]) >
   .
 
-  --- write-object-data-subroutine
+  --- write-object-data-request
   ceq
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(writeObjectData[# HANDLE PARAMS]) , storage : SI >
   =
     < TK : TAKernel | api-call : exec(writeObjectData[# HANDLE PARAMS] , 0) >
     (msg getStatus[] from TK to SI)
   if not nullHandle(HANDLE)
-  .
-
-  --- write-object-data-subroutine
-  eq
-    (msg retStatus[# (normal).StorageStatus] from SI to TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-call : exec(writeObjectData[# HI # DATA] , 0) ,
-                      storage : SI >
-  =
-    < TK : TAKernel | api-call : final(writeObjectData[# HI # DATA]) >
-    (msg reqWriteObjectData[# DATA # SI] from TK to HI)
-  .
-
-  --- write-object-data-top-level-handle
-  ceq
-    (msg reqWriteObjectData[# DATA # SI] from TK to HANDLE)
-    < oid(M, SI) : PersistObj | data-stream : STREAM >
-    < HANDLE : ObjHandle | oid : oid(M, SI), flags : DATAFLAGS, pos : DATAPOS >
-  =
-    < oid(M, SI) : PersistObj | data-stream : writeStream(DATA, DATAPOS, STREAM) >
-    < HANDLE : ObjHandle | pos : advancePos(DATAPOS, sizeOfData(DATA)) >
-    (msg finishWriteData[] from HANDLE to TK)
-  if isWritable(DATAFLAGS) /\ withinMaxPos(advancePos(DATAPOS, sizeOfData(DATA)))
   .
 
   --- write-object-data-success
@@ -1107,13 +781,46 @@ omod DATA-STREAM-OBJECT-BEHAVIOR-INVISIBLE is
     < TK : TAKernel | api-call : return(writeObjectData[# success]) >
   .
 
-  --- write-object-data-storage-err
+  --- truncate-object-data-request
   ceq
-    (msg retStatus[# STATUS] from SI to TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-call : exec(writeObjectData[PARAMS] , 0) >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(truncateObjectData[# HANDLE PARAMS]) , storage : SI >
   =
-    < TK : TAKernel | api-call : return(writeObjectData[# storageErrCode(STATUS)]) >
-  if abnormalStorage(STATUS)
+    < TK : TAKernel | api-call : exec(truncateObjectData[# HANDLE PARAMS] , 0) >
+    (msg getStatus[] from TK to SI)
+  if not nullHandle(HANDLE)
+  .
+
+  --- truncate-object-data-success
+  eq
+    (msg finishTruncateData[] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(truncateObjectData[PARAMS]) >
+  =
+    < TK : TAKernel | api-call : return(truncateObjectData[# success]) >
+  .
+
+  --- seek-object-data-request
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(seekObjectData[# HANDLE PARAMS]) , storage : SI >
+  =
+    < TK : TAKernel | api-call : exec(seekObjectData[# HANDLE PARAMS] , 0) >
+    (msg getStatus[] from TK to SI)
+  if not nullHandle(HANDLE)
+  .
+
+  --- seek-object-data-top-level-finish-overflow
+  eq
+    (msg seekObjectOverflowTop[] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(seekObjectData[PARAMS]) >
+  =
+    < TK : TAKernel | api-call : return(seekObjectData[# errorOverflow]) >
+  .
+
+  --- seek-object-data-success
+  eq
+    (msg finishSeekData[] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(seekObjectData[PARAMS]) >
+  =
+    < TK : TAKernel | api-call : return(seekObjectData[# success]) >
   .
 
 endom
@@ -1210,15 +917,6 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
   if not nullHandle(HANDLE)
   .
 
-  --- free-operation-top-level-handle
-  eq
-    (msg deleteOperationObject[] from TK to HANDLE)
-    < CI : CryptoOp | >
-    < HANDLE : OpHandle | oid : CI >
-  =
-    (msg finishDeleteOperationObject[] from HANDLE to TK)
-  .
-
   --- free-operation-not-null-success
   eq
     (msg finishDeleteOperationObject[] from HANDLE to TK)
@@ -1235,6 +933,50 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
   if nullHandle(HANDLE)
   .
 
+  --- get-operation-info-subroutine
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(getOperationInfo[# HANDLE]) >
+  =
+    < TK : TAKernel | api-call : final(getOperationInfo[# HANDLE]) >
+    (msg reqOperationInfoMultiple[] from TK to HANDLE)
+  if not nullHandle(HANDLE)
+  .
+
+  --- get-operation-info-success
+  eq
+    (msg retOperationInfoMultiple[# OPINFOMULTI] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(getOperationInfo[PARAMS]) >
+  =
+    < TK : TAKernel | api-call : return(getOperationInfo[# noReturnCode # singleOperationInfo(OPINFOMULTI)]) >
+  .
+
+  --- get-operation-info-multiple-subroutine
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(getOperationInfoMultiple[# HANDLE ZrGetOperationInfoMultiple]) >
+  =
+    < TK : TAKernel | api-call : final(getOperationInfoMultiple[# HANDLE ZrGetOperationInfoMultiple]) >
+    (msg reqOperationInfoMultiple[] from TK to HANDLE)
+  if not nullHandle(HANDLE)
+  .
+
+  --- get-operation-info-multiple-success
+  ceq
+    (msg retOperationInfoMultiple[# OPINFOMULTI] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(getOperationInfoMultiple[ZsGetOperationInfoMultiple0 ZrGetOperationInfoMultiple]) >
+  = < TK : TAKernel | api-call : return(getOperationInfoMultiple[# success # OPINFOMULTI]) >
+    if not hasOutputCapacity(ZrGetOperationInfoMultiple) or
+       outputCapacityFitsSize(ZrGetOperationInfoMultiple , operationInfoRequiredSize(OPINFOMULTI))
+  .
+
+  --- get-operation-info-multiple-short-buffer
+  ceq
+    (msg retOperationInfoMultiple[# OPINFOMULTI] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(getOperationInfoMultiple[ZsGetOperationInfoMultiple0 ZrGetOperationInfoMultiple]) >
+  = < TK : TAKernel | api-call : return(getOperationInfoMultiple[# errorShortBuffer # operationInfoRequiredSize(OPINFOMULTI)]) >
+    if hasOutputCapacity(ZrGetOperationInfoMultiple) and
+       not outputCapacityFitsSize(ZrGetOperationInfoMultiple , operationInfoRequiredSize(OPINFOMULTI))
+  .
+
   --- reset-oper-req-reset
   ceq
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(resetOperation[# HANDLE]) >
@@ -1242,17 +984,6 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     < TK : TAKernel | api-call : final(resetOperation[# HANDLE]) >
     (msg resetOp[# HANDLE] from TK to HANDLE)
   if not nullHandle(HANDLE)
-  .
-
-  --- reset-oper-try-reset-success
-  eq
-    < CI : CryptoOp | state : CSTATE >
-    < HANDLE : OpHandle | oid : CI , state : handleState((keySet, HSF)) >
-    (msg resetOp[# HANDLE] from TK to HANDLE)
-  = < CI : CryptoOp | state : (if CSTATE == active then initial else CSTATE fi) ,
-                       acc-data : nil >
-     < HANDLE : OpHandle | >
-     (msg finishResetOp[] from HANDLE to TK)
   .
 
   --- reset-oper-success
@@ -1272,116 +1003,12 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
   if not nullHandle(KEY) and not nullHandle(HANDLE)
   .
 
-  --- set-operation-key-req-attribute
-  eq
-    (msg startSetOperationKey[# KEY # SI] from TK to HANDLE)
-    < HANDLE : OpHandle | >
-  =
-    < HANDLE : OpHandle | >
-    (msg reqAttribute[] from HANDLE to KEY)
-    (msg pendingSetOperationKey[# TK # KEY # SI] from HANDLE to HANDLE)
-  .
-
-  --- set-operation-key-subroutine-1
-  eq
-    (msg retAttributeTr[# ATTRS # OBJTYPE # OBJUSAGES] from KEY to HANDLE)
-    (msg pendingSetOperationKey[# TK # KEY # SI] from HANDLE to HANDLE)
-  =
-    (msg reqSetOperationKey[# OBJTYPE # ATTRS # OBJUSAGES] from TK to HANDLE)
-  .
-
-  --- set-operation-key-top-level-handle-success
-  ceq
-    (msg reqSetOperationKey[# OBJTYPE # ATTRS # OBJUSAGES] from TK to HANDLE)
-    < HANDLE : OpHandle | oid : CI >
-    < CI : CryptoOp | algorithm : ALGO , mode : MODE,
-                             max-size : KEYSIZE, state : OS >
-  =
-    < HANDLE : OpHandle | oid : CI >
-    < CI : CryptoOp | attributes : ATTRS ,
-                             state : initial >
-    (msg installTopOperationKey[# CI # ATTRS] from TK to HANDLE)
-  if not expectsTwoKeys(ALGO) /\ algorithmObjectTypeCompatible(ALGO , OBJTYPE) /\
-     typeModeCompatible(OBJTYPE , MODE) /\
-     operationUsageCompatible(ALGO , OBJUSAGES , MODE) /\
-     singleKeyMaterialCompatible(ALGO , KEYSIZE , ATTRS)
-  .
-
-  --- install-operation-key-top-level-handle
-  eq
-    (msg installTopOperationKey[# CI # ATTRS] from TK to HANDLE)
-    < HANDLE : OpHandle | state : HS >
-  =
-    < HANDLE : OpHandle | state : handleState(keySet),
-                                 key-material-set : true >
-    (msg finishSetOperationKey[] from HANDLE to TK)
-  .
-
-  --- set-operation-key-top-level-handle-fail
-  ceq
-    (msg reqSetOperationKey[# OBJTYPE # ATTRS # OBJUSAGES] from TK to HANDLE)
-    < HANDLE : OpHandle | oid : CI , HSA:AttributeSet >
-    < CI : CryptoOp | algorithm : ALGO,
-                             mode : MODE, max-size : KEYSIZE >
-  =
-    < HANDLE : OpHandle | oid : CI , HSA >
-    < CI : CryptoOp | >
-    (msg rejectTopOperationKey[] from TK to HANDLE)
-  if not (not expectsTwoKeys(ALGO) and algorithmObjectTypeCompatible(ALGO , OBJTYPE) and
-          typeModeCompatible(OBJTYPE , MODE) and
-          operationUsageCompatible(ALGO , OBJUSAGES , MODE) and
-          singleKeyMaterialCompatible(ALGO , KEYSIZE , ATTRS))
-  .
-
-  --- reject-operation-key-top-level-handle
-  eq
-    (msg rejectTopOperationKey[] from TK to HANDLE)
-    < HANDLE : OpHandle | state : HS >
-  =
-    < HANDLE : OpHandle | >
-    (msg failSetOperationKey[] from HANDLE to TK)
-  .
-
   --- set-operation-key-success
   eq
     (msg finishSetOperationKey[] from HANDLE to TK)
     < TK : TAKernel | status : (normal).AppStatus , api-call : final(setOperationKey[PARAMS]) >
   =
     < TK : TAKernel | api-call : return(setOperationKey[# success]) >
-  .
-
-  --- set-operation-key-panic
-  eq
-    (msg failSetOperationKey[] from HANDLE to TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-call : final(setOperationKey[PARAMS]) >
-  =
-    < TK : TAKernel | status : panic >
-  .
-
-  --- set-operation-key-subroutine-2
-  eq
-    (msg retAttributePr[# ATTRS # OBJTYPE # OBJUSAGES] from KEY to HANDLE)
-    (msg pendingSetOperationKey[# TK # KEY # SI] from HANDLE to HANDLE)
-  =
-    (msg getStatus[] from HANDLE to SI)
-    (msg pendingSetOperationKeyStorage[# TK # SI # ATTRS # OBJTYPE # OBJUSAGES] from HANDLE to HANDLE)
-  .
-
-  --- set-operation-key-subroutine-2
-  eq
-    (msg retStatus[# (normal).StorageStatus] from SI to HANDLE)
-    (msg pendingSetOperationKeyStorage[# TK # SI # ATTRS # OBJTYPE # OBJUSAGES] from HANDLE to HANDLE)
-  =
-    (msg reqSetOperationKey[# OBJTYPE # ATTRS # OBJUSAGES] from TK to HANDLE)
-  .
-
-  --- set-operation-key-storage-err
-  ceq
-    (msg retStatus[# STATUS] from SI to HANDLE)
-    (msg pendingSetOperationKeyStorage[# TK # SI # ATTRS # OBJTYPE # OBJUSAGES] from HANDLE to HANDLE)
-  =
-    (msg failSetOperationKeyCode[# storageErrCode(STATUS)] from HANDLE to TK)
-  if abnormalStorage(STATUS)
   .
 
   --- set-operation-key-storage-err-return
@@ -1392,6 +1019,101 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     < TK : TAKernel | api-call : return(setOperationKey[# RC]) >
   .
 
+  --- set-operation-key2-storage-err-return
+  eq
+    (msg failSetOperationKey2Code[# RC] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(setOperationKey2[PARAMS]) >
+  = < TK : TAKernel | api-call : return(setOperationKey2[# RC]) >
+  .
+
+  --- set-operation-key2-success
+  eq
+    (msg finishSetOperationKey2[] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(setOperationKey2[PARAMS]) >
+  = < TK : TAKernel | api-call : return(setOperationKey2[# success]) >
+  .
+
+  --- copy-operation-request
+  eq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(copyOperation[# HANDLE # SRC ZrCopyOperation]) >
+  =
+    < TK : TAKernel | api-call : final(copyOperation[# HANDLE # SRC ZrCopyOperation]) >
+    (msg startCopyOperation[# SRC] from TK to HANDLE)
+  .
+
+  --- copy-operation-success
+  eq
+    (msg finishCopyOperation[] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(copyOperation[PARAMS]) >
+  =
+    < TK : TAKernel | api-call : return(copyOperation[# noReturnCode]) >
+  .
+
+  --- is-algorithm-supported-success
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(isAlgorithmSupported[# ALGO # ELEM]) >
+  = < TK : TAKernel | api-call : return(isAlgorithmSupported[# success]) >
+  if supportsElement(ALGO , ELEM)
+  .
+
+  --- is-algorithm-supported-fail
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(isAlgorithmSupported[# ALGO # ELEM]) >
+  = < TK : TAKernel | api-call : return(isAlgorithmSupported[# errorNotSupported]) >
+  if not supportsElement(ALGO , ELEM)
+  .
+
+  --- digest-update-subroutine
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(digestUpdate[# HANDLE # DATA]) >
+  =
+    < TK : TAKernel | api-call : final(digestUpdate[# HANDLE # DATA]) >
+    (msg reqDigestUpdate[# DATA] from TK to HANDLE)
+  if not nullHandle(HANDLE)
+  .
+
+  --- digest-update-success
+  eq
+    (msg finishDigestUpdate[] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(digestUpdate[PARAMS]) >
+  =
+    < TK : TAKernel | api-call : return(digestUpdate[# noReturnCode]) >
+  .
+
+  --- digest-do-final-subroutine
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(digestDoFinal[# HANDLE # DATA]) >
+  =
+    < TK : TAKernel | api-call : final(digestDoFinal[# HANDLE # DATA]) >
+    (msg reqDigestDoFinal[# DATA] from TK to HANDLE)
+  if not nullHandle(HANDLE)
+  .
+
+  --- digest-do-final-success
+  eq
+    (msg finishDigestDoFinal[# DATA] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(digestDoFinal[PARAMS]) >
+  =
+    < TK : TAKernel | api-call : return(digestDoFinal[# success # DATA]) >
+  .
+
+  --- digest-extract-subroutine
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(digestExtract[# HANDLE]) >
+  =
+    < TK : TAKernel | api-call : final(digestExtract[# HANDLE]) >
+    (msg reqDigestExtract[] from TK to HANDLE)
+  if not nullHandle(HANDLE)
+  .
+
+  --- digest-extract-success
+  eq
+    (msg finishDigestExtract[# DATA] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(digestExtract[PARAMS]) >
+  =
+    < TK : TAKernel | api-call : return(digestExtract[# success # DATA]) >
+  .
+
   --- cipher-init-req-cipher-init
   ceq
     < TK : TAKernel | status : (normal).AppStatus , api-call : init(cipherInit[# HANDLE # IV]) >
@@ -1399,29 +1121,6 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     < TK : TAKernel | api-call : final(cipherInit[# HANDLE # IV]) >
     (msg reqCipherInit[# IV] from TK to HANDLE)
   if not nullHandle(HANDLE)
-  .
-
-  --- cipher-init-initialize-success
-  eq
-    < HANDLE : OpHandle | oid : CI , state : handleState((keySet , HSF)) ,
-                          opclass : clsCipher >
-    < CI : CryptoOp | state : CSTATE >
-    (msg reqCipherInit[# IV] from TK to HANDLE)
-  = < HANDLE : OpHandle | state : handleState((init , keySet , HSF)) >
-     < CI : CryptoOp | state : if CSTATE == initial then active
-                               else (if CSTATE == active then initial else CSTATE fi) fi >
-     (msg finishCipherInit[] from HANDLE to TK)
-  .
-
-  --- cipher-init-initialize-fail
-  ceq
-    < HANDLE : OpHandle | oid : CI , state : handleState(HSF) , opclass : OC >
-    < CI : CryptoOp | >
-    (msg reqCipherInit[# IV] from TK to HANDLE)
-  = < HANDLE : OpHandle | >
-     < CI : CryptoOp | >
-     (msg failCipherInit[] from HANDLE to TK)
-  if (OC =/= clsCipher) or not (keySet in HSF)
   .
 
   --- cipher-init-success
@@ -1441,33 +1140,6 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
   if not nullHandle(HANDLE)
   .
 
-  --- cipher-update-try-cipher-success
-  ceq
-    < CI : CryptoOp | state : active , attributes : ATTRS ,
-                      algorithm : ALGO , mode : MODE >
-    < HANDLE : OpHandle | oid : CI , opclass : clsCipher ,
-                          state : handleState((init , keySet , HSF)) >
-    (msg reqCipher[# HANDLE # DATA] from TK to HANDLE)
-  = < CI : CryptoOp | >
-     < HANDLE : OpHandle | >
-     (msg finishCipher[# OPRESULT] from HANDLE to TK)
-  if [OPRESULT] := runOp(ALGO , MODE , ATTRS , DATA)
-  .
-
-  --- cipher-update-try-cipher-fail
-  ceq
-    < CI : CryptoOp | state : CSTATE , attributes : ATTRS ,
-                      algorithm : ALGO , mode : MODE >
-    < HANDLE : OpHandle | oid : CI , opclass : OC ,
-                          state : handleState(HSF) >
-    (msg reqCipher[# HANDLE # DATA] from TK to HANDLE)
-  = < CI : CryptoOp | >
-     < HANDLE : OpHandle | >
-     (msg failCipher[] from HANDLE to TK)
-  if not (init in HSF) or not (keySet in HSF) or (CSTATE =/= active) or
-     (OC =/= clsCipher) or runOp(ALGO , MODE , ATTRS , DATA) == failure
-  .
-
   --- cipher-update-success
   eq
     (msg finishCipher[# OPRESULT] from HANDLE to TK)
@@ -1476,35 +1148,268 @@ omod CRYPTO-OPERATION-BEHAVIOR-INVISIBLE is
     < TK : TAKernel | api-call : return(cipherUpdate[# success # OPRESULT]) >
   .
 
-  --- cipher-update-panic
-  eq
-    (msg failCipher[] from HANDLE to TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-call : final(cipherUpdate[PARAMS]) >
+  --- cipher-do-final-req-cipher-final
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(cipherDoFinal[# HANDLE # DATA]) >
   =
-    < TK : TAKernel | status : panic >
+    < TK : TAKernel | api-call : final(cipherDoFinal[# HANDLE # DATA]) >
+    (msg reqCipherFinal[# DATA] from TK to HANDLE)
+  if not nullHandle(HANDLE)
   .
 
-endom
-
---- @kind behavior
---- @feature invisible
-omod PERSISTENT-PANIC-INVISIBLE is
-  pr PERSISTENT-PANIC .
-
-  var TK : Oid .
-  var ARGS : ArgList .
-  var SI : Oid .
-  var STATUS : StorageStatus .
-
-  --- create-persistent-abnormal-storage-panic
-  ceq
-    (msg create[ARGS] from TK to SI)
-    < TK : TAKernel | status : (normal).AppStatus >
-    < SI : Storage | status : STATUS >
+  --- cipher-do-final-success
+  eq
+    (msg finishCipherDoFinal[# OPRESULT] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(cipherDoFinal[PARAMS]) >
   =
-    < TK : TAKernel | status : panic >
-    < SI : Storage | >
-  if abnormalStorage(STATUS)
+    < TK : TAKernel | api-call : return(cipherDoFinal[# success # OPRESULT]) >
+  .
+
+  --- mac-init-subroutine
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(macInit[# HANDLE # IV]) >
+  =
+    < TK : TAKernel | api-call : final(macInit[# HANDLE # IV]) >
+    (msg initOperation[# IV] from TK to HANDLE)
+  if not nullHandle(HANDLE)
+  .
+
+  --- mac-init-success
+  eq
+    (msg finishInitOperation[] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(macInit[PARAMS]) >
+  =
+    < TK : TAKernel | api-call : return(macInit[# noReturnCode]) >
+  .
+
+  --- mac-update-subroutine
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(macUpdate[# HANDLE # DATA]) >
+  =
+    < TK : TAKernel | api-call : final(macUpdate[# HANDLE # DATA]) >
+    (msg reqMACUpdate[# DATA] from TK to HANDLE)
+  if not nullHandle(HANDLE)
+  .
+
+  --- mac-update-success
+  eq
+    (msg finishMacUpdate[] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(macUpdate[PARAMS]) >
+  =
+    < TK : TAKernel | api-call : return(macUpdate[# noReturnCode]) >
+  .
+
+  --- mac-compute-final-subroutine
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(macComputeFinal[# HANDLE # DATA]) >
+  =
+    < TK : TAKernel | api-call : final(macComputeFinal[# HANDLE # DATA]) >
+    (msg reqMACComputeFinal[# DATA] from TK to HANDLE)
+  if not nullHandle(HANDLE)
+  .
+
+  --- mac-compute-final-success
+  eq
+    (msg finishMacComputeFinal[# DATA] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(macComputeFinal[PARAMS]) >
+  =
+    < TK : TAKernel | api-call : return(macComputeFinal[# success # DATA]) >
+  .
+
+  --- mac-compare-final-subroutine
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(macCompareFinal[# HANDLE # DATA ZsMACCompareFinal2 ZrMACCompareFinal]) >
+  =
+    < TK : TAKernel | api-call : final(macCompareFinal[# HANDLE # DATA ZsMACCompareFinal2 ZrMACCompareFinal]) >
+    (msg reqMACComputeFinal[# DATA] from TK to HANDLE)
+  if not nullHandle(HANDLE)
+  .
+
+  --- mac-compare-final-success
+  eq
+    (msg finishMacComputeFinal[# DATA] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(macCompareFinal[ZsMACCompareFinal0 ZsMACCompareFinal1 # MAC ZrMACCompareFinal]) >
+  =
+    < TK : TAKernel | api-call : return(macCompareFinal[# getReturnCode(DATA , MAC)]) >
+  .
+
+  --- ae-init-subroutine
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(aeInit[# HANDLE # IV]) >
+  =
+    < TK : TAKernel | api-call : final(aeInit[# HANDLE # IV]) >
+    (msg initOperation[# IV] from TK to HANDLE)
+  if not nullHandle(HANDLE)
+  .
+
+  --- ae-init-success
+  eq
+    (msg finishInitOperation[] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(aeInit[PARAMS]) >
+  =
+    < TK : TAKernel | api-call : return(aeInit[# success]) >
+  .
+
+  --- ae-update-aad-subroutine
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(aeUpdateAAD[# HANDLE # DATA]) >
+  =
+    < TK : TAKernel | api-call : final(aeUpdateAAD[# HANDLE # DATA]) >
+    (msg reqAEUpdateAAD[# DATA] from TK to HANDLE)
+  if not nullHandle(HANDLE)
+  .
+
+  --- ae-update-aad-success
+  eq
+    (msg finishAEUpdateAAD[] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(aeUpdateAAD[PARAMS]) >
+  =
+    < TK : TAKernel | api-call : return(aeUpdateAAD[# noReturnCode]) >
+  .
+
+  --- ae-update-subroutine
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(aeUpdate[# HANDLE # DATA]) >
+  =
+    < TK : TAKernel | api-call : final(aeUpdate[# HANDLE # DATA]) >
+    (msg reqAEUpdate[# DATA] from TK to HANDLE)
+  if not nullHandle(HANDLE)
+  .
+
+  --- ae-update-success
+  eq
+    (msg finishAEUpdate[# DATA] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(aeUpdate[PARAMS]) >
+  =
+    < TK : TAKernel | api-call : return(aeUpdate[# success # DATA]) >
+  .
+
+  --- ae-encrypt-final-subroutine
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(aeEncryptFinal[# HANDLE # DATA]) >
+  = < TK : TAKernel | api-call : final(aeEncryptFinal[# HANDLE # DATA]) >
+    (msg reqAEEncryptFinal[# DATA] from TK to HANDLE)
+  if not nullHandle(HANDLE)
+  .
+
+  --- ae-encrypt-final-success
+  eq
+    (msg finishAEEncryptFinal[# DATA # MAC] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(aeEncryptFinal[PARAMS]) >
+  = < TK : TAKernel | api-call : return(aeEncryptFinal[# success # DATA # MAC]) >
+  .
+
+  --- ae-decrypt-final-subroutine
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(aeDecryptFinal[# HANDLE # DATA # MAC]) >
+  = < TK : TAKernel | api-call : final(aeDecryptFinal[# HANDLE # DATA # MAC]) >
+    (msg reqAEDecryptFinal[# DATA # MAC] from TK to HANDLE)
+  if not nullHandle(HANDLE)
+  .
+
+  --- ae-decrypt-final-success
+  eq
+    (msg finishAEDecryptFinal[# DATA # MAC # MAC] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(aeDecryptFinal[PARAMS]) >
+  = < TK : TAKernel | api-call : return(aeDecryptFinal[# success # DATA]) >
+  .
+
+  --- ae-decrypt-final-mac-invalid
+  ceq
+    (msg finishAEDecryptFinal[# DATA # MAC # DL] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(aeDecryptFinal[PARAMS]) >
+  = < TK : TAKernel | api-call : return(aeDecryptFinal[# errorMacInvalid]) >
+  if MAC =/= DL
+  .
+
+  --- asymmetric-encrypt-subroutine
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(asymmetricEncrypt[# HANDLE # DATA]) >
+  =
+    < TK : TAKernel | api-call : final(asymmetricEncrypt[# HANDLE # DATA]) >
+    (msg asymEncrypt[# DATA] from TK to HANDLE)
+  if not nullHandle(HANDLE)
+  .
+
+  --- asymmetric-encrypt-success
+  eq
+    (msg finishAsymEncrypt[# DATA] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(asymmetricEncrypt[PARAMS]) >
+  =
+    < TK : TAKernel | api-call : return(asymmetricEncrypt[# success # DATA]) >
+  .
+
+  --- asymmetric-decrypt-subroutine
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(asymmetricDecrypt[# HANDLE # DATA]) >
+  =
+    < TK : TAKernel | api-call : final(asymmetricDecrypt[# HANDLE # DATA]) >
+    (msg asymDecrypt[# DATA] from TK to HANDLE)
+  if not nullHandle(HANDLE)
+  .
+
+  --- asymmetric-decrypt-success
+  eq
+    (msg finishAsymDecrypt[# DATA] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(asymmetricDecrypt[PARAMS]) >
+  =
+    < TK : TAKernel | api-call : return(asymmetricDecrypt[# success # DATA]) >
+  .
+
+  --- asymmetric-sign-digest-subroutine
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(asymmetricSignDigest[# HANDLE # DATA]) >
+  =
+    < TK : TAKernel | api-call : final(asymmetricSignDigest[# HANDLE # DATA]) >
+    (msg asymSignDigest[# DATA] from TK to HANDLE)
+  if not nullHandle(HANDLE)
+  .
+
+  --- asymmetric-sign-digest-success
+  eq
+    (msg finishAsymSignDigest[# DATA] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(asymmetricSignDigest[PARAMS]) >
+  =
+    < TK : TAKernel | api-call : return(asymmetricSignDigest[# success # DATA]) >
+  .
+
+  --- asymmetric-verify-digest-subroutine
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(asymmetricVerifyDigest[# HANDLE # DATA ZsAsymmetricVerifyDigest2 ZrAsymmetricVerifyDigest]) >
+  =
+    < TK : TAKernel | api-call : final(asymmetricVerifyDigest[# HANDLE # DATA ZsAsymmetricVerifyDigest2 ZrAsymmetricVerifyDigest]) >
+    (msg asymVerifyDigest[# DATA] from TK to HANDLE)
+  if not nullHandle(HANDLE)
+  .
+
+  --- asymmetric-verify-digest-success
+  eq
+    (msg finishAsymVerifyDigest[# DATA] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(asymmetricVerifyDigest[ZsAsymmetricVerifyDigest0 ZsAsymmetricVerifyDigest1 # DIGEST ZrAsymmetricVerifyDigest]) >
+  =
+    < TK : TAKernel | api-call : return(asymmetricVerifyDigest[# getReturnCodeOfDigest(DATA , DIGEST)]) >
+  .
+
+  --- derive-key-subroutine
+  ceq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(deriveKey[# HANDLE # ATTRS # DERIVED]) >
+  = < TK : TAKernel | api-call : final(deriveKey[# HANDLE # ATTRS # DERIVED]) >
+       (msg reqDeriveKey[# ATTRS # DERIVED] from TK to HANDLE)
+  if not nullHandle(HANDLE)
+  .
+
+  --- derive-key-success
+  eq
+    (msg finishDeriveKey[] from DERIVED to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(deriveKey[PARAMS]) >
+  = < TK : TAKernel | api-call : return(deriveKey[# noReturnCode]) >
+  .
+
+  --- generate-random-success
+  eq
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(generateRandom[PARAMS]) >
+  =
+    < TK : TAKernel | api-call : return(generateRandom[# noReturnCode # randomData]) >
   .
 
 endom
@@ -1517,7 +1422,6 @@ mod INVISIBLE-REDUCTION is
   pr PERSISTENT-OBJECT-BEHAVIOR-INVISIBLE .
   pr DATA-STREAM-OBJECT-BEHAVIOR-INVISIBLE .
   pr CRYPTO-OPERATION-BEHAVIOR-INVISIBLE .
-  pr PERSISTENT-PANIC-INVISIBLE .
 endm
 
 --- @kind assembly

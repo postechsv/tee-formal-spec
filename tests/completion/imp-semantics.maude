@@ -186,3 +186,30 @@ red isFinal(mkConf(int[2] qv ; int qx ; qx := qv[# 0] ;)) == false .
 ------------------------------------------------------------
 
 search [1] in IMP-SEM-TEST : mkConf(struct qPt { int qa ; } ; int qf(struct qPt qp) { qp . qa := # 9 ; return qp . qa ; } struct qPt qs ; int qx ; int qy ; qs . qa := # 1 ; qx := qf(qs) ; qy := qs . qa ;) =>* k(.K) env((qx |-> L) ; (qy |-> L') ; ENV) store((L |-> # 9) ; (L' |-> # 1) ; MEM) KS:KConfig .
+
+------------------------------------------------------------
+--- Pointers: addr (&E), deref (*E) and -> (C11 6.5.3.2, 6.5.2.3p4).
+------------------------------------------------------------
+
+--- A write through a pointer reaches the object it points to: qx = 3.
+search [1] in IMP-SEM-TEST : mkConf(int qx ; int * qp ; qp := addr(qx) ; deref(qp) := # 3 ;) =>* k(.K) env((qx |-> L) ; ENV) store((L |-> # 3) ; MEM) KS:KConfig .
+
+--- A read through a pointer: qy = qx + 1 = 5.
+search [1] in IMP-SEM-TEST : mkConf(int qx ; int qy ; int * qp ; qx := # 4 ; qp := addr(qx) ; qy := deref(qp) + # 1 ;) =>* k(.K) env((qy |-> L) ; ENV) store((L |-> # 5) ; MEM) KS:KConfig .
+
+--- A pointer is passed by value and points to the caller's object: the callee swaps qx and qy
+--- through its pointer parameters (qx = 2, qy = 1).
+search [1] in IMP-SEM-TEST : mkConf(int qswap(int * qa, int * qbb) { int qt ; qt := deref(qa) ; deref(qa) := deref(qbb) ; deref(qbb) := qt ; return # 0 ; } int qx ; int qy ; int qz ; qx := # 1 ; qy := # 2 ; qz := qswap(addr(qx), addr(qy)) ;) =>* k(.K) env((qx |-> L) ; (qy |-> L') ; ENV) store((L |-> # 2) ; (L' |-> # 1) ; MEM) KS:KConfig .
+
+--- The C pattern of a TA session context: a struct passed as void *, converted to a struct
+--- pointer in the callee and updated through ->.  The caller's struct sees the update: qy = 7.
+search [1] in IMP-SEM-TEST : mkConf(struct qPt { int qa ; } ; int qf(void * qv) { (struct qPt) * qp ; qp := qv ; qp -> qa := # 7 ; return # 0 ; } struct qPt qs ; int qx ; int qy ; qx := qf(addr(qs)) ; qy := qs . qa ;) =>* k(.K) env((qy |-> L) ; ENV) store((L |-> # 7) ; MEM) KS:KConfig .
+
+--- A read through -> and a struct copy through deref: qx = 6, and qt is a copy of qs (qy = 6).
+search [1] in IMP-SEM-TEST : mkConf(struct qPt { int qa ; } ; struct qPt qs ; struct qPt qt ; (struct qPt) * qp ; int qx ; int qy ; qs . qa := # 6 ; qp := addr(qs) ; qx := qp -> qa ; qt := deref(qp) ; qy := qt . qa ;) =>* k(.K) env((qx |-> L) ; (qy |-> L') ; ENV) store((L |-> # 6) ; (L' |-> # 6) ; MEM) KS:KConfig .
+
+--- A pointer to a struct member: qs.qa = 8.
+search [1] in IMP-SEM-TEST : mkConf(struct qPt { int qa ; } ; struct qPt qs ; int * qp ; int qx ; qp := addr(qs . qa) ; deref(qp) := # 8 ; qx := qs . qa ;) =>* k(.K) env((qx |-> L) ; ENV) store((L |-> # 8) ; MEM) KS:KConfig .
+
+--- A pointer and a reference parameter in one call: both reach the caller's objects.
+search [1] in IMP-SEM-TEST : mkConf(int qf(int * qp, int & qv) { deref(qp) := # 1 ; qv := # 2 ; return # 0 ; } int qx ; int qy ; int qz ; qz := qf(addr(qx), qy) ;) =>* k(.K) env((qx |-> L) ; (qy |-> L') ; ENV) store((L |-> # 1) ; (L' |-> # 2) ; MEM) KS:KConfig .

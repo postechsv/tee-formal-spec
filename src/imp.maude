@@ -25,6 +25,10 @@ fmod IMP-BTYPE is
   op int : -> ConcBType [ctor] .
   op bool : -> ConcBType [ctor] .
   op void : -> BType [ctor] .
+  --- Pointer types (C11 6.2.5p20): T * points to an object of type T, and void * to an object
+  --- of any type.  A pointer is a scalar, so a pointer type is a concrete base type: a variable,
+  --- a struct member or a by-value parameter may have it.  Its values are locations loc(L).
+  op _* : ImpType -> ConcBType [ctor prec 20] .
 endfm
 
 --- @kind program
@@ -238,6 +242,7 @@ fmod IMP-EXP is
   var F : FuncId .
   vars E E1 E2 : Exp .
   var LE : LExp .
+  var X : Var .
 
   op _+_ : Exp Exp -> Exp [ctor gather(E e) prec 33] .
   op _-_ : Exp Exp -> Exp [ctor gather(E e) prec 33] .
@@ -252,6 +257,14 @@ fmod IMP-EXP is
   op _[_] : LExp Exp -> LExp [ctor prec 30] .
   --- The element at index E2 of the array at the location V1 (internal form).
   op elemAt : Value Exp -> Exp [ctor] .
+  --- Pointers.  addr(E) is the address &E of the lvalue E, deref(E) the object *E that the
+  --- pointer E points to (an lvalue), and E -> X the member X of that object, as in C11
+  --- 6.5.2.3p4.  The C tokens & and * are not used as prefix operators: & would clash with the
+  --- reference parameter U & X, and * with multiplication.
+  op addr : Exp -> Exp [ctor] .
+  op deref : Exp -> LExp [ctor] .
+  op _->_ : Exp Var -> LExp [ctor gather(E e) prec 30] .
+  eq E -> X = deref(E) . X .
   op __ : ImpType Var -> PExp [ctor prec 30] .
 
   op _(_) : FuncId ExpList -> FExp [ctor prec 30] .
@@ -505,6 +518,9 @@ fmod IMP-TYPING is
   op $tret : -> TItem [ctor] .
   op $tif : Stmt Stmt -> TItem [ctor] .
   op $twhile : Stmt -> TItem [ctor] .
+  --- $tptr: the address of the lvalue just typed.  $tderef: the object the pointer just typed
+  --- points to.
+  ops $tptr $tderef : -> TItem [ctor] .
 
   --- Tasks.  SIMPLE: <tasks> <task*> <k/> <tenv?/> <returnType?/> </task> </tasks> <gtenv/>.
   --- A task here has the cells
@@ -639,6 +655,12 @@ fmod IMP-TYPING is
   ceq memberMap(T X ;, F) = mm((X |-> T)) if okDecl(T, F) = true .
   ceq memberMap(S S', F) = mm(M1 ; M2) if mm(M1) := memberMap(S, F) /\ mm(M2) := memberMap(S', F) .
 
+  --- ptrConv(U, T): a value of the pointer type U converts implicitly to the pointer type T
+  --- because one of them is void *.
+  op ptrConv : ImpType ImpType -> Bool .
+  eq ptrConv(void *, T *) = true .
+  eq ptrConv(T *, void *) = true .
+
   op hasLab : Label Facts -> Bool .
   eq hasLab(LB, lab(LB) % F) = true .
   op hasTLab : Label Facts -> Bool .
@@ -651,6 +673,9 @@ fmod IMP-TYPING is
   ------------------------------------------------------------
 
   eq tk(ty(T) ~> $tchk(T) ~> K) = tk(K) .
+  --- void * and any other pointer type convert to each other implicitly (C11 6.3.2.3p1, and
+  --- 6.5.16.1p1 for assignment, 6.5.2.2p7 for arguments, 6.8.6.4p3 for return).
+  ceq tk(ty(U) ~> $tchk(T) ~> K) = tk(K) if ptrConv(U, T) = true /\ U =/= T .
   eq tk($tres(T) ~> K) = tk(ty(T) ~> K) .
   --- SIMPLE: context ltype(HOLE) requires isLValue(HOLE).
   ceq tk($tl(E) ~> K) = tk($te(E) ~> K) if E :: LExp .
@@ -696,6 +721,14 @@ fmod IMP-TYPING is
     = task(tk(ty(U) ~> K) tfacts(F) C)
     if sdef(struct T, M) % F' := F /\ ty(U) := lookupT(X, M) .
 
+  --- Address and indirection (not in SIMPLE, C11 6.5.3.2).  &E of an lvalue E of type T has the
+  --- type T *, except for an array (arrays do not decay to pointers here).  *E of a pointer E
+  --- of type T * is an lvalue of type T; a void * is not dereferenced.
+  eq tk($te(addr(E)) ~> K) = tk($tl(E) ~> $tptr ~> K) .
+  ceq tk(ty(T) ~> $tptr ~> K) = tk(ty(T *) ~> K) if not T :: AType .
+  eq tk($te(deref(E)) ~> K) = tk($te(E) ~> $tderef ~> K) .
+  ceq tk(ty(T *) ~> $tderef ~> K) = tk(ty(T) ~> K) if T =/= void .
+
   --- Array element.  SIMPLE: (T[])[int, Ts] => T[Ts].  The index must be an int; a literal
   --- index is checked against the bounds (0 <= I < N).  A non-literal index is not checked
   --- statically (see README): an out-of-range one is stuck at run time.
@@ -719,6 +752,7 @@ fmod IMP-TYPING is
     if not U :: AType .
   eq tk($targs(nil, nil) ~> K) = tk(K) .
   eq tk(ty(T) ~> $targ(T) ~> K) = tk(K) .
+  ceq tk(ty(U) ~> $targ(T) ~> K) = tk(K) if ptrConv(U, T) = true /\ U =/= T .
 
   ------------------------------------------------------------
   --- Statements
@@ -780,6 +814,8 @@ fmod IMP-TYPING is
   eq tk((return E ;) ~> K) = tk($te(E) ~> $tret ~> K) .
   ceq task(tk(ty(T) ~> $tret ~> K) tmode(tmBody) tret(T) C) = task(tk(stmt ~> K) tmode(tmBody) tret(T) C)
     if not T :: SType .
+  ceq task(tk(ty(U) ~> $tret ~> K) tmode(tmBody) tret(T) C) = task(tk(stmt ~> K) tmode(tmBody) tret(T) C)
+    if ptrConv(U, T) = true /\ U =/= T .
 
   --- Struct declaration (top level, not in SIMPLE).
   ceq task(tk((ST {S} ;) ~> K) tmode(tmTop) tfacts(F) C) = task(tk(stmt ~> K) tmode(tmTop) tfacts(sdef(ST, NL) % F) C)
@@ -1023,6 +1059,14 @@ fmod IMP-STRICTNESS is
   eq k({ V1 } ~> $idxA(E2) ~> K)        = k({ elemAt(V1, E2) } ~> K) .
   ceq k({ elemAt(V1, E2) } ~> K)        = k({ E2 } ~> $idxI(V1) ~> K) if not E2 :: Value .
    eq k({ V2 } ~> $idxI(V1) ~> K)       = k({ elemAt(V1, V2) } ~> K) .
+
+--- Pointers.  A pointer value is a location loc(L).  addr(E) is the lvalue of E, that is its
+--- location.  deref(E) as an lvalue is the value of E (the location it points to), and as an
+--- rvalue it is the value stored there ($read, see elem-read in IMP-SEMANTICS); a member access
+--- E -> X = deref(E) . X heats deref(E) as an lvalue (see struct member access above).
+  eq k({ addr(E) } ~> K)                = k({ lvalue(E) } ~> K) .
+  eq k({ lvalue(deref(E)) } ~> K)       = k({ E } ~> K) .
+  eq k({ deref(E) } ~> K)               = k({ lvalue(deref(E)) } ~> $read ~> K) .
 
 --- Input parameters of a TEE API stub: $inH heats each input name to its value and cools
 --- the value into the list of values (see defineSysCall in tee-imp.maude).
@@ -1413,8 +1457,8 @@ mod IMP-SEMANTICS is
   --- equation applies and the program is stuck.
   ceq [elem]: k({ elemAt(loc(LN), # NI) } ~> K) arrlen((LN |-> NN) ; AL)
    = k({ loc(LN + NI) } ~> K) arrlen((LN |-> NN) ; AL) if NI < NN .
-  --- elem-read: the rvalue of a[E] is the value V stored at the location M of the element.  An
-  --- undef element (V not a Value) is stuck.
+  --- elem-read: the rvalue of a[E] (or of deref(E)) is the value V stored at the location M of
+  --- the element (or of the object pointed to).  An undef value (V not a Value) is stuck.
   ceq [elem-read]: k({ loc(M) } ~> $read ~> K) store((M |-> V) ; MEM)
    = k({ V } ~> K) store((M |-> V) ; MEM) if V :: Value .
 

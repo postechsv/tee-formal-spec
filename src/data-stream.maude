@@ -76,8 +76,7 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
 
   --- read-object-data-get-storage-status: the TA asks the storage for its status (getStatus).
   rl [read-object-data-get-storage-status] :
-    < TK : TAKernel | status : (normal).AppStatus ,
-                      api-call : init(readObjData[# HI ZsReadObjectData1 ZrReadObjectData]) , storage : SI >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(readObjData[# HI ZsReadObjectData1 ZrReadObjectData]) , storage : SI >
     =>
     < TK : TAKernel | api-call : exec(readObjData[# HI ZsReadObjectData1 ZrReadObjectData] , 0) >
     (msg getStatus[] from TK to SI)
@@ -87,8 +86,7 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   --- otherwise the storage error code is returned.
   rl [read-object-data-storage-status-check] :
     (msg retStatus[# STATUS] from SI to TK)
-    < TK : TAKernel | status : (normal).AppStatus ,
-                      api-call : exec(readObjData[# HI ZsReadObjectData1 ZrReadObjectData] , 0) >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : exec(readObjData[# HI ZsReadObjectData1 ZrReadObjectData] , 0) >
   =>
     if STATUS == normal
     then < TK : TAKernel | api-call : final(readObjData[# HI ZsReadObjectData1 ZrReadObjectData]) >
@@ -141,8 +139,7 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   --- the data to the handle.
   rl [write-object-data-subroutine] :
     (msg retStatus[# (normal).StorageStatus] from SI to TK)
-    < TK : TAKernel | status : (normal).AppStatus ,
-                      api-call : exec(writeObjectData[# HI # DATA] , 0) ,
+    < TK : TAKernel | status : (normal).AppStatus , api-call : exec(writeObjectData[# HI # DATA] , 0) ,
                       storage : SI >
     =>
     < TK : TAKernel | api-call : final(writeObjectData[# HI # DATA]) >
@@ -168,7 +165,7 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   --- new position would be greater than TEE_DATA_MAX_POSITION.
   crl [write-object-data-top-level-overflow] :
     (msg reqWriteObjectData[# DATA # SI] from TK to HANDLE)
-    < TK : TAKernel | api-call : final(writeObjectData[PARAMS]) >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(writeObjectData[PARAMS]) >
     < oid(M, SI) : PersistObj | >
     < HANDLE : ObjHandle | oid : oid(M, SI), flags : DATAFLAGS, pos : DATAPOS >
     =>
@@ -181,7 +178,7 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   --- write-object-data-success: finishWriteData returns success.
   rl [write-object-data-success] :
     (msg finishWriteData[] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(writeObjectData[PARAMS]) >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(writeObjectData[PARAMS]) >
     =>
     < TK : TAKernel | api-call : return(writeObjectData[# success]) >
   .
@@ -191,7 +188,7 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   --- holds, e.g. errorStorageNoSpace, errorCorruptObject or errorStorageNotAvailable.
   crl [write-object-data-storage-err] :
     (msg retStatus[# STATUS] from SI to TK)
-    < TK : TAKernel | api-call : exec(writeObjectData[PARAMS] , 0) >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : exec(writeObjectData[PARAMS] , 0) >
     =>
     < TK : TAKernel | api-call : return(writeObjectData[# storageErrCode(STATUS)]) >
   if abnormalStorage(STATUS)
@@ -220,8 +217,7 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   --- with the size to the handle.
   rl [truncate-object-data-subroutine] :
     (msg retStatus[# (normal).StorageStatus] from SI to TK)
-    < TK : TAKernel | status : (normal).AppStatus ,
-                      api-call : exec(truncateObjectData[# HANDLE # DATASIZE] , 0) ,
+    < TK : TAKernel | status : (normal).AppStatus , api-call : exec(truncateObjectData[# HANDLE # DATASIZE] , 0) ,
                       storage : SI >
     =>
     < TK : TAKernel | api-call : final(truncateObjectData[# HANDLE # DATASIZE]) >
@@ -245,7 +241,7 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   --- truncate-object-data-success: finishTruncateData returns success.
   rl [truncate-object-data-success] :
     (msg finishTruncateData[] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(truncateObjectData[PARAMS]) >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(truncateObjectData[PARAMS]) >
     =>
     < TK : TAKernel | api-call : return(truncateObjectData[# success]) >
   .
@@ -255,7 +251,7 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   --- holds, e.g. errorStorageNoSpace, errorCorruptObject or errorStorageNotAvailable.
   crl [truncate-object-data-storage-err] :
     (msg retStatus[# STATUS] from SI to TK)
-    < TK : TAKernel | api-call : exec(truncateObjectData[PARAMS] , 0) >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : exec(truncateObjectData[PARAMS] , 0) >
     =>
     < TK : TAKernel | api-call : return(truncateObjectData[# storageErrCode(STATUS)]) >
   if abnormalStorage(STATUS)
@@ -286,8 +282,7 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   --- handle with OFST and WHENCE.
   rl [seek-object-data-subroutine] :
     (msg retStatus[# (normal).StorageStatus] from SI to TK)
-    < TK : TAKernel | status : (normal).AppStatus ,
-                      api-call : exec(seekObjectData[# HANDLE # OFST # WHENCE] , 0) ,
+    < TK : TAKernel | status : (normal).AppStatus , api-call : exec(seekObjectData[# HANDLE # OFST # WHENCE] , 0) ,
                       storage : SI >
     =>
     < TK : TAKernel | api-call : final(seekObjectData[# HANDLE # OFST # WHENCE]) >
@@ -326,7 +321,7 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   --- seek-object-data-top-level-finish-overflow: seekObjectOverflowTop returns errorOverflow.
   rl [seek-object-data-top-level-finish-overflow] :
     (msg seekObjectOverflowTop[] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(seekObjectData[PARAMS]) >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(seekObjectData[PARAMS]) >
     =>
     < TK : TAKernel | api-call : return(seekObjectData[# errorOverflow]) >
   .
@@ -334,7 +329,7 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   --- seek-object-data-success: finishSeekData returns success.
   rl [seek-object-data-success] :
     (msg finishSeekData[] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(seekObjectData[PARAMS]) >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(seekObjectData[PARAMS]) >
     =>
     < TK : TAKernel | api-call : return(seekObjectData[# success]) >
   .
@@ -344,7 +339,7 @@ omod DATA-STREAM-OBJECT-BEHAVIOR is
   --- holds, e.g. errorCorruptObject or errorStorageNotAvailable.
   crl [seek-object-data-storage-err] :
     (msg retStatus[# STATUS] from SI to TK)
-    < TK : TAKernel | api-call : exec(seekObjectData[PARAMS] , 0) >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : exec(seekObjectData[PARAMS] , 0) >
     =>
     < TK : TAKernel | api-call : return(seekObjectData[# storageErrCode(STATUS)]) >
   if abnormalStorage(STATUS)

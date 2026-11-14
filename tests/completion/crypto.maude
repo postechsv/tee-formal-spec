@@ -28,34 +28,34 @@ search [1] in COMPLETION-TEST :
 
 --- TEE_IsAlgorithmSupported distinguishes supported and unsupported elements.
 search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | api-call : init(isAlgorithmSupported[# algAesCtr # cryptoElementNone]) >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(isAlgorithmSupported[# algAesCtr # cryptoElementNone]) >
 =>*
-  < testTa : TAKernel | api-call : return(isAlgorithmSupported[# success]) > .
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : return(isAlgorithmSupported[# success]) > .
 
 search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | api-call : init(isAlgorithmSupported[# algAesCtr # eccCurveNistP192]) >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(isAlgorithmSupported[# algAesCtr # eccCurveNistP192]) >
 =>*
-  < testTa : TAKernel | api-call : return(isAlgorithmSupported[# errorNotSupported]) > .
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : return(isAlgorithmSupported[# errorNotSupported]) > .
 
 --- AE final calls return both ciphertext and tag and use their own wait state.
 search [1] in COMPLETION-TEST :
   (msg finishAEEncryptFinal[# randomData # macValue(randomData, algAesGcm, empty)] from oid(101, testTa) to testTa)
-  < testTa : TAKernel | api-call : final(aeEncryptFinal[# ZvHandle # ZvData]) >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(aeEncryptFinal[# ZvHandle # ZvData]) >
 =>*
-  < testTa : TAKernel | api-call : return(aeEncryptFinal[# success # randomData # macValue(randomData, algAesGcm, empty)]) > .
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : return(aeEncryptFinal[# success # randomData # macValue(randomData, algAesGcm, empty)]) > .
 
 --- A matching AE tag succeeds; a mismatching tag returns MAC_INVALID.
 search [1] in COMPLETION-TEST :
   (msg finishAEDecryptFinal[# randomData # randomData # randomData] from oid(101, testTa) to testTa)
-  < testTa : TAKernel | api-call : final(aeDecryptFinal[# ZvHandle # ZvData # ZvMac]) >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(aeDecryptFinal[# ZvHandle # ZvData # ZvMac]) >
 =>*
-  < testTa : TAKernel | api-call : return(aeDecryptFinal[# success # randomData]) > .
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : return(aeDecryptFinal[# success # randomData]) > .
 
 search [1] in COMPLETION-TEST :
   (msg finishAEDecryptFinal[# randomData # randomData # (nil).List{Data}] from oid(101, testTa) to testTa)
-  < testTa : TAKernel | api-call : final(aeDecryptFinal[# ZvHandle # ZvData # ZvMac]) >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(aeDecryptFinal[# ZvHandle # ZvData # ZvMac]) >
 =>*
-  < testTa : TAKernel | api-call : return(aeDecryptFinal[# errorMacInvalid]) > .
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : return(aeDecryptFinal[# errorMacInvalid]) > .
 
 --- cipherUpdate rejects insufficient (empty) decrypt input.
 --- runOp(decrypt, nil) = failure (cipher-update), since nil is
@@ -329,7 +329,7 @@ search [1] in COMPLETION-TEST :
 
 --- Asymmetric capacity checks resolve the top-level operation owner.
 search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | api-call : init(asymmetricEncrypt[# oid(101, testTa) # randomData # dataSize(0)]) >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(asymmetricEncrypt[# oid(101, testTa) # randomData # dataSize(0)]) >
   < oid(1, testTa) : CryptoOp |
       attributes : attr(rsaModulus, randomAttrVal),
       algorithm : algRsaesPkcs1OaepMgf1Sha1,
@@ -337,7 +337,7 @@ search [1] in COMPLETION-TEST :
   < oid(101, testTa) : OpHandle | oid : oid(1, testTa),
       key-material-set : true, opclass : clsAsymmetricCipher >
 =>*
-  < testTa : TAKernel | api-call : return(asymmetricEncrypt[# errorShortBuffer # dataSize(256)]) >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : return(asymmetricEncrypt[# errorShortBuffer # dataSize(256)]) >
   < oid(1, testTa) : CryptoOp |
       attributes : attr(rsaModulus, randomAttrVal),
       algorithm : algRsaesPkcs1OaepMgf1Sha1,
@@ -587,7 +587,7 @@ search [1] in COMPLETION-TEST :
 
 --- Visible getOperationInfo builds the GP single-key information structure.
 search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | api-call : init(getOperationInfo[# oid(101, testTa)]) >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(getOperationInfo[# oid(101, testTa)]) >
   < oid(1, testTa) : CryptoOp |
       attributes : attr(secretValue, sizedAttrVal(128, 1)),
       max-size : 256, algorithm : algAesCtr,
@@ -597,4 +597,4 @@ search [1] in COMPLETION-TEST :
       state : handleState(keySet), key-material-set : true,
       opclass : clsCipher >
 =>*
-  < testTa : TAKernel | api-call : return(getOperationInfo[# noReturnCode # teeOperationInfo(algAesCtr, clsCipher, modeEncrypt, dataSize(0), 256, 128, usageEncrypt, false, true, false, false)]) > C .
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : return(getOperationInfo[# noReturnCode # teeOperationInfo(algAesCtr, clsCipher, modeEncrypt, dataSize(0), 256, 128, usageEncrypt, false, true, false, false)]) > C .

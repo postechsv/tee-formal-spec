@@ -1,0 +1,26 @@
+--- CopyOperation (TEE_CopyOperation) driven from the TA-level API call through the source and
+--- target operation handles. Each search is a bounded example driver.
+
+load ./src/main
+load ./tests/api/aux
+
+set show command off .
+set print attribute off .
+set print color off .
+
+mod SEED-COPY is
+  pr TEST-AUX .
+endm
+
+--- [SEED-COPY-REQUEST] copy-operation asks the source handle for its attributes
+search [1] in SEED-COPY :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(CopyOperation[# oid(101, ta) # oid(102, ta)]), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : exec(CopyOperation[# oid(101, ta) # oid(102, ta)] , 0) > .
+
+--- [SEED-COPY-FINISH] copy-operation sends the source attributes and keys to the target handle
+search [1] in SEED-COPY :
+  (msg retOperationAttr[# opObjectAttr(algAesGcm, modeEncrypt, active, attr(secretValue, sizedAttrVal(128, 1))) # opHandleAttr(true, true, false) # (nil).List{CryptoKey}] from oid(102, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(CopyOperation[# oid(101, ta) # oid(102, ta)] , 0), counter : 0 >
+=>*
+  < ta : TAKernel | api-call : final(CopyOperation[# oid(101, ta) # oid(102, ta)]) > .

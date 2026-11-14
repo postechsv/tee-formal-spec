@@ -2,7 +2,7 @@
 
 An executable [Maude](https://maude.cs.illinois.edu/) specification of the GlobalPlatform TEE Internal Core API. It models successful API calls, error returns, panics, storage conditions, and the state transitions of cryptographic operations, together with the trusted application (TA) kernel and the storage and OS services that the API calls depend on.
 
-This repository holds the specification, its build (feature selection) and its test suites. Transforming it (DM-Check, maude2lean, ghost composition) and analyzing applications on top of it is done in [tee-formal-analysis](https://github.com/postechsv/tee-formal-analysis), which fetches a revision of this repository and builds it with `make`.
+This repository holds the specification, its build (feature selection), its test suites and its documentation site. Transforming it (DM-Check, maude2lean, ghost composition) and analyzing applications on top of it is done in [tee-formal-analysis](https://github.com/postechsv/tee-formal-analysis), which fetches a revision of this repository and builds it with `make`.
 
 ## Features
 
@@ -30,6 +30,7 @@ maude src/main.maude
 make                         # build/default/src and build/default/tests
 make NAME=t CRYPTO=0         # a build without the cryptographic operation API
 make NAME=t test             # build, then run the API suite and the check suite on it
+make docs                    # documentation site in build/docs
 make help                    # features, settings and targets
 ```
 
@@ -65,8 +66,10 @@ tee-formal-spec/
 ├── docs/annotations.md   # the machine-readable module annotations of src/
 ├── tools/
 │   ├── build/            # select-main.awk: src/main.maude of a feature configuration
-│   └── test/             # the test runners (run-api-suite.py, run-checks.py)
-├── Makefile              # build, tests
+│   ├── test/             # the test runners (run-api-suite.py, run-checks.py)
+│   └── docs/             # the documentation site: gen-docs.py, gen-examples.py and their inputs
+├── .github/workflows/docs.yml   # builds the site and deploys it to GitHub Pages
+├── Makefile              # build, tests, docs
 ├── features.mk           # feature groups a build can drop
 ├── LICENSE
 └── README.md

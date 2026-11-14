@@ -1,0 +1,45 @@
+--- Key generation panics and the generate-key subroutine (TEE_GenerateKey) driven from the
+--- TA-level API call through the transient object handle. Each search is a bounded example driver.
+
+load ./src/main
+load ./tests/api/aux
+
+set show command off .
+set print attribute off .
+set print color off .
+
+mod SEED-TRANSIENT-KEYS is
+  pr TEST-AUX .
+endm
+
+--- [SEED-GK-SUBROUTINE] generate-key sends reqGenerateKey to the handle
+search [1] in SEED-TRANSIENT-KEYS :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(GenerateKey[# oid(6, ta) # 128 # (empty).Set{CryptoAttribute}]), counter : 0 >
+  < oid(6, ta) : ObjHandle | oid : obj, flags : empty, pos : 0 >
+  < obj : TransObj | initialized : false, type : typeAes, max-size : 128, attributes : empty, usages : empty >
+=>*
+  < ta : TAKernel | api-call : final(GenerateKey[# oid(6, ta) # 128 # (empty).Set{CryptoAttribute}]) > .
+
+--- [SEED-GK-OVERSIZED] generate-key with a key size above the object maximum panics
+search [1] in SEED-TRANSIENT-KEYS :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(GenerateKey[# oid(6, ta) # 256 # (empty).Set{CryptoAttribute}]), counter : 0 >
+  < oid(6, ta) : ObjHandle | oid : obj, flags : empty, pos : 0 >
+  < obj : TransObj | initialized : false, type : typeAes, max-size : 128, attributes : empty, usages : empty >
+=>*
+  < ta : TAKernel | status : panic > .
+
+--- [SEED-GK-UNSUPPORTED-SIZE] generate-key with a key size that the key type does not accept panics
+search [1] in SEED-TRANSIENT-KEYS :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(GenerateKey[# oid(6, ta) # 64 # (empty).Set{CryptoAttribute}]), counter : 0 >
+  < oid(6, ta) : ObjHandle | oid : obj, flags : empty, pos : 0 >
+  < obj : TransObj | initialized : false, type : typeAes, max-size : 128, attributes : empty, usages : empty >
+=>*
+  < ta : TAKernel | status : panic > .
+
+--- [SEED-GK-MISSING-PARAMS] generate-key without the mandatory parameters of the key type panics
+search [1] in SEED-TRANSIENT-KEYS :
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(GenerateKey[# oid(6, ta) # 2048 # (attr(rsaModulus, randomAttrVal)).Set{CryptoAttribute}]), counter : 0 >
+  < oid(6, ta) : ObjHandle | oid : obj, flags : empty, pos : 0 >
+  < obj : TransObj | initialized : false, type : rsaKeyPair, max-size : 2048, attributes : empty, usages : empty >
+=>*
+  < ta : TAKernel | status : panic > .

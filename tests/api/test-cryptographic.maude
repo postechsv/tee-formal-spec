@@ -64,7 +64,7 @@ search [1] in TEST-AUX :
     clsCipher, modeEncrypt, dataSize(0), 128,
     false, true, true, false, active, 1,
     teeOperationInfoKey(128, usageEncrypt) ; noKeyInformation)] from oid(9, ta) to ta)
-  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(getOperationInfo[ZsGetOperationInfo0] , 0), counter : 0 >
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(getOperationInfo[ZsGetOperationInfo0]), counter : 0 >
 =>*
   < ta : TAKernel | api-call : return(getOperationInfo[# noReturnCode # teeOperationInfo(algAesCtr, clsCipher, modeEncrypt, dataSize(0), 128, 128, usageEncrypt, false, true, true, false)]) > .
 
@@ -92,7 +92,7 @@ search [1] in TEST-AUX :
     true, true, false, false, initial, 2,
     teeOperationInfoKey(128, usageEncrypt) ;
     teeOperationInfoKey(128, usageEncrypt) ; noKeyInformation)] from oid(9, ta) to ta)
-  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(getOperationInfoMultiple[# oid(1, ta) # dataSize(1)] , 0), counter : 0 >
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(getOperationInfoMultiple[# oid(1, ta) # dataSize(1)]), counter : 0 >
 =>*
   < ta : TAKernel | api-call : return(getOperationInfoMultiple[# errorShortBuffer # dataSize(2)]) > .
 
@@ -125,10 +125,12 @@ search [1] in TEST-AUX :
 =>*
   < ta : TAKernel | api-call : return(setOperationKey[# success]) > .
 
---- [BB-C-SK-2] set-operation-key-storage-error
+--- [BB-C-SK-2] set-operation-key-storage-error: the operation handle oid(9, ta) gets the abnormal
+--- storage status and reports the code; the TA returns it.
 search [1] in TEST-AUX :
-  (msg retStatus[# (corrupted).StorageStatus] from oid(0, ta) to ta)
-  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(setOperationKey[ZsSetOperationKey0 ZsSetOperationKey1] , 1), counter : 0 >
+  (msg retStatus[# (corrupted).StorageStatus] from oid(0, ta) to oid(9, ta))
+  (msg pendingSetOperationKeyStorage[# ta # oid(0, ta) # (empty).Set{CryptoAttribute} # typeAes # usageEncrypt] from oid(9, ta) to oid(9, ta))
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(setOperationKey[ZsSetOperationKey0 ZsSetOperationKey1]), counter : 0 >
 =>*
   < ta : TAKernel | api-call : return(setOperationKey[# errorCorruptObject]) > .
 

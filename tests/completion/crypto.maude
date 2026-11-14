@@ -469,14 +469,58 @@ search [1] in COMPLETION-TEST :
       state : handleState(keySet), key-material-set : true >
   C .
 
---- GP 6.2.6: a non-null key object must be initialized.
+--- TEE_SetOperationKey with a non-null key: the TA moves from init to final (no exec stage) and
+--- the operation handle is asked to get the key attributes itself.
 search [1] in COMPLETION-TEST :
-  (msg reqAttribute[] from testTa to oid(102, testTa))
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : exec(setOperationKey[# ZvHandle # ZvKeyHandle] , 0) >
+  < testTa : TAKernel | status : (normal).AppStatus, storage : oid(0, testTa),
+      api-call : init(setOperationKey[# oid(101, testTa) # oid(102, testTa)]) >
+=>1
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(setOperationKey[# oid(101, testTa) # oid(102, testTa)]), RSA:AttributeSet >
+  (msg startSetOperationKey[# oid(102, testTa) # oid(0, testTa)] from testTa to oid(101, testTa)) .
+
+--- GP 6.2.6: a non-null key object must be initialized.  The handle reports the failure and the
+--- TA panics.
+search [1] in COMPLETION-TEST :
+  (msg reqAttribute[] from oid(101, testTa) to oid(102, testTa))
+  (msg pendingSetOperationKey[# testTa # oid(102, testTa) # oid(0, testTa)] from oid(101, testTa) to oid(101, testTa))
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(setOperationKey[# oid(101, testTa) # oid(102, testTa)]) >
   < oid(2, testTa) : TransObj | initialized : false >
   < oid(102, testTa) : ObjHandle | oid : oid(2, testTa) >
-=>1
+=>*
   < testTa : TAKernel | status : panic, RSA:AttributeSet > C .
+
+--- A persistent key: its handle answers reqAttribute with retAttributePr (req-attribute-persistent),
+--- the operation handle checks the storage status, and the key is set.
+search [1] in COMPLETION-TEST :
+  < testTa : TAKernel | status : (normal).AppStatus, storage : oid(0, testTa),
+      api-call : init(setOperationKey[# oid(101, testTa) # oid(102, testTa)]) >
+  < oid(0, testTa) : Storage | status : (normal).StorageStatus >
+  < oid(102, testTa) : ObjHandle | oid : oid(2, testTa) >
+  < oid(2, testTa) : PersistObj | type : typeAes, usages : usageEncrypt,
+      attributes : attr(secretValue, sizedAttrVal(128, 1)) >
+  < oid(1, testTa) : CryptoOp |
+      algorithm : algAesCtr, mode : modeEncrypt, max-size : 128,
+      attributes : empty, keys : nil, state : initial >
+  < oid(101, testTa) : OpHandle | oid : oid(1, testTa),
+      state : handleState(empty), key-material-set : false >
+=>*
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : return(setOperationKey[# success]), RSA:AttributeSet > C .
+
+--- The same with a corrupted storage: TEE_ERROR_CORRUPT_OBJECT.
+search [1] in COMPLETION-TEST :
+  < testTa : TAKernel | status : (normal).AppStatus, storage : oid(0, testTa),
+      api-call : init(setOperationKey[# oid(101, testTa) # oid(102, testTa)]) >
+  < oid(0, testTa) : Storage | status : (corrupted).StorageStatus >
+  < oid(102, testTa) : ObjHandle | oid : oid(2, testTa) >
+  < oid(2, testTa) : PersistObj | type : typeAes, usages : usageEncrypt,
+      attributes : attr(secretValue, sizedAttrVal(128, 1)) >
+  < oid(1, testTa) : CryptoOp |
+      algorithm : algAesCtr, mode : modeEncrypt, max-size : 128,
+      attributes : empty, keys : nil, state : initial >
+  < oid(101, testTa) : OpHandle | oid : oid(1, testTa),
+      state : handleState(empty), key-material-set : false >
+=>*
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : return(setOperationKey[# errorCorruptObject]), RSA:AttributeSet > C .
 
 --- Other algorithms cannot accept the two-key API.
 search [1] in COMPLETION-TEST :
@@ -518,23 +562,20 @@ search [1] in COMPLETION-TEST :
   < testTa : TAKernel | status : panic, SK2:AttributeSet > C .
 
 --- GP 6.2.7: a persistent first key resumes with the second-key lookup only
---- after trusted storage reports a normal state.
+--- after trusted storage reports a normal state.  The operation handle oid(1, testTa) does it.
 search [1] in COMPLETION-TEST :
-  (msg retStatus[# (normal).StorageStatus] from oid(0, testTa) to testTa)
-  (msg resumeSetOperationKey2[# oid(2, testTa) # typeAes # usageEncrypt # (attr(secretValue, randomAttrVal)).Set{CryptoAttribute}] from testTa to testTa)
-  < testTa : TAKernel | api-call : exec(setOperationKey2[# oid(1, testTa) # oid(3, testTa) # oid(2, testTa)] , 1) >
+  (msg retStatus[# (normal).StorageStatus] from oid(0, testTa) to oid(1, testTa))
+  (msg pendingSetOperationKey2Storage1[# testTa # oid(2, testTa) # oid(0, testTa) # (attr(secretValue, randomAttrVal)).Set{CryptoAttribute} # typeAes # usageEncrypt] from oid(1, testTa) to oid(1, testTa))
 =>1
-  (msg reqAttribute[] from testTa to oid(2, testTa))
-  < testTa : TAKernel | api-call : exec(setOperationKey2[# oid(1, testTa) # oid(3, testTa) # oid(2, testTa) # attr(secretValue, randomAttrVal) # typeAes # usageEncrypt] , 2) > C .
+  (msg reqAttribute[] from oid(1, testTa) to oid(2, testTa))
+  (msg pendingSetOperationKey2Second[# testTa # oid(2, testTa) # oid(0, testTa) # (attr(secretValue, randomAttrVal)).Set{CryptoAttribute} # typeAes # usageEncrypt] from oid(1, testTa) to oid(1, testTa)) C .
 
 --- A persistent second key continues into the common two-key validator.
 search [1] in COMPLETION-TEST :
-  (msg retStatus[# (normal).StorageStatus] from oid(0, testTa) to testTa)
-  (msg installStoredOperationKeys[# oid(1, testTa) # typeAes # usageEncrypt # (empty).Set{CryptoAttribute} # typeAes # usageEncrypt # (empty).Set{CryptoAttribute}] from testTa to testTa)
-  < testTa : TAKernel | api-call : exec(setOperationKey2[# ZvHandle # ZvKeyHandle # ZvSecondKeyHandle] , 3) >
+  (msg retStatus[# (normal).StorageStatus] from oid(0, testTa) to oid(1, testTa))
+  (msg pendingSetOperationKey2Storage2[# testTa # oid(0, testTa) # typeAes # usageEncrypt # (empty).Set{CryptoAttribute} # typeAes # usageEncrypt # (empty).Set{CryptoAttribute}] from oid(1, testTa) to oid(1, testTa))
 =>1
-  (msg installOperationKeys[# typeAes # usageEncrypt # (empty).Set{CryptoAttribute} # typeAes # usageEncrypt # (empty).Set{CryptoAttribute}] from testTa to oid(1, testTa))
-  < testTa : TAKernel | api-call : final(setOperationKey2[# ZvHandle # ZvKeyHandle # ZvSecondKeyHandle]) > C .
+  (msg installOperationKeys[# typeAes # usageEncrypt # (empty).Set{CryptoAttribute} # typeAes # usageEncrypt # (empty).Set{CryptoAttribute}] from testTa to oid(1, testTa)) C .
 
 --- Clearing two keys is valid only for an operation that expects two keys.
 search [1] in COMPLETION-TEST :

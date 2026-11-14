@@ -966,12 +966,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   op reqOperationInfoMultiple : -> ReqId [ctor] .
   op retOperationInfoMultiple : -> ReqId [ctor] .
 
-  --- get-operation-info-subroutine: getOperationInfo with a handle moves to exec and requests the
+  --- get-operation-info-subroutine: getOperationInfo with a handle moves to final and requests the
   --- multiple operation info from HANDLE with reqOperationInfoMultiple.
   rl [get-operation-info-subroutine] :
-    < TK : TAKernel | api-call : init(getOperationInfo[# HANDLE]) >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(getOperationInfo[# HANDLE]) >
     =>
-    < TK : TAKernel | api-call : exec(getOperationInfo[# HANDLE] , 0) >
+    < TK : TAKernel | api-call : final(getOperationInfo[# HANDLE]) >
     (msg reqOperationInfoMultiple[] from TK to HANDLE)
   .
 
@@ -995,7 +995,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- with noReturnCode.
   rl [get-operation-info-success] :
     (msg retOperationInfoMultiple[# OPINFOMULTI] from HANDLE to TK)
-    < TK : TAKernel | api-call : exec(getOperationInfo[PARAMS] , 0) >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(getOperationInfo[PARAMS]) >
     =>
     < TK : TAKernel | api-call : return(getOperationInfo[# noReturnCode # singleOperationInfo(OPINFOMULTI)]) >
   .
@@ -1004,12 +1004,12 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- TEE_GetOperationInfoMultiple
 ------------------------------------------------------------
 
-  --- get-operation-info-multiple-subroutine: getOperationInfoMultiple moves to exec and requests
+  --- get-operation-info-multiple-subroutine: getOperationInfoMultiple moves to final and requests
   --- the multiple operation info from HANDLE with reqOperationInfoMultiple.
   rl [get-operation-info-multiple-subroutine] :
-    < TK : TAKernel | api-call : init(getOperationInfoMultiple[# HANDLE ZrGetOperationInfoMultiple]) >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(getOperationInfoMultiple[# HANDLE ZrGetOperationInfoMultiple]) >
     =>
-    < TK : TAKernel | api-call : exec(getOperationInfoMultiple[# HANDLE ZrGetOperationInfoMultiple] , 0) >
+    < TK : TAKernel | api-call : final(getOperationInfoMultiple[# HANDLE ZrGetOperationInfoMultiple]) >
     (msg reqOperationInfoMultiple[] from TK to HANDLE)
   .
 
@@ -1057,7 +1057,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- required size, the multiple operation info is returned with success.
   crl [get-operation-info-multiple-success] :
     (msg retOperationInfoMultiple[# OPINFOMULTI] from HANDLE to TK)
-    < TK : TAKernel | api-call : exec(getOperationInfoMultiple[ZsGetOperationInfoMultiple0 ZrGetOperationInfoMultiple] , 0) >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(getOperationInfoMultiple[ZsGetOperationInfoMultiple0 ZrGetOperationInfoMultiple]) >
     => < TK : TAKernel | api-call : return(getOperationInfoMultiple[# success # OPINFOMULTI]) >
     if not hasOutputCapacity(ZrGetOperationInfoMultiple) or
        outputCapacityFitsSize(ZrGetOperationInfoMultiple , operationInfoRequiredSize(OPINFOMULTI)) .
@@ -1066,7 +1066,7 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- returned with the required size.
   crl [get-operation-info-multiple-short-buffer] :
     (msg retOperationInfoMultiple[# OPINFOMULTI] from HANDLE to TK)
-    < TK : TAKernel | api-call : exec(getOperationInfoMultiple[ZsGetOperationInfoMultiple0 ZrGetOperationInfoMultiple] , 0) >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(getOperationInfoMultiple[ZsGetOperationInfoMultiple0 ZrGetOperationInfoMultiple]) >
     => < TK : TAKernel | api-call : return(getOperationInfoMultiple[# errorShortBuffer # operationInfoRequiredSize(OPINFOMULTI)]) >
     if hasOutputCapacity(ZrGetOperationInfoMultiple) and
        not outputCapacityFitsSize(ZrGetOperationInfoMultiple , operationInfoRequiredSize(OPINFOMULTI)) .
@@ -1138,24 +1138,42 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   op rejectTopOperationKey : -> ReqId [ctor] .
   op finishSetOperationKey : -> ReqId [ctor] .
   op failSetOperationKey : -> ReqId [ctor] .
+  --- The TA does not wait in exec: it moves from init to final and the operation handle gets the
+  --- key attributes (and the storage status of a persistent key) itself.  The handle keeps what it
+  --- needs for the next step in a message to itself (pendingSetOperationKey,
+  --- pendingSetOperationKeyStorage).
+  op startSetOperationKey : -> ReqId [ctor] .
+  op pendingSetOperationKey : -> ReqId [ctor] .
+  op pendingSetOperationKeyStorage : -> ReqId [ctor] .
+  op failSetOperationKeyCode : -> ReqId [ctor] .
+  var RC : ReturnCode .
 
-  --- set-operation-key-subroutine: TEE_SetOperationKey with a non-null key handle moves to exec and
-  --- requests the key attributes with reqAttribute.
-  --- Step numbers: 0 waits for the key attributes (reqAttribute) or for the key's storage status,
-  --- 1 waits for the storage status of a persistent key (retAttributePr path).
+  --- set-operation-key-subroutine: TEE_SetOperationKey with a non-null key handle moves to final and
+  --- sends startSetOperationKey with the key handle KEY and the storage SI of the TA to HANDLE.
   crl [set-operation-key-subroutine] :
-    < TK : TAKernel | api-call : init(setOperationKey[ZsSetOperationKey0 # KEY ZrSetOperationKey]) >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(setOperationKey[# HANDLE # KEY ZrSetOperationKey]) , storage : SI >
     =>
-    < TK : TAKernel | api-call : exec(setOperationKey[ZsSetOperationKey0 # KEY ZrSetOperationKey] , 0) >
-    (msg reqAttribute[] from TK to KEY)
+    < TK : TAKernel | api-call : final(setOperationKey[# HANDLE # KEY ZrSetOperationKey]) >
+    (msg startSetOperationKey[# KEY # SI] from TK to HANDLE)
   if not nullHandle(KEY)
+  .
+
+  --- set-operation-key-req-attribute: HANDLE requests the attributes of KEY with reqAttribute and
+  --- keeps the TA TK, KEY and SI in pendingSetOperationKey.
+  rl [set-operation-key-req-attribute] :
+    (msg startSetOperationKey[# KEY # SI] from TK to HANDLE)
+    < HANDLE : OpHandle | >
+    =>
+    < HANDLE : OpHandle | >
+    (msg reqAttribute[] from HANDLE to KEY)
+    (msg pendingSetOperationKey[# TK # KEY # SI] from HANDLE to HANDLE)
   .
 
   --- set-operation-key-clear: TEE_SetOperationKey with a null key handle clears the key material of
   --- HANDLE. The CryptoOp CI is reset to empty attributes, nil keys and the initial state,
   --- the handle gets an empty handleState and key-material-set false, and success is returned.
   rl [set-operation-key-clear] :
-    < TK : TAKernel | api-call : init(setOperationKey[# HANDLE # null ZrSetOperationKey]) >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(setOperationKey[# HANDLE # null ZrSetOperationKey]) >
     < CI : CryptoOp | >
     < HANDLE : OpHandle | oid : CI , state : HS >
     =>
@@ -1166,28 +1184,27 @@ omod CRYPTO-OPERATION-BEHAVIOR is
                                  key-material-set : false >
   .
 
-  --- set-operation-key-subroutine-1: the attributes ATTRS, OBJTYPE and OBJUSAGES of the key are
-  --- received.  The call moves to final and reqSetOperationKey is sent to HANDLE.
+  --- set-operation-key-subroutine-1: HANDLE receives the attributes ATTRS, OBJTYPE and OBJUSAGES of
+  --- the key, and reqSetOperationKey of TK is sent to HANDLE.
   rl [set-operation-key-subroutine-1] :
-    (msg retAttributeTr[# ATTRS # OBJTYPE # OBJUSAGES] from KEY to TK)
-    < TK : TAKernel | api-call : exec(setOperationKey[# HANDLE # KEY ZrSetOperationKey] , 0) >
+    (msg retAttributeTr[# ATTRS # OBJTYPE # OBJUSAGES] from KEY to HANDLE)
+    (msg pendingSetOperationKey[# TK # KEY # SI] from HANDLE to HANDLE)
     =>
-    < TK : TAKernel | api-call : final(setOperationKey[# HANDLE # KEY ZrSetOperationKey]) >
     (msg reqSetOperationKey[# OBJTYPE # ATTRS # OBJUSAGES] from TK to HANDLE)
   .
 
   --- set-operation-key-uninitialized-key-panic: a key whose transient object is not initialized
-  --- sets the kernel status to panic.
+  --- makes HANDLE send failSetOperationKey to TK; set-operation-key-panic then sets the kernel
+  --- status to panic.
   rl [set-operation-key-uninitialized-key-panic] :
-    (msg reqAttribute[] from TK to KEY)
-    < TK : TAKernel | status : (normal).AppStatus ,
-                      api-call : exec(setOperationKey[PARAMS] , 0) >
+    (msg reqAttribute[] from HANDLE to KEY)
+    (msg pendingSetOperationKey[# TK # KEY # SI] from HANDLE to HANDLE)
     < OI : TransObj | initialized : false >
     < KEY : ObjHandle | oid : OI >
     =>
-    < TK : TAKernel | status : panic >
     < OI : TransObj | >
     < KEY : ObjHandle | >
+    (msg failSetOperationKey[] from HANDLE to TK)
   .
 
   --- set-operation-key-top-level-handle-success: when ALGO does not expect two keys and OBJTYPE,
@@ -1255,29 +1272,28 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   --- set-operation-key-panic: failSetOperationKey sets the kernel status to panic.
   rl [set-operation-key-panic] :
     (msg failSetOperationKey[] from HANDLE to TK)
-    < TK : TAKernel | api-call : final(setOperationKey[PARAMS]) >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(setOperationKey[PARAMS]) >
     =>
     < TK : TAKernel | status : panic >
   .
 
-  --- set-operation-key-subroutine-2 (request): a persistent key's storage status is requested
-  --- before the key is set.  The handle, attributes and type are kept in the parameters, so that the
-  --- storage check and reqSetOperationKey can match.
+  --- set-operation-key-subroutine-2 (request): for a persistent key, HANDLE requests the storage
+  --- status from SI before the key is set, and keeps TK and the attributes in
+  --- pendingSetOperationKeyStorage.
   rl [set-operation-key-subroutine-2] :
-    (msg retAttributePr[# ATTRS # OBJTYPE # OBJUSAGES] from KEY to TK)
-    < TK : TAKernel | api-call : exec(setOperationKey[# HANDLE # KEY ZrSetOperationKey] , 0) , storage : SI >
+    (msg retAttributePr[# ATTRS # OBJTYPE # OBJUSAGES] from KEY to HANDLE)
+    (msg pendingSetOperationKey[# TK # KEY # SI] from HANDLE to HANDLE)
     =>
-    < TK : TAKernel | api-call : exec(setOperationKey[# HANDLE # KEY # ATTRS # OBJTYPE # OBJUSAGES ZrSetOperationKey] , 1) >
-    (msg getStatus[] from TK to SI)
+    (msg getStatus[] from HANDLE to SI)
+    (msg pendingSetOperationKeyStorage[# TK # SI # ATTRS # OBJTYPE # OBJUSAGES] from HANDLE to HANDLE)
   .
 
-  --- set-operation-key-subroutine-2 (finish): once the storage status is returned, the call moves
-  --- to final and reqSetOperationKey is sent to HANDLE.
+  --- set-operation-key-subroutine-2 (finish): once the storage status is normal, reqSetOperationKey
+  --- of TK is sent to HANDLE.
   rl [set-operation-key-subroutine-2] :
-    (msg retStatus[# (normal).StorageStatus] from SI to TK)
-    < TK : TAKernel | api-call : exec(setOperationKey[# HANDLE # KEY # ATTRS # OBJTYPE # OBJUSAGES ZrSetOperationKey] , 1) >
+    (msg retStatus[# (normal).StorageStatus] from SI to HANDLE)
+    (msg pendingSetOperationKeyStorage[# TK # SI # ATTRS # OBJTYPE # OBJUSAGES] from HANDLE to HANDLE)
     =>
-    < TK : TAKernel | api-call : final(setOperationKey[# HANDLE # KEY # ATTRS # OBJTYPE # OBJUSAGES ZrSetOperationKey]) >
     (msg reqSetOperationKey[# OBJTYPE # ATTRS # OBJUSAGES] from TK to HANDLE)
   .
 
@@ -1286,50 +1302,72 @@ omod CRYPTO-OPERATION-BEHAVIOR is
 --- This rule returns TEE_ERROR_CORRUPT_OBJECT if the object is corrupt.
 --- This rule returns TEE_ERROR_STORAGE_NOT_AVAILABLE if the persistent object is stored in a storage area which is currently inaccessible.
 
-  --- set-operation-key-storage-err: when the storage status STATUS is abnormal, TEE_SetOperationKey
-  --- returns storageErrCode(STATUS).
+  --- set-operation-key-storage-err: when the storage status STATUS is abnormal, HANDLE sends
+  --- failSetOperationKeyCode with storageErrCode(STATUS) to TK.
   crl [set-operation-key-storage-err] :
-    (msg retStatus[# STATUS] from SI to TK)
-    < TK : TAKernel | api-call : exec(setOperationKey[PARAMS] , 1) >
+    (msg retStatus[# STATUS] from SI to HANDLE)
+    (msg pendingSetOperationKeyStorage[# TK # SI # ATTRS # OBJTYPE # OBJUSAGES] from HANDLE to HANDLE)
     =>
-    < TK : TAKernel | api-call : return(setOperationKey[# storageErrCode(STATUS)]) >
+    (msg failSetOperationKeyCode[# storageErrCode(STATUS)] from HANDLE to TK)
   if abnormalStorage(STATUS)
+  .
+
+  --- set-operation-key-storage-err-return: failSetOperationKeyCode returns its code RC.
+  rl [set-operation-key-storage-err-return] :
+    (msg failSetOperationKeyCode[# RC] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(setOperationKey[PARAMS]) >
+    =>
+    < TK : TAKernel | api-call : return(setOperationKey[# RC]) >
   .
 
 ------------------------------------------------------------
 --- TEE_SetOperationKey2
 ------------------------------------------------------------
 
---- Step numbers: 0 waits for the first key's attributes, 1 waits for the storage status of a
---- persistent first key, 2 waits for the second key's attributes, 3 waits for the storage status of
---- a persistent second key.
+--- The TA does not wait in exec: it moves from init to final and the operation handle gets the
+--- attributes of the two keys (and the storage status of a persistent key) itself, in the order
+--- first key, its storage status, second key, its storage status.  The handle keeps what it needs
+--- for the next step in a message to itself (pendingSetOperationKey2, ...Storage1, ...Second,
+--- ...Storage2).
 
   op installOperationKeys : -> ReqId [ctor] .
   op finishInstallTopOperationKeys : -> ReqId [ctor] .
   op finishSetOperationKey2 : -> ReqId [ctor] .
   op failSetOperationKey2 : -> ReqId [ctor] .
-  op resumeSetOperationKey2 : -> ReqId [ctor] .
-  op installStoredOperationKeys : -> ReqId [ctor] .
+  op startSetOperationKey2 : -> ReqId [ctor] .
+  op pendingSetOperationKey2 : -> ReqId [ctor] .
+  op pendingSetOperationKey2Storage1 : -> ReqId [ctor] .
+  op pendingSetOperationKey2Second : -> ReqId [ctor] .
+  op pendingSetOperationKey2Storage2 : -> ReqId [ctor] .
+  op failSetOperationKey2Code : -> ReqId [ctor] .
 
   --- set-operation-key2-subroutine (request): with two different non-null key handles for a two-key
-  --- algorithm, when the handle is not initialized, the call moves to exec and reqAttribute is sent
-  --- to KEY1.
+  --- algorithm, when the handle is not initialized, the call moves to final and
+  --- startSetOperationKey2 with KEY1, KEY2 and the storage SI of the TA is sent to HANDLE.
   crl [set-operation-key2-subroutine] :
-    < TK : TAKernel | api-call : init(setOperationKey2[# HANDLE # KEY1 # KEY2]) >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(setOperationKey2[# HANDLE # KEY1 # KEY2]) , storage : SI >
     < HANDLE : OpHandle | state : HS , oid : CI >
     < CI : CryptoOp | algorithm : ALGO >
-    => < TK : TAKernel | api-call : exec(setOperationKey2[# HANDLE # KEY1 # KEY2] , 0) >
+    => < TK : TAKernel | api-call : final(setOperationKey2[# HANDLE # KEY1 # KEY2]) >
        < HANDLE : OpHandle | >
        < CI : CryptoOp | >
-       (msg reqAttribute[] from TK to KEY1)
+       (msg startSetOperationKey2[# KEY1 # KEY2 # SI] from TK to HANDLE)
   if not hasInit(HS) /\ expectsTwoKeys(ALGO) /\ not nullHandle(KEY1) /\
      not nullHandle(KEY2) /\ KEY1 =/= KEY2 .
+
+  --- set-operation-key2-req-attribute: HANDLE requests the attributes of KEY1 and keeps TK, KEY1,
+  --- KEY2 and SI in pendingSetOperationKey2.
+  rl [set-operation-key2-req-attribute] :
+    (msg startSetOperationKey2[# KEY1 # KEY2 # SI] from TK to HANDLE)
+    < HANDLE : OpHandle | >
+    => < HANDLE : OpHandle | >
+       (msg reqAttribute[] from HANDLE to KEY1)
+       (msg pendingSetOperationKey2[# TK # KEY1 # KEY2 # SI] from HANDLE to HANDLE) .
 
   --- set-operation-key2-wrong-algorithm-panic: when the handle is not initialized and ALGO does not
   --- expect two keys, the kernel status is set to panic.
   crl [set-operation-key2-wrong-algorithm-panic] :
-    < TK : TAKernel | status : (normal).AppStatus,
-                      api-call : init(setOperationKey2[# HANDLE ZsSetOperationKey21 ZsSetOperationKey22 ZrSetOperationKey2]) >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(setOperationKey2[# HANDLE ZsSetOperationKey21 ZsSetOperationKey22 ZrSetOperationKey2]) >
     < HANDLE : OpHandle | oid : CI, state : HS >
     < CI : CryptoOp | algorithm : ALGO >
     => < TK : TAKernel | status : panic >
@@ -1370,87 +1408,93 @@ omod CRYPTO-OPERATION-BEHAVIOR is
        < CI : CryptoOp | >
   if not hasInit(HS) /\ expectsTwoKeys(ALGO) /\ not nullHandle(KEY1) .
 
-  --- set-operation-key2-subroutine (first-key): when the first key is a transient object, its
-  --- attributes ATTRS, OBJTYPE and OBJUSAGES are kept in the parameters and reqAttribute is sent to
-  --- KEY2.
+  --- set-operation-key2-subroutine (first-key): when the first key is a transient object, HANDLE
+  --- keeps its attributes ATTRS, OBJTYPE and OBJUSAGES in pendingSetOperationKey2Second and
+  --- requests the attributes of KEY2.
   rl [set-operation-key2-subroutine] :
-    (msg retAttributeTr[# ATTRS # OBJTYPE # OBJUSAGES] from KEY1 to TK)
-    < TK : TAKernel | api-call : exec(setOperationKey2[# HANDLE # KEY1 # KEY2] , 0) >
-    => < TK : TAKernel | api-call : exec(setOperationKey2[# HANDLE # KEY1 # KEY2 # ATTRS # OBJTYPE # OBJUSAGES] , 2) >
-       (msg reqAttribute[] from TK to KEY2) .
+    (msg retAttributeTr[# ATTRS # OBJTYPE # OBJUSAGES] from KEY1 to HANDLE)
+    (msg pendingSetOperationKey2[# TK # KEY1 # KEY2 # SI] from HANDLE to HANDLE)
+    => (msg reqAttribute[] from HANDLE to KEY2)
+       (msg pendingSetOperationKey2Second[# TK # KEY2 # SI # ATTRS # OBJTYPE # OBJUSAGES] from HANDLE to HANDLE) .
 
-  --- set-operation-key2-first-persistent-key: the first key is persistent, so its storage status is
-  --- requested with getStatus before the second key is requested.
+  --- set-operation-key2-first-persistent-key: the first key is persistent, so HANDLE requests the
+  --- storage status from SI before the second key is requested.
   rl [set-operation-key2-first-persistent-key] :
-    (msg retAttributePr[# ATTRS # OBJTYPE # OBJUSAGES] from KEY1 to TK)
-    < TK : TAKernel | api-call : exec(setOperationKey2[# HANDLE # KEY1 # KEY2] , 0) , storage : SI >
-    => < TK : TAKernel | api-call : exec(setOperationKey2[# HANDLE # KEY1 # KEY2] , 1) >
-       (msg resumeSetOperationKey2[# KEY2 # OBJTYPE # OBJUSAGES # ATTRS] from TK to TK)
-       (msg getStatus[] from TK to SI) .
+    (msg retAttributePr[# ATTRS # OBJTYPE # OBJUSAGES] from KEY1 to HANDLE)
+    (msg pendingSetOperationKey2[# TK # KEY1 # KEY2 # SI] from HANDLE to HANDLE)
+    => (msg getStatus[] from HANDLE to SI)
+       (msg pendingSetOperationKey2Storage1[# TK # KEY2 # SI # ATTRS # OBJTYPE # OBJUSAGES] from HANDLE to HANDLE) .
 
   --- set-operation-key2-first-persistent-key-ready: when the storage status of the first key is
-  --- normal, the second key is requested with reqAttribute.
+  --- normal, HANDLE requests the attributes of KEY2.
   rl [set-operation-key2-first-persistent-key-ready] :
-    (msg retStatus[# (normal).StorageStatus] from SI to TK)
-    (msg resumeSetOperationKey2[# KEY2 # OBJTYPE # OBJUSAGES # ATTRS] from TK to TK)
-    < TK : TAKernel | api-call : exec(setOperationKey2[# HANDLE # KEY1 # KEY2] , 1) >
-    => < TK : TAKernel | api-call : exec(setOperationKey2[# HANDLE # KEY1 # KEY2 # ATTRS # OBJTYPE # OBJUSAGES] , 2) >
-       (msg reqAttribute[] from TK to KEY2) .
+    (msg retStatus[# (normal).StorageStatus] from SI to HANDLE)
+    (msg pendingSetOperationKey2Storage1[# TK # KEY2 # SI # ATTRS # OBJTYPE # OBJUSAGES] from HANDLE to HANDLE)
+    => (msg reqAttribute[] from HANDLE to KEY2)
+       (msg pendingSetOperationKey2Second[# TK # KEY2 # SI # ATTRS # OBJTYPE # OBJUSAGES] from HANDLE to HANDLE) .
 
   --- set-operation-key2-first-persistent-storage-error: an abnormal storage status of the first key
-  --- returns storageErrCode(STATUS).
+  --- makes HANDLE send failSetOperationKey2Code with storageErrCode(STATUS) to TK.
   crl [set-operation-key2-first-persistent-storage-error] :
-    (msg retStatus[# STATUS] from SI to TK)
-    (msg resumeSetOperationKey2[# KEY2 # OBJTYPE # OBJUSAGES # ATTRS] from TK to TK)
-    < TK : TAKernel | api-call : exec(setOperationKey2[PARAMS] , 1) >
-    => < TK : TAKernel | api-call : return(setOperationKey2[# storageErrCode(STATUS)]) >
+    (msg retStatus[# STATUS] from SI to HANDLE)
+    (msg pendingSetOperationKey2Storage1[# TK # KEY2 # SI # ATTRS # OBJTYPE # OBJUSAGES] from HANDLE to HANDLE)
+    => (msg failSetOperationKey2Code[# storageErrCode(STATUS)] from HANDLE to TK)
   if abnormalStorage(STATUS) .
 
   --- set-operation-key2-subroutine (second-key): when the second key is a transient object, its
-  --- attributes ATTRS2, OBJTYPE2 and OBJUSAGES2 are received, the call moves to final, and
-  --- installOperationKeys is sent to HANDLE.
+  --- attributes ATTRS2, OBJTYPE2 and OBJUSAGES2 are received and installOperationKeys of TK is sent
+  --- to HANDLE.
   rl [set-operation-key2-subroutine] :
-    (msg retAttributeTr[# ATTRS2 # OBJTYPE2 # OBJUSAGES2] from KEY2 to TK)
-    < TK : TAKernel | api-call : exec(setOperationKey2[# HANDLE # KEY1 # KEY2 # ATTRS # OBJTYPE # OBJUSAGES] , 2) >
-    => < TK : TAKernel | api-call : final(setOperationKey2[# HANDLE # KEY1 # KEY2 # ATTRS # OBJTYPE # OBJUSAGES]) >
-       (msg installOperationKeys[# OBJTYPE # OBJUSAGES # ATTRS # OBJTYPE2 # OBJUSAGES2 # ATTRS2] from TK to HANDLE) .
+    (msg retAttributeTr[# ATTRS2 # OBJTYPE2 # OBJUSAGES2] from KEY2 to HANDLE)
+    (msg pendingSetOperationKey2Second[# TK # KEY2 # SI # ATTRS # OBJTYPE # OBJUSAGES] from HANDLE to HANDLE)
+    => (msg installOperationKeys[# OBJTYPE # OBJUSAGES # ATTRS # OBJTYPE2 # OBJUSAGES2 # ATTRS2] from TK to HANDLE) .
 
-  --- set-operation-key2-second-persistent-key: the second key is persistent, so its storage status
-  --- is requested with getStatus before both keys are installed.
+  --- set-operation-key2-second-persistent-key: the second key is persistent, so HANDLE requests the
+  --- storage status from SI before both keys are installed.
   rl [set-operation-key2-second-persistent-key] :
-    (msg retAttributePr[# ATTRS2 # OBJTYPE2 # OBJUSAGES2] from KEY2 to TK)
-    < TK : TAKernel | api-call : exec(setOperationKey2[# HANDLE # KEY1 # KEY2 # ATTRS # OBJTYPE # OBJUSAGES] , 2) , storage : SI >
-    => < TK : TAKernel | api-call : exec(setOperationKey2[# HANDLE # KEY1 # KEY2 # ATTRS # OBJTYPE # OBJUSAGES] , 3) >
-       (msg installStoredOperationKeys[# HANDLE # OBJTYPE # OBJUSAGES # ATTRS # OBJTYPE2 # OBJUSAGES2 # ATTRS2] from TK to TK)
-       (msg getStatus[] from TK to SI) .
+    (msg retAttributePr[# ATTRS2 # OBJTYPE2 # OBJUSAGES2] from KEY2 to HANDLE)
+    (msg pendingSetOperationKey2Second[# TK # KEY2 # SI # ATTRS # OBJTYPE # OBJUSAGES] from HANDLE to HANDLE)
+    => (msg getStatus[] from HANDLE to SI)
+       (msg pendingSetOperationKey2Storage2[# TK # SI # OBJTYPE # OBJUSAGES # ATTRS # OBJTYPE2 # OBJUSAGES2 # ATTRS2] from HANDLE to HANDLE) .
 
   --- set-operation-key2-second-persistent-key-ready: when the storage status of the second key is
-  --- normal, installOperationKeys is sent to HANDLE and the call moves to final.
+  --- normal, installOperationKeys of TK is sent to HANDLE.
   rl [set-operation-key2-second-persistent-key-ready] :
-    (msg retStatus[# (normal).StorageStatus] from SI to TK)
-    (msg installStoredOperationKeys[# HANDLE # OBJTYPE # OBJUSAGES # ATTRS # OBJTYPE2 # OBJUSAGES2 # ATTRS2] from TK to TK)
-    < TK : TAKernel | api-call : exec(setOperationKey2[PARAMS] , 3) >
-    => < TK : TAKernel | api-call : final(setOperationKey2[PARAMS]) >
-       (msg installOperationKeys[# OBJTYPE # OBJUSAGES # ATTRS # OBJTYPE2 # OBJUSAGES2 # ATTRS2] from TK to HANDLE) .
+    (msg retStatus[# (normal).StorageStatus] from SI to HANDLE)
+    (msg pendingSetOperationKey2Storage2[# TK # SI # OBJTYPE # OBJUSAGES # ATTRS # OBJTYPE2 # OBJUSAGES2 # ATTRS2] from HANDLE to HANDLE)
+    => (msg installOperationKeys[# OBJTYPE # OBJUSAGES # ATTRS # OBJTYPE2 # OBJUSAGES2 # ATTRS2] from TK to HANDLE) .
 
   --- set-operation-key2-second-persistent-storage-error: an abnormal storage status of the second
-  --- key returns storageErrCode2(STATUS).
+  --- key makes HANDLE send failSetOperationKey2Code with storageErrCode2(STATUS) to TK.
   crl [set-operation-key2-second-persistent-storage-error] :
-    (msg retStatus[# STATUS] from SI to TK)
-    (msg installStoredOperationKeys[# HANDLE # OBJTYPE # OBJUSAGES # ATTRS # OBJTYPE2 # OBJUSAGES2 # ATTRS2] from TK to TK)
-    < TK : TAKernel | api-call : exec(setOperationKey2[PARAMS] , 3) >
-    => < TK : TAKernel | api-call : return(setOperationKey2[# storageErrCode2(STATUS)]) >
+    (msg retStatus[# STATUS] from SI to HANDLE)
+    (msg pendingSetOperationKey2Storage2[# TK # SI # OBJTYPE # OBJUSAGES # ATTRS # OBJTYPE2 # OBJUSAGES2 # ATTRS2] from HANDLE to HANDLE)
+    => (msg failSetOperationKey2Code[# storageErrCode2(STATUS)] from HANDLE to TK)
   if abnormalStorage(STATUS) .
 
+  --- set-operation-key2-storage-err-return: failSetOperationKey2Code returns its code RC.
+  rl [set-operation-key2-storage-err-return] :
+    (msg failSetOperationKey2Code[# RC] from HANDLE to TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(setOperationKey2[PARAMS]) >
+    => < TK : TAKernel | api-call : return(setOperationKey2[# RC]) > .
+
   --- set-operation-key2-uninitialized-key-panic: a key whose transient object is not initialized
-  --- sets the kernel status to panic.
+  --- makes HANDLE send failSetOperationKey2 for TK; set-operation-key2-panic then sets the kernel
+  --- status to panic.  One rule for the first key and one for the second.
   rl [set-operation-key2-uninitialized-key-panic] :
-    (msg reqAttribute[] from TK to KEY)
-    < TK : TAKernel | status : (normal).AppStatus , api-call : exec(setOperationKey2[PARAMS] , N) >
+    (msg reqAttribute[] from HANDLE to KEY1)
+    (msg pendingSetOperationKey2[# TK # KEY1 # KEY2 # SI] from HANDLE to HANDLE)
     < OI : TransObj | initialized : false >
-    < KEY : ObjHandle | oid : OI >
-    => < TK : TAKernel | status : panic >
-       < OI : TransObj | > < KEY : ObjHandle | > .
+    < KEY1 : ObjHandle | oid : OI >
+    => < OI : TransObj | > < KEY1 : ObjHandle | >
+       (msg failSetOperationKey2[] from TK to HANDLE) .
+  rl [set-operation-key2-uninitialized-key-panic] :
+    (msg reqAttribute[] from HANDLE to KEY2)
+    (msg pendingSetOperationKey2Second[# TK # KEY2 # SI # ATTRS # OBJTYPE # OBJUSAGES] from HANDLE to HANDLE)
+    < OI : TransObj | initialized : false >
+    < KEY2 : ObjHandle | oid : OI >
+    => < OI : TransObj | > < KEY2 : ObjHandle | >
+       (msg failSetOperationKey2[] from TK to HANDLE) .
 
   --- set-operation-key2-top-level-handle: when twoKeyCompatible, twoKeyMaterialCompatible and
   --- twoKeyOperationSizeCompatible all hold, the CryptoOp takes both attribute sets and the
@@ -1518,23 +1562,37 @@ omod CRYPTO-OPERATION-BEHAVIOR is
   op applyCopiedOperationHandle : -> ReqId [ctor] .
   op finishCopyOperation : -> ReqId [ctor] .
   op failCopyOperation : -> ReqId [ctor] .
+  --- The TA does not wait in exec: it moves from init to final and the target handle gets the
+  --- source attributes itself, keeping TK in pendingCopyOperation, a message to itself.
+  op startCopyOperation : -> ReqId [ctor] .
+  op pendingCopyOperation : -> ReqId [ctor] .
 
-  --- copy-operation-subroutine (request): copyOperation with a source handle moves to exec and
-  --- requests the source attributes with reqOperationAttr.
+  --- copy-operation-subroutine (request): copyOperation with a target handle HANDLE and a source
+  --- handle SRC moves to final and sends startCopyOperation with SRC to HANDLE.
   rl [copy-operation-subroutine] :
-    < TK : TAKernel | api-call : init(copyOperation[ZsCopyOperation0 # HANDLE ZrCopyOperation]) >
-    =>
-    < TK : TAKernel | api-call : exec(copyOperation[ZsCopyOperation0 # HANDLE ZrCopyOperation] , 0) >
-    (msg reqOperationAttr[] from TK to HANDLE)
-  .
-
-  --- copy-operation-subroutine (finish): the source attributes and keys are received, the call
-  --- moves to final, and reqCopyOperation is sent to the target HANDLE.
-  rl [copy-operation-subroutine] :
-    (msg retOperationAttr[# OPOBJATTR # OPHANDLEATTR # KEYS] from SRC to TK)
-    < TK : TAKernel | api-call : exec(copyOperation[# HANDLE # SRC ZrCopyOperation] , 0) >
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(copyOperation[# HANDLE # SRC ZrCopyOperation]) >
     =>
     < TK : TAKernel | api-call : final(copyOperation[# HANDLE # SRC ZrCopyOperation]) >
+    (msg startCopyOperation[# SRC] from TK to HANDLE)
+  .
+
+  --- copy-operation-req-attr: HANDLE requests the source attributes from SRC with reqOperationAttr
+  --- and keeps TK and SRC in pendingCopyOperation.
+  rl [copy-operation-req-attr] :
+    (msg startCopyOperation[# SRC] from TK to HANDLE)
+    < HANDLE : OpHandle | >
+    =>
+    < HANDLE : OpHandle | >
+    (msg reqOperationAttr[] from HANDLE to SRC)
+    (msg pendingCopyOperation[# TK # SRC] from HANDLE to HANDLE)
+  .
+
+  --- copy-operation-subroutine (finish): the source attributes and keys are received, and
+  --- reqCopyOperation of TK is sent to the target HANDLE.
+  rl [copy-operation-subroutine] :
+    (msg retOperationAttr[# OPOBJATTR # OPHANDLEATTR # KEYS] from SRC to HANDLE)
+    (msg pendingCopyOperation[# TK # SRC] from HANDLE to HANDLE)
+    =>
     (msg reqCopyOperation[# OPOBJATTR # OPHANDLEATTR # KEYS] from TK to HANDLE)
   .
 

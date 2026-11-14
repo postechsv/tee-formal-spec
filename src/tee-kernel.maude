@@ -5,16 +5,16 @@
 fmod APP-STATUS is
   sort AppStatus .
 
-  --- outOfMemory: the memory of the TA is exhausted.  Only the rules of the API functions that
-  --- allocate memory (allocateTransientObject, allocOperation, openPersistentObject,
-  --- createPersistent, allocatePersistentObjectEnumerator) look at it: they return errorOutOfMemory
-  --- instead of allocating.  Every other rule runs as in normal status (except the shared-memory
-  --- builtins, which are not in the paper or its artifact), so the program goes on
-  --- and its call returns ([Internal Core] 4.3.5), as in the paper artifact.  The rules printed in
-  --- the paper require status normal also for the API call and TA invocation rules; with them a TA
-  --- stops after a memory error, which contradicts the paper's own results (Tables 10 and 13).
-  --- A panic is not stopped by a status condition either: a panic rule leaves the call without a
-  --- return value (it consumes the reply of the object, or sets api-call to noCall).
+  --- normal: the TA runs.  As in the rules printed in the paper, a rule of a TA (a TA invocation,
+  --- an API call, a step of a TEE API function, a shared-memory builtin) fires only in status normal.
+  --- outOfMemory: the memory of the TA is exhausted.  Only the memory error rules of the functions
+  --- that allocate memory (allocateTransientObject, allocOperation, openPersistentObject,
+  --- createPersistent, allocatePersistentObjectEnumerator) fire in this status: the call returns
+  --- errorOutOfMemory instead of allocating.  No rule sets the status back to normal, so a TA in
+  --- this status stops at its next step that is not such a memory error rule.
+  --- panic: the TA has panicked.  A panic rule leaves the call without a return value (it consumes
+  --- the reply of the object, or sets api-call to noCall), and no rule of the TA fires in this status
+  --- except the ones that answer its client with errorTargetDead.
   op normal : -> AppStatus [ctor] .
   op outOfMemory : -> AppStatus [ctor] .
   op panic : -> AppStatus [ctor] .

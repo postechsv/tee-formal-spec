@@ -2,18 +2,30 @@
 --- IMP types of the TEE API values
 ------------------------------------------------------------
 
---- Each TEE value sort has one IMP base type (see TEE-IMP-VALUE-TYPE).  A TEE handle
---- of any kind (session, object, enumerator) is a TEE-Handle: the handle kinds are not
---- distinguishable from the Oid value.  TEE-Params types an opaque cross-TA parameter
---- block (TeeInvokeTACommand).
+--- The IMP types of the TEE API values are the C types of the GlobalPlatform API (see
+--- TEE-IMP-VALUE-TYPE).  A C typedef is an alias, written with - for _: TEE-Result is int, as
+--- TEE_Result is uint32_t, and a handle type is a pointer to an opaque struct, as
+--- TEE_ObjectHandle is struct __TEE_ObjectHandle *.  The integer types of the API (uint32_t,
+--- size_t, the enumerations) are int, so object types, algorithms, modes, flags, sizes and
+--- origins are ints.  The structs of the API whose content the model does not show are opaque
+--- types: TEE-Attribute (TEE_Attribute; an attribute array is one value), TEE-Param (TEE_Param;
+--- the four parameters are one value), TEE-UUID and TEEC-Session.  TEE-Buffer, TEE-ObjectId,
+--- TEE-AttributeIds and TEE-AttrContent stand for the buffers of the API, which are pointers
+--- in C.
 --- @kind data
 --- @feature imp
 fmod TEE-IMP-TYPE is
   pr IMP-BTYPE .
-  ops TEE-Result TEE-Handle TEE-ObjectType TEE-Attributes TEE-AttributeIds
-      TEE-AttrContent TEE-Usages TEE-StorageId TEE-DataFlags TEE-Buffer TEE-Size
-      TEE-ObjectId TEE-DataPosition TEE-Whence TEE-ParamTypes TEE-AppId TEE-ReturnOrigin
-      TEE-Timeout TEE-SessionId TEE-CommandId TEE-Params TEE-Algorithm TEE-OperationMode TEE-AttrId : -> ConcBType [ctor] .
+  pr IMP-STYPE .
+  ops TEE-Result TEE-ObjectHandle TEE-OperationHandle TEE-TASessionHandle TEE-ObjectEnumHandle : -> ConcBType .
+  ops TeeObjectHandle TeeOperationHandle TeeTASessionHandle TeeObjectEnumHandle : -> ImpType [ctor] .
+  eq TEE-Result = int .
+  eq TEE-ObjectHandle = (struct TeeObjectHandle) * .
+  eq TEE-OperationHandle = (struct TeeOperationHandle) * .
+  eq TEE-TASessionHandle = (struct TeeTASessionHandle) * .
+  eq TEE-ObjectEnumHandle = (struct TeeObjectEnumHandle) * .
+  ops TEE-Attribute TEE-Param TEE-UUID TEEC-Session : -> ConcBType [ctor] .
+  ops TEE-Buffer TEE-ObjectId TEE-AttributeIds TEE-AttrContent : -> ConcBType [ctor] .
 endfm
 
 ------------------------------------------------------------
@@ -322,7 +334,7 @@ mod TRANSIENT-OBJECT-TEE-CALL is
   op AllocateTransientObjectLib : -> Program .
   eq AllocateTransientObjectLib 
   = defineSysCall(
-      TEE-Result allocateTransientObject(TEE-ObjectType 'objType, int 'size, TEE-Handle & 'handle),
+      TEE-Result allocateTransientObject(int 'objType, int 'size, TEE-ObjectHandle & 'handle),
       @inArgs('objType, 'size),                 --- should match with the makeCall              
       @outArgs('ret, 'handle),                  --- should match with the makeReturnStmt
       @body(skip),
@@ -341,7 +353,7 @@ mod TRANSIENT-OBJECT-TEE-CALL is
   op FreeTransientObjectLib : -> Program .
   eq FreeTransientObjectLib 
   = defineSysCall(
-      int freeTransientObject(TEE-Handle & 'handle),
+      int freeTransientObject(TEE-ObjectHandle & 'handle),
       @inArgs('handle),                     --- should match with the makeCall              
       @outArgs(nil),                        --- should match with the makeReturnStmt
       @body(skip),
@@ -421,7 +433,7 @@ mod PERSISTENT-OBJECT-TEE-CALL is
   op OpenPersistentObjectLib : -> Program .
   eq OpenPersistentObjectLib 
   = defineSysCall(
-      TEE-Result openPersistentObject(TEE-StorageId 'storageId, TEE-ObjectId 'fileId, TEE-DataFlags 'dataFlags, TEE-Handle & 'handle),
+      TEE-Result openPersistentObject(int 'storageId, TEE-ObjectId 'fileId, int 'dataFlags, TEE-ObjectHandle & 'handle),
       @inArgs('storageId, 'fileId, 'dataFlags), --- should match with the makeCall              
       @outArgs('ret, 'handle),                  --- should match with the makeReturnStmt
       @body(skip),
@@ -439,9 +451,9 @@ mod PERSISTENT-OBJECT-TEE-CALL is
   op CreatePersistentObjectLib : -> Program .
   eq CreatePersistentObjectLib 
   = defineSysCall(
-      TEE-Result createPersistent(TEE-StorageId 'storageId, TEE-ObjectId 'fileId, 
-                                 TEE-DataFlags 'dataFlags, TEE-Handle 'handle, TEE-Buffer 'data, TEE-Size 'size, 
-                                 TEE-Handle & 'optHandle),                   --- signature 
+      TEE-Result createPersistent(int 'storageId, TEE-ObjectId 'fileId,
+                                 int 'dataFlags, TEE-ObjectHandle 'handle, TEE-Buffer 'data, int 'size,
+                                 TEE-ObjectHandle & 'optHandle),                   --- signature 
       @inArgs('storageId, 'fileId, 'dataFlags, 'handle, 'data, 'size, 'optHandle),                   
       @outArgs('ret, 'optHandle),                  
       @body(skip),
@@ -460,7 +472,7 @@ mod PERSISTENT-OBJECT-TEE-CALL is
   op CloseAndDeletePersistentObjectLib : -> Program .
   eq CloseAndDeletePersistentObjectLib 
   = defineSysCall(
-      TEE-Result closeAndDeletePersistentObject1(TEE-Handle & 'handle),
+      TEE-Result closeAndDeletePersistentObject1(TEE-ObjectHandle & 'handle),
       @inArgs('handle),                         --- should match with the makeCall              
       @outArgs('ret, 'handle),                  --- should match with the makeReturnStmt
       @body(skip),
@@ -483,7 +495,7 @@ mod PERSISTENT-OBJECT-TEE-CALL is
   op ReadObjectDataLib : -> Program .
   eq ReadObjectDataLib
   = defineSysCall(
-      TEE-Result readObjData(TEE-Handle 'obj, TEE-Size 'size, TEE-Buffer & 'buf),
+      TEE-Result readObjData(TEE-ObjectHandle 'obj, int 'size, TEE-Buffer & 'buf),
       @inArgs('obj, 'size),
       @outArgs('ret, 'buf),
       @body(skip),
@@ -493,7 +505,7 @@ mod PERSISTENT-OBJECT-TEE-CALL is
   op WriteObjectDataLib : -> Program .
   eq WriteObjectDataLib
   = defineSysCall(
-      TEE-Result writeObjectData(TEE-Handle 'obj, TEE-Buffer 'buf),
+      TEE-Result writeObjectData(TEE-ObjectHandle 'obj, TEE-Buffer 'buf),
       @inArgs('obj, 'buf),
       @outArgs('ret),
       @body(skip),
@@ -503,7 +515,7 @@ mod PERSISTENT-OBJECT-TEE-CALL is
   op TruncateObjectDataLib : -> Program .
   eq TruncateObjectDataLib
   = defineSysCall(
-      int truncateObjectData(TEE-Handle 'obj, TEE-Size 'size, TEE-Result & 'code),
+      int truncateObjectData(TEE-ObjectHandle 'obj, int 'size, TEE-Result & 'code),
       @inArgs('obj, 'size),
       @outArgs('code),
       @body(skip),
@@ -513,7 +525,7 @@ mod PERSISTENT-OBJECT-TEE-CALL is
   op SeekObjectDataLib : -> Program .
   eq SeekObjectDataLib
   = defineSysCall(
-      int seekObjectData(TEE-Handle 'obj, int 'offset, TEE-Whence 'whence, TEE-Result & 'code),
+      int seekObjectData(TEE-ObjectHandle 'obj, int 'offset, int 'whence, TEE-Result & 'code),
       @inArgs('obj, 'offset, 'whence),
       @outArgs('code),
       @body(skip),
@@ -523,7 +535,7 @@ mod PERSISTENT-OBJECT-TEE-CALL is
   op RenamePersistentObjectLib : -> Program .
   eq RenamePersistentObjectLib
   = defineSysCall(
-      int renamePersistentObject(TEE-Handle 'obj, TEE-ObjectId 'newId, TEE-Result & 'code),
+      int renamePersistentObject(TEE-ObjectHandle 'obj, TEE-ObjectId 'newId, TEE-Result & 'code),
       @inArgs('obj, 'newId),
       @outArgs('code),
       @body(skip),
@@ -785,7 +797,7 @@ mod TEE-INTERNAL-CLIENT-CALL is
   op TeeOpenTASessionLib : -> Program .
   eq TeeOpenTASessionLib 
   = defineSysCall(
-      int TeeOpenTASession(TEE-AppId 'dest, TEE-Timeout 'TO, TEE-Result & 'code, TEE-Handle & 'handle, TEE-ReturnOrigin & 'orig),
+      int TeeOpenTASession(TEE-UUID 'dest, int 'TO, TEE-Result & 'code, TEE-TASessionHandle & 'handle, int & 'orig),
       @inArgs('dest, 'TO),                   
       @outArgs('code, 'handle, 'orig),       
       @body(skip),            
@@ -807,7 +819,7 @@ mod TEE-INTERNAL-CLIENT-CALL is
   op TeeInvokeTACommandLib : -> Program .
   eq TeeInvokeTACommandLib 
   = defineSysCall(
-      TEE-Result TeeInvokeTACommand(TEE-Handle & 'sess, TEE-CommandId 'cmd, TEE-Params & 'params, TEE-ReturnOrigin & 'orig),
+      TEE-Result TeeInvokeTACommand(TEE-TASessionHandle & 'sess, int 'cmd, TEE-Param & 'params, int & 'orig),
       @inArgs('sess, 'cmd, 'params),                  
       @outArgs('ret, 'params, 'orig),                
       @body(skip),    
@@ -863,29 +875,34 @@ mod TEE-IMP-VALUE-TYPE is
   var RO : ReturnOrigin .
   var TO : TaCancelTimeOut .
 
-  eq tyV(# X) = ty(TEE-SessionId) .
-  eq tyV(# H) = ty(TEE-Handle) .
-  eq tyV(# F) = ty(TEE-CommandId) .
-  eq tyV(# R) = ty(TEE-Result) .
-  eq tyV(# OT) = ty(TEE-ObjectType) .
-  eq tyV(# ALG) = ty(TEE-Algorithm) .
-  eq tyV(# MD) = ty(TEE-OperationMode) .
-  eq tyV(# AT) = ty(TEE-Attributes) .
-  eq tyV(# AID) = ty(TEE-AttrId) .
+  --- The constants of the API that are integers in C (return codes, object types, algorithms,
+  --- modes, attribute identifiers, usages, storage identifiers, data flags, sizes, positions,
+  --- whence, parameter types, origins, timeouts, command identifiers) are ints.  A handle value,
+  --- that is TEE_HANDLE_NULL or an object identifier the model puts in a program, is a void *,
+  --- which converts to every handle type, as the null pointer constant does in C.
+  eq tyV(# X) = ty(TEEC-Session) .
+  eq tyV(# H) = ty(void *) .
+  eq tyV(# F) = ty(int) .
+  eq tyV(# R) = ty(int) .
+  eq tyV(# OT) = ty(int) .
+  eq tyV(# ALG) = ty(int) .
+  eq tyV(# MD) = ty(int) .
+  eq tyV(# AT) = ty(TEE-Attribute) .
+  eq tyV(# AID) = ty(int) .
   eq tyV(# AI) = ty(TEE-AttributeIds) .
   eq tyV(# AC) = ty(TEE-AttrContent) .
-  eq tyV(# OU) = ty(TEE-Usages) .
-  eq tyV(# SI) = ty(TEE-StorageId) .
-  eq tyV(# DF) = ty(TEE-DataFlags) .
+  eq tyV(# OU) = ty(int) .
+  eq tyV(# SI) = ty(int) .
+  eq tyV(# DF) = ty(int) .
   eq tyV(# DL) = ty(TEE-Buffer) .
-  eq tyV(# DS) = ty(TEE-Size) .
+  eq tyV(# DS) = ty(int) .
   eq tyV(# FI) = ty(TEE-ObjectId) .
-  eq tyV(# DP) = ty(TEE-DataPosition) .
-  eq tyV(# SK) = ty(TEE-Whence) .
-  eq tyV(# PT) = ty(TEE-ParamTypes) .
-  eq tyV(# APP) = ty(TEE-AppId) .
-  eq tyV(# RO) = ty(TEE-ReturnOrigin) .
-  eq tyV(# TO) = ty(TEE-Timeout) .
+  eq tyV(# DP) = ty(int) .
+  eq tyV(# SK) = ty(int) .
+  eq tyV(# PT) = ty(int) .
+  eq tyV(# APP) = ty(TEE-UUID) .
+  eq tyV(# RO) = ty(int) .
+  eq tyV(# TO) = ty(int) .
 endm
 
 ------------------------------------------------------------
@@ -906,7 +923,7 @@ mod CRYPTO-OPERATION-SYSCALL is
   op AllocOperationLib : -> Program .
   eq AllocOperationLib
   = defineSysCall(
-      TEE-Result allocOperation(TEE-Algorithm 'algo, TEE-OperationMode 'mode, int 'keySize, TEE-Handle & 'handle),
+      TEE-Result allocOperation(int 'algo, int 'mode, int 'keySize, TEE-OperationHandle & 'handle),
       @inArgs('algo, 'mode, 'keySize),
       @outArgs('ret, 'handle),
       @body(skip),
@@ -916,7 +933,7 @@ mod CRYPTO-OPERATION-SYSCALL is
   op FreeOperationLib : -> Program .
   eq FreeOperationLib
   = defineSysCall(
-      int freeOperation(TEE-Handle & 'handle),
+      int freeOperation(TEE-OperationHandle & 'handle),
       @inArgs('handle),
       @outArgs(nil),
       @body(skip),
@@ -926,7 +943,7 @@ mod CRYPTO-OPERATION-SYSCALL is
   op ResetOperationLib : -> Program .
   eq ResetOperationLib
   = defineSysCall(
-      int resetOperation(TEE-Handle 'handle),
+      int resetOperation(TEE-OperationHandle 'handle),
       @inArgs('handle),
       @outArgs(nil),
       @body(skip),
@@ -936,7 +953,7 @@ mod CRYPTO-OPERATION-SYSCALL is
   op SetOperationKeyLib : -> Program .
   eq SetOperationKeyLib
   = defineSysCall(
-      TEE-Result setOperationKey(TEE-Handle 'opHandle, TEE-Handle 'keyHandle),
+      TEE-Result setOperationKey(TEE-OperationHandle 'opHandle, TEE-ObjectHandle 'keyHandle),
       @inArgs('opHandle, 'keyHandle),
       @outArgs('ret),
       @body(skip),
@@ -946,7 +963,7 @@ mod CRYPTO-OPERATION-SYSCALL is
   op CipherInitLib : -> Program .
   eq CipherInitLib
   = defineSysCall(
-      int cipherInit(TEE-Handle 'handle, TEE-Buffer 'iv),
+      int cipherInit(TEE-OperationHandle 'handle, TEE-Buffer 'iv),
       @inArgs('handle, 'iv),
       @outArgs(nil),
       @body(skip),
@@ -956,7 +973,7 @@ mod CRYPTO-OPERATION-SYSCALL is
   op CipherUpdateLib : -> Program .
   eq CipherUpdateLib
   = defineSysCall(
-      TEE-Result cipherUpdate(TEE-Handle 'handle, TEE-Buffer 'src, TEE-Buffer & 'dest),
+      TEE-Result cipherUpdate(TEE-OperationHandle 'handle, TEE-Buffer 'src, TEE-Buffer & 'dest),
       @inArgs('handle, 'src),
       @outArgs('ret, 'dest),
       @body(skip),
@@ -993,7 +1010,7 @@ mod OBJECT-SYSCALL is
   op PopulateTransientObjectLib : -> Program .
   eq PopulateTransientObjectLib
   = defineSysCall(
-      TEE-Result populateTransientObject(TEE-Handle 'handle, TEE-Attributes 'attrs),
+      TEE-Result populateTransientObject(TEE-ObjectHandle 'handle, TEE-Attribute 'attrs),
       @inArgs('handle, 'attrs),
       @outArgs('ret),
       @body(skip),
@@ -1003,7 +1020,7 @@ mod OBJECT-SYSCALL is
   op ResetTransientObjectLib : -> Program .
   eq ResetTransientObjectLib
   = defineSysCall(
-      int resetTransientObject(TEE-Handle 'handle),
+      int resetTransientObject(TEE-ObjectHandle 'handle),
       @inArgs('handle),
       @outArgs(nil),
       @body(skip),
@@ -1013,7 +1030,7 @@ mod OBJECT-SYSCALL is
   op CloseObjectLib : -> Program .
   eq CloseObjectLib
   = defineSysCall(
-      int closeObject(TEE-Handle 'handle),
+      int closeObject(TEE-ObjectHandle 'handle),
       @inArgs('handle),
       @outArgs(nil),
       @body(skip),
@@ -1023,7 +1040,7 @@ mod OBJECT-SYSCALL is
   op InitRefAttributeLib : -> Program .
   eq InitRefAttributeLib
   = defineSysCall(
-      int initRefAttribute(TEE-AttrId 'id, TEE-Buffer 'value, TEE-Attributes & 'attr),
+      int initRefAttribute(int 'id, TEE-Buffer 'value, TEE-Attribute & 'attr),
       @inArgs('id, 'value),
       @outArgs('attr),
       @body(skip),
@@ -1033,7 +1050,7 @@ mod OBJECT-SYSCALL is
   op GetObjectInfo1Lib : -> Program .
   eq GetObjectInfo1Lib
   = defineSysCall(
-      TEE-Result getObjectInfo1(TEE-Handle 'handle, (struct TeeObjectInfo) & 'info),
+      TEE-Result getObjectInfo1(TEE-ObjectHandle 'handle, (struct TeeObjectInfo) & 'info),
       @inArgs('handle),
       @outArgs('ret, 'info),
       @body(skip),
@@ -1074,13 +1091,13 @@ mod TEE-API-IMP-PROGRAM is
     } ;
 
     struct TeeObjectInfo {
-      TEE-ObjectType objectType ;
-      TEE-Size objectSize ;
-      TEE-Size maxObjectSize ;
-      TEE-Usages objectUsage ;
-      TEE-Size dataSize ;
-      TEE-DataPosition dataPosition ;
-      TEE-DataFlags handleFlags ;
+      int objectType ;
+      int objectSize ;
+      int maxObjectSize ;
+      int objectUsage ;
+      int dataSize ;
+      int dataPosition ;
+      int handleFlags ;
     } ;
 
     TransientLibs

@@ -178,7 +178,7 @@ mod SHARED-MEMORY-VALUE is
   op nmem : Nat MemrefDir -> Value [ctor] .
   op mref : Oid -> MrefValue [ctor] .
 
-  ops TEE-Memref TEE-SharedMem : -> ConcBType [ctor] .
+  ops TEE-Memref TEEC-SharedMemory : -> ConcBType [ctor] .
   --- The typing context of TEE_CheckMemoryAccessRights (see the typing equations below).
   op $tcmar : -> TItem [ctor] .
 
@@ -226,22 +226,22 @@ mod SHARED-MEMORY-VALUE is
   eq tk($te(checkMemoryAccessRights(MA, E)) ~> K) = tk($te(E) ~> $tcmar ~> K) .
   eq tk(ty(TEE-Memref) ~> $tcmar ~> K) = tk(ty(TEE-Result) ~> K) .
   eq tk(ty(TEE-Buffer) ~> $tcmar ~> K) = tk(ty(TEE-Result) ~> K) .
-  eq tk($te(shmAlloc(E, D)) ~> K) = tk($te(E) ~> $tchk(int) ~> $tres(TEE-SharedMem) ~> K) .
+  eq tk($te(shmAlloc(E, D)) ~> K) = tk($te(E) ~> $tchk(int) ~> $tres(TEEC-SharedMemory) ~> K) .
   eq tk($te(shmFill(E1, E2)) ~> K)
-   = tk($te(E1) ~> $tchk(TEE-SharedMem) ~> $te(E2) ~> $tchk(TEE-Buffer) ~> $tres(void) ~> K) .
+   = tk($te(E1) ~> $tchk(TEEC-SharedMemory) ~> $te(E2) ~> $tchk(TEE-Buffer) ~> $tres(void) ~> K) .
   eq tk($te(shmRogue(E1, E2)) ~> K)
-   = tk($te(E1) ~> $tchk(TEE-SharedMem) ~> $te(E2) ~> $tchk(TEE-Buffer) ~> $tres(void) ~> K) .
-  eq tk($te(shmView(E)) ~> K) = tk($te(E) ~> $tchk(TEE-SharedMem) ~> $tres(TEE-Buffer) ~> K) .
-  eq tk($te(shmRetSize(E)) ~> K) = tk($te(E) ~> $tchk(TEE-SharedMem) ~> $tres(int) ~> K) .
-  eq tk($te(shmRelease(E)) ~> K) = tk($te(E) ~> $tchk(TEE-SharedMem) ~> $tres(void) ~> K) .
-  eq tk($te(memrefTo(E, D)) ~> K) = tk($te(E) ~> $tchk(TEE-SharedMem) ~> $tres(TEE-Memref) ~> K) .
+   = tk($te(E1) ~> $tchk(TEEC-SharedMemory) ~> $te(E2) ~> $tchk(TEE-Buffer) ~> $tres(void) ~> K) .
+  eq tk($te(shmView(E)) ~> K) = tk($te(E) ~> $tchk(TEEC-SharedMemory) ~> $tres(TEE-Buffer) ~> K) .
+  eq tk($te(shmRetSize(E)) ~> K) = tk($te(E) ~> $tchk(TEEC-SharedMemory) ~> $tres(int) ~> K) .
+  eq tk($te(shmRelease(E)) ~> K) = tk($te(E) ~> $tchk(TEEC-SharedMemory) ~> $tres(void) ~> K) .
+  eq tk($te(memrefTo(E, D)) ~> K) = tk($te(E) ~> $tchk(TEEC-SharedMemory) ~> $tres(TEE-Memref) ~> K) .
   --- A temporary memory reference names the client buffer and its size: both are lvalues.
   eq tk($te(tmpref(E, Z, D)) ~> K)
    = tk($tl(E) ~> $tchk(TEE-Buffer) ~> $tl(Z) ~> $tchk(int) ~> $tres(TEE-Memref) ~> K) .
   eq tk($te(nullref(Z, D)) ~> K) = tk($tl(Z) ~> $tchk(int) ~> $tres(TEE-Memref) ~> K) .
   --- The command arguments EL are not typed (an output is written &E).
   eq tk($te(teecInvokeCommand(ES, EF, EL)) ~> K)
-   = tk($te(ES) ~> $tchk(TEE-SessionId) ~> $te(EF) ~> $tchk(TEE-CommandId) ~> $tres(void) ~> K) .
+   = tk($te(ES) ~> $tchk(TEEC-Session) ~> $te(EF) ~> $tchk(int) ~> $tres(void) ~> K) .
 
   --- A memory reference may be passed for a buffer parameter ([inbuf], [Internal Core] 3.4.3);
   --- it is read when the parameter is bound.  It may also be passed for an object

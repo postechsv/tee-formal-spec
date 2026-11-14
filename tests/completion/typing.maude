@@ -32,7 +32,7 @@ red wellTyped(int x ; x := # 1 ; if(# true){ int x ; x := # 2 ; }else{ skip }) .
 --- A struct member may be a struct.
 red wellTyped(struct Pt { int a ; } ; struct Qt { struct Pt p ; } ; struct Qt s ; int x ; s . p . a := # 1 ; x := s . p . a ;) .
 red wellTyped(int setx(int & p) { p := # 1 ; return # 1 ; } int x ; x := setx(x) ;) .
-red wellTyped(syscalls TEE-Handle h ; TEE-Result r ; r := allocateTransientObject(# typeAes, # 256, h) ;) .
+red wellTyped(syscalls TEE-ObjectHandle h ; TEE-Result r ; r := allocateTransientObject(# typeAes, # 256, h) ;) .
 --- Arrays: a literal index inside 0 <= I < N, a non-literal index, an element as a by-reference argument.
 red wellTyped(int[3] a ; a[# 0] := # 1 ; int x ; x := a[# 2] ;) .
 red wellTyped(int[3] a ; int i ; i := # 1 ; a[i] := # 5 ; int x ; x := a[i] + a[# 0] ;) .
@@ -143,3 +143,13 @@ red (wellTyped(int * p ; bool * q ; p := q ;) == true) == false .
 red (wellTyped(int x ; void * p ; p := addr(x) ; x := deref(p) ;) == true) == false .
 red (wellTyped(int * p ; p := addr(# 1) ;) == true) == false .
 red (wellTyped(int x ; int y ; y := deref(x) ;) == true) == false .
+
+--- C types of the API.  TEE-Result is an alias of int (TEE_Result is uint32_t), and the integer
+--- constants of the API (algorithms, modes, object types, ...) are ints, as in C.
+red wellTyped(syscalls TEE-Result r ; int x ; r := # success ; x := r ; r := # 0 ;) .
+red wellTyped(syscalls TEE-OperationHandle h ; TEE-Result r ; int a ; a := # algAesCbcNopad ; r := allocOperation(a, # modeEncrypt, # 128, h) ;) .
+--- A handle constant (TEE_HANDLE_NULL) converts to every handle type.
+red wellTyped(syscalls TEE-ObjectHandle h ; TEE-OperationHandle q ; bool b ; h := # null ; q := # null ; b := h == # null ;) .
+--- The handle types are distinct pointer types, as in C: an operation handle is not an object handle.
+red (wellTyped(syscalls TEE-OperationHandle q ; q := # null ; closeObject(q) ;) == true) == false .
+red (wellTyped(syscalls TEE-ObjectHandle h ; TEE-OperationHandle q ; q := h ;) == true) == false .

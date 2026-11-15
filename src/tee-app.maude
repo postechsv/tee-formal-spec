@@ -61,31 +61,35 @@ omod TRUST-APP-BEHAVIOR is
   var FID : FuncId .
   var P : Program .
   var KS : KConfig .
-  var RET : ArgList .
   var VL : ArgList .
+  var CS : CStore .
+  var MEM : Map{Nat,Value?} .
+  var L : Nat .
+  var AL : Map{Nat,Nat} .
 
-  --- handle-invoke-ta: an invkTa request for the service FID with the values VL starts the
-  --- program of the TA with mkConf(syscalls P, FID, VL) and records {RI, FID} as its
-  --- client-service.
+  --- handle-invoke-ta: an invkTa request for the service FID with the values VL and the memory
+  --- CS of the client starts the program of the TA with mkConf(syscalls P, FID, VL, CS), on
+  --- that memory, and records {RI, FID} as its client-service.
   rl [handle-invoke-ta] :
-    (msg invkTa[FID VL] from RI to TI)
+    (msg invkTa[FID, VL, CS] from RI to TI)
     < TI : TrustedApp | proc : none , client-service : none ,
                         prog : P , status : (normal).AppStatus >
     =>
-    < TI : TrustedApp | proc : mkConf(syscalls P , FID , VL) ,
+    < TI : TrustedApp | proc : mkConf(syscalls P , FID , VL , CS) ,
                         client-service : {RI , FID} >
   .
 
-  --- handle-invoke-ta-finish: when the program has finished, the output values of the
-  --- service are returned to the RA as invkTaRet, and the TA is available again.
-  ---@dmc inline-match
-  crl [handle-invoke-ta-finish] :
-    < TI : TrustedApp | proc : (k(.K) KS) , client-service : {RI , FID} ,
-                        prog : P , status : (normal).AppStatus >
+  --- handle-invoke-ta-finish: when the program has finished, its memory, with what the service
+  --- wrote to the objects of the client, is returned to the RA as invkTaRet, and the TA is
+  --- available again.  The objects of the TA stay in the memory, past the locations of the
+  --- client.
+  rl [handle-invoke-ta-finish] :
+    < TI : TrustedApp | proc : (k(.K) store(MEM) nextLoc(L) arrlen(AL) KS) ,
+                        client-service : {RI , FID} , status : (normal).AppStatus >
     =>
     < TI : TrustedApp | proc : none , client-service : none >
-    (msg invkTaRet[RET] from TI to RI)
-  if RET := getVals(getOutVars(getFuncParams(P , FID)), KS) .
+    (msg invkTaRet[cstore(MEM, L, AL)] from TI to RI)
+  .
 
 endom
 

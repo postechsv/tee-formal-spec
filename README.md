@@ -14,7 +14,7 @@ FASE 2024, LNCS, Springer.
 
 - Generic, transient, and persistent object APIs
 - Persistent data stream access and persistent object enumeration
-- Shared memory of memory reference parameters, with an optional rogue client
+- Shared memory of a client and a TA: the TA runs on the memory that the client passes with the call
 - Cryptographic operations
 - Programmer errors and invalid handles, modeled as panics
 - Model programs (`src/imp.maude`) whose calls are translated into TEE API calls (`src/tee-imp.maude`)
@@ -56,7 +56,7 @@ The API groups below are feature groups (`features.mk`): a build without some of
 | `GENERIC` | Generic object API | |
 | `DATA_STREAM` | Persistent data stream access | `PERSISTENT` |
 | `ENUMERATOR` | Persistent object enumeration | `PERSISTENT` |
-| `SHM` | Shared memory of memory reference parameters | |
+| `SHM` | Shared memory of a client and a TA (the IMP client call `teecInvokeCommand`) | |
 
 ## Repository layout
 
@@ -109,7 +109,7 @@ tee-formal-spec/
 | `persistent-panic.maude`, `data-stream-panic.maude`, `crypto-panic.maude` | Panics of the storage and cryptographic APIs |
 | `os.maude`, `os-service.maude` | Trusted OS and storage services |
 | `app.maude`, `ree-app.maude`, `tee-app.maude`, `tee-client.maude` | REE/TEE applications and client behavior |
-| `shared-memory.maude` | Shared memory blocks and memory references of operations: the client and TA views, their synchronization, and TA access |
+| `shared-memory.maude` | Shared memory of a client and a TA: the client passes its memory with the call, the TA runs on it and passes it back; the IMP client call `teecInvokeCommand` |
 
 ### Program execution
 

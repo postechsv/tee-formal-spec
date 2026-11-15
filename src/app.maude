@@ -39,6 +39,8 @@ omod PROGRAM-APP-AUX is
   var PL : ExpList .
   var XL : VarList .
   var L : Nat .
+  var AL : Map{Nat,Nat} .
+  var CS : CStore .
 
   --- mkFunMap(P): the function map of P.  It holds the user functions (their body is a Stmt)
   --- and the trusted library functions ($libFun, their body is internal K).
@@ -68,74 +70,30 @@ omod PROGRAM-APP-AUX is
   op getFuncParams : Program FuncId -> ExpList .
   eq getFuncParams(P, FUNC) = getParams(FUNC, mkFunMap(P)) .
 
-  --- isOutType(T): true when T is a reference type T &, that is, the type of an output
-  --- parameter.
-  op isOutType : ImpType -> Bool .
-  eq isOutType(T &) = true .
-  ---@dmc scope(TEE-BEHAVIOR, OVERWRITE-INV, LOST-UPDATE-INV)
-  ---@dmc owise enumerate(T)
-  eq isOutType(T) = false [owise] .
-
-  --- getOutVars(PARAMS): the names of the output parameters of PARAMS, in order.
-  op getOutVars : ExpList -> VarList .
-  ceq getOutVars((T X, PARAMS)) = X , getOutVars(PARAMS) if isOutType(T) .
-  eq getOutVars((T X, PARAMS)) = getOutVars(PARAMS) [owise] .
-  eq getOutVars(nil) = nil .
-
-  --- callFunc(P, FUNC, VL): declares the output parameters of FUNC, each initialised with its
-  --- entry of VL, and then calls FUNC.  An output parameter is passed by reference, so the
-  --- caller reads it back after the call; an input parameter is passed with its value.  Only
-  --- the output parameters are declared here.
+  --- callFunc(P, FUNC, VL): calls FUNC with the arguments VL.  An output parameter T & X is
+  --- passed by reference: its argument is the location loc(L) of an object of the caller,
+  --- in the memory that the TA runs on (see mkConf), and X names that object (bindR in
+  --- IMP-SEMANTICS).  The caller sees what FUNC writes to X when it gets the memory back.
   op callFunc : Program FuncId ArgList -> K .
-  ceq callFunc(P, FUNC, VL) = outDecls(PARAMS, VL) ~> FUNC(callArgs(PARAMS, VL)) ;
-  if PARAMS := getFuncParams(P, FUNC) .
+  eq callFunc(P, FUNC, VL) = FUNC(callArgs(VL)) ; .
 
-  --- outDecls(PARAMS, VL): declares each output parameter X of PARAMS and assigns it the
-  --- matching value of VL.  Input parameters are skipped.
-  op outDecls : ExpList ArgList -> K .
-  ceq outDecls((T X, PARAMS), (V VL))
-    = hoistPExp(U X) ~> X := V ; ~> outDecls(PARAMS, VL)
-  if isOutType(T) /\ U := pointee(T) .
-  ---@dmc scope(TEE-BEHAVIOR)
-  ---@dmc owise enumerate(T)
-  eq outDecls((T X, PARAMS), (V VL)) = outDecls(PARAMS, VL) [owise] .
-  eq outDecls(nil, argNil) = .K .
+  --- callArgs(VL): the values VL as the actual arguments of a call.
+  op callArgs : ArgList -> ExpList .
+  eq callArgs(V VL) = V , callArgs(VL) .
+  eq callArgs(argNil) = nil .
 
-  --- callArgs(PARAMS, VL): the actual arguments of a call, X for each output parameter and
-  --- the value V for each input parameter.
-  op callArgs : ExpList ArgList -> ExpList .
-  ceq callArgs((T X, PARAMS), (V VL)) = X , callArgs(PARAMS, VL) if isOutType(T) .
-  ---@dmc scope(TEE-BEHAVIOR)
-  ---@dmc owise enumerate(T)
-  eq callArgs((T X, PARAMS), (V VL)) = V , callArgs(PARAMS, VL) [owise] .
-  eq callArgs(nil, argNil) = nil .
-
-  --- pointee(T): the type U that the reference type T (U &) refers to.
-  op pointee : ImpType -> ImpType .
-  eq pointee(U &) = U .
-
-  --- mkConf(P, FUNC, VL): the initial configuration that runs the program P followed by
-  --- callFunc(P, FUNC, VL) in the k cell.  The other cells start in their initial state, with
-  --- the labels cell holding the labels of P.  The configuration is built only when P is well
-  --- typed; otherwise the result is illTyped.
-  op mkConf : Program FuncId ArgList -> KConfig .
-  ceq mkConf(P, FUNC, VL)
+  --- mkConf(P, FUNC, VL, CS): the initial configuration that runs the program P followed by
+  --- callFunc(P, FUNC, VL) in the k cell, on the memory CS of the client: the store, the
+  --- location counter and the array lengths are the client's, so the TA reads and writes the
+  --- objects of the client, and its own objects take the next locations.  The other cells
+  --- start in their initial state, with the labels cell holding the labels of P.  The
+  --- configuration is built only when P is well typed; otherwise the result is illTyped.
+  op mkConf : Program FuncId ArgList CStore -> KConfig .
+  ceq mkConf(P, FUNC, VL, cstore(MEM, L, AL))
     = k(hoistK(getSList(P)) ~> $genv ~> P ~> callFunc(P, FUNC, VL)) env(empty) genv(empty)
-      store(empty) fdecl(empty) sdecl(empty) stack(nilStack) nextLoc(0)
-      labels(labelsOf(getSList(P))) arrlen(empty)
+      store(MEM) fdecl(empty) sdecl(empty) stack(nilStack) nextLoc(L)
+      labels(labelsOf(getSList(P))) arrlen(AL)
   if wellTyped(P) = true .
   ---@dmc drop
-  ceq mkConf(P, FUNC, VL) = illTyped if wellTyped(P) =/= true .
-
-  --- getVals(XL, KS): the values of the variables XL, read from the env and store cells of
-  --- the configuration KS.
-  op getVals : VarList KConfig -> ArgList .
-  eq getVals(XL, env(ENV) store(MEM) KS) = findAllValues(XL, ENV, MEM) .
-
-  op findAllValues : VarList Map{Var,Nat} Map{Nat,Value?} -> ArgList .
-  eq findAllValues((X,XL), ENV, MEM) = findValue(X, ENV, MEM) findAllValues(XL, ENV, MEM) .
-  eq findAllValues(nil, ENV, MEM) = argNil .
-
-  op findValue : Var Map{Var,Nat} Map{Nat,Value?} -> Value .
-  eq findValue(X, (X |-> L) ; ENV, (L |-> V) ; MEM) = V .
+  ceq mkConf(P, FUNC, VL, CS) = illTyped if wellTyped(P) =/= true .
 endom

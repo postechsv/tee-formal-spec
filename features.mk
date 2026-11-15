@@ -72,8 +72,9 @@ ENUMERATOR_MODULES := ENUMERATOR-OBJECT-BEHAVIOR ENUMERATOR-OBJECT-TEE-CALL
 ENUMERATOR_REQUIRES := PERSISTENT
 ENUMERATOR_TESTS := api/test-enumerator.maude completion/enumerator.maude
 
-# Shared memory of Memory Reference Parameters (src/shared-memory.maude): memref arguments of
-# an SMC request become MemrefOp objects that the TA accesses with shmData/shmWrite.
+# Shared memory of a client and a TA (src/shared-memory.maude): the IMP client call
+# teecInvokeCommand. The TA runs on the memory that the client passes with the call, and
+# passes it back when the call completes (the message rules are in the os and client features).
 SHM ?= 1
 SHM_LOADS := shared-memory
 SHM_MODULES := SHARED-MEMORY-BEHAVIOR

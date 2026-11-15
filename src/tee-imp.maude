@@ -813,20 +813,21 @@ mod TEE-INTERNAL-CLIENT-CALL is
 --- 'TEE_InvokeTACommand' Syscall
 ------------------------------------------------------------
 
-  --- TeeInvokeTACommand: the return code goes to the first out argument E, the returned values V to
-  --- E1, and the return origin RO (TEE_ORIGIN_TRUSTED_APP, or TEE_ORIGIN_TEE when the TEE answers) to E2.
+  --- TeeInvokeTACommand: the return code goes to the first out argument E and the return origin
+  --- RO (TEE_ORIGIN_TRUSTED_APP, or TEE_ORIGIN_TEE when the TEE answers) to E2.  The parameters
+  --- are input values: the destination TA runs on the memory of the caller, so it writes an
+  --- output parameter (a location of the caller) in place, and no value comes back.
   eq makeCall(TeeInvokeTACommand , # HANDLE # FUNC VL) = TeeInvokeTACommand[# HANDLE # FUNC # VL] .
-  eq makeReturnStmt(TeeInvokeTACommand, RET, # V # RO, (E , E1 , E2)) = 
+  eq makeReturnStmt(TeeInvokeTACommand, RET, # RO, (E , E2)) =
     $assign(# RET , E) ~>
-    E2 := # RO ;
-    E1 := V ; .
+    E2 := # RO ; .
 
   op TeeInvokeTACommandLib : -> Program .
   eq TeeInvokeTACommandLib 
   = defineSysCall(
-      TEE-Result TeeInvokeTACommand(TEE-TASessionHandle & 'sess, int 'cmd, TEE-Param & 'params, int & 'orig),
+      TEE-Result TeeInvokeTACommand(TEE-TASessionHandle & 'sess, int 'cmd, TEE-Param 'params, int & 'orig),
       @inArgs('sess, 'cmd, 'params),                  
-      @outArgs('ret, 'params, 'orig),                
+      @outArgs('ret, 'orig),                
       @body(skip),    
       @return('ret)
   ) .

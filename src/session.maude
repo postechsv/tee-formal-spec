@@ -2,15 +2,20 @@
 
 --- @kind messages
 --- @feature ta-session
+--- A request {HANDLE, FUNC, VL, CS, TK} of the TA TK through the session handle HANDLE asks for
+--- the service FUNC with the values VL, on the memory CS of TK.  The return
+--- {HANDLE, FUNC, TK, VL, CS} gives TK the values VL (the return origin and code) and the memory
+--- CS, as the destination TA has left it.
 mod SESSION-REQ is
   pr OBJECT-ID .
   pr IMP-FUNC-SIG .
   pr IMP-EXP-LIST .
+  pr IMP-CONFIG .
 
   sorts SessionReq SessionRet .
 
-  op {_,_,_,_} : Oid FuncId ArgList Oid -> SessionReq [ctor] .
-  op {_,_,_,_} : Oid FuncId Oid ArgList -> SessionRet [ctor] .
+  op {_,_,_,_,_} : Oid FuncId ArgList CStore Oid -> SessionReq [ctor] .
+  op {_,_,_,_,_} : Oid FuncId Oid ArgList CStore -> SessionRet [ctor] .
 
   op noReq : -> SessionReq [ctor] .
   op noRet : -> SessionRet [ctor] .
@@ -42,43 +47,48 @@ omod SESSION-BEHAVIOR is
   var FUNC : FuncId .
   var KS : KConfig .
   var VL : ArgList .
-  var RET : ArgList .
+  var CS : CStore .
+  var MEM : Map{Nat,Value?} .
+  var L : Nat .
+  var AL : Map{Nat,Nat} .
 
   --- handle-session-req (request): starts the service FUNC of the TA RK for a session
   --- request, the same way handle-invoke-ta does for an invkTa request.  The TA runs
-  --- mkConf(syscalls P, FUNC, VL) and records {TK, FUNC} as its client-service.
+  --- mkConf(syscalls P, FUNC, VL, CS) on the memory CS of the TA TK, and records {TK, FUNC} as
+  --- its client-service.
   rl [handle-session-req] :
-    < OI : Session | req : {HANDLE, FUNC, VL, TK} , ta-id : RK >
+    < OI : Session | req : {HANDLE, FUNC, VL, CS, TK} , ta-id : RK >
     < RK : TrustedApp | proc : none , client-service : none , prog : P , status : (normal).AppStatus >
     =>
-    < OI : Session | req : {HANDLE, FUNC, VL, TK} , ta-id : RK >
-    < RK : TrustedApp | proc : mkConf(syscalls P , FUNC , VL) , client-service : {TK , FUNC} >
+    < OI : Session | req : {HANDLE, FUNC, VL, CS, TK} , ta-id : RK >
+    < RK : TrustedApp | proc : mkConf(syscalls P , FUNC , VL , CS) , client-service : {TK , FUNC} >
   .
 
-  --- handle-session-req-finish: once the TA RK has finished, its output values RET, read
-  --- from the final configuration KS, are stored as the return of the session request, after
-  --- the return origin TEE_ORIGIN_TRUSTED_APP and the return code success.  A service is a
-  --- void function, so a finished service succeeds ([Internal Core] 4.9.3: the code is the one
-  --- of the destination TA).  The proc and client-service of the TA are cleared, and the
-  --- request is reset to noReq.
-  ---@dmc inline-match
-  crl [handle-session-req-finish] :
-    < OI : Session | req : {HANDLE, FUNC, VL, TK} , ret : noRet , ta-id : RK >
-    < RK : TrustedApp | proc : (k(.K) KS) , client-service : {TK , FUNC} , prog : P ,
-                      status : (normal).AppStatus >
+  --- handle-session-req-finish: once the TA RK has finished, its memory is stored as the return
+  --- of the session request, with the return origin TEE_ORIGIN_TRUSTED_APP and the return code
+  --- success.  A service is a void function, so a finished service succeeds ([Internal Core]
+  --- 4.9.3: the code is the one of the destination TA).  The proc and client-service of the TA
+  --- are cleared, and the request is reset to noReq.
+  rl [handle-session-req-finish] :
+    < OI : Session | req : {HANDLE, FUNC, VL, CS, TK} , ret : noRet , ta-id : RK >
+    < RK : TrustedApp | proc : (k(.K) store(MEM) nextLoc(L) arrlen(AL) KS) ,
+                        client-service : {TK , FUNC} , status : (normal).AppStatus >
     =>
-    < OI : Session | req : noReq , ret : {HANDLE, FUNC, TK, (# originTrustedApp # success RET)} >
+    < OI : Session | req : noReq ,
+                     ret : {HANDLE, FUNC, TK, (# originTrustedApp # success), cstore(MEM, L, AL)} >
     < RK : TrustedApp | proc : none , client-service : none >
-  if RET := getVals(getOutVars(getFuncParams(P , FUNC)) , KS) .
+  .
 
   --- handle-session-req-panic: a TA RK that panics while it serves the session request of the
   --- TA TK returns TEE_ERROR_TARGET_DEAD with the origin TEE_ORIGIN_TEE ([Internal Core] 4.9.3),
-  --- and it has no client-service afterwards.
+  --- with the memory as RK has left it, and it has no client-service afterwards.
   rl [handle-session-req-panic] :
-    < OI : Session | req : {HANDLE, FUNC, VL, TK} , ret : noRet , ta-id : RK >
-    < RK : TrustedApp | status : panic , client-service : {TK , FUNC} >
+    < OI : Session | req : {HANDLE, FUNC, VL, CS, TK} , ret : noRet , ta-id : RK >
+    < RK : TrustedApp | status : panic , client-service : {TK , FUNC} ,
+                        proc : (store(MEM) nextLoc(L) arrlen(AL) KS) >
     =>
-    < OI : Session | req : noReq , ret : {HANDLE, FUNC, TK, (# originTee # errorTargetDead)} >
+    < OI : Session | req : noReq ,
+                     ret : {HANDLE, FUNC, TK, (# originTee # errorTargetDead), cstore(MEM, L, AL)} >
     < RK : TrustedApp | client-service : none >
   .
 endom

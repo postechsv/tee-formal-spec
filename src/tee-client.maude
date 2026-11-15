@@ -83,30 +83,38 @@ omod TEE-CLIENT-API-BEHAVIOR is
   --- .
 
   var FID : FuncId .
-  var RET : ArgList .
+  var CS : CStore .
+  var MEM : Map{Nat,Value?} .
+  var L : Nat .
+  var AL : Map{Nat,Nat} .
+  var KS : KConfig .
 
---- handle-smc-request: the TrustedOS forwards the SMC request to the TA of the session.
+--- handle-smc-request: the TrustedOS forwards the SMC request to the TA of the session, with
+--- the memory CS of the RA.
   rl [handle-smc-request] :
-    < KI : TrustedOS | sess : (SID |-> TK , SMAP) > smcReq(RI, SID, FID, VL)
+    < KI : TrustedOS | sess : (SID |-> TK , SMAP) > smcReq(RI, SID, FID, VL, CS)
     =>
-    < KI : TrustedOS | > (msg invkTa[FID VL] from RI to TK) .
+    < KI : TrustedOS | > (msg invkTa[FID, VL, CS] from RI to TK) .
 
---- handle-smc-request-finish: the TrustedOS returns the TA's output values as an SMC response.
+--- handle-smc-request-finish: the TrustedOS returns the memory that the TA passes back as an
+--- SMC response with the return code success.
   rl [handle-smc-request-finish] :
-    < KI : TrustedOS | > (msg invkTaRet[RET] from TI to RI)
+    < KI : TrustedOS | > (msg invkTaRet[CS] from TI to RI)
     =>
-    < KI : TrustedOS | > smcRet(RI, RET) .
+    < KI : TrustedOS | > smcRet(RI, # success, CS) .
 
 --- return-smc-request-panic: a TA that panics before answering returns target-dead to the RA
---- of its request (its client-service {RI, FID}), and the TA has no client-service afterwards.
---- The client is an RA: a TA client gets its answer through its session (handle-session-req).
+--- of its request (its client-service {RI, FID}), with the memory as the TA has left it: what
+--- the TA wrote before the panic stays.  The TA has no client-service afterwards.  The client
+--- is an RA: a TA client gets its answer through its session (handle-session-req).
   rl [return-smc-request-panic] :
-    < TI : TrustedApp | status : panic, client-service : {RI , FID} >
+    < TI : TrustedApp | status : panic, client-service : {RI , FID},
+                        proc : (store(MEM) nextLoc(L) arrlen(AL) KS) >
     < KI : TrustedOS | >
     =>
     < KI : TrustedOS | >
     < TI : TrustedApp | status : panic, client-service : none >
-    smcRet(RI, # errorTargetDead) .
+    smcRet(RI, # errorTargetDead, cstore(MEM, L, AL)) .
 
 endom
 
@@ -137,6 +145,11 @@ omod TEE-INTERNAL-CLIENT-API-BEHAVIOR is
   var PARAMS : ArgList .
   var RET : ReturnCode .
   var RO : ReturnOrigin .
+  var CS : CStore .
+  vars MEM MEM' : Map{Nat,Value?} .
+  vars L L' : Nat .
+  vars AL AL' : Map{Nat,Nat} .
+  var KS : KConfig .
 
 ------------------------------------------------------------
 --- 'TEE_OpenTASession'
@@ -181,45 +194,50 @@ omod TEE-INTERNAL-CLIENT-API-BEHAVIOR is
   op finishReqInvoke : -> ReqId [ctor] .
 
   --- invoke-ta-command-subroutine (request): the init call of TeeInvokeTACommand becomes
-  --- final, and the reqInvoke message with FUNC and VL is sent to the session handle HANDLE.
+  --- final, and the reqInvoke message with FUNC, the memory of TK and VL is sent to the session
+  --- handle HANDLE.  TK waits for the answer, so its memory does not change meanwhile.
   rl [invoke-ta-command-subroutine] :
-    < TK : TAKernel | status : (normal).AppStatus , api-call : init(TeeInvokeTACommand[# HANDLE # FUNC # VL ZrTeeInvokeTACommand]) >
+    < TK : TrustedApp | status : (normal).AppStatus , api-call : init(TeeInvokeTACommand[# HANDLE # FUNC # VL ZrTeeInvokeTACommand]) ,
+                        proc : (store(MEM) nextLoc(L) arrlen(AL) KS) >
     =>
-    < TK : TAKernel | api-call : final(TeeInvokeTACommand[# HANDLE # FUNC # VL ZrTeeInvokeTACommand]) >
-    (msg reqInvoke[# FUNC # VL] from TK to HANDLE)
+    < TK : TrustedApp | api-call : final(TeeInvokeTACommand[# HANDLE # FUNC # VL ZrTeeInvokeTACommand]) >
+    (msg reqInvoke[# FUNC # cstore(MEM, L, AL) # VL] from TK to HANDLE)
   .
 
   --- invoke-ta-command-top-level-handle: the reqInvoke message reaches the session handle
-  --- HANDLE of the idle session OI (req : noReq), and the request {HANDLE, FUNC, VL, TK} is
+  --- HANDLE of the idle session OI (req : noReq), and the request {HANDLE, FUNC, VL, CS, TK} is
   --- stored in the session.
   rl [invoke-ta-command-top-level-handle] :
-    (msg reqInvoke[# FUNC # VL] from TK to HANDLE)
+    (msg reqInvoke[# FUNC # CS # VL] from TK to HANDLE)
     < OI : Session | req : noReq >
     < HANDLE : TaSessionHandle | oid : OI >
     =>
-    < OI : Session | req : {HANDLE, FUNC, VL, TK} >
+    < OI : Session | req : {HANDLE, FUNC, VL, CS, TK} >
     < HANDLE : TaSessionHandle | >
   .
 
-  --- invoke-ta-command-top-level-return: the stored return {HANDLE, FUNC, TK, VL} of the session
-  --- OI is cleared, and the finishReqInvoke message with FUNC and VL is sent back to TK.
+  --- invoke-ta-command-top-level-return: the stored return {HANDLE, FUNC, TK, VL, CS} of the
+  --- session OI is cleared, and the finishReqInvoke message with FUNC, the memory CS and VL is
+  --- sent back to TK.
   rl [invoke-ta-command-top-level-return] :
-    < OI : Session | ret : {HANDLE, FUNC, TK, VL} >
+    < OI : Session | ret : {HANDLE, FUNC, TK, VL, CS} >
     < HANDLE : TaSessionHandle | oid : OI >
     =>
     < OI : Session | ret : noRet >
     < HANDLE : TaSessionHandle | >
-    (msg finishReqInvoke[# FUNC # VL] from HANDLE to TK)
+    (msg finishReqInvoke[# FUNC # CS # VL] from HANDLE to TK)
   .
 
-  --- invoke-ta-command-subroutine (finish): the finishReqInvoke message gives the return origin
-  --- RO, the return code RET and the values VL to the final call of TeeInvokeTACommand, which
-  --- becomes return.
+  --- invoke-ta-command-subroutine (finish): the finishReqInvoke message gives TK its memory
+  --- back, as the destination TA has left it, and the return origin RO and the return code RET
+  --- to the final call of TeeInvokeTACommand, which becomes return.
   rl [invoke-ta-command-subroutine] :
-    (msg finishReqInvoke[# FUNC # (# RO # RET VL)] from HANDLE to TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-call : final(TeeInvokeTACommand[# HANDLE ZsTeeInvokeTACommand1 ZsTeeInvokeTACommand2 ZrTeeInvokeTACommand]) >
+    (msg finishReqInvoke[# FUNC # cstore(MEM', L', AL') # (# RO # RET)] from HANDLE to TK)
+    < TK : TrustedApp | status : (normal).AppStatus , api-call : final(TeeInvokeTACommand[# HANDLE ZsTeeInvokeTACommand1 ZsTeeInvokeTACommand2 ZrTeeInvokeTACommand]) ,
+                        proc : (store(MEM) nextLoc(L) arrlen(AL) KS) >
     =>
-    < TK : TAKernel | api-call : return(TeeInvokeTACommand[# RET # VL # RO]) >
+    < TK : TrustedApp | api-call : return(TeeInvokeTACommand[# RET # RO]) ,
+                        proc : (store(MEM') nextLoc(L') arrlen(AL') KS) >
   .
 
 endom

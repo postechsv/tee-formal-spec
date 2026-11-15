@@ -28,49 +28,35 @@ omod RICH-APP-BEHAVIOR is
   var K : K .
   var SID : SessionId .
   var VL : ArgList .
-  var RET : ArgList .
-  var OUT : ExpList .
+  var V : Value .
   var KS : KConfig .
   var FID : FuncId .
-  var E : Exp .
-  var EL : ExpList .
-  var V : Value .
-
---- assign(OUT, RET) stores the output values RET into the output expressions OUT.
-  op assign : ExpList ArgList -> Stmt .
-  eq assign((E, EL), (V VL)) = E := V ; assign(EL, VL) .
-  eq assign(nil, argNil) = skip .
+  vars MEM MEM' : Map{Nat,Value?} .
+  vars L L' : Nat .
+  vars AL AL' : Map{Nat,Nat} .
 
 ------------------------------------------------------------
 --- IMP Semantics
 ------------------------------------------------------------
 
---- invoke-ta-smc: the $in task of TEEC_InvokeCommand creates the SMC request.
+--- invoke-ta-smc: the $in task of TEEC_InvokeCommand creates the SMC request, with the memory
+--- of the RA (its store, location counter and array lengths).  The RA waits until the
+--- response, so its memory does not change meanwhile.
   rl [invoke-ta-smc] :
-    < RI : RichApp | proc : (k($in(# SID # FID VL) ~> $wait(TeecInvokeCommand) ~> K) KS) >
+    < RI : RichApp | proc : (k($in(# SID # FID VL) ~> $wait(TeecInvokeCommand) ~> K)
+                             store(MEM) nextLoc(L) arrlen(AL) KS) >
     =>
-    < RI : RichApp | proc : (k($wait(TeecInvokeCommand) ~> K) KS) >
-    smcReq(RI, SID, FID, VL)
+    < RI : RichApp | proc : (k($wait(TeecInvokeCommand) ~> K) store(MEM) nextLoc(L) arrlen(AL) KS) >
+    smcReq(RI, SID, FID, VL, cstore(MEM, L, AL))
   .
 
---- invoke-ta-finish: the SMC response assigns the output values to the output expressions.
---- The response of a TA that panicked is handled by invoke-ta-finish-target-dead.
-  crl [invoke-ta-finish] :
-    smcRet(RI, RET)
-    < RI : RichApp | proc : (k($wait(TeecInvokeCommand) ~> $out(OUT) ~> K) KS) >
+--- invoke-ta-finish: the SMC response gives the RA its memory back, as the TA has left it, also
+--- when the TA panicked, and the return code V is the value of TEEC_InvokeCommand.
+  rl [invoke-ta-finish] :
+    smcRet(RI, V, cstore(MEM', L', AL'))
+    < RI : RichApp | proc : (k($wait(TeecInvokeCommand) ~> K) store(MEM) nextLoc(L) arrlen(AL) KS) >
     =>
-    < RI : RichApp | proc : (k(assign(OUT, RET) ~> K) KS) >
-  if RET =/= # errorTargetDead .
-
---- invoke-ta-finish-target-dead: a TA that panicked answers with the return code
---- TEE_ERROR_TARGET_DEAD only (return-smc-request-panic).  The code is stored into the first
---- output, and the other outputs keep the values they had: an output is the client's memory,
---- and after a panic the client only gets the return code.
-  rl [invoke-ta-finish-target-dead] :
-    smcRet(RI, # errorTargetDead)
-    < RI : RichApp | proc : (k($wait(TeecInvokeCommand) ~> $out((E , EL)) ~> K) KS) >
-    =>
-    < RI : RichApp | proc : (k(E := # errorTargetDead ; ~> K) KS) >
+    < RI : RichApp | proc : (k({ V } ~> K) store(MEM') nextLoc(L') arrlen(AL') KS) >
   .
 
 endom

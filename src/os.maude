@@ -1,6 +1,8 @@
 --- This module defines calls to invoke TA. The request
---- invkTa[FID VL] carries the TA service FID and its argument values VL; the response
---- invkTaRet[VL] carries the values of the output parameters.
+--- invkTa[FID, VL, CS] carries the TA service FID, its argument values VL and the memory CS of
+--- the client; the response invkTaRet[CS] carries the memory back, as the TA has left it.
+--- The TA runs on the memory of the client (see mkConf), so an output parameter is an object
+--- of the client that the TA writes.
 
 --- @kind messages
 --- @feature os
@@ -8,14 +10,17 @@ omod INVOKE-TA-CALL is
   pr TEE-MSG .
   pr IMP-FUNC-SIG .
   pr IMP-EXP-LIST .
+  pr IMP-CONFIG .
 
-  op invkTa[__] : APIFuncId ArgList -> Req [ctor] .
-  op invkTaRet[_] : ArgList -> Req [ctor] .
+  op invkTa[_,_,_] : APIFuncId ArgList CStore -> Req [ctor] .
+  op invkTaRet[_] : CStore -> Req [ctor] .
 endom
 
 --- This module defines SMC calls between REE and TEE execution environments.
---- smcReq(RI, SID, FID, VL) is an SMC request of RA RI for service FID in session SID;
---- smcRet(RI, VL) is the response carrying the output values VL.
+--- smcReq(RI, SID, FID, VL, CS) is an SMC request of RA RI for service FID in session SID with
+--- the arguments VL and the memory CS of RI; smcRet(RI, RET, CS) is the response with the
+--- return code RET and the memory CS.  The RA waits while the TA runs, so the TA is the only
+--- one that uses the memory until the response.
 
 --- @kind messages
 --- @feature os
@@ -24,9 +29,10 @@ omod SECURE-MONITOR-CALL is
   pr SESSION-ID .
   pr IMP-FUNC-SIG .
   pr IMP-EXP-LIST .
+  pr IMP-CONFIG .
 
-  msg smcReq : Oid SessionId APIFuncId ArgList -> Msg .
-  msg smcRet : Oid ArgList -> Msg .
+  msg smcReq : Oid SessionId APIFuncId ArgList CStore -> Msg .
+  msg smcRet : Oid ArgList CStore -> Msg .
 endom
 
 --- This module defines execution environments for REE and TEE.
@@ -44,22 +50,23 @@ mod EXECUTION-ENV is
   var SID : SessionId .
   var FID : APIFuncId .
   var VL : ArgList .
+  var CS : CStore .
 
   op {_}|{_} : Configuration Configuration -> Envs [ctor] .
 
-  --- accept-smc-request: the REE request smcReq(RI, SID, FID, VL) is moved from the REE
+  --- accept-smc-request: the REE request smcReq(RI, SID, FID, VL, CS) is moved from the REE
   --- environment to the TEE environment.
   rl [accept-smc-request] :
-    {REE smcReq(RI, SID, FID, VL)} | {TEE}
+    {REE smcReq(RI, SID, FID, VL, CS)} | {TEE}
     =>
-    {REE} | {TEE smcReq(RI, SID, FID, VL)} .
+    {REE} | {TEE smcReq(RI, SID, FID, VL, CS)} .
 
-  --- return-smc-request: the TEE response smcRet(RI, VL) is moved from the TEE environment to
+  --- return-smc-request: the TEE response smcRet(RI, VL, CS) is moved from the TEE environment to
   --- the REE environment.
   rl [return-smc-request] :
-    {REE} | {TEE smcRet(RI, VL)}
+    {REE} | {TEE smcRet(RI, VL, CS)}
     =>
-    {REE smcRet(RI, VL)} | {TEE} .
+    {REE smcRet(RI, VL, CS)} | {TEE} .
 endm
 
 --- This module defines storage status constants.

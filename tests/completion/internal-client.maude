@@ -14,6 +14,7 @@ mod COMPLETION-TEST is
   var ENVM : Map{Var,Nat} .
   var MEMM : Map{Nat,Value?} .
   var KSM : KConfig .
+  var ALM : Map{Nat,Nat} .
   var TESTDIGEST : List{Data} .
   var CIPHERRESULT : List{Data} .
   var TESTMAC : List{Data} .
@@ -57,34 +58,37 @@ search [1] in COMPLETION-TEST :
       status : (normal).StorageStatus, files : empty, counter : 0 >
   C .
 
---- A received invocation runs the TA service to completion: the TA answers with invkTaRet
---- carrying the output value of res (22), and it is available again with no client-service.
+--- A received invocation runs the TA service to completion on the memory of the client: the
+--- output parameter res is the object of the client at location 0, and the TA answers with
+--- invkTaRet carrying the memory, where that object holds 22.  The TA is available again with
+--- no client-service.
 search [1] in COMPLETION-TEST :
-  (msg invkTa[addService (# 10 # 12 # 0)] from testRa to testTa)
+  (msg invkTa[addService, (# 10 # 12 loc(0)), cstore((0 |-> # 0), 1, empty)] from testRa to testTa)
   < testTa : TrustedApp |
       proc : none, prog : serviceProg, client-service : none,
       status : (normal).AppStatus, storage : oid(0, testTa), os-kernel : osId,
       counter : 0, api-call : noCall >
 =>+
-  (msg invkTaRet[# 22] from testTa to testRa)
+  (msg invkTaRet[cstore((0 |-> # 22) ; MEMM, LOC, ALM)] from testTa to testRa)
   < testTa : TrustedApp |
       proc : none, client-service : none, status : (normal).AppStatus,
       AS2:AttributeSet >
   C .
 
---- mkConf(P, FID, VL) runs the program P and then callFunc(FID, VL): the output
---- parameter res is declared with the value of its argument (0), and addService is called
---- with the input values 3 and 4, so the output res is 7.
+--- mkConf(P, FID, VL, CS) runs the program P and then callFunc(FID, VL) on the memory CS: the
+--- output parameter res names the object of the client at location 0, and addService is called
+--- with the input values 3 and 4, so that object holds 7.  The service runs past the
+--- locations of the client: its input parameters take location 1 and 2.
 search [1] in COMPLETION-TEST :
-  mkConf(serviceProg, addService, # 3 # 4 # 0)
+  mkConf(serviceProg, addService, # 3 # 4 loc(0), cstore((0 |-> # 0), 1, empty))
 =>+
-  k(.K) stack(nilStack) env((res |-> LOC) ; ENVM) store((LOC |-> # 7) ; MEMM) KSM:KConfig
+  k(.K) stack(nilStack) store((0 |-> # 7) ; (1 |-> # 3) ; MEMM) KSM:KConfig
   .
 
 --- TeeInvokeTACommand resolves a top-level session handle in both directions.
 --- The session object is oid(1, testTa); its handle is oid(2, testTa).
 search [1] in COMPLETION-TEST :
-  (msg reqInvoke[# main # argNil] from testTa to oid(2, testTa))
+  (msg reqInvoke[# main # emptyStore # argNil] from testTa to oid(2, testTa))
   < oid(1, testTa) : Session | req : noReq >
   < oid(2, testTa) : TaSessionHandle | oid : oid(1, testTa) >
 =>1
@@ -92,54 +96,60 @@ search [1] in COMPLETION-TEST :
 
 search [1] in COMPLETION-TEST :
   < oid(1, testTa) : Session |
-      ret : {oid(2, testTa), main, testTa, argNil} >
+      ret : {oid(2, testTa), main, testTa, argNil, emptyStore} >
   < oid(2, testTa) : TaSessionHandle | oid : oid(1, testTa) >
 =>1
-  (msg finishReqInvoke[# main # argNil] from oid(2, testTa) to testTa)
+  (msg finishReqInvoke[# main # cstore(empty, 0, empty) # argNil] from oid(2, testTa) to testTa)
   C .
 
---- A TA that panics while serving the request of RA testRa returns target-dead to testRa,
---- and the TA is left with no client-service.
+--- A TA that panics while serving the request of RA testRa returns target-dead to testRa, with
+--- the memory as the TA has left it (the TA wrote 5 to location 0 before the panic), and the TA
+--- is left with no client-service.
 search [1] in COMPLETION-TEST :
   < testRa : RichApp | RAATTS:AttributeSet >
   < osId : TrustedOS | OSATTS:AttributeSet >
-  < testTa : TrustedApp | status : panic, client-service : {testRa, addService}, TAATTS:AttributeSet >
+  < testTa : TrustedApp | status : panic, client-service : {testRa, addService},
+      proc : (k(.K) store(0 |-> # 5) nextLoc(1) arrlen(empty)), TAATTS:AttributeSet >
   C
 =>1
-  smcRet(testRa, # errorTargetDead)
+  smcRet(testRa, # errorTargetDead, cstore((0 |-> # 5), 1, empty))
   < testRa : RichApp | RAATTS:AttributeSet >
   < osId : TrustedOS | OSATTS:AttributeSet >
   < testTa : TrustedApp | status : panic, client-service : none, TAATTS:AttributeSet >
   C .
 
 --- A finished service of otherTa answers the session request with the origin of the TA and success,
---- before its output values.
+--- and the memory of testTa, where the output res (location 0) holds 22.
 search [1] in COMPLETION-TEST :
-  < oid(1, testTa) : Session | req : {oid(2, testTa), addService, (# 10 # 12 # 0), testTa}, ret : noRet, ta-id : otherTa >
+  < oid(1, testTa) : Session | req : {oid(2, testTa), addService, (# 10 # 12 loc(0)), cstore((0 |-> # 0), 1, empty), testTa}, ret : noRet, ta-id : otherTa >
   < oid(2, testTa) : TaSessionHandle | oid : oid(1, testTa) >
   < otherTa : TrustedApp | proc : none, prog : serviceProg, client-service : none,
       status : (normal).AppStatus, storage : oid(0, otherTa), os-kernel : osId,
       counter : 0, api-call : noCall >
 =>!
-  (msg finishReqInvoke[# addService # (# originTrustedApp # success # 22)] from oid(2, testTa) to testTa)
+  (msg finishReqInvoke[# addService # cstore((0 |-> # 22) ; MEMM, LOC, ALM) # (# originTrustedApp # success)] from oid(2, testTa) to testTa)
   C:Configuration .
 
---- The finishReqInvoke answer returns TeeInvokeTACommand with its code, values and origin.
+--- The finishReqInvoke answer returns TeeInvokeTACommand with its code and origin, and gives
+--- testTa the memory back.
 search [1] in COMPLETION-TEST :
-  (msg finishReqInvoke[# main # (# originTee # errorTargetDead)] from oid(2, testTa) to testTa)
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : final(TeeInvokeTACommand[# oid(2, testTa) # main # argNil]) >
+  (msg finishReqInvoke[# main # cstore((0 |-> # 5), 1, empty) # (# originTee # errorTargetDead)] from oid(2, testTa) to testTa)
+  < testTa : TrustedApp | status : (normal).AppStatus, api-call : final(TeeInvokeTACommand[# oid(2, testTa) # main # argNil]),
+      proc : (k(.K) store(empty) nextLoc(0) arrlen(empty)) >
 =>1
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : return(TeeInvokeTACommand[# errorTargetDead # argNil # originTee]) > .
+  < testTa : TrustedApp | status : (normal).AppStatus, api-call : return(TeeInvokeTACommand[# errorTargetDead # originTee]),
+      proc : (k(.K) store(0 |-> # 5) nextLoc(1) arrlen(empty)) > .
 
 --- A TA service function calls a TEE API in its body: the transient allocate returns success
---- and the handle oid(1, testTa) to the output parameter res.
+--- and the handle oid(1, testTa) to the output parameter res, the object of the client at
+--- location 0.
 search [1] in COMPLETION-TEST :
-  (msg invkTa[allocService (# null)] from testRa to testTa)
+  (msg invkTa[allocService, loc(0), cstore((0 |-> # null), 1, empty)] from testRa to testTa)
   < testTa : TrustedApp | proc : none, prog : allocBodyProg, client-service : none,
       status : (normal).AppStatus, storage : oid(0, testTa), os-kernel : osId,
       counter : 0, api-call : noCall >
 =>!
-  (msg invkTaRet[# oid(1, testTa)] from testTa to testRa)
+  (msg invkTaRet[cstore((0 |-> # oid(1, testTa)) ; MEMM, LOC, ALM)] from testTa to testRa)
   C:Configuration .
 
 --- A TA program calls one TEE API (a transient allocate) and runs to completion: the call
@@ -147,7 +157,7 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   C
   < testTa : TrustedApp |
-      proc : mkConf(allocProg, main, argNil), prog : allocProg, client-service : none,
+      proc : mkConf(allocProg, main, argNil, emptyStore), prog : allocProg, client-service : none,
       status : (normal).AppStatus, api-call : noCall, counter : 0, TAATTS:AttributeSet >
 =>+
   < testTa : TrustedApp |

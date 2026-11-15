@@ -103,7 +103,7 @@ tee-formal-spec/
 | `tee-data-type.maude` | Models of GlobalPlatform API data structures |
 | `tee-api.maude`, `tee-api-call.maude` | API identifiers, call parameters, and return values |
 | `tee-msg.maude` | Message layer of the TEE API models |
-| `session.maude` | Session handling |
+| `session.maude` | Sessions: opening a session (TEEC_OpenSession, TEE_OpenTASession) with the TA instances it creates, and the requests of a TA through its session |
 | `tee-kernel.maude` | TA kernel and API execution state |
 | `tee-panic.maude` | General programmer errors and invalid-handle panics |
 | `persistent-panic.maude`, `data-stream-panic.maude`, `crypto-panic.maude` | Panics of the storage and cryptographic APIs |

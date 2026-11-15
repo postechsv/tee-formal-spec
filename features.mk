@@ -79,7 +79,7 @@ SHM ?= 1
 SHM_LOADS := shared-memory
 SHM_MODULES := SHARED-MEMORY-BEHAVIOR
 SHM_REQUIRES :=
-SHM_TESTS := completion/shared-memory.maude
+SHM_TESTS := completion/shared-memory.maude completion/client-session.maude
 
 # Invisible-transition reduction of Section 8 of the paper (src/invisible-reduction.maude): AP-invisible
 # rules restated as equations. Off by default. Its modules take effect only when a model imports

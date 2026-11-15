@@ -23,40 +23,78 @@ omod RICH-APP-BEHAVIOR is
   pr TEE-CLIENT-IMP-VALUE .
   pr ID-IMP-VALUE .
   pr RETURN-IMP-VALUE .
+  pr TEE-IMP-VALUE-TYPE .
 
   var RI : Oid .
   var K : K .
   var SID : SessionId .
-  var VL : ArgList .
+  var API : TeeClientApi .
+  vars VL VL' : ArgList .
   var V : Value .
   var KS : KConfig .
-  var FID : FuncId .
+  vars EU ES : Exp .
+  var EL : ExpList .
   vars MEM MEM' : Map{Nat,Value?} .
   vars L L' : Nat .
   vars AL AL' : Map{Nat,Nat} .
 
 ------------------------------------------------------------
+--- IMP Syntax
+------------------------------------------------------------
+
+  --- teecOpenSession(EU, ES): TEEC_OpenSession ([Client API] 4.5.7) with the TA EU.  Its value
+  --- is the return code; after success the new session is written to the lvalue ES (the
+  --- session structure that the client passes, &session in C).  The context, the connection
+  --- method and data, the operation and the return origin are not modeled.
+  op teecOpenSession : Exp Exp -> Exp [ctor] .
+
+  --- teecOpenSession(EU, ES) runs as the stub of TEEC_OpenSession: EU is evaluated and sent by
+  --- client-api-smc, and ES waits in $out for the response (client-api-finish).
+  eq k({ teecOpenSession(EU, ES) } ~> K)
+   = k($inH(argNil, EU) ~> $wait(TeecOpenSession) ~> $out(ES) ~> K) .
+
+  --- Typing (IMP-TYPING): the TA is a TEE-UUID and the session a TEEC-Session lvalue.  The call
+  --- is a TEE-Result.
+  eq tk($te(teecOpenSession(EU, ES)) ~> K)
+   = tk($te(EU) ~> $tchk(TEE-UUID) ~> $tl(ES) ~> $tchk(TEEC-Session) ~> $tres(TEE-Result) ~> K) .
+
+------------------------------------------------------------
 --- IMP Semantics
 ------------------------------------------------------------
 
---- invoke-ta-smc: the $in task of TEEC_InvokeCommand creates the SMC request, with the memory
---- of the RA (its store, location counter and array lengths).  The RA waits until the
+--- A client API call API of an RA is $in(VL) ~> $wait(API) ~> $out(EL), as a TEE API call of a
+--- TA (TRUST-APP-IMP-BEHAVIOR): the input values VL go to the TEE with the SMC request, and the
+--- output lvalues EL get the values of the response (clientReturn).
+
+--- client-api-smc: the $in task of the client API call API creates the SMC request, with the
+--- memory of the RA (its store, location counter and array lengths).  The RA waits until the
 --- response, so its memory does not change meanwhile.
-  rl [invoke-ta-smc] :
-    < RI : RichApp | proc : (k($in(# SID # FID VL) ~> $wait(TeecInvokeCommand) ~> K)
+  rl [client-api-smc] :
+    < RI : RichApp | proc : (k($in(VL) ~> $wait(API) ~> K)
                              store(MEM) nextLoc(L) arrlen(AL) KS) >
     =>
-    < RI : RichApp | proc : (k($wait(TeecInvokeCommand) ~> K) store(MEM) nextLoc(L) arrlen(AL) KS) >
-    smcReq(RI, SID, FID, VL, cstore(MEM, L, AL))
+    < RI : RichApp | proc : (k($wait(API) ~> K) store(MEM) nextLoc(L) arrlen(AL) KS) >
+    smcReq(RI, API, VL, cstore(MEM, L, AL))
   .
 
---- invoke-ta-finish: the SMC response gives the RA its memory back, as the TA has left it, also
---- when the TA panicked, and the return code V is the value of TEEC_InvokeCommand.
-  rl [invoke-ta-finish] :
-    smcRet(RI, V, cstore(MEM', L', AL'))
-    < RI : RichApp | proc : (k($wait(TeecInvokeCommand) ~> K) store(MEM) nextLoc(L) arrlen(AL) KS) >
+--- client-api-finish: the SMC response gives the RA its memory back, as the TEE has left it,
+--- also when the TA panicked, and clientReturn(API, VL', EL) gives the value of the call and
+--- assigns the output values to EL.
+  rl [client-api-finish] :
+    smcRet(RI, VL', cstore(MEM', L', AL'))
+    < RI : RichApp | proc : (k($wait(API) ~> $out(EL) ~> K) store(MEM) nextLoc(L) arrlen(AL) KS) >
     =>
-    < RI : RichApp | proc : (k({ V } ~> K) store(MEM') nextLoc(L') arrlen(AL') KS) >
+    < RI : RichApp | proc : (k(clientReturn(API, VL', EL) ~> K) store(MEM') nextLoc(L') arrlen(AL') KS) >
   .
+
+  --- clientReturn(API, VL, EL): the values VL of the response to the call API, as the value of
+  --- the call followed by the assignment of the output values to the lvalues EL.  The values
+  --- are the return code alone, or for TEEC_OpenSession after success, the code and the session.
+  --- A failed TEEC_OpenSession leaves the session structure as it is ([Client API] 4.5.7: its
+  --- content is then undefined).
+  op clientReturn : TeeClientApi ArgList ExpList -> K .
+  eq clientReturn(TeecInvokeCommand, V, nil) = { V } .
+  eq clientReturn(TeecOpenSession, (# success # SID), ES) = $assign(# SID, ES) ~> { # success } .
+  eq clientReturn(TeecOpenSession, V, ES) = { V } .
 
 endom

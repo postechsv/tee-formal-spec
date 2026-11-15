@@ -1,0 +1,130 @@
+--- Opening a session: TEEC_OpenSession of an RA ([Client API] 4.5.7) and TEE_OpenTASession of a
+--- TA ([Internal Core] 4.9.1).  The TA instance is not in the initial configuration: the
+--- TrustedOS creates it from ta-prog-map at the first session.  The TA TESTTA is a single
+--- instance with a single session, taConfig(true, false) ([Internal Core] 4.5).
+load ../../src/main
+load ../cases/aux
+
+mod CLIENT-SESSION-TEST is
+  pr TEE-BEHAVIOR .
+  pr TEE-IMP-BEHAVIOR .
+  pr TEST-AUX .
+
+  ops s s2 b buf res r r2 : -> Var [ctor] .
+  op check : -> FuncId [ctor] .
+  op unknownTa : -> AppId [ctor] .
+  var S : Program .
+
+  --- dfProg reads the input through the pointer buf and copies it to the output res.
+  op dfProg : -> Program .
+  eq dfProg = void check(char * buf, char & res) {
+      if (deref(buf) == # data(1)) { res := deref(buf) ; } else { res := # noData ; } } .
+
+  --- openInvokeProg: the RA opens a session s with TESTTA, and calls check in it with the
+  --- locations of b and res.
+  op openInvokeProg : -> Program .
+  eq openInvokeProg =
+    TEEC-Session s ; char b ; char res ; TEE-Result r ; TEE-Result r2 ;
+    b := # data(1) ; res := # noData ;
+    r := teecOpenSession(# TESTTA, s) ;
+    r2 := teecInvokeCommand(s, # check, (addr(b), addr(res))) ; .
+
+  --- openTwiceProg: the RA opens two sessions with TESTTA.
+  op openTwiceProg : -> Program .
+  eq openTwiceProg =
+    TEEC-Session s ; TEEC-Session s2 ; TEE-Result r ; TEE-Result r2 ;
+    r := teecOpenSession(# TESTTA, s) ;
+    r2 := teecOpenSession(# TESTTA, s2) ; .
+
+  --- openUnknownProg: the RA opens a session with a TA that does not exist.
+  op openUnknownProg : -> Program .
+  eq openUnknownProg =
+    TEEC-Session s ; TEE-Result r ;
+    r := teecOpenSession(# unknownTa, s) ; .
+
+  --- ree(S): the RA testRa runs S, and the TrustedOS has the program dfProg of TESTTA and no
+  --- TA instance.
+  op ree : Program -> Configuration .
+  eq ree(S) =
+    < testRa : RichApp | prog : S, proc : mkConf(S) >
+    < osId : TrustedOS | sess : empty, session-counter : 0,
+        ta-prog-map : (TESTTA |-> [dfProg]),
+        ta-config : (TESTTA |-> taConfig(true, false)), ta-instances : empty > .
+endm
+
+------------------------------------------------------------
+--- TEEC_OpenSession
+------------------------------------------------------------
+
+--- The RA opens a session, which creates the instance oid(0, osId) of TESTTA, and invokes check
+--- in it: both calls succeed, s holds the session sessionId(0), and the TA has written data(1)
+--- to res.
+search [1] in CLIENT-SESSION-TEST : ree(openInvokeProg) =>!
+  < testRa : RichApp | prog : S,
+      proc : (k(.K) env((s |-> LS:Nat) ; (res |-> LR:Nat) ; (r |-> LC:Nat) ; (r2 |-> LC2:Nat) ; ENV:Map{Var,Nat})
+              store((LS:Nat |-> # sessionId(0)) ; (LR:Nat |-> # data(1)) ; (LC:Nat |-> # success) ;
+                    (LC2:Nat |-> # success) ; MEM:Map{Nat,Value?}) KS:KConfig) >
+  < osId : TrustedOS | sess : (sessionId(0) |-> oid(0, osId)), ta-instances : (TESTTA |-> oid(0, osId)),
+      OSATTS:AttributeSet >
+  < oid(0, osId) : TrustedApp | proc : none, client-service : none, TAATTS:AttributeSet >
+  < oid(0, oid(0, osId)) : Storage | STATTS:AttributeSet > .
+
+--- TESTTA accepts one session at a time: the second open fails with TEEC_ERROR_BUSY, and no other
+--- instance or session is created.
+search [1] in CLIENT-SESSION-TEST : ree(openTwiceProg) =>!
+  < testRa : RichApp | prog : S,
+      proc : (k(.K) env((s |-> LS:Nat) ; (r |-> LC:Nat) ; (r2 |-> LC2:Nat) ; ENV:Map{Var,Nat})
+              store((LS:Nat |-> # sessionId(0)) ; (LC:Nat |-> # success) ; (LC2:Nat |-> # errorBusy) ;
+                    MEM:Map{Nat,Value?}) KS:KConfig) >
+  < osId : TrustedOS | sess : (sessionId(0) |-> oid(0, osId)), session-counter : 1,
+      OSATTS:AttributeSet >
+  < oid(0, osId) : TrustedApp | TAATTS:AttributeSet >
+  < oid(0, oid(0, osId)) : Storage | STATTS:AttributeSet > .
+
+--- A TA that does not exist: TEEC_ERROR_ITEM_NOT_FOUND, and no instance is created.
+search [1] in CLIENT-SESSION-TEST : ree(openUnknownProg) =>!
+  < testRa : RichApp | prog : S,
+      proc : (k(.K) env((r |-> LC:Nat) ; ENV:Map{Var,Nat})
+              store((LC:Nat |-> # errorItemNotFound) ; MEM:Map{Nat,Value?}) KS:KConfig) >
+  < osId : TrustedOS | sess : empty, ta-instances : empty, OSATTS:AttributeSet > .
+
+------------------------------------------------------------
+--- TEE_OpenTASession
+------------------------------------------------------------
+
+--- The instance oid(0, osId) of TESTTA already has a session: a TA that opens a session with
+--- TESTTA gets openSessionFail(errorBusy).
+search [1] in CLIENT-SESSION-TEST :
+  < osId : TrustedOS |
+      service-in : openTASession(TESTTA) nil, service-out : nil,
+      ta-prog-map : TESTTA |-> [dfProg],
+      ta-config : TESTTA |-> taConfig(true, false), ta-instances : TESTTA |-> oid(0, osId),
+      sess : sessionId(0) |-> oid(0, osId), session-counter : 1 >
+=>1
+  < osId : TrustedOS | service-in : nil, service-out : openSessionFail(errorBusy),
+      sess : sessionId(0) |-> oid(0, osId), session-counter : 1, OSATTS:AttributeSet > .
+
+--- A TA that does not exist: openSessionFail(errorItemNotFound).
+search [1] in CLIENT-SESSION-TEST :
+  < osId : TrustedOS |
+      service-in : openTASession(unknownTa) nil, service-out : nil,
+      ta-prog-map : TESTTA |-> [dfProg],
+      ta-config : TESTTA |-> taConfig(true, false), ta-instances : empty,
+      sess : empty, session-counter : 0 >
+=>1
+  < osId : TrustedOS | service-in : nil, service-out : openSessionFail(errorItemNotFound),
+      OSATTS:AttributeSet > .
+
+--- The failure answer finishes TEE_OpenTASession with the code, TEE_HANDLE_NULL and the origin of
+--- the TEE, and no session object is created.
+search [1] in CLIENT-SESSION-TEST :
+  retTrustedOS(openSessionFail(errorBusy), testTa)
+  < testTa : TAKernel | status : (normal).AppStatus,
+      api-call : final(TeeOpenTASession[# TESTTA # timeoutInfinite]), counter : 1 >
+=>1
+  < testTa : TAKernel | api-call : return(TeeOpenTASession[# errorBusy # null # originTee]),
+      counter : 1, AS:AttributeSet > .
+
+--- The return statement assigns the code, the null handle and the origin to the out arguments.
+red makeReturnStmt(TeeOpenTASession, errorBusy, # null # originTee, (r, s, r2))
+  == $assign((# errorBusy, # null, # originTee), (r, s, r2)) .

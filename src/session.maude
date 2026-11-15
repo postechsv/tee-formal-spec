@@ -92,3 +92,181 @@ omod SESSION-BEHAVIOR is
     < RK : TrustedApp | client-service : none >
   .
 endom
+
+--- This module defines opening a session ([Internal Core] 4.3, 4.5, 4.9.1, [Client API] 4.5.7).
+---
+--- A client opens a session with the TA TN: an RA with TEEC_OpenSession, through the SMC request
+--- smcReq(RI, TeecOpenSession, # TN, CS), and a TA with TEE_OpenTASession, through the service
+--- openTASession(TN) of the TrustedOS.  The TrustedOS decides in the same way for both:
+---   * TN has no instance: the TrustedOS creates the instance from the program of TN in
+---     ta-prog-map, with its storage, records it in ta-instances, and opens the session on it;
+---   * the instance of TN already has a session: TEE_ERROR_BUSY (TEEC_ERROR_BUSY for an RA);
+---   * no TA has the identifier TN: TEE_ERROR_ITEM_NOT_FOUND.
+--- Every open session is in sess, with the instance that serves it.  Only the TAs of
+--- configuration taConfig(true, false) in ta-config are served for now: a single instance with a
+--- single session.  The entry points TA_CreateEntryPoint and TA_OpenSessionEntryPoint are not
+--- modeled: the instance is created and the session opened at once.
+---
+--- An RA gets the return code, and the new session sessionId(N) after success; its memory CS
+--- comes back unchanged, and it is not given the return origin.  A TA gets a session object and
+--- its handle after success, or the code with the origin of the TEE and TEE_HANDLE_NULL.  The
+--- IMP call of an RA, teecOpenSession, is in RICH-APP-BEHAVIOR.
+
+--- @kind behavior
+--- @feature ta-session
+omod SESSION-OPEN-BEHAVIOR is
+  pr SESSION .
+  pr TEE-OS-BEHAVIOR .
+  pr TRUST-APP .
+  pr SECURE-MONITOR-CALL .
+  pr HANDLE-AUX .
+  pr TEE-MSG .
+  pr TEE-CLIENT-FUNC .
+  pr TEE-INTERNAL-CLIENT-FUNC .
+  pr TEE-CLIENT-IMP-VALUE .
+  pr RETURN-IMP-VALUE .
+
+  vars KI RI TK RK TI : Oid .
+  var TN : AppId .
+  var TA : AppId .
+  var N : Nat .
+  var P : Program .
+  var CS : CStore .
+  var SIL : List{Service} .
+  var SOL : List{ServiceReturn} .
+  vars SID SID' : SessionId .
+  vars SESS SMAP : Map{SessionId,Oid} .
+  var PROGC : Map{AppId,ProgramCell} .
+  var CFG : Map{AppId,TaConfig} .
+  var IM : Map{AppId,Oid} .
+  var PARAMS : ArgList .
+  var RET : ReturnCode .
+  var ZsTeeOpenTASession1 : Value .
+  var ZrTeeOpenTASession : ArgList .
+
+------------------------------------------------------------
+--- The TrustedOS: TEEC_OpenSession of an RA
+------------------------------------------------------------
+
+--- teec-open-session: TN has no instance, so the TrustedOS creates the TA instance oid(N, KI)
+--- with the program P of TN and its storage, records it as the instance of TN, and opens the
+--- session sessionId(N) on it.
+  crl [teec-open-session] :
+    smcReq(RI, TeecOpenSession, # TN, CS)
+    < KI : TrustedOS | ta-prog-map : (TN |-> [P] , PROGC) ,
+                       ta-config : (TN |-> taConfig(true, false) , CFG) , ta-instances : IM ,
+                       sess : SMAP , session-counter : N >
+    =>
+    < KI : TrustedOS | ta-instances : (TN |-> oid(N, KI) , IM) ,
+                       sess : (sessionId(N) |-> oid(N, KI) , SMAP) , session-counter : N + 1 >
+    < oid(N, KI) : TrustedApp | proc : none , prog : P ,
+                                 status : (normal).AppStatus , api-call : noCall , counter : 1 ,
+                                 storage : oid(0, oid(N, KI)) , os-kernel : KI ,
+                                 client-service : none >
+    < oid(0, oid(N, KI)) : Storage | status : (normal).StorageStatus , files : empty , counter : 0 >
+    smcRet(RI, (# success # sessionId(N)), CS)
+  if not $hasMapping(IM, TN) .
+
+--- teec-open-session-busy: the instance TI of TN already has the session SID', and TN accepts
+--- one session at a time: TEEC_ERROR_BUSY.
+  rl [teec-open-session-busy] :
+    smcReq(RI, TeecOpenSession, # TN, CS)
+    < KI : TrustedOS | ta-config : (TN |-> taConfig(true, false) , CFG) ,
+                       ta-instances : (TN |-> TI , IM) , sess : (SID' |-> TI , SMAP) >
+    =>
+    < KI : TrustedOS | >
+    smcRet(RI, # errorBusy, CS) .
+
+--- teec-open-session-not-found: no TA has the identifier TN: TEEC_ERROR_ITEM_NOT_FOUND.
+  crl [teec-open-session-not-found] :
+    smcReq(RI, TeecOpenSession, # TN, CS)
+    < KI : TrustedOS | ta-prog-map : PROGC >
+    =>
+    < KI : TrustedOS | >
+    smcRet(RI, # errorItemNotFound, CS)
+  if not $hasMapping(PROGC, TN) .
+
+------------------------------------------------------------
+--- The TrustedOS: openTASession of a TA
+------------------------------------------------------------
+
+--- open-ta-session: TN has no instance, so the TrustedOS creates the TA instance oid(N, KI) with
+--- the program P of TN from ta-prog-map and its storage oid(0, oid(N, KI)) with no files,
+--- records it as the instance of TN, and opens the session sessionId(N) on it.
+--- openSessionSuccess(oid(N, KI)) is queued in service-out.
+  crl [open-ta-session] :
+    < KI : TrustedOS | service-in : (openTASession(TN) SIL) , service-out : SOL ,
+                       ta-prog-map : (TN |-> [P] , PROGC) ,
+                       ta-config : (TN |-> taConfig(true, false) , CFG) , ta-instances : IM ,
+                       sess : SESS , session-counter : N >
+    =>
+    < KI : TrustedOS | service-in : SIL , service-out : (SOL openSessionSuccess(oid(N, KI))) ,
+                       ta-instances : (TN |-> oid(N, KI) , IM) ,
+                       sess : (sessionId(N) |-> oid(N, KI) , SESS) , session-counter : N + 1 >
+    < oid(N, KI) : TrustedApp | proc : none , prog : P ,
+                                 status : (normal).AppStatus , api-call : noCall , counter : 1 ,
+                                 storage : oid(0, oid(N, KI)) , os-kernel : KI ,
+                                 client-service : none >
+    < oid(0, oid(N, KI)) : Storage | status : (normal).StorageStatus , files : empty , counter : 0 >
+  if not $hasMapping(IM, TN) .
+
+--- open-ta-session-busy: the instance TI of TN already has the session SID, and TN accepts one
+--- session at a time, so the session is not opened: TEE_ERROR_BUSY ([Internal Core] 4.9.1).
+  rl [open-ta-session-busy] :
+    < KI : TrustedOS | service-in : (openTASession(TN) SIL) , service-out : SOL ,
+                       ta-config : (TN |-> taConfig(true, false) , CFG) ,
+                       ta-instances : (TN |-> TI , IM) , sess : (SID |-> TI , SESS) >
+    =>
+    < KI : TrustedOS | service-in : SIL , service-out : (SOL openSessionFail(errorBusy)) >
+  .
+
+--- open-ta-session-not-found: no TA has the identifier TN, so the session is not opened:
+--- TEE_ERROR_ITEM_NOT_FOUND, [Internal Core] 4.9.1.
+  crl [open-ta-session-not-found] :
+    < KI : TrustedOS | service-in : (openTASession(TN) SIL) , service-out : SOL ,
+                       ta-prog-map : PROGC >
+    =>
+    < KI : TrustedOS | service-in : SIL , service-out : (SOL openSessionFail(errorItemNotFound)) >
+  if not $hasMapping(PROGC, TN) .
+
+------------------------------------------------------------
+--- The TA: TEE_OpenTASession
+------------------------------------------------------------
+
+  --- The 'TEE_OpenTASession' function opens a new session with a Trusted Application.
+  --- See page 98 of the G.P. documentation for more details.
+
+  --- open-session-subroutine: the init call of TeeOpenTASession becomes final, and the
+  --- TrustedOS is asked to open a session with the TA TA.
+  rl [open-session-subroutine] :
+    < TK : TAKernel | status : (normal).AppStatus , api-call : init(TeeOpenTASession[# TA ZsTeeOpenTASession1 ZrTeeOpenTASession]) >
+    =>
+    < TK : TAKernel | api-call : final(TeeOpenTASession[# TA ZsTeeOpenTASession1 ZrTeeOpenTASession]) >
+    reqTrustedOS(openTASession(TA) , TK)
+  .
+
+  --- open-session-success: the openSessionSuccess(RK) answer of the TrustedOS finishes the call
+  --- with success and the handle oid(N + 1, TK).  The session object oid(N, TK) is created
+  --- with ta-id RK, the handle oid(N + 1, TK) is created for it, and the counter advances by
+  --- two.
+  rl [open-session-success] :
+    retTrustedOS(openSessionSuccess(RK), TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(TeeOpenTASession[PARAMS]) , counter : N >
+    =>
+    < TK : TAKernel | api-call : return(TeeOpenTASession[# success # oid(N + 1, TK) # originTrustedApp]) ,
+                      counter : N + 2 >
+    < oid(N , TK) : Session |
+      req : noReq , ret : noRet , ta-id : RK >
+    freshSessionHandle(N + 1, TK, oid(N, TK))
+  .
+
+  --- open-session-fail: the openSessionFail(RET) answer of the TrustedOS finishes the call with
+  --- the code RET, the origin of the TEE, and TEE_HANDLE_NULL as the handle ([Internal Core]
+  --- 4.9.1).  No session object is created.
+  rl [open-session-fail] :
+    retTrustedOS(openSessionFail(RET), TK)
+    < TK : TAKernel | status : (normal).AppStatus , api-call : final(TeeOpenTASession[PARAMS]) >
+    =>
+    < TK : TAKernel | api-call : return(TeeOpenTASession[# RET # null # originTee]) >
+  .
+endom

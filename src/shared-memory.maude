@@ -57,10 +57,11 @@ mod SHARED-MEMORY-BEHAVIOR is
   var K : K .
 
   --- teecInvokeCommand(ES, EF, EL) runs as the stub of TEEC_InvokeCommand: the arguments are
-  --- evaluated ($inH, addr(E) to the location of E) and sent by invoke-ta-smc with the memory
-  --- of the client; invoke-ta-finish gives the client the memory back and the return code.
+  --- evaluated ($inH, addr(E) to the location of E) and sent by client-api-smc with the memory
+  --- of the client; client-api-finish gives the client the memory back and the return code.
+  --- It has no output lvalue: the TA writes the shared objects in the memory.
   eq k({ teecInvokeCommand(ES, EF, EL) } ~> K)
-   = k($inH(argNil, (ES, EF, EL)) ~> $wait(TeecInvokeCommand) ~> K) .
+   = k($inH(argNil, (ES, EF, EL)) ~> $wait(TeecInvokeCommand) ~> $out(nil) ~> K) .
 
   --- Typing (IMP-TYPING): the session is a TEEC-Session and the command an int; the arguments
   --- EL are not typed (they are the parameters of the TA service).  The call is a TEE-Result.

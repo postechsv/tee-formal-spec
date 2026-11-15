@@ -16,18 +16,12 @@ omod TEE-OS-BEHAVIOR is
 
   var KI : Oid .
   var SIL : List{Service} .
-  var SOL : List{ServiceReturn} .
   var NESOL : NeList{ServiceReturn} .
   var TK : Oid .
-  var TN : AppId .
   var STATUS : StorageStatus .
-  var SESS : Map{SessionId,Oid} .
   var SI : Oid .
   vars FILE FILE' : FileName .
   var FL : Set{FileName} .
-  var PROGC : Map{AppId,ProgramCell} .
-  var P : Program .
-  var N : Nat .
 
   msg reqTrustedOS : List{Service} Oid -> Msg .
   msg retTrustedOS : List{ServiceReturn} Oid -> Msg .
@@ -113,20 +107,4 @@ omod TEE-OS-BEHAVIOR is
     < SI : Storage | files : (FILE' , FL) > (msg notifyFileRename[# FILE' # FILE] from TK to SI)
   => < SI : Storage | files : (FILE , FL) > (msg acceptNotification[] from SI to TK) .
 
---- open-ta-session: the TrustedOS serves openTASession(TN) by creating the TA oid(N, KI) with
---- the program P of TN from ta-prog-map, its storage oid(0, oid(N, KI)) with no files, and
---- the session sessionId(N) that refers to it.  openSessionSuccess(oid(N, KI)) is queued in
---- service-out.
-  rl [open-ta-session] :
-    < KI : TrustedOS | service-in : (openTASession(TN) SIL) , service-out : SOL , ta-prog-map : (TN |-> [P] , PROGC) ,
-                         sess : SESS , session-counter : N >
-    =>
-    < KI : TrustedOS | service-in : SIL , service-out : (SOL openSessionSuccess(oid(N, KI))) ,
-                         sess : (sessionId(N) |-> oid(N, KI) , SESS) , session-counter : N + 1 >
-    < oid(N, KI) : TrustedApp | proc : none , prog : P ,
-                                 status : (normal).AppStatus , api-call : noCall , counter : 1 ,
-                                 storage : oid(0, oid(N, KI)) , os-kernel : KI ,
-                                 client-service : none >
-    < oid(0, oid(N, KI)) : Storage | status : (normal).StorageStatus , files : empty , counter : 0 >
-  .
 endom

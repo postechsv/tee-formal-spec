@@ -19,15 +19,20 @@
 --- in its client-service, {SID, FID}, so that the TrustedOS finds the client of its answer.
 ---
 --- Opening a session.  The TrustedOS decides in the same way for both kinds of client:
----   * the TA TN has no instance: the TrustedOS creates the instance from the program of TN in
----     ta-prog-map, with its storage, records it in ta-instances, and opens the session on it;
+---   * the single-instance TA TN has no instance: the TrustedOS creates the instance from the
+---     program of TN in ta-prog-map, with the storage of TN, records it in ta-instances, and
+---     opens the session on it;
 ---   * the instance of TN already has a session, and TN accepts one session at a time,
 ---     taConfig(true, false): TEE_ERROR_BUSY, TEEC_ERROR_BUSY for an RA;
 ---   * TN has an instance and accepts several sessions, taConfig(true, true): the session is
 ---     opened on that instance, which all the sessions of TN share, see [Internal Core] 2.1.6;
+---   * TN is a multi-instance TA, taConfig(false, MS): the TrustedOS creates a new instance for
+---     the session, see [Internal Core] 2.1.6, with the storage of TN; MS is ignored, see
+---     [Internal Core] 4.5, as each instance has one session;
 ---   * no TA has the identifier TN: TEE_ERROR_ITEM_NOT_FOUND.
---- Only the single-instance TAs, taConfig(true, MS) in ta-config, are served for now.  The
---- entry points TA_CreateEntryPoint and
+--- The storage of a TA is shared by all its instances, see [Internal Core] 2.2: the TrustedOS
+--- creates it, oid(0, TI), with the first instance TI of the TA, records it in ta-storages, and
+--- gives it to the later instances.  The entry points TA_CreateEntryPoint and
 --- TA_OpenSessionEntryPoint are not modeled: the instance is created and the session opened at
 --- once.  An RA gets the return code, and the new session after success; it is not given the
 --- return origin.  A TA gets the code, the handle (TEE_HANDLE_NULL on failure) and the origin.
@@ -80,7 +85,8 @@ omod SESSION-BEHAVIOR is
   var SESS : Map{SessionId,SessionInfo} .
   var PROGC : Map{AppId,ProgramCell} .
   var CFG : Map{AppId,TaConfig} .
-  var IM : Map{AppId,Oid} .
+  vars IM ST : Map{AppId,Oid} .
+  var SI : Oid .
   var FID : FuncId .
   var VL : ArgList .
   var PARAMS : ArgList .
@@ -99,16 +105,17 @@ omod SESSION-BEHAVIOR is
 --- Opening a session: the TrustedOS, for an RA (TEEC_OpenSession)
 ------------------------------------------------------------
 
---- teec-open-session: TN has no instance, so the TrustedOS creates the TA instance oid(N, KI)
---- with the program P of TN and its storage, records it as the instance of TN, and opens the
+--- teec-open-session: the single-instance TA TN has no instance, so the TrustedOS creates the TA
+--- instance oid(N, KI) with the program P of TN and the storage of TN, records them, and opens the
 --- session sessionId(N) of the RA RI on it.  The memory CS of the RA comes back unchanged.
   crl [teec-open-session] :
     smcReq(RI, TeecOpenSession, # TN, CS)
     < KI : TrustedOS | ta-prog-map : (TN |-> [P] , PROGC) ,
                        ta-config : (TN |-> taConfig(true, MS) , CFG) , ta-instances : IM ,
-                       sess : SESS , session-counter : N >
+                       ta-storages : ST , sess : SESS , session-counter : N >
     =>
     < KI : TrustedOS | ta-instances : (TN |-> oid(N, KI) , IM) ,
+                       ta-storages : (TN |-> oid(0, oid(N, KI)) , ST) ,
                        sess : (sessionId(N) |-> session(reeClient(RI), oid(N, KI)) , SESS) ,
                        session-counter : N + 1 >
     < oid(N, KI) : TrustedApp | proc : none , prog : P ,
@@ -117,7 +124,7 @@ omod SESSION-BEHAVIOR is
                                  client-service : none >
     < oid(0, oid(N, KI)) : Storage | status : (normal).StorageStatus , files : empty , counter : 0 >
     smcRet(RI, (# success # sessionId(N)), CS)
-  if not $hasMapping(IM, TN) .
+  if not $hasMapping(IM, TN) /\ not $hasMapping(ST, TN) .
 
 --- teec-open-session-busy: the instance TI of TN already has the session SID', and TN accepts
 --- one session at a time: TEEC_ERROR_BUSY.
@@ -128,6 +135,42 @@ omod SESSION-BEHAVIOR is
     =>
     < KI : TrustedOS | >
     smcRet(RI, # errorBusy, CS) .
+
+--- teec-open-session-instance: TN is a multi-instance TA, so the TrustedOS creates the instance
+--- oid(N, KI) for the session sessionId(N) of the RA RI.  TN has no storage yet: it is created
+--- with this first instance, oid(0, oid(N, KI)), and recorded.
+  crl [teec-open-session-instance] :
+    smcReq(RI, TeecOpenSession, # TN, CS)
+    < KI : TrustedOS | ta-prog-map : (TN |-> [P] , PROGC) ,
+                       ta-config : (TN |-> taConfig(false, MS) , CFG) ,
+                       ta-storages : ST , sess : SESS , session-counter : N >
+    =>
+    < KI : TrustedOS | ta-storages : (TN |-> oid(0, oid(N, KI)) , ST) ,
+                       sess : (sessionId(N) |-> session(reeClient(RI), oid(N, KI)) , SESS) ,
+                       session-counter : N + 1 >
+    < oid(N, KI) : TrustedApp | proc : none , prog : P ,
+                                 status : (normal).AppStatus , api-call : noCall , counter : 1 ,
+                                 storage : oid(0, oid(N, KI)) , os-kernel : KI ,
+                                 client-service : none >
+    < oid(0, oid(N, KI)) : Storage | status : (normal).StorageStatus , files : empty , counter : 0 >
+    smcRet(RI, (# success # sessionId(N)), CS)
+  if not $hasMapping(ST, TN) .
+
+--- teec-open-session-instance-storage: the same, when TN has the storage SI: the new instance
+--- gets SI.
+  rl [teec-open-session-instance-storage] :
+    smcReq(RI, TeecOpenSession, # TN, CS)
+    < KI : TrustedOS | ta-prog-map : (TN |-> [P] , PROGC) ,
+                       ta-config : (TN |-> taConfig(false, MS) , CFG) ,
+                       ta-storages : (TN |-> SI , ST) , sess : SESS , session-counter : N >
+    =>
+    < KI : TrustedOS | sess : (sessionId(N) |-> session(reeClient(RI), oid(N, KI)) , SESS) ,
+                       session-counter : N + 1 >
+    < oid(N, KI) : TrustedApp | proc : none , prog : P ,
+                                 status : (normal).AppStatus , api-call : noCall , counter : 1 ,
+                                 storage : SI , os-kernel : KI ,
+                                 client-service : none >
+    smcRet(RI, (# success # sessionId(N)), CS) .
 
 --- teec-open-session-shared: TN has the instance TI and accepts several sessions, so the
 --- session sessionId(N) of the RA RI is opened on TI.
@@ -153,19 +196,20 @@ omod SESSION-BEHAVIOR is
 --- Opening a session: the TrustedOS, for a TA (openTASession)
 ------------------------------------------------------------
 
---- open-ta-session: TN has no instance, so the TrustedOS creates the TA instance oid(N, KI) with
---- the program P of TN from ta-prog-map and its storage oid(0, oid(N, KI)) with no files,
---- records it as the instance of TN, and opens the session sessionId(N) of the requesting TA TK
---- on it.  openSessionSuccess(sessionId(N)) is queued in service-out.
+--- open-ta-session: the single-instance TA TN has no instance, so the TrustedOS creates the TA
+--- instance oid(N, KI) with the program P of TN from ta-prog-map and the storage of TN,
+--- oid(0, oid(N, KI)) with no files, records them, and opens the session sessionId(N) of the
+--- requesting TA TK on it.  openSessionSuccess(sessionId(N)) is queued in service-out.
   crl [open-ta-session] :
     < KI : TrustedOS | service-in : (openTASession(TN) SIL) , service-out : SOL ,
                        service-request-ta-inst : TK ,
                        ta-prog-map : (TN |-> [P] , PROGC) ,
                        ta-config : (TN |-> taConfig(true, MS) , CFG) , ta-instances : IM ,
-                       sess : SESS , session-counter : N >
+                       ta-storages : ST , sess : SESS , session-counter : N >
     =>
     < KI : TrustedOS | service-in : SIL , service-out : (SOL openSessionSuccess(sessionId(N))) ,
                        ta-instances : (TN |-> oid(N, KI) , IM) ,
+                       ta-storages : (TN |-> oid(0, oid(N, KI)) , ST) ,
                        sess : (sessionId(N) |-> session(taClient(TK), oid(N, KI)) , SESS) ,
                        session-counter : N + 1 >
     < oid(N, KI) : TrustedApp | proc : none , prog : P ,
@@ -173,7 +217,7 @@ omod SESSION-BEHAVIOR is
                                  storage : oid(0, oid(N, KI)) , os-kernel : KI ,
                                  client-service : none >
     < oid(0, oid(N, KI)) : Storage | status : (normal).StorageStatus , files : empty , counter : 0 >
-  if not $hasMapping(IM, TN) .
+  if not $hasMapping(IM, TN) /\ not $hasMapping(ST, TN) .
 
 --- open-ta-session-busy: the instance TI of TN already has the session SID', and TN accepts one
 --- session at a time, so the session is not opened: TEE_ERROR_BUSY, [Internal Core] 4.9.1.
@@ -183,6 +227,45 @@ omod SESSION-BEHAVIOR is
                        ta-instances : (TN |-> TI , IM) , sess : (SID' |-> session(CL, TI) , SESS) >
     =>
     < KI : TrustedOS | service-in : SIL , service-out : (SOL openSessionFail(errorBusy)) >
+  .
+
+--- open-ta-session-instance: TN is a multi-instance TA, so the TrustedOS creates the instance
+--- oid(N, KI) for the session sessionId(N) of the requesting TA TK.  TN has no storage yet: it is
+--- created with this first instance, oid(0, oid(N, KI)), and recorded.
+  crl [open-ta-session-instance] :
+    < KI : TrustedOS | service-in : (openTASession(TN) SIL) , service-out : SOL ,
+                       service-request-ta-inst : TK ,
+                       ta-prog-map : (TN |-> [P] , PROGC) ,
+                       ta-config : (TN |-> taConfig(false, MS) , CFG) ,
+                       ta-storages : ST , sess : SESS , session-counter : N >
+    =>
+    < KI : TrustedOS | service-in : SIL , service-out : (SOL openSessionSuccess(sessionId(N))) ,
+                       ta-storages : (TN |-> oid(0, oid(N, KI)) , ST) ,
+                       sess : (sessionId(N) |-> session(taClient(TK), oid(N, KI)) , SESS) ,
+                       session-counter : N + 1 >
+    < oid(N, KI) : TrustedApp | proc : none , prog : P ,
+                                 status : (normal).AppStatus , api-call : noCall , counter : 1 ,
+                                 storage : oid(0, oid(N, KI)) , os-kernel : KI ,
+                                 client-service : none >
+    < oid(0, oid(N, KI)) : Storage | status : (normal).StorageStatus , files : empty , counter : 0 >
+  if not $hasMapping(ST, TN) .
+
+--- open-ta-session-instance-storage: the same, when TN has the storage SI: the new instance gets
+--- SI.
+  rl [open-ta-session-instance-storage] :
+    < KI : TrustedOS | service-in : (openTASession(TN) SIL) , service-out : SOL ,
+                       service-request-ta-inst : TK ,
+                       ta-prog-map : (TN |-> [P] , PROGC) ,
+                       ta-config : (TN |-> taConfig(false, MS) , CFG) ,
+                       ta-storages : (TN |-> SI , ST) , sess : SESS , session-counter : N >
+    =>
+    < KI : TrustedOS | service-in : SIL , service-out : (SOL openSessionSuccess(sessionId(N))) ,
+                       sess : (sessionId(N) |-> session(taClient(TK), oid(N, KI)) , SESS) ,
+                       session-counter : N + 1 >
+    < oid(N, KI) : TrustedApp | proc : none , prog : P ,
+                                 status : (normal).AppStatus , api-call : noCall , counter : 1 ,
+                                 storage : SI , os-kernel : KI ,
+                                 client-service : none >
   .
 
 --- open-ta-session-shared: TN has the instance TI and accepts several sessions, so the session

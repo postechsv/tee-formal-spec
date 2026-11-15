@@ -1,8 +1,9 @@
 --- Opening a session: TEEC_OpenSession of an RA ([Client API] 4.5.7) and TEE_OpenTASession of a
 --- TA ([Internal Core] 4.9.1).  The TA instance is not in the initial configuration: the
 --- TrustedOS creates it from ta-prog-map at the first session.  The TA TESTTA is a single
---- instance with a single session, taConfig(true, false), and the TA MSTA a single instance with
---- several sessions, taConfig(true, true), see [Internal Core] 4.5.
+--- instance with a single session, taConfig(true, false), the TA MSTA a single instance with
+--- several sessions, taConfig(true, true), and the TA MITA a multi-instance TA, taConfig(false,
+--- false), see [Internal Core] 4.5.
 load ../../src/main
 load ../cases/aux
 
@@ -15,6 +16,7 @@ mod CLIENT-SESSION-TEST is
   op check : -> FuncId [ctor] .
   op unknownTa : -> AppId [ctor] .
   op MSTA : -> AppId [ctor] .
+  op MITA : -> AppId [ctor] .
   op ra2 : -> Oid [ctor] .
   vars S S1 S2 : Program .
   var TN : AppId .
@@ -61,13 +63,15 @@ mod CLIENT-SESSION-TEST is
     TEEC-Session s ; TEE-Result r ;
     r := teecOpenSession(# unknownTa, s) ; .
 
-  --- os: the TrustedOS has the program dfProg of TESTTA and MSTA and no TA instance.
+  --- os: the TrustedOS has the program dfProg of TESTTA, MSTA and MITA, and no TA instance or
+  --- storage.
   op os : -> Configuration .
   eq os =
     < osId : TrustedOS | sess : empty, session-counter : 0,
-        ta-prog-map : (TESTTA |-> [dfProg], MSTA |-> [dfProg]),
-        ta-config : (TESTTA |-> taConfig(true, false), MSTA |-> taConfig(true, true)),
-        ta-instances : empty > .
+        ta-prog-map : (TESTTA |-> [dfProg], MSTA |-> [dfProg], MITA |-> [dfProg]),
+        ta-config : (TESTTA |-> taConfig(true, false), MSTA |-> taConfig(true, true),
+                     MITA |-> taConfig(false, false)),
+        ta-instances : empty, ta-storages : empty > .
 
   --- ree(S): the RA testRa runs S.
   op ree : Program -> Configuration .
@@ -243,3 +247,73 @@ search [1] in CLIENT-SESSION-TEST :
 =>1
   (msg finishReqInvoke[# cstore((0 |-> # 1), 1, empty) # originTee # errorTargetDead] from osId to testTa)
   C:Configuration .
+
+------------------------------------------------------------
+--- A multi-instance TA: MITA
+------------------------------------------------------------
+
+--- The RA opens two sessions with MITA: both succeed, each on its own instance, oid(0, osId) and
+--- oid(1, osId), and both instances have the one storage of MITA, created with the first.
+search [1] in CLIENT-SESSION-TEST : ree(openTwiceTo(MITA)) =>!
+  < testRa : RichApp | prog : S,
+      proc : (k(.K) env((s |-> LS:Nat) ; (s2 |-> LS2:Nat) ; (r |-> LC:Nat) ; (r2 |-> LC2:Nat) ; ENV:Map{Var,Nat})
+              store((LS:Nat |-> # sessionId(0)) ; (LS2:Nat |-> # sessionId(1)) ; (LC:Nat |-> # success) ;
+                    (LC2:Nat |-> # success) ; MEM:Map{Nat,Value?}) KS:KConfig) >
+  < osId : TrustedOS |
+      sess : (sessionId(0) |-> session(reeClient(testRa), oid(0, osId)),
+              sessionId(1) |-> session(reeClient(testRa), oid(1, osId))),
+      ta-instances : empty, ta-storages : (MITA |-> oid(0, oid(0, osId))), OSATTS:AttributeSet >
+  < oid(0, osId) : TrustedApp | storage : oid(0, oid(0, osId)), TAATTS:AttributeSet >
+  < oid(1, osId) : TrustedApp | storage : oid(0, oid(0, osId)), TAATTS':AttributeSet >
+  < oid(0, oid(0, osId)) : Storage | STATTS:AttributeSet > .
+
+--- Two RAs open a session with MITA and invoke check in it: both calls of both RAs succeed, each
+--- RA served by its own instance.
+search [1] in CLIENT-SESSION-TEST : ree2(openInvokeTo(MITA), openInvokeTo(MITA)) =>!
+  < testRa : RichApp | prog : S1,
+      proc : (k(.K) env((res |-> LR:Nat) ; (r |-> LC:Nat) ; (r2 |-> LC2:Nat) ; ENV:Map{Var,Nat})
+              store((LR:Nat |-> # data(1)) ; (LC:Nat |-> # success) ; (LC2:Nat |-> # success) ;
+                    MEM:Map{Nat,Value?}) KS:KConfig) >
+  < ra2 : RichApp | prog : S2,
+      proc : (k(.K) env((res |-> LR':Nat) ; (r |-> LC':Nat) ; (r2 |-> LC2':Nat) ; ENV':Map{Var,Nat})
+              store((LR':Nat |-> # data(1)) ; (LC':Nat |-> # success) ; (LC2':Nat |-> # success) ;
+                    MEM':Map{Nat,Value?}) KS':KConfig) >
+  < oid(0, osId) : TrustedApp | TAATTS:AttributeSet >
+  < oid(1, osId) : TrustedApp | TAATTS':AttributeSet >
+  C:Configuration .
+
+--- In no final state is a call of testRa unfinished or failed.
+--- expect: no solution
+search in CLIENT-SESSION-TEST : ree2(openInvokeTo(MITA), openInvokeTo(MITA)) =>!
+  < testRa : RichApp | prog : S1,
+      proc : (k(K:K) env((res |-> LR:Nat) ; (r |-> LC:Nat) ; (r2 |-> LC2:Nat) ; ENV:Map{Var,Nat})
+              store((LR:Nat |-> V:Value?) ; (LC:Nat |-> V1:Value?) ; (LC2:Nat |-> V2:Value?) ;
+                    MEM:Map{Nat,Value?}) KS:KConfig) >
+  C:Configuration
+  such that K:K =/= .K or V:Value? =/= # data(1) or V1:Value? =/= # success or V2:Value? =/= # success .
+
+--- The same for ra2.
+--- expect: no solution
+search in CLIENT-SESSION-TEST : ree2(openInvokeTo(MITA), openInvokeTo(MITA)) =>!
+  < ra2 : RichApp | prog : S2,
+      proc : (k(K:K) env((res |-> LR:Nat) ; (r |-> LC:Nat) ; (r2 |-> LC2:Nat) ; ENV:Map{Var,Nat})
+              store((LR:Nat |-> V:Value?) ; (LC:Nat |-> V1:Value?) ; (LC2:Nat |-> V2:Value?) ;
+                    MEM:Map{Nat,Value?}) KS:KConfig) >
+  C:Configuration
+  such that K:K =/= .K or V:Value? =/= # data(1) or V1:Value? =/= # success or V2:Value? =/= # success .
+
+--- A TA opens a session with MITA, which has the storage oid(0, oid(0, osId)): the TrustedOS
+--- creates the new instance oid(1, osId) for the session sessionId(1), with that storage.
+search [1] in CLIENT-SESSION-TEST :
+  < osId : TrustedOS |
+      service-in : openTASession(MITA) nil, service-out : nil, service-request-ta-inst : testTa,
+      ta-prog-map : MITA |-> [dfProg],
+      ta-config : MITA |-> taConfig(false, false), ta-instances : empty,
+      ta-storages : MITA |-> oid(0, oid(0, osId)),
+      sess : sessionId(0) |-> session(taClient(otherTa), oid(0, osId)), session-counter : 1 >
+=>1
+  < osId : TrustedOS | service-in : nil, service-out : openSessionSuccess(sessionId(1)),
+      sess : (sessionId(0) |-> session(taClient(otherTa), oid(0, osId)),
+              sessionId(1) |-> session(taClient(testTa), oid(1, osId))),
+      session-counter : 2, OSATTS:AttributeSet >
+  < oid(1, osId) : TrustedApp | storage : oid(0, oid(0, osId)), os-kernel : osId, TAATTS:AttributeSet > .

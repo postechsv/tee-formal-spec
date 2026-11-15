@@ -127,8 +127,9 @@ endv
 --- taConfig(SI, MS): SI is gpd.ta.singleInstance, whether one TA instance serves all the client
 --- sessions (true) or each session has its own instance (false); MS is gpd.ta.multiSession,
 --- whether the instance accepts more than one session at a time (ignored when SI is false).
---- The TrustedOS serves only the single-instance configurations for now: taConfig(true, false),
---- a single session at a time, and taConfig(true, true), several sessions on the instance.
+--- The TrustedOS serves taConfig(true, false), a single instance with a single session at a time,
+--- taConfig(true, true), a single instance with several sessions, and taConfig(false, MS), an
+--- instance for each session.
 
 --- @kind data
 --- @feature os
@@ -190,8 +191,9 @@ omod TEE-OS is
 
   --- The further attributes are session-counter, service-request-ta-inst, service-in,
   --- service-out, temporary-objects and ta-prog-map, which hold the service queues and maps.
-  --- ta-config gives the configuration of each TA, and ta-instances the instance of each
-  --- single-instance TA that has one.  sess holds every open session, of an RA or of a TA,
+  --- ta-config gives the configuration of each TA, ta-instances the instance of each
+  --- single-instance TA that has one, and ta-storages the storage of each TA that has one: the
+  --- storage of a TA is shared by all its instances, see [Internal Core] 2.2.  sess holds every open session, of an RA or of a TA,
   --- with its client and the TA instance that serves it.
   class TrustedOS | sess : Map{SessionId,SessionInfo},
                     session-counter : Nat,
@@ -200,7 +202,8 @@ omod TEE-OS is
                     temporary-objects : Map{Oid,Set{Oid}},
                     ta-prog-map : Map{AppId,ProgramCell},
                     ta-config : Map{AppId,TaConfig},
-                    ta-instances : Map{AppId,Oid} .
+                    ta-instances : Map{AppId,Oid},
+                    ta-storages : Map{AppId,Oid} .
 endom
 
 --- @kind interface

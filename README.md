@@ -103,12 +103,12 @@ tee-formal-spec/
 | `tee-data-type.maude` | Models of GlobalPlatform API data structures |
 | `tee-api.maude`, `tee-api-call.maude` | API identifiers, call parameters, and return values |
 | `tee-msg.maude` | Message layer of the TEE API models |
-| `session.maude` | Sessions: opening a session (TEEC_OpenSession, TEE_OpenTASession) with the TA instances it creates, and the requests of a TA through its session |
+| `session.maude` | Sessions of an RA or a TA client: opening a session (TEEC_OpenSession, TEE_OpenTASession) with the TA instance it creates, and invoking a command in it |
 | `tee-kernel.maude` | TA kernel and API execution state |
 | `tee-panic.maude` | General programmer errors and invalid-handle panics |
 | `persistent-panic.maude`, `data-stream-panic.maude`, `crypto-panic.maude` | Panics of the storage and cryptographic APIs |
 | `os.maude`, `os-service.maude` | Trusted OS and storage services |
-| `app.maude`, `ree-app.maude`, `tee-app.maude`, `tee-client.maude` | REE/TEE applications and client behavior |
+| `app.maude`, `ree-app.maude`, `tee-app.maude` | REE/TEE applications and client behavior |
 | `shared-memory.maude` | Shared memory of a client and a TA: the client passes its memory with the call, the TA runs on it and passes it back; the IMP client call `teecInvokeCommand` |
 
 ### Program execution

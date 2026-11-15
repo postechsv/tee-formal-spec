@@ -64,7 +64,7 @@ search [1] in CLIENT-SESSION-TEST : ree(openInvokeProg) =>!
       proc : (k(.K) env((s |-> LS:Nat) ; (res |-> LR:Nat) ; (r |-> LC:Nat) ; (r2 |-> LC2:Nat) ; ENV:Map{Var,Nat})
               store((LS:Nat |-> # sessionId(0)) ; (LR:Nat |-> # data(1)) ; (LC:Nat |-> # success) ;
                     (LC2:Nat |-> # success) ; MEM:Map{Nat,Value?}) KS:KConfig) >
-  < osId : TrustedOS | sess : (sessionId(0) |-> oid(0, osId)), ta-instances : (TESTTA |-> oid(0, osId)),
+  < osId : TrustedOS | sess : (sessionId(0) |-> session(reeClient(testRa), oid(0, osId))), ta-instances : (TESTTA |-> oid(0, osId)),
       OSATTS:AttributeSet >
   < oid(0, osId) : TrustedApp | proc : none, client-service : none, TAATTS:AttributeSet >
   < oid(0, oid(0, osId)) : Storage | STATTS:AttributeSet > .
@@ -76,7 +76,7 @@ search [1] in CLIENT-SESSION-TEST : ree(openTwiceProg) =>!
       proc : (k(.K) env((s |-> LS:Nat) ; (r |-> LC:Nat) ; (r2 |-> LC2:Nat) ; ENV:Map{Var,Nat})
               store((LS:Nat |-> # sessionId(0)) ; (LC:Nat |-> # success) ; (LC2:Nat |-> # errorBusy) ;
                     MEM:Map{Nat,Value?}) KS:KConfig) >
-  < osId : TrustedOS | sess : (sessionId(0) |-> oid(0, osId)), session-counter : 1,
+  < osId : TrustedOS | sess : (sessionId(0) |-> session(reeClient(testRa), oid(0, osId))), session-counter : 1,
       OSATTS:AttributeSet >
   < oid(0, osId) : TrustedApp | TAATTS:AttributeSet >
   < oid(0, oid(0, osId)) : Storage | STATTS:AttributeSet > .
@@ -92,17 +92,17 @@ search [1] in CLIENT-SESSION-TEST : ree(openUnknownProg) =>!
 --- TEE_OpenTASession
 ------------------------------------------------------------
 
---- The instance oid(0, osId) of TESTTA already has a session: a TA that opens a session with
---- TESTTA gets openSessionFail(errorBusy).
+--- The instance oid(0, osId) of TESTTA already has a session, of the TA otherTa: a TA that
+--- opens a session with TESTTA gets openSessionFail(errorBusy).
 search [1] in CLIENT-SESSION-TEST :
   < osId : TrustedOS |
       service-in : openTASession(TESTTA) nil, service-out : nil,
       ta-prog-map : TESTTA |-> [dfProg],
       ta-config : TESTTA |-> taConfig(true, false), ta-instances : TESTTA |-> oid(0, osId),
-      sess : sessionId(0) |-> oid(0, osId), session-counter : 1 >
+      sess : sessionId(0) |-> session(taClient(otherTa), oid(0, osId)), session-counter : 1 >
 =>1
   < osId : TrustedOS | service-in : nil, service-out : openSessionFail(errorBusy),
-      sess : sessionId(0) |-> oid(0, osId), session-counter : 1, OSATTS:AttributeSet > .
+      sess : sessionId(0) |-> session(taClient(otherTa), oid(0, osId)), session-counter : 1, OSATTS:AttributeSet > .
 
 --- A TA that does not exist: openSessionFail(errorItemNotFound).
 search [1] in CLIENT-SESSION-TEST :

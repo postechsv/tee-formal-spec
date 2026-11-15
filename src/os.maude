@@ -1,19 +1,20 @@
---- This module defines calls to invoke TA. The request
---- invkTa[FID, VL, CS] carries the TA service FID, its argument values VL and the memory CS of
---- the client; the response invkTaRet[CS] carries the memory back, as the TA has left it.
---- The TA runs on the memory of the client (see mkConf), so an output parameter is an object
---- of the client that the TA writes.
+--- This module defines calls to invoke TA, between the TrustedOS and the TA instance of a
+--- session. The request invkTa[SID, FID, VL, CS] of the session SID carries the TA service FID,
+--- its argument values VL and the memory CS of the client; the response invkTaRet[SID, CS]
+--- carries the memory back, as the TA has left it.  The TA runs on the memory of the client,
+--- see mkConf, so an output parameter is an object of the client that the TA writes.
 
 --- @kind messages
 --- @feature os
 omod INVOKE-TA-CALL is
   pr TEE-MSG .
+  pr SESSION-ID .
   pr IMP-FUNC-SIG .
   pr IMP-EXP-LIST .
   pr IMP-CONFIG .
 
-  op invkTa[_,_,_] : APIFuncId ArgList CStore -> Req [ctor] .
-  op invkTaRet[_] : CStore -> Req [ctor] .
+  op invkTa[_,_,_,_] : SessionId APIFuncId ArgList CStore -> Req [ctor] .
+  op invkTaRet[_,_] : SessionId CStore -> Req [ctor] .
 endom
 
 --- This module defines SMC calls between REE and TEE execution environments.
@@ -143,6 +144,29 @@ view TaConfig from TRIV to TA-CONFIG is
   sort Elt to TaConfig .
 endv
 
+--- This module defines the open sessions that the TrustedOS records.
+--- session(CL, TI): a session of the client CL on the TA instance TI.  The client is an RA,
+--- reeClient(RI), or a TA, taClient(TK): the TrustedOS answers each through its own channel,
+--- smcRet for an RA and a message for a TA.  The kind of the client is the login of its identity,
+--- gpd.client.identity, see [Internal Core] 4.2.2 and 4.6: TEE_LOGIN_TRUSTED_APP for a TA, a
+--- login of the REE for an RA.
+
+--- @kind data
+--- @feature os
+mod SESSION-INFO is
+  pr OBJECT-ID .
+
+  sorts Client SessionInfo .
+
+  op reeClient : Oid -> Client [ctor] .
+  op taClient : Oid -> Client [ctor] .
+  op session : Client Oid -> SessionInfo [ctor] .
+endm
+
+view SessionInfo from TRIV to SESSION-INFO is
+  sort Elt to SessionInfo .
+endv
+
 --- This module defines the trusted OS.
 
 --- @kind state
@@ -155,7 +179,7 @@ omod TEE-OS is
   pr MAP{AppId,ProgramCell} .
   pr MAP{AppId,TaConfig} .
   pr MAP{AppId,Oid} .
-  pr MAP{SessionId,Oid} .
+  pr MAP{SessionId,SessionInfo} .
   pr MAP{Oid,Set{Oid}} * (op undefined to noObject) .
   pr LIST{Service} .
   pr LIST{ServiceReturn} .
@@ -168,8 +192,8 @@ omod TEE-OS is
   --- service-out, temporary-objects and ta-prog-map, which hold the service queues and maps.
   --- ta-config gives the configuration of each TA, and ta-instances the instance of each
   --- single-instance TA that has one.  sess holds every open session, of an RA or of a TA,
-  --- with the TA instance that serves it.
-  class TrustedOS | sess : Map{SessionId,Oid},
+  --- with its client and the TA instance that serves it.
+  class TrustedOS | sess : Map{SessionId,SessionInfo},
                     session-counter : Nat,
                     service-request-ta-inst : Oid?,
                     service-in : List{Service}, service-out : List{ServiceReturn},
@@ -185,12 +209,13 @@ mod TEE-OS-SERVICE is
   pr SERVICE .
   pr APP-ID .
   pr OBJECT-ID .
+  pr SESSION-ID .
   pr RETURN-CODE .
 
---- Session: openSessionSuccess(TI) gives the TA instance TI of the new session, and
---- openSessionFail(RET) the code RET of a session that is not opened.
+--- Session: openSessionSuccess(SID) gives the new session SID, and openSessionFail(RET) the
+--- code RET of a session that is not opened.
   op openTASession : AppId -> Service [ctor] .
-  op openSessionSuccess : Oid -> ServiceReturn [ctor] .
+  op openSessionSuccess : SessionId -> ServiceReturn [ctor] .
   op openSessionFail : ReturnCode -> ServiceReturn [ctor] .
 endm
 

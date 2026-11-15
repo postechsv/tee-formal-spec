@@ -42,21 +42,19 @@ mod SHM-TEST is
     r := teecInvokeCommand(# sid, # F, (addr(b), addr(res))) ; .
 
   --- client(S, P): the RA testRa runs the program S, and has a session sid with testTa, which
-  --- runs P.
+  --- runs P.  The TrustedOS records the session with its client testRa.
   op client : Program Program -> Configuration .
   eq client(S, P) =
     < testRa : RichApp | prog : S, proc : mkConf(S) >
-    < osId : TrustedOS | sess : (sid |-> testTa) >
+    < osId : TrustedOS | sess : (sid |-> session(reeClient(testRa), testTa)) >
     < testTa : TrustedApp | proc : none, prog : P, client-service : none,
         status : (normal).AppStatus, api-call : noCall, counter : 0, storage : oid(0, testTa),
         os-kernel : osId > .
 
-  --- callee(P): testTa has a session oid(1, testTa), with the handle oid(2, testTa), with
-  --- otherTa, which runs P.
+  --- callee(P): testTa has a session sid with otherTa, which runs P.
   op callee : Program -> Configuration .
   eq callee(P) =
-    < oid(1, testTa) : Session | req : noReq, ret : noRet, ta-id : otherTa >
-    < oid(2, testTa) : TaSessionHandle | oid : oid(1, testTa) >
+    < osId : TrustedOS | sess : (sid |-> session(taClient(testTa), otherTa)) >
     < otherTa : TrustedApp | proc : none, prog : P, client-service : none,
         status : (normal).AppStatus, api-call : noCall, counter : 0, storage : oid(0, otherTa),
         os-kernel : osId > .
@@ -105,28 +103,28 @@ search [1] in SHM-TEST : client(cliProg(fill), fillProg) =>!
 --- A TA calls another TA
 ------------------------------------------------------------
 
---- testTa sends reqInvoke for fill with its memory, where b is location 0 and res location 1,
---- through its session handle oid(2, testTa); otherTa serves it on that memory, and the
---- memory comes back with the two fragments at 0 and data(5) at 1.
+--- testTa sends reqInvoke for fill in its session sid with its memory, where b is location 0
+--- and res location 1; otherTa serves it on that memory, and the memory comes back with the two
+--- fragments at 0 and data(5) at 1.
 search [1] in SHM-TEST :
-  (msg reqInvoke[# fill # cstore((0 |-> # data(1)) ; (1 |-> # noData), 2, empty) # (loc(0) loc(1))]
-    from testTa to oid(2, testTa))
+  (msg reqInvoke[# sid # fill # cstore((0 |-> # data(1)) ; (1 |-> # noData), 2, empty) # (loc(0) loc(1))]
+    from testTa to osId)
   callee(fillProg)
   =>!
-  (msg finishReqInvoke[# fill # cstore((0 |-> # (data(7) data(8))) ; (1 |-> # data(5)) ; MEM:Map{Nat,Value?},
-                                     L:Nat, AL:Map{Nat,Nat}) # (# originTrustedApp # success)]
-    from oid(2, testTa) to testTa)
+  (msg finishReqInvoke[# cstore((0 |-> # (data(7) data(8))) ; (1 |-> # data(5)) ; MEM:Map{Nat,Value?},
+                                L:Nat, AL:Map{Nat,Nat}) # originTrustedApp # success]
+    from osId to testTa)
   C:Configuration .
 
 --- If otherTa panics, testTa gets target-dead from the TEE, with the memory as otherTa left it:
 --- data(7) at 0, and res unchanged at 1.
 search [1] in SHM-TEST :
-  (msg reqInvoke[# fill # cstore((0 |-> # data(1)) ; (1 |-> # noData), 2, empty) # (loc(0) loc(1))]
-    from testTa to oid(2, testTa))
+  (msg reqInvoke[# sid # fill # cstore((0 |-> # data(1)) ; (1 |-> # noData), 2, empty) # (loc(0) loc(1))]
+    from testTa to osId)
   callee(panicProg)
   =>!
-  (msg finishReqInvoke[# fill # cstore((0 |-> # data(7)) ; (1 |-> # (nil).List{Data}) ; MEM:Map{Nat,Value?},
-                                     L:Nat, AL:Map{Nat,Nat}) # (# originTee # errorTargetDead)]
-    from oid(2, testTa) to testTa)
+  (msg finishReqInvoke[# cstore((0 |-> # data(7)) ; (1 |-> # (nil).List{Data}) ; MEM:Map{Nat,Value?},
+                                L:Nat, AL:Map{Nat,Nat}) # originTee # errorTargetDead]
+    from osId to testTa)
   < otherTa : TrustedApp | status : panic, AS:AttributeSet >
   C:Configuration .

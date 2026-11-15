@@ -33,10 +33,12 @@ endv
 
 --- @kind state
 --- @feature ta-session
+--- The handle of a TA session names the session in the TrustedOS (session), not an object.
 omod TA-SESSION-HANDLE is
   pr HANDLE .
+  pr SESSION-ID .
 
-  class TaSessionHandle | is-initialized : Bool .
+  class TaSessionHandle | session : SessionId, is-initialized : Bool .
   subclass TaSessionHandle < Handle .
 endom
 
@@ -168,6 +170,7 @@ omod HANDLE-AUX is
   var HANDLE : Oid .
   var OI : Oid .
   var OC : OpClass .
+  var SID : SessionId .
 
   --- The fresh*Handle operators create a new handle object with identifier oid(N, TK) in the
   --- initial state of its handle class.
@@ -175,8 +178,7 @@ omod HANDLE-AUX is
   op freshPersistentHandle : Nat Oid Set{DataAccessFlag} Oid -> Configuration .
   op freshEnumeratorHandle : Nat Oid Oid -> Configuration .
   op freshOperationHandle : Nat Oid Oid OpClass -> Configuration .
-  op freshSessionHandle : Nat Oid -> Configuration . 
-  op freshSessionHandle : Nat Oid Oid -> Configuration .
+  op freshSessionHandle : Nat Oid SessionId -> Configuration .
   
   --- nullHandle(HANDLE): true only for the null handle.
   op nullHandle : Oid -> Bool .
@@ -203,10 +205,7 @@ omod HANDLE-AUX is
                                             key-material-set : false,
                                             opclass : OC > .
 
-  eq freshSessionHandle(N, TK)
-  = < oid(N, TK) : TaSessionHandle | is-initialized : true > .
-
-  eq freshSessionHandle(N, TK, OI)
-  = < oid(N, TK) : TaSessionHandle | oid : OI,
+  eq freshSessionHandle(N, TK, SID)
+  = < oid(N, TK) : TaSessionHandle | session : SID,
                                            is-initialized : true > .
 endom

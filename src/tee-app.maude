@@ -1,17 +1,18 @@
 --- This file defines the abstract trusted application (TA) class and the commands it uses
 
---- The client-service attribute of a TA: either {RI, FID}, the requesting RA RI and the
---- service function FID, or none.
+--- The client-service attribute of a TA: either {SID, FID}, the session SID of the request and
+--- the service function FID, or none.  The TrustedOS knows the client of the session.
 --- @kind interface
 --- @feature client
 omod CLIENT-SERVICE is
   pr CONFIGURATION .
+  pr SESSION-ID .
   pr IMP-FUNC-SIG .
 
   sorts ClientService ClientService? .
   subsort ClientService < ClientService? .
 
-  op {_,_} : Oid APIFuncId -> ClientService [ctor] .
+  op {_,_} : SessionId APIFuncId -> ClientService [ctor] .
   op none : -> ClientService? [ctor] .
 endom
 
@@ -40,8 +41,9 @@ omod TRUST-APP-BEHAVIOR is
   pr PROGRAM-APP-AUX .
   pr INVOKE-TA-CALL .
 
-  var RI : Oid .
+  var KI : Oid .
   var TI : Oid .
+  var SID : SessionId .
   var FID : FuncId .
   var P : Program .
   var KS : KConfig .
@@ -51,28 +53,29 @@ omod TRUST-APP-BEHAVIOR is
   var L : Nat .
   var AL : Map{Nat,Nat} .
 
-  --- handle-invoke-ta: an invkTa request for the service FID with the values VL and the memory
-  --- CS of the client starts the program of the TA with mkConf(syscalls P, FID, VL, CS), on
-  --- that memory, and records {RI, FID} as its client-service.
+  --- handle-invoke-ta: an invkTa request of its TrustedOS KI, in the session SID, for the
+  --- service FID with the values VL and the memory CS of the client starts the program of the TA
+  --- with mkConf(syscalls P, FID, VL, CS), on that memory, and records {SID, FID} as its
+  --- client-service.
   rl [handle-invoke-ta] :
-    (msg invkTa[FID, VL, CS] from RI to TI)
-    < TI : TrustedApp | proc : none , client-service : none ,
+    (msg invkTa[SID, FID, VL, CS] from KI to TI)
+    < TI : TrustedApp | proc : none , client-service : none , os-kernel : KI ,
                         prog : P , status : (normal).AppStatus >
     =>
     < TI : TrustedApp | proc : mkConf(syscalls P , FID , VL , CS) ,
-                        client-service : {RI , FID} >
+                        client-service : {SID , FID} >
   .
 
   --- handle-invoke-ta-finish: when the program has finished, its memory, with what the service
-  --- wrote to the objects of the client, is returned to the RA as invkTaRet, and the TA is
-  --- available again.  The objects of the TA stay in the memory, past the locations of the
-  --- client.
+  --- wrote to the objects of the client, is returned to the TrustedOS as invkTaRet of the session,
+  --- and the TA is available again.  The objects of the TA stay in the memory, past the locations
+  --- of the client.
   rl [handle-invoke-ta-finish] :
-    < TI : TrustedApp | proc : (k(.K) store(MEM) nextLoc(L) arrlen(AL) KS) ,
-                        client-service : {RI , FID} , status : (normal).AppStatus >
+    < TI : TrustedApp | proc : (k(.K) store(MEM) nextLoc(L) arrlen(AL) KS) , os-kernel : KI ,
+                        client-service : {SID , FID} , status : (normal).AppStatus >
     =>
     < TI : TrustedApp | proc : none , client-service : none >
-    (msg invkTaRet[cstore(MEM, L, AL)] from TI to RI)
+    (msg invkTaRet[SID, cstore(MEM, L, AL)] from TI to KI)
   .
 
 endom

@@ -1,7 +1,8 @@
 --- Opening a session: TEEC_OpenSession of an RA ([Client API] 4.5.7) and TEE_OpenTASession of a
 --- TA ([Internal Core] 4.9.1).  The TA instance is not in the initial configuration: the
 --- TrustedOS creates it from ta-prog-map at the first session.  The TA TESTTA is a single
---- instance with a single session, taConfig(true, false) ([Internal Core] 4.5).
+--- instance with a single session, taConfig(true, false), and the TA MSTA a single instance with
+--- several sessions, taConfig(true, true), see [Internal Core] 4.5.
 load ../../src/main
 load ../cases/aux
 
@@ -13,7 +14,10 @@ mod CLIENT-SESSION-TEST is
   ops s s2 b buf res r r2 : -> Var [ctor] .
   op check : -> FuncId [ctor] .
   op unknownTa : -> AppId [ctor] .
-  var S : Program .
+  op MSTA : -> AppId [ctor] .
+  op ra2 : -> Oid [ctor] .
+  vars S S1 S2 : Program .
+  var TN : AppId .
 
   --- dfProg reads the input through the pointer buf and copies it to the output res.
   op dfProg : -> Program .
@@ -36,20 +40,44 @@ mod CLIENT-SESSION-TEST is
     r := teecOpenSession(# TESTTA, s) ;
     r2 := teecOpenSession(# TESTTA, s2) ; .
 
+  --- openInvokeTo(TN): openInvokeProg with the TA TN.
+  op openInvokeTo : AppId -> Program .
+  eq openInvokeTo(TN) =
+    TEEC-Session s ; char b ; char res ; TEE-Result r ; TEE-Result r2 ;
+    b := # data(1) ; res := # noData ;
+    r := teecOpenSession(# TN, s) ;
+    r2 := teecInvokeCommand(s, # check, (addr(b), addr(res))) ; .
+
+  --- openTwiceTo(TN): openTwiceProg with the TA TN.
+  op openTwiceTo : AppId -> Program .
+  eq openTwiceTo(TN) =
+    TEEC-Session s ; TEEC-Session s2 ; TEE-Result r ; TEE-Result r2 ;
+    r := teecOpenSession(# TN, s) ;
+    r2 := teecOpenSession(# TN, s2) ; .
+
   --- openUnknownProg: the RA opens a session with a TA that does not exist.
   op openUnknownProg : -> Program .
   eq openUnknownProg =
     TEEC-Session s ; TEE-Result r ;
     r := teecOpenSession(# unknownTa, s) ; .
 
-  --- ree(S): the RA testRa runs S, and the TrustedOS has the program dfProg of TESTTA and no
-  --- TA instance.
-  op ree : Program -> Configuration .
-  eq ree(S) =
-    < testRa : RichApp | prog : S, proc : mkConf(S) >
+  --- os: the TrustedOS has the program dfProg of TESTTA and MSTA and no TA instance.
+  op os : -> Configuration .
+  eq os =
     < osId : TrustedOS | sess : empty, session-counter : 0,
-        ta-prog-map : (TESTTA |-> [dfProg]),
-        ta-config : (TESTTA |-> taConfig(true, false)), ta-instances : empty > .
+        ta-prog-map : (TESTTA |-> [dfProg], MSTA |-> [dfProg]),
+        ta-config : (TESTTA |-> taConfig(true, false), MSTA |-> taConfig(true, true)),
+        ta-instances : empty > .
+
+  --- ree(S): the RA testRa runs S.
+  op ree : Program -> Configuration .
+  eq ree(S) = < testRa : RichApp | prog : S, proc : mkConf(S) > os .
+
+  --- ree2(S1, S2): the RAs testRa and ra2 run S1 and S2.
+  op ree2 : Program Program -> Configuration .
+  eq ree2(S1, S2) =
+    < testRa : RichApp | prog : S1, proc : mkConf(S1) >
+    < ra2 : RichApp | prog : S2, proc : mkConf(S2) > os .
 endm
 
 ------------------------------------------------------------
@@ -128,3 +156,90 @@ search [1] in CLIENT-SESSION-TEST :
 --- The return statement assigns the code, the null handle and the origin to the out arguments.
 red makeReturnStmt(TeeOpenTASession, errorBusy, # null # originTee, (r, s, r2))
   == $assign((# errorBusy, # null, # originTee), (r, s, r2)) .
+
+------------------------------------------------------------
+--- A single instance with several sessions: MSTA
+------------------------------------------------------------
+
+--- The RA opens two sessions with MSTA: both succeed, and both are on the one instance
+--- oid(0, osId).
+search [1] in CLIENT-SESSION-TEST : ree(openTwiceTo(MSTA)) =>!
+  < testRa : RichApp | prog : S,
+      proc : (k(.K) env((s |-> LS:Nat) ; (s2 |-> LS2:Nat) ; (r |-> LC:Nat) ; (r2 |-> LC2:Nat) ; ENV:Map{Var,Nat})
+              store((LS:Nat |-> # sessionId(0)) ; (LS2:Nat |-> # sessionId(1)) ; (LC:Nat |-> # success) ;
+                    (LC2:Nat |-> # success) ; MEM:Map{Nat,Value?}) KS:KConfig) >
+  < osId : TrustedOS |
+      sess : (sessionId(0) |-> session(reeClient(testRa), oid(0, osId)),
+              sessionId(1) |-> session(reeClient(testRa), oid(0, osId))),
+      ta-instances : (MSTA |-> oid(0, osId)), OSATTS:AttributeSet >
+  < oid(0, osId) : TrustedApp | TAATTS:AttributeSet >
+  < oid(0, oid(0, osId)) : Storage | STATTS:AttributeSet > .
+
+--- Two RAs open a session with MSTA and invoke check in it: both calls of both RAs succeed and the
+--- TA has written data(1) to res of each, served by the one instance.
+search [1] in CLIENT-SESSION-TEST : ree2(openInvokeTo(MSTA), openInvokeTo(MSTA)) =>!
+  < testRa : RichApp | prog : S1,
+      proc : (k(.K) env((res |-> LR:Nat) ; (r |-> LC:Nat) ; (r2 |-> LC2:Nat) ; ENV:Map{Var,Nat})
+              store((LR:Nat |-> # data(1)) ; (LC:Nat |-> # success) ; (LC2:Nat |-> # success) ;
+                    MEM:Map{Nat,Value?}) KS:KConfig) >
+  < ra2 : RichApp | prog : S2,
+      proc : (k(.K) env((res |-> LR':Nat) ; (r |-> LC':Nat) ; (r2 |-> LC2':Nat) ; ENV':Map{Var,Nat})
+              store((LR':Nat |-> # data(1)) ; (LC':Nat |-> # success) ; (LC2':Nat |-> # success) ;
+                    MEM':Map{Nat,Value?}) KS':KConfig) >
+  < oid(0, osId) : TrustedApp | TAATTS:AttributeSet >
+  C:Configuration .
+
+--- In no final state is a call of testRa unfinished or failed, whichever request the instance
+--- serves first.
+--- expect: no solution
+search in CLIENT-SESSION-TEST : ree2(openInvokeTo(MSTA), openInvokeTo(MSTA)) =>!
+  < testRa : RichApp | prog : S1,
+      proc : (k(K:K) env((res |-> LR:Nat) ; (r |-> LC:Nat) ; (r2 |-> LC2:Nat) ; ENV:Map{Var,Nat})
+              store((LR:Nat |-> V:Value?) ; (LC:Nat |-> V1:Value?) ; (LC2:Nat |-> V2:Value?) ;
+                    MEM:Map{Nat,Value?}) KS:KConfig) >
+  C:Configuration
+  such that K:K =/= .K or V:Value? =/= # data(1) or V1:Value? =/= # success or V2:Value? =/= # success .
+
+--- The same for ra2.
+--- expect: no solution
+search in CLIENT-SESSION-TEST : ree2(openInvokeTo(MSTA), openInvokeTo(MSTA)) =>!
+  < ra2 : RichApp | prog : S2,
+      proc : (k(K:K) env((res |-> LR:Nat) ; (r |-> LC:Nat) ; (r2 |-> LC2:Nat) ; ENV:Map{Var,Nat})
+              store((LR:Nat |-> V:Value?) ; (LC:Nat |-> V1:Value?) ; (LC2:Nat |-> V2:Value?) ;
+                    MEM:Map{Nat,Value?}) KS:KConfig) >
+  C:Configuration
+  such that K:K =/= .K or V:Value? =/= # data(1) or V1:Value? =/= # success or V2:Value? =/= # success .
+
+--- A TA opens a session with MSTA, which already has an instance with a session: the session
+--- sessionId(1) is opened on that instance.
+search [1] in CLIENT-SESSION-TEST :
+  < osId : TrustedOS |
+      service-in : openTASession(MSTA) nil, service-out : nil, service-request-ta-inst : testTa,
+      ta-prog-map : MSTA |-> [dfProg],
+      ta-config : MSTA |-> taConfig(true, true), ta-instances : MSTA |-> oid(0, osId),
+      sess : sessionId(0) |-> session(taClient(otherTa), oid(0, osId)), session-counter : 1 >
+=>1
+  < osId : TrustedOS | service-in : nil, service-out : openSessionSuccess(sessionId(1)),
+      sess : (sessionId(0) |-> session(taClient(otherTa), oid(0, osId)),
+              sessionId(1) |-> session(taClient(testTa), oid(0, osId))),
+      session-counter : 2, OSATTS:AttributeSet > .
+
+--- A request to an instance that has panicked, of an RA: TEEC_ERROR_TARGET_DEAD, with the memory of
+--- the RA unchanged.
+search [1] in CLIENT-SESSION-TEST :
+  (msg invkTa[sessionId(1), check, argNil, cstore((0 |-> # 1), 1, empty)] from osId to oid(0, osId))
+  < oid(0, osId) : TrustedApp | status : panic, client-service : {sessionId(0), check} >
+  < osId : TrustedOS | sess : (sessionId(0) |-> session(reeClient(testRa), oid(0, osId)),
+                               sessionId(1) |-> session(reeClient(ra2), oid(0, osId))) >
+=>1
+  smcRet(ra2, # errorTargetDead, cstore((0 |-> # 1), 1, empty))
+  C:Configuration .
+
+--- The same request of a TA: TEE_ERROR_TARGET_DEAD with the origin of the TEE.
+search [1] in CLIENT-SESSION-TEST :
+  (msg invkTa[sessionId(1), check, argNil, cstore((0 |-> # 1), 1, empty)] from osId to oid(0, osId))
+  < oid(0, osId) : TrustedApp | status : panic, client-service : none >
+  < osId : TrustedOS | sess : (sessionId(1) |-> session(taClient(testTa), oid(0, osId))) >
+=>1
+  (msg finishReqInvoke[# cstore((0 |-> # 1), 1, empty) # originTee # errorTargetDead] from osId to testTa)
+  C:Configuration .

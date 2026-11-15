@@ -21,20 +21,27 @@
 --- Opening a session.  The TrustedOS decides in the same way for both kinds of client:
 ---   * the TA TN has no instance: the TrustedOS creates the instance from the program of TN in
 ---     ta-prog-map, with its storage, records it in ta-instances, and opens the session on it;
----   * the instance of TN already has a session: TEE_ERROR_BUSY (TEEC_ERROR_BUSY for an RA);
+---   * the instance of TN already has a session, and TN accepts one session at a time,
+---     taConfig(true, false): TEE_ERROR_BUSY, TEEC_ERROR_BUSY for an RA;
+---   * TN has an instance and accepts several sessions, taConfig(true, true): the session is
+---     opened on that instance, which all the sessions of TN share, see [Internal Core] 2.1.6;
 ---   * no TA has the identifier TN: TEE_ERROR_ITEM_NOT_FOUND.
---- Only the TAs of configuration taConfig(true, false) in ta-config are served for now: a
---- single instance with a single session.  The entry points TA_CreateEntryPoint and
+--- Only the single-instance TAs, taConfig(true, MS) in ta-config, are served for now.  The
+--- entry points TA_CreateEntryPoint and
 --- TA_OpenSessionEntryPoint are not modeled: the instance is created and the session opened at
 --- once.  An RA gets the return code, and the new session after success; it is not given the
 --- return origin.  A TA gets the code, the handle (TEE_HANDLE_NULL on failure) and the origin.
 ---
 --- Invoking a command.  The TrustedOS forwards the request of the client of a session to the TA
---- instance of the session; a request through a session of another client is not served.  A
---- finished service succeeds (a service is a void function): the client gets success, with the
---- origin of the TA for a TA client.  A TA instance that panics while it serves the request
---- answers TEE_ERROR_TARGET_DEAD, with the origin of the TEE for a TA client ([Internal Core]
---- 4.9.3).  In both cases the client gets the memory back as the TA instance has left it.
+--- instance of the session; a request through a session of another client is not served.  The
+--- instance serves one request at a time, see [Internal Core] 2.1.3: the other requests to it
+--- wait, as invkTa messages, until it is free, and the next one is chosen nondeterministically.
+--- A finished service succeeds, as a service is a void function: the client gets success, with
+--- the origin of the TA for a TA client.  A TA instance that panics while it serves the request
+--- answers TEE_ERROR_TARGET_DEAD, with the origin of the TEE for a TA client, see [Internal Core]
+--- 4.9.3.  In both cases the client gets the memory back as the TA instance has left it.  Every
+--- later or waiting request to a panicked instance gets TEE_ERROR_TARGET_DEAD too, with the
+--- memory of the client unchanged, see [Internal Core] 2.3.3.
 ---
 --- TEEC_CloseSession and TEE_CloseTASession are not modeled: a session, once open, stays open.
 --- The IMP call of an RA, teecOpenSession, is in RICH-APP-BEHAVIOR, and teecInvokeCommand in
@@ -64,6 +71,7 @@ omod SESSION-BEHAVIOR is
   var CL : Client .
   vars TN TA : AppId .
   var N : Nat .
+  var MS : Bool .
   var P : Program .
   vars CS : CStore .
   var SIL : List{Service} .
@@ -97,7 +105,7 @@ omod SESSION-BEHAVIOR is
   crl [teec-open-session] :
     smcReq(RI, TeecOpenSession, # TN, CS)
     < KI : TrustedOS | ta-prog-map : (TN |-> [P] , PROGC) ,
-                       ta-config : (TN |-> taConfig(true, false) , CFG) , ta-instances : IM ,
+                       ta-config : (TN |-> taConfig(true, MS) , CFG) , ta-instances : IM ,
                        sess : SESS , session-counter : N >
     =>
     < KI : TrustedOS | ta-instances : (TN |-> oid(N, KI) , IM) ,
@@ -121,6 +129,17 @@ omod SESSION-BEHAVIOR is
     < KI : TrustedOS | >
     smcRet(RI, # errorBusy, CS) .
 
+--- teec-open-session-shared: TN has the instance TI and accepts several sessions, so the
+--- session sessionId(N) of the RA RI is opened on TI.
+  rl [teec-open-session-shared] :
+    smcReq(RI, TeecOpenSession, # TN, CS)
+    < KI : TrustedOS | ta-config : (TN |-> taConfig(true, true) , CFG) ,
+                       ta-instances : (TN |-> TI , IM) , sess : SESS , session-counter : N >
+    =>
+    < KI : TrustedOS | sess : (sessionId(N) |-> session(reeClient(RI), TI) , SESS) ,
+                       session-counter : N + 1 >
+    smcRet(RI, (# success # sessionId(N)), CS) .
+
 --- teec-open-session-not-found: no TA has the identifier TN: TEEC_ERROR_ITEM_NOT_FOUND.
   crl [teec-open-session-not-found] :
     smcReq(RI, TeecOpenSession, # TN, CS)
@@ -142,7 +161,7 @@ omod SESSION-BEHAVIOR is
     < KI : TrustedOS | service-in : (openTASession(TN) SIL) , service-out : SOL ,
                        service-request-ta-inst : TK ,
                        ta-prog-map : (TN |-> [P] , PROGC) ,
-                       ta-config : (TN |-> taConfig(true, false) , CFG) , ta-instances : IM ,
+                       ta-config : (TN |-> taConfig(true, MS) , CFG) , ta-instances : IM ,
                        sess : SESS , session-counter : N >
     =>
     < KI : TrustedOS | service-in : SIL , service-out : (SOL openSessionSuccess(sessionId(N))) ,
@@ -164,6 +183,19 @@ omod SESSION-BEHAVIOR is
                        ta-instances : (TN |-> TI , IM) , sess : (SID' |-> session(CL, TI) , SESS) >
     =>
     < KI : TrustedOS | service-in : SIL , service-out : (SOL openSessionFail(errorBusy)) >
+  .
+
+--- open-ta-session-shared: TN has the instance TI and accepts several sessions, so the session
+--- sessionId(N) of the requesting TA TK is opened on TI.
+  rl [open-ta-session-shared] :
+    < KI : TrustedOS | service-in : (openTASession(TN) SIL) , service-out : SOL ,
+                       service-request-ta-inst : TK ,
+                       ta-config : (TN |-> taConfig(true, true) , CFG) ,
+                       ta-instances : (TN |-> TI , IM) , sess : SESS , session-counter : N >
+    =>
+    < KI : TrustedOS | service-in : SIL , service-out : (SOL openSessionSuccess(sessionId(N))) ,
+                       sess : (sessionId(N) |-> session(taClient(TK), TI) , SESS) ,
+                       session-counter : N + 1 >
   .
 
 --- open-ta-session-not-found: no TA has the identifier TN, so the session is not opened:
@@ -277,6 +309,29 @@ omod SESSION-BEHAVIOR is
     < KI : TrustedOS | >
     < TI : TrustedApp | status : panic, client-service : none >
     (msg finishReqInvoke[# cstore(MEM, L, AL) # originTee # errorTargetDead] from KI to TK) .
+
+--- return-smc-request-dead: a request of the session SID of the RA RI to a TA instance that has
+--- panicked, waiting or sent after the panic, is not served: TEE_ERROR_TARGET_DEAD, with the
+--- memory CS of the RA unchanged.
+  rl [return-smc-request-dead] :
+    (msg invkTa[SID, FID, VL, CS] from KI to TI)
+    < TI : TrustedApp | status : panic >
+    < KI : TrustedOS | sess : (SID |-> session(reeClient(RI), TI) , SESS) >
+    =>
+    < TI : TrustedApp | >
+    < KI : TrustedOS | >
+    smcRet(RI, # errorTargetDead, CS) .
+
+--- return-session-request-dead: the same for a request of the session SID of the TA TK: the
+--- origin is the TEE.
+  rl [return-session-request-dead] :
+    (msg invkTa[SID, FID, VL, CS] from KI to TI)
+    < TI : TrustedApp | status : panic >
+    < KI : TrustedOS | sess : (SID |-> session(taClient(TK), TI) , SESS) >
+    =>
+    < TI : TrustedApp | >
+    < KI : TrustedOS | >
+    (msg finishReqInvoke[# CS # originTee # errorTargetDead] from KI to TK) .
 
 ------------------------------------------------------------
 --- Invoking a command: the TA (TEE_InvokeTACommand)

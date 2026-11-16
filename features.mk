@@ -2,7 +2,9 @@
 #
 # A feature F is a variable F (value 0 or 1) plus:
 #   F_LOADS     "load" lines dropped from src/main.maude when F=0
-#   F_MODULES   "pr" lines dropped from src/main.maude when F=0
+#   F_MODULES   modules removed when F=0: their "pr" lines in src/main.maude, and their
+#               definitions in the src files that stay (tools/strip-modules.py; each
+#               must be annotated "--- @feature f", f = F in lower case with "-" for "_")
 #   F_REQUIRES  features that must be 1 while F=1 (checked, never auto-enabled). Names
 #               API-level dependencies, not load dependencies: the files still load
 #               independently

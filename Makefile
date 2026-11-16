@@ -3,7 +3,8 @@
 #   make                    build build/default/src and build/default/tests
 #   make NAME=t             build build/t/src and build/t/tests
 #   make NAME=t CRYPTO=0    build without the crypto modules (features.mk lists the features)
-#   make NAME=t WITHOUT=M   build without module M (must be a pr line in main.maude)
+#   make NAME=t CONFIG=x.toml  the features set by x.toml (lines CRYPTO = 0, ...; see features.toml)
+#   make NAME=t WITHOUT=M   build without module M (must be a pr line in src/main.maude)
 #   make NAME=t test        build, then run test-api and test-checks in build/t/tests
 #   make test-api           API-level black-box tests (tests/api/test-*.maude)
 #   make test-checks        search/red checks (completion/*.maude, gp-conformance/*.maude)
@@ -13,7 +14,9 @@
 #   make clean NAME=t       remove build/t
 #
 # build/$(NAME)/ holds:
-#   src/, tests/   the selected sources (src/main.maude loads them) and a copy of tests/ with the
+#   src/, lang/,   the selected sources (src/main.maude, filtered for the features,
+#                  loads them, and the language files of
+#   tests/         lang/ with ../lang/... paths) and a copy of tests/ with the
 #                  test runners (tools/test/), so relative loads such as ../src/main resolve
 #   tests.txt      the selected test files, relative to tests/: lines "api FILE" and "check FILE",
 #                  and "api-full" when every API test is selected (the runner then checks the total)
@@ -21,7 +24,9 @@
 #   .stage/        intermediate, removed after each successful build. A failed build leaves
 #                  the stamp untouched, so the next run rebuilds.
 #
-# Setting precedence: command line > build/$(NAME)/config.mk (cache) > features.mk.
+# Setting precedence: command line > CONFIG file > build/$(NAME)/config.mk (cache) > features.mk.
+# The cache keeps every setting of the last build, CONFIG (the file name) included: a feature
+# that is no longer given keeps its last value (give it, or make clean, to get the default).
 # Personal settings such as the Maude path go in config.mk at the repo root (gitignored).
 
 # Ignore a NAME inherited from the shell environment; only make arguments or config.mk set it.
@@ -45,6 +50,25 @@ export MAUDE_BIN := $(MAUDE)
 
 # Feature table (defaults with ?=).
 include features.mk
+
+# Build configuration file: "F = V" lines (features.toml sets every feature). It is TOML with
+# top-level keys only and a makefile at once, so it is included: it overrides the cache and
+# features.mk, and the command line overrides it. A key that is not a feature, or a [table], is an
+# error. Cached like WITHOUT; CONFIG= turns it off. Like NAME, an inherited environment value is
+# ignored.
+ifneq ($(filter environment%,$(origin CONFIG)),)
+CONFIG :=
+endif
+CONFIG ?=
+ifneq ($(strip $(CONFIG)),)
+$(if $(wildcard $(CONFIG)),,$(error CONFIG file '$(CONFIG)' not found))
+CONFIG_KEYS := $(shell sed -n -e 's/^[[:space:]]*\([A-Za-z0-9_-]*\)[[:space:]]*=.*/\1/p' \
+	-e 's/^[[:space:]]*\[.*/[table]/p' $(CONFIG))
+CONFIG_BAD := $(filter-out $(FEATURES),$(CONFIG_KEYS))
+$(if $(CONFIG_BAD),$(error CONFIG file '$(CONFIG)': not a feature of features.mk: $(CONFIG_BAD) (the features are: $(FEATURES))))
+# Plain assignments: they replace the cached value and the default, but not a command-line value.
+include $(CONFIG)
+endif
 
 # Verbose output (V=1 or VERBOSE=1): the test runners stream Maude's output and the recipes
 # are echoed. Display only, so it is not written to config.want or the cache, and changing it
@@ -70,14 +94,22 @@ $(foreach F,$(FEATURES),\
   $(if $(filter 1,$($(F))),\
     $(foreach G,$($(F)_REQUIRES),$(if $(filter 0,$($(G))),$(error $(F) requires $(G))))))
 
-# Arguments for tools/build/select-main.awk. Disabled features contribute their lists.
+# Arguments for tools/strip-modules.py. Disabled features contribute their lists.
 DROP_LOADS := $(foreach F,$(FEATURES),$(if $(filter 0,$($(F))),$($(F)_LOADS)))
 DROP_MODULES := $(foreach F,$(FEATURES),$(if $(filter 0,$($(F))),$($(F)_MODULES))) $(WITHOUT)
+# "M:F" for each module M of a disabled feature F.
+# Their definitions are cut from the staged src files (WITHOUT only drops the pr line).
+STRIP_MODULES := $(foreach F,$(FEATURES),$(if $(filter 0,$($(F))),$(addsuffix :$(F),$($(F)_MODULES))))
 
+# The entry point: build/$(NAME)/src/main.maude is this file, filtered for the features.
 MAIN_SRC := src/main.maude
-# Spec files in the stage: every src/*.maude except main.maude and the files of disabled features.
+# Spec files in the stage: every src/*.maude except main.maude and the files of disabled
+# features.
 DROP_SRC := $(addprefix src/,$(addsuffix .maude,$(DROP_LOADS)))
 SRC_FILES := $(filter-out $(MAIN_SRC) $(DROP_SRC),$(wildcard src/*.maude))
+# Programming-language files (lang/<language>/*.maude), next to src/ and loaded by main.maude
+# with ../lang/... paths. Staged at the same relative paths, so those loads resolve.
+LANG_FILES := $(sort $(wildcard lang/*/*.maude))
 
 # Test selection. Names are relative to tests/. Files listed in F_TESTS of a disabled feature
 # are dropped.
@@ -96,25 +128,25 @@ RUNNERS := tools/test/run-api-suite.py tools/test/run-checks.py
 
 # Everything that decides the build. config.want changes with every setting; .inputs with the
 # selected file list, so deleting a file (which no longer appears in the lists) rebuilds.
-FINAL_INPUTS := $(MAIN_SRC) $(SRC_FILES) $(TEST_SRCS) $(RUNNERS) tools/build/select-main.awk features.mk $(OUT)/config.want $(OUT)/.inputs
+FINAL_INPUTS := $(MAIN_SRC) $(SRC_FILES) $(LANG_FILES) $(TEST_SRCS) $(RUNNERS) tools/strip-modules.py features.mk $(OUT)/config.want $(OUT)/.inputs
 
 # The cache is updated last, so a failed build never leaves bad settings behind.
 src: $(FINAL_STAMP)
-	@echo "config: NAME=$(NAME) $(foreach F,$(FEATURES),$(F)=$($(F))) WITHOUT='$(WITHOUT)'"
+	@echo "config: NAME=$(NAME) $(foreach F,$(FEATURES),$(F)=$($(F))) WITHOUT='$(WITHOUT)' CONFIG='$(CONFIG)'"
 	@cmp -s $(OUT)/config.want $(OUT)/config.mk || cp $(OUT)/config.want $(OUT)/config.mk
 
 # Stage, then the build, then the stage is removed. A failure before the touch leaves the stamp
 # old, so the next run rebuilds (and starts by removing the stage).
 $(FINAL_STAMP): $(FINAL_INPUTS) | $(OUT)
-	$(Q)rm -rf $(STAGE) $(OUT)/src $(OUT)/tests
+	$(Q)rm -rf $(STAGE) $(OUT)/src $(OUT)/lang $(OUT)/tests
 	$(Q)mkdir -p $(STAGE)/src $(STAGE)/tests
-	$(Q)awk -v skip_loads='$(DROP_LOADS)' -v skip_mods='$(DROP_MODULES)' -v without='$(WITHOUT)' \
-		-f tools/build/select-main.awk $(MAIN_SRC) > $(STAGE)/src/main.maude
-	$(Q)$(if $(SRC_FILES),cp $(SRC_FILES) $(STAGE)/src/)
+	$(Q)python3 tools/strip-modules.py --out $(STAGE) --main $(MAIN_SRC) \
+		--drop-loads '$(DROP_LOADS)' --drop-prs '$(DROP_MODULES)' --without '$(WITHOUT)' \
+		--cut '$(STRIP_MODULES)' $(SRC_FILES) $(LANG_FILES)
 	$(Q)cp -R tests/. $(STAGE)/tests/
 	$(Q)cp $(RUNNERS) $(STAGE)/tests/
 	$(Q)printf '%s\n' $(addprefix 'api ',$(API_TESTS)) $(addprefix 'check ',$(CHECK_TESTS)) $(if $(API_FULL),api-full) > $(STAGE)/tests.txt
-	$(Q)mv $(STAGE)/src $(STAGE)/tests $(STAGE)/tests.txt $(OUT)/
+	$(Q)mv $(STAGE)/src $(if $(LANG_FILES),$(STAGE)/lang) $(STAGE)/tests $(STAGE)/tests.txt $(OUT)/
 	$(Q)rm -rf $(STAGE)
 	$(Q)touch $@
 
@@ -142,12 +174,13 @@ help config:
 	@echo "NAME=$(NAME)  OUT=$(OUT)  MAUDE=$(MAUDE)"
 	@echo "features:"
 	@$(foreach F,$(FEATURES),echo '  $(F)=$($(F))';) echo '  WITHOUT=$(WITHOUT)'
+	@echo "  CONFIG=$(CONFIG)  (file of F = V lines that sets features, such as features.toml)"
 	@echo "  V=$(V)  (display only: not cached; V=1 streams test output)"
 	@echo "tests (relative to tests/):"
 	@echo "  api:    $(API_TESTS)"
 	@echo "  checks: $(CHECK_TESTS)"
 	@echo "targets:"
-	@echo "  make [src]     build $(OUT)/src and $(OUT)/tests"
+	@echo "  make [src]     build $(OUT)/src, $(OUT)/lang and $(OUT)/tests"
 	@echo "  make test      test-api and test-checks (V=1: stream each file's Maude output)"
 	@echo "  make test-api  API-level tests (run-api-suite.py)"
 	@echo "  make test-checks  search/red checks (run-checks.py)"
@@ -169,13 +202,13 @@ $(OUT):
 # Gated so help/clean never create build directories.
 ifeq (,$(filter help config clean distclean docs,$(MAKECMDGOALS)))
 $(OUT)/config.want: FORCE | $(OUT)
-	@printf '%s\n' '# Generated by Makefile. Do not edit.' $(foreach F,$(FEATURES),'$(F) := $($(F))') 'WITHOUT := $(WITHOUT)' > $@.tmp
+	@printf '%s\n' '# Generated by Makefile. Do not edit.' $(foreach F,$(FEATURES),'$(F) := $($(F))') 'WITHOUT := $(WITHOUT)' 'CONFIG := $(CONFIG)' > $@.tmp
 	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv $@.tmp $@; fi
 
 # Selected input files (sorted), rewritten only when the list changes. A deleted or added file
 # changes the list, so the stamp becomes stale.
 $(OUT)/.inputs: FORCE | $(OUT)
-	@printf '%s\n' $(sort $(SRC_FILES) $(TEST_SRCS)) > $@.tmp
+	@printf '%s\n' $(sort $(SRC_FILES) $(LANG_FILES) $(TEST_SRCS)) > $@.tmp
 	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv $@.tmp $@; fi
 endif
 

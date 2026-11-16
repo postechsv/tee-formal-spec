@@ -34,6 +34,7 @@ maude src/main.maude
 ```bash
 make                         # build/default/src and build/default/tests
 make NAME=t CRYPTO=0         # a build without the cryptographic operation API
+make NAME=t CONFIG=x.toml    # the features set by x.toml (see features.toml)
 make NAME=t test             # build, then run the API suite and the check suite on it
 make docs                    # documentation site in build/docs
 make help                    # features, settings and targets
@@ -45,7 +46,18 @@ Set the Maude binary in `config.mk` (gitignored) for the tests:
 MAUDE := /path/to/maude
 ```
 
-The API groups below are feature groups (`features.mk`): a build without some of them (`make CRYPTO=0`) drops their files from `src/main.maude` and their tests.
+The API groups below are feature groups (`features.mk`): a build without some of them (`make CRYPTO=0`) drops their files from `build/<NAME>/src/main.maude` and their tests.
+
+A build configuration file selects features: `make CONFIG=x.toml` reads its `F = V` lines
+(`features.toml` sets every feature on). The file is TOML with top-level keys only, which is also
+make syntax, so the Makefile includes it; a key that is not a feature is an error. A feature it does
+not set keeps its default (`features.mk`), and the command line overrides it
+(`make CONFIG=x.toml CRYPTO=1`). Like the other settings, CONFIG is cached in `build/<NAME>/config.mk`.
+
+```toml
+CRYPTO = 0
+SHM = 0
+```
 
 | Feature | Covers | Requires |
 | --- | --- | --- |
@@ -70,7 +82,7 @@ tee-formal-spec/
 │   └── main.maude        # shared test modules
 ├── docs/annotations.md   # the machine-readable module annotations of src/
 ├── tools/
-│   ├── build/            # select-main.awk: src/main.maude of a feature configuration
+│   ├── strip-modules.py  # main.maude and the spec files of a feature configuration
 │   ├── test/             # the test runners (run-api-suite.py, run-checks.py)
 │   └── docs/             # the documentation site: gen-docs.py, gen-examples.py and their inputs
 ├── .github/workflows/docs.yml   # builds the site and deploys it to GitHub Pages

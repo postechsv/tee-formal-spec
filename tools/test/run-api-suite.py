@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
-import platform
 import re
 import shutil
 import subprocess
@@ -16,10 +15,6 @@ import threading
 
 ROOT = Path(__file__).resolve().parent.parent
 SPEC = ROOT
-MAUDE_RELATIVE = (
-    Path("Darwin64/maude.darwin64") if platform.system() == "Darwin"
-    else Path("Linux64/maude.linux64")
-)
 EXPECTED_API_TESTS = 96
 SEARCH_START = re.compile(r"^search\s+\[1\]\s+in\s+TEST-AUX\s*:", re.MULTILINE)
 TEST_ID = re.compile(r"---\s*\[([^]]+)]")
@@ -33,8 +28,6 @@ def find_maude() -> Path:
     configured = os.environ.get("MAUDE_BIN")
     candidates = [
         Path(configured).expanduser() if configured else None,
-        ROOT.parent / "tee-formal-analysis" / "3rd_party" / MAUDE_RELATIVE,
-        ROOT.parent / "zenodo" / "tee-formal-analysis" / "3rd_party" / MAUDE_RELATIVE,
     ]
     installed = shutil.which("maude")
     if installed:

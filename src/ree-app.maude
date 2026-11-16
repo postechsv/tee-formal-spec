@@ -17,34 +17,33 @@ endom
 --- @feature client
 omod RICH-APP-BEHAVIOR is
   pr RICH-APP .
-  pr IMP-SEMANTICS .
+  pr CALL-TASK .
   pr SECURE-MONITOR-CALL .
   pr TEE-CLIENT-FUNC .
-  pr TEE-CLIENT-IMP-VALUE .
-  pr ID-IMP-VALUE .
+  pr TEE-CLIENT-VALUE .
+  pr ID-VALUE .
+  pr RETURN-VALUE .
 
   var RI : Oid .
   var K : K .
   var SID : SessionId .
-  var VL : ArgList .
-  var RET : ArgList .
-  var OUT : ExpList .
-  var KS : KConfig .
   var FID : FuncId .
-  var E : Exp .
-  var EL : ExpList .
+  var API : TeeClientApi .
+  vars VL RET : List{Arg} .
   var V : Value .
+  var KS : KConfig .
+  vars EL OUT : ExpList .
 
---- assign(OUT, RET) stores the output values RET into the output expressions OUT.
-  op assign : ExpList ArgList -> Stmt .
-  eq assign((E, EL), (V VL)) = E := V ; assign(EL, VL) .
-  eq assign(nil, argNil) = skip .
+  op #_ : FuncId -> Value [ctor] .
 
-------------------------------------------------------------
---- IMP Semantics
-------------------------------------------------------------
+--- A client API call API of an RA is $in(VL) ~> $wait(API) ~> $out(EL), as a TEE API call of a
+--- TA (TRUST-APP-CALL-BEHAVIOR): the input values VL go to the TEE with the SMC request, and the
+--- outputs EL get the values of the response (assign, CALL-TASK).  The first value of a response
+--- is the return code, so the language makes the first output of a client call the value of
+--- the call.
 
---- invoke-ta-smc: the $in task of TEEC_InvokeCommand creates the SMC request.
+--- invoke-ta-smc: for TEEC_InvokeCommand, the $in task creates an smcReq message with the session
+--- SID, the service FID and the values VL (App D.2).
   rl [invoke-ta-smc] :
     < RI : RichApp | proc : (k($in(# SID # FID VL) ~> $wait(teecInvokeCommand) ~> K) KS) >
     =>
@@ -52,7 +51,8 @@ omod RICH-APP-BEHAVIOR is
     smcReq(RI, SID, FID, VL)
   .
 
---- invoke-ta-finish: the SMC response assigns the output values to the output expressions.
+--- invoke-ta-finish: the smcRet response RET completes the invocation: the return values are
+--- assigned to the output parameters OUT (App D.2).
   rl [invoke-ta-finish] :
     smcRet(RI, RET)
     < RI : RichApp | proc : (k($wait(teecInvokeCommand) ~> $out(OUT) ~> K) KS) >
@@ -60,4 +60,21 @@ omod RICH-APP-BEHAVIOR is
     < RI : RichApp | proc : (k(assign(OUT, RET) ~> K) KS) >
   .
 
+--- client-api-smc: the $in task of the session API call API (TEEC_OpenSession,
+--- TEEC_CloseSession) creates the SMC request with the input values VL.
+  crl [client-api-smc] :
+    < RI : RichApp | proc : (k($in(VL) ~> $wait(API) ~> K) KS) >
+    =>
+    < RI : RichApp | proc : (k($wait(API) ~> K) KS) >
+    smcReq(RI, API, VL)
+  if API =/= teecInvokeCommand .
+
+--- client-api-finish: the SMC response VL of the session API call API is assigned to the
+--- outputs EL, as in invoke-ta-finish.
+  crl [client-api-finish] :
+    smcRet(RI, VL)
+    < RI : RichApp | proc : (k($wait(API) ~> $out(EL) ~> K) KS) >
+    =>
+    < RI : RichApp | proc : (k(assign(EL, VL) ~> K) KS) >
+  if API =/= teecInvokeCommand .
 endom

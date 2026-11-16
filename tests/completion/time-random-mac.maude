@@ -1,0 +1,77 @@
+--- The C stubs of TEE_GetSystemTime ([Internal Core] 7.2.1), TEE_GenerateRandom (6.10.1),
+--- TEE_MACInit and TEE_MACComputeFinal (6.6.1, 6.6.3).
+load ../../src/main
+load ../cases/aux
+
+mod TIME-RANDOM-MAC-TEST is
+  pr TEE-BEHAVIOR .
+  pr TEE-C-BEHAVIOR .
+  pr TEST-AUX .
+
+  ops tt tsecs tmsecs tbuf tmsg tmac top tkey tr1 tr2 tr3 : -> Var [ctor] .
+  ops run : -> FuncId [ctor] .
+  var C : Configuration .
+  var MEM : Map{Nat,Value?} .
+  vars L L1 L2 L3 L4 : Nat .
+  var KS : KConfig .
+
+  --- ta(P): the instance testTa of P, idle.
+  op ta : Program -> Configuration .
+  var P : Program .
+  eq ta(P) =
+    < testTa : TrustedApp | proc : none, prog : P, client-service : none,
+        status : (normal).AppStatus, storage : oid(0, testTa), os-kernel : osId,
+        counter : 1, api-call : noCall > .
+
+  op req : -> Msg .
+  eq req = msg invkTa[run nil] from testRa to testTa .
+
+  --- timeProg: reads the system time into tsecs and tmsecs.
+  op timeProg : -> Program .
+  eq timeProg =
+    void run() { struct TeeTime tt ; int tsecs ; int tmsecs ; getSystemTime(tt) ;
+                 tsecs := tt . seconds ; tmsecs := tt . millis ; return unit ; } .
+
+  --- randomProg: fills the buffer tbuf with random data.
+  op randomProg : -> Program .
+  eq randomProg = void run() { char tbuf ; tbuf := # noData ; generateRandom(addr(tbuf)) ; return unit ; } .
+
+  --- macProg: computes the HMAC-SHA256 of tmsg under a key with an arbitrary content into tmac,
+  --- and compares tmac with the MAC of tmsg (tr3).
+  op macProg : -> Program .
+  eq macProg =
+    void run() {
+      TEE-ObjectHandle tkey ; TEE-OperationHandle top ; TEE-Attribute tt ; char tbuf ;
+      char tmsg ; char tmac ; TEE-Result tr1 ; TEE-Result tr2 ; TEE-Result tr3 ;
+      tbuf := # randomAttrVal ; tmsg := # data(2) ; tmac := # noData ;
+      tr1 := allocateTransientObject(# typeHmacSha256, # 256, tkey) ;
+      initRefAttribute(# secretValue, addr(tbuf), tt) ;
+      tr1 := populateTransientObject(tkey, tt) ;
+      tr1 := allocOperation(# algHmacSha256, # modeMac, # 256, top) ;
+      tr1 := setOperationKey(top, tkey) ;
+      macInit(top, nullptr) ;
+      tr2 := macComputeFinal(top, addr(tmsg), addr(tmac)) ;
+      macInit(top, nullptr) ;
+      tr3 := macCompareFinal(top, addr(tmsg), addr(tmac)) ; return unit ; } .
+endm
+
+--- Each check reads the locals of run at its return unit; (before fQuit pops its frame).
+
+--- getSystemTime: the model has no clock, so the time is 0 seconds and 0 milliseconds.
+search [1] in TIME-RANDOM-MAC-TEST : req ta(timeProg) =>*
+  < testTa : TrustedApp | proc : (k(return unit ;) env((tsecs |-> L1) ; (tmsecs |-> L2) ; ENV:Map{Var,Nat})
+                                  store((L1 |-> # 0) ; (L2 |-> # 0) ; MEM) KS),
+                          AS:AttributeSet > C .
+
+--- generateRandom: the buffer holds randomData.
+search [1] in TIME-RANDOM-MAC-TEST : req ta(randomProg) =>*
+  < testTa : TrustedApp | proc : (k(return unit ;) env((tbuf |-> L1) ; ENV:Map{Var,Nat})
+                                  store((L1 |-> # randomData) ; MEM) KS),
+                          AS:AttributeSet > C .
+
+--- macComputeFinal and macCompareFinal: the MAC that macComputeFinal writes to tmac is the one
+--- macCompareFinal expects, so both succeed.
+search [1] in TIME-RANDOM-MAC-TEST : req ta(macProg) =>*
+  < testTa : TrustedApp | proc : (k(return unit ;) env((tr2 |-> L1) ; (tr3 |-> L2) ; ENV:Map{Var,Nat})
+                                  store((L1 |-> # success) ; (L2 |-> # success) ; MEM) KS),
+                          AS:AttributeSet > C .

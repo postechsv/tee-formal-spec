@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Generate docs/examples.json: Maude-verified examples for rules and equations.
+"""Generate tools/docs/input/examples.json: Maude-verified examples for rules and equations.
 
 Sources are the search and red commands of tests/api, tests/completion,
-tests/gp-conformance and the seed files in docs/example-seeds (--seeds). Each
+tests/gp-conformance and the seed files in tools/docs/input/seeds (--seeds). Each
 file is run with its own non-command lines (module declarations, loads, set
 commands), in the repository root. Search commands of tests/api and of the seed
 files are first completed as tests/run-api-suite.py does (api_query).
@@ -14,7 +14,7 @@ path is shown, not only its first state. Candidates are checked again with
 "search [1] in MOD : before =>1 after ." and "show path labels 1 .", which must
 name the same label. Terms are printed by Maude and used as they are printed.
 If that re-parse does not confirm a step (for example because the printed
-IMP program does not parse back to the same term), the step is kept when the
+C program does not parse back to the same term), the step is kept when the
 original search, run again, gives "show path labels N ." with exactly the label
 sequence of its path; then the example is taken from that real path and
 check_module is the module of that search.
@@ -36,9 +36,9 @@ token sequence, then by its words (variables, punctuation, sort names and the
 kernel attributes Maude adds are ignored), then by its words being contained in
 those of the step.
 
-Output schema (docs/examples.json):
+Output schema (tools/docs/input/examples.json):
 {
-  "generated_by": "tools/gen-examples.py",
+  "generated_by": "tools/docs/gen-examples.py",
   "maude_version": "<version from the Maude banner>",
   "rules": {
     "<label or label@file:line>": [
@@ -64,11 +64,11 @@ search command in the test or seed file that produced the step. "source" is
 "<test file>:<line>" otherwise. "missing" lists the rule keys and equation-defined
 ops (those with at least one equation in src/) without a verified example.
 
-Usage: python3 tools/gen-examples.py [--maude PATH] [--out docs/examples.json]
+Usage: python3 tools/docs/gen-examples.py [--maude PATH] [--out tools/docs/input/examples.json]
                                      [--seeds DIR] [--cache DIR] [--timeout SECONDS]
                                      [--jobs N] [--verbose]
 The Maude binary defaults to MAUDE in config.mk. --seeds names the directory of
-seed files (default docs/example-seeds; "" disables them). Seed files are
+seed files (default tools/docs/input/seeds; "" disables them). Seed files are
 ordinary Maude files whose search commands drive rules that the test files
 never reach; each must load and finish quickly. Only the standard library is
 used. With --cache, the raw Maude outputs of the test runs are kept in DIR;
@@ -90,11 +90,15 @@ import subprocess
 import sys
 
 
-ROOT = Path(__file__).resolve().parent.parent
+# REPO is the root of this repository (config.mk, tools/docs/input/); ROOT is where the spec is
+# (src/, tests/) and where Maude runs: REPO itself.
+REPO = Path(__file__).resolve().parents[2]
+ROOT = REPO
 SRC = ROOT / "src"
+LANG = ROOT / "lang"
 TEST_GLOBS = ("tests/api/test-*.maude", "tests/completion/*.maude",
               "tests/gp-conformance/*.maude")
-SEEDS_DIR = ROOT / "docs" / "example-seeds"
+SEEDS_DIR = REPO / "tools" / "docs" / "input" / "seeds"
 MAX_TERM = 4000
 CANDIDATES_PER_KEY = 2       # verified examples kept per rule or op
 TRIES_PER_KEY = 6            # candidates checked per rule or op
@@ -252,12 +256,25 @@ class OpIndex:
         return best
 
 
-def scan_src(src_dir: Path):
-    """Return (rules, equation-defined op keys, operator index, variable names)."""
+def rel_path(path: Path) -> Path:
+    """A spec file relative to the spec root, a seed file relative to this repository."""
+    try:
+        return path.relative_to(ROOT)
+    except ValueError:
+        return path.relative_to(REPO)
+
+
+def spec_files():
+    """The spec files: src/*.maude and the language files lang/<language>/*.maude."""
+    return sorted(SRC.glob("*.maude")) + sorted(LANG.glob("*/*.maude"))
+
+
+def scan_src():
+    """Return (rules, equation-defined op keys, operator index, variable names) of spec_files()."""
     variables: set[str] = set()
     raw = []  # (file, line, module, keyword, text)
-    for path in sorted(src_dir.glob("*.maude")):
-        rel = path.relative_to(ROOT).as_posix()
+    for path in spec_files():
+        rel = rel_path(path).as_posix()
         module = None
         current = None
         for number, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
@@ -580,7 +597,7 @@ def run_test_file(maude: str, path: Path, cache: Path | None, digest: str, timeo
     search_text = "".join(t + "\n" for t in texts)
 
     def run_cached(mode: str, program: str) -> str:
-        name = "{}-{}-{}.txt".format(path.relative_to(ROOT).as_posix().replace("/", "_"),
+        name = "{}-{}-{}.txt".format(rel_path(path).as_posix().replace("/", "_"),
                                      mode, digest)
         cached = cache / name if cache else None
         if cached is not None and cached.is_file():
@@ -594,7 +611,7 @@ def run_test_file(maude: str, path: Path, cache: Path | None, digest: str, timeo
     outputs = {"search": run_cached("search", prelude + search_text)}
     for line in outputs["search"].splitlines():
         if line.startswith(("Warning:", "Error:")):
-            print("warning: {}: {}".format(path.relative_to(ROOT).as_posix(), line),
+            print("warning: {}: {}".format(rel_path(path).as_posix(), line),
                   file=sys.stderr)
             break
     states = solution_states(outputs["search"])
@@ -619,19 +636,19 @@ def source_of(rel: str, command: dict) -> str:
 def inputs_digest(maude: str, seeds: Path | None) -> str:
     digest = hashlib.sha256(maude.encode())
     seed_files = sorted(seeds.glob("*.maude")) if seeds and seeds.is_dir() else []
-    for path in sorted(list(SRC.glob("*.maude")) + list((ROOT / "tests").rglob("*.maude"))
+    for path in sorted(spec_files() + list((ROOT / "tests").rglob("*.maude"))
                        + seed_files):
-        digest.update(path.relative_to(ROOT).as_posix().encode())
+        digest.update(rel_path(path).as_posix().encode())
         digest.update(path.read_bytes())
     return digest.hexdigest()[:16]
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Generate docs/examples.json (verified examples).")
+    parser = argparse.ArgumentParser(description="Generate tools/docs/input/examples.json (verified examples).")
     parser.add_argument("--maude", help="Maude binary (default: MAUDE in config.mk)")
-    parser.add_argument("--out", default=str(ROOT / "docs" / "examples.json"))
+    parser.add_argument("--out", default=str(REPO / "tools" / "docs" / "input" / "examples.json"))
     parser.add_argument("--seeds", default=str(SEEDS_DIR),
-                        help="directory of seed files (default: docs/example-seeds; "
+                        help="directory of seed files (default: tools/docs/input/seeds; "
                              "empty string for none)")
     parser.add_argument("--cache", help="directory for raw Maude outputs of the test runs")
     parser.add_argument("--timeout", type=float, default=1800.0,
@@ -643,7 +660,7 @@ def main() -> int:
 
     maude = args.maude
     if maude is None:
-        config = (ROOT / "config.mk").read_text(encoding="utf-8")
+        config = (REPO / "config.mk").read_text(encoding="utf-8")
         match = re.search(r"^MAUDE\s*:=\s*(\S+)", config, re.MULTILINE)
         if match is None:
             print("no MAUDE in config.mk; use --maude", file=sys.stderr)
@@ -654,7 +671,7 @@ def main() -> int:
     digest = inputs_digest(maude, seeds)
     version = maude_version(maude)
 
-    rules, eq_ops, ops, variables = scan_src(SRC)
+    rules, eq_ops, ops, variables = scan_src()
     op_entries = {entry["key"]: entry for entry in ops.entries}
 
     # Test files in tests/api and all seed files are API-level: their searches are completed
@@ -674,7 +691,7 @@ def main() -> int:
     op_candidates: dict[str, list[dict]] = {}
 
     for run in runs:
-        rel = run["path"].relative_to(ROOT).as_posix()
+        rel = rel_path(run["path"]).as_posix()
         prelude = run["prelude"]
         searches = run["searches"]
         path_bodies = split_results(run["outputs"]["path"])
@@ -811,7 +828,7 @@ def main() -> int:
             missing_ops.append(key)
 
     document = {
-        "generated_by": "tools/gen-examples.py",
+        "generated_by": "tools/docs/gen-examples.py",
         "maude_version": version,
         "rules": dict(sorted(rules_out.items())),
         "ops": dict(sorted(ops_out.items())),

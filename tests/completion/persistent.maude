@@ -5,7 +5,6 @@ load ../cases/aux
 mod COMPLETION-TEST is
   var ZvFileId : FileName .
   var ZvFlags : Set{DataAccessFlag} .
-  var ZvStorageId : StorageIdentifier .
   pr TEE-BEHAVIOR .
   pr TEST-AUX .
   var C : Configuration .
@@ -18,32 +17,32 @@ endm
 --- Top-level operation-handle regression coverage appears below.
 --- Unimplemented and illegal trusted-storage identifiers report ITEM_NOT_FOUND.
 search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(OpenPersistentObject[# storagePerso # ZvFileId # ZvFlags]) >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(openPersistentObject[# storagePerso # ZvFileId # ZvFlags]) >
 =>*
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : return(OpenPersistentObject[# errorItemNotFound # null]) > .
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : return(openPersistentObject[# errorItemNotFound # null]) > .
 
 --- Creating a persistent object can consume an abstract top-level transient handle.
 search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(createPersistent[# ZvStorageId # testFileId # accessRead # oid(101, testTa) # (nil).List{Data} # dataSize(0) # null]), storage : oid(0, testTa), counter : 0, TA-ATTS:AttributeSet >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(createPersistent[# testFileId # accessRead # oid(101, testTa) # (nil).List{Data} # null]), storage : oid(0, testTa), counter : 0, TA-ATTS:AttributeSet >
   < oid(101, testTa) : ObjHandle | oid : oid(1, testTa), flags : empty, pos : 0 >
   < oid(1, testTa) : TransObj | initialized : true, type : typeAes, attributes : empty, usages : usageExtractable, max-size : 128 >
   < oid(0, testTa) : Storage | status : (normal).StorageStatus, files : empty, counter : 0 >
 =>*
-  < testTa : TAKernel | api-call : return(createPersistent[# success # oid(0, oid(0, testTa))]), TA-ATTS:AttributeSet > C:Configuration .
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : return(createPersistent[# success # oid(0, oid(0, testTa))]), TA-ATTS:AttributeSet > C:Configuration .
 
 --- Transforming a transient object advances its Storage object (two identifiers per persistent object: handle and object).
 search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(createPersistent[# ZvStorageId # testFileId # accessRead # oid(101, testTa) # (nil).List{Data} # dataSize(0) # null]), storage : oid(0, testTa), counter : 0, TA-ATTS:AttributeSet >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(createPersistent[# testFileId # accessRead # oid(101, testTa) # (nil).List{Data} # null]), storage : oid(0, testTa), counter : 0, TA-ATTS:AttributeSet >
   < oid(101, testTa) : ObjHandle | oid : oid(1, testTa), flags : empty, pos : 0 >
   < oid(1, testTa) : TransObj | initialized : true, type : typeAes, attributes : empty, usages : usageExtractable, max-size : 128 >
   < oid(0, testTa) : Storage | status : (normal).StorageStatus, files : empty, counter : 0 >
 =>*
   < oid(0, testTa) : Storage | files : testFileId, counter : 2, STO-ATTS:AttributeSet > C:Configuration .
 
---- OpenPersistentObject resolves an object through the handle's oid relation.
+--- openPersistentObject resolves an object through the handle's oid relation.
 search [1] in COMPLETION-TEST :
   (msg openPersistentHandle[# testFileId # accessRead # 3] from testTa to oid(0, testTa))
-  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId >
+  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId, open-handles : noHandles >
 =>*
   (msg finishOpenPersistentHandle[# oid(3, testTa)] from oid(0, testTa) to testTa)
   C .
@@ -52,51 +51,79 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   (msg openPersistentHandle[# testFileId # (accessRead,
                         shareRead) # 2] from testTa to oid(0, testTa))
-  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId >
+  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId,
+      open-handles : handleConf(oid(1, testTa), accessRead) >
   < oid(1, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
       flags : accessRead >
 =>*
   (msg failOpenPersistentHandle[] from oid(0, testTa) to testTa)
-  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId >
+  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId,
+      open-handles : handleConf(oid(1, testTa), accessRead) >
   < oid(1, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
       flags : accessRead > .
+
+--- ... and it cannot succeed: the check sees every open handle of the object.
+--- expect: no solution
+search [1] in COMPLETION-TEST :
+  (msg openPersistentHandle[# testFileId # (accessRead,
+                        shareRead) # 2] from testTa to oid(0, testTa))
+  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId,
+      open-handles : handleConf(oid(1, testTa), accessRead) >
+  < oid(1, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
+      flags : accessRead >
+=>*
+  (msg finishOpenPersistentHandle[# H:Oid] from oid(0, testTa) to testTa)
+  C .
 
 --- Opening is scoped to the TA's Storage even when another Storage contains
 --- an object with the same file identifier.
 search [1] in COMPLETION-TEST :
   (msg openPersistentHandle[# testFileId # accessRead # 4] from testTa to oid(0, otherTa))
-  < oid(0, oid(0, testTa)) : PersistObj | file-name : testFileId >
-  < oid(0, oid(0, otherTa)) : PersistObj | file-name : testFileId >
+  < oid(0, oid(0, testTa)) : PersistObj | file-name : testFileId, open-handles : noHandles >
+  < oid(0, oid(0, otherTa)) : PersistObj | file-name : testFileId, open-handles : noHandles >
 =>*
   (msg finishOpenPersistentHandle[# oid(4, testTa)] from oid(0, otherTa) to testTa)
   < oid(4, testTa) : ObjHandle |
       oid : oid(0, oid(0, otherTa)),
       flags : accessRead,
       pos : 0 >
-  < oid(0, oid(0, testTa)) : PersistObj | file-name : testFileId >
-  < oid(0, oid(0, otherTa)) : PersistObj | file-name : testFileId > .
+  < oid(0, oid(0, testTa)) : PersistObj | file-name : testFileId, open-handles : noHandles >
+  < oid(0, oid(0, otherTa)) : PersistObj | file-name : testFileId,
+      open-handles : handleConf(oid(4, testTa), accessRead) > .
 
 --- Overwrite removes only the old object in the TA's Storage namespace.
 search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(createPersistent[# ZvStorageId # testFileId # (accessRead , overwrite) # null # (nil).List{Data} # dataSize(0) # null]), storage : oid(0, testTa), counter : 0, TA-ATTS:AttributeSet >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(createPersistent[# testFileId # (accessRead , overwrite) # null # (nil).List{Data} # null]), storage : oid(0, testTa), counter : 0, TA-ATTS:AttributeSet >
   < oid(0, testTa) : Storage | status : (normal).StorageStatus, files : testFileId, counter : 0 >
   < oid(0, oid(0, testTa)) : PersistObj | file-name : testFileId, data-stream : nil, REST1:AttributeSet >
   < oid(0, oid(0, otherTa)) : PersistObj | file-name : testFileId, data-stream : nil, REST3:AttributeSet >
 =>*
-  < testTa : TAKernel | api-call : return(createPersistent[# success # oid(0, oid(0, testTa))]), TA-ATTS:AttributeSet >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : return(createPersistent[# success # oid(0, oid(0, testTa))]), TA-ATTS:AttributeSet >
   < oid(0, oid(0, otherTa)) : PersistObj | file-name : testFileId, data-stream : nil, REST3:AttributeSet > C:Configuration .
 
---- CloseAndDelete invalidates every top-level handle that references the owner.
+--- CloseAndDelete removes the object and its handle.  A handle with accessWriteMeta is the only open
+--- handle of its object (the sharing rules), so no other handle refers to the object.
 search [1] in COMPLETION-TEST :
   (msg deletePersistent[# oid(0, testTa)] from testTa to oid(101, testTa))
-  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId >
+  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId,
+      open-handles : handleConf(oid(101, testTa), accessWriteMeta) >
   < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
       flags : accessWriteMeta >
-  < oid(102, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)) >
 =>*
   (msg finishDeletePersistent[# testFileId] from oid(101, testTa) to testTa) .
 
---- RenamePersistentObject authorizes through a top-level write-meta handle.
+--- A second open next to a handle with accessWriteMeta conflicts, so the delete above never leaves
+--- another handle behind.
+--- expect: no solution
+search [1] in COMPLETION-TEST :
+  (msg openPersistentHandle[# testFileId # accessRead # 2] from testTa to oid(0, testTa))
+  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId,
+      open-handles : handleConf(oid(101, testTa), accessWriteMeta) >
+=>*
+  (msg finishOpenPersistentHandle[# H:Oid] from oid(0, testTa) to testTa)
+  C .
+
+--- renamePersistentObject authorizes through a top-level write-meta handle.
 search [1] in COMPLETION-TEST :
   (msg renamePersistent[# newTestFileId # oid(0, testTa)] from testTa to oid(101, testTa))
   < oid(1, testTa) : PersistObj |
@@ -152,3 +179,33 @@ search [1] in COMPLETION-TEST :
   < oid(0, testTa) : Storage | files : empty, counter : 0 >
   < oid(0, otherTa) : Storage | files : testFileId, counter : 6 >
   C .
+
+--- A delete through a handle without accessWriteMeta ends in a panic: after the storage check the
+--- handle refuses it (close-and-delete-persistent-top-level-fail).  No final state keeps the TA normal.
+--- expect: no solution
+search [1] in COMPLETION-TEST :
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(closeAndDeletePersistentObject1[# oid(101, testTa)]), storage : oid(0, testTa), counter : 0 >
+  < oid(0, testTa) : Storage | status : (normal).StorageStatus, files : testFileId, counter : 2 >
+  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId, open-handles : handleConf(oid(101, testTa), accessRead) >
+  < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)), flags : accessRead, pos : 0 >
+=>!
+  < testTa : TAKernel | status : (normal).AppStatus, TA-ATTS:AttributeSet > C .
+
+--- The same for a rename, refused by the handle (rename-persistent-top-level-check-handle-fail).
+--- expect: no solution
+search [1] in COMPLETION-TEST :
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(renamePersistentObject[# oid(101, testTa) # newTestFileId]), storage : oid(0, testTa), counter : 0 >
+  < oid(0, testTa) : Storage | status : (normal).StorageStatus, files : testFileId, counter : 2 >
+  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId, open-handles : handleConf(oid(101, testTa), accessRead) >
+  < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)), flags : accessRead, pos : 0 >
+=>!
+  < testTa : TAKernel | status : (normal).AppStatus, TA-ATTS:AttributeSet > C .
+
+--- An open with an unsupported storageId is not rewritten to storagePrivate, so it cannot succeed.
+--- expect: no solution
+search [1] in COMPLETION-TEST :
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(openPersistentObject[# storagePerso # testFileId # accessRead]), storage : oid(0, testTa), counter : 3 >
+  < oid(0, testTa) : Storage | status : (normal).StorageStatus, files : testFileId, counter : 2 >
+  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId, open-handles : noHandles >
+=>*
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : return(openPersistentObject[# success # H:Oid]), TA-ATTS:AttributeSet > C .

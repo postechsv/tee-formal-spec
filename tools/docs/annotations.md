@@ -2,7 +2,7 @@
 
 Every module in `src/*.maude` carries a machine-readable annotation. The annotation is a
 Maude comment, so it does not change the specification. The documentation generator
-(`tools/gen-docs.py`) uses it to group modules by role and to link related modules.
+(`tools/docs/gen-docs.py`) uses it to group modules by role and to link related modules.
 
 ## Format
 
@@ -46,9 +46,9 @@ data, constants.
 ## Feature groups
 
 `@feature` names the API group a module belongs to. Groups follow the feature names in
-`mk/features.mk`, written in lower case with hyphens:
+`features.mk`, written in lower case with hyphens:
 
-| `@feature` | `mk/features.mk` feature |
+| `@feature` | `features.mk` feature |
 |---|---|
 | `generic` | `GENERIC` |
 | `transient` | `TRANSIENT` |
@@ -56,10 +56,12 @@ data, constants.
 | `data-stream` | `DATA_STREAM` |
 | `enumerator` | `ENUMERATOR` |
 | `crypto` | `CRYPTO` |
+| `shm` | `SHM` |
 | `ta-session` | TA sessions and the TA kernel (no feature flag) |
 | `client` | REE/TEE client API (no feature flag) |
 | `os` | Secure monitor, TEE OS and execution environments (no feature flag) |
-| `imp` | Model programs and their translation into TEE calls (no feature flag) |
+| `c` | Model programs and their translation into TEE calls (no feature flag) |
+| `rust` | Rust (Stable MIR) programs and their translation into TEE calls (no feature flag) |
 | `core` | Shared modules used by several groups (no feature flag) |
 
 ## How gen-docs uses the annotations

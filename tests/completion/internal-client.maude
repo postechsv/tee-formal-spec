@@ -6,7 +6,7 @@ mod COMPLETION-TEST is
   var ZvTaCancelReqTime : TaCancelTimeOut .
   var ZvUuid : AppId .
   pr TEE-BEHAVIOR .
-  pr TEE-IMP-BEHAVIOR .
+  pr TEE-C-BEHAVIOR .
   pr TEST-AUX .
   var C : Configuration .
   var LOC : Nat .
@@ -14,46 +14,57 @@ mod COMPLETION-TEST is
   var ENVM : Map{Var,Nat} .
   var MEMM : Map{Nat,Value?} .
   var KSM : KConfig .
+  var ALM : Map{Nat,Nat} .
   var TESTDIGEST : List{Data} .
   var CIPHERRESULT : List{Data} .
   var TESTMAC : List{Data} .
   var P : Program .
   op serviceProg : -> Program .
   op addService : -> FuncId [ctor] .
-  eq serviceProg = void addService (int srcKey, int destKey, int * res) { res := srcKey + destKey ; } .
+  op otherRa : -> Oid [ctor] .
+  eq serviceProg = void addService (int srcKey, int destKey, int & res) { res := srcKey + destKey ; return unit ; } .
+  --- allocBodyProg: the service allocService calls a TEE API in its body.
+  op allocBodyProg : -> Program .
+  op allocService : -> FuncId [ctor] .
+  eq allocBodyProg = void allocService(TEE-ObjectHandle & res) {
+      TEE-Result ret ; ret := allocateTransientObject(# typeAes, # 256, res) ; return unit ; } .
   op allocProg : -> Program .
-  eq allocProg = syscalls TEE-Handle res ; TEE-Result ret ; ret := AllocateTransientObject(# typeAes, # 256, res) ; void main() { skip } .
+  eq allocProg = syscalls TEE-ObjectHandle res ; TEE-Result ret ; ret := allocateTransientObject(# typeAes, # 256, res) ; void main() { return unit ; } .
 endm
 
---- TeeOpenTASession creates a top-level session handle linked to its owner.
+--- TeeOpenTASession creates the handle oid(1, testTa) of the session that the TrustedOS has
+--- opened; the handle names the session.
 search [1] in COMPLETION-TEST :
-  retTrustedOS(openSessionSuccess(testTa), testTa)
+  retTrustedOS(openSessionSuccess(sessionId(0)), testTa)
   < testTa : TAKernel | status : (normal).AppStatus, api-call : final(TeeOpenTASession[# ZvUuid # ZvTaCancelReqTime]), counter : 1 >
 =>1
-  < oid(1, testTa) : Session |
-      req : noReq, ret : noRet, ta-id : testTa >
-  C .
+  < oid(1, testTa) : TaSessionHandle | session : sessionId(0), is-initialized : true >
+  < testTa : TAKernel | api-call : return(TeeOpenTASession[# success # oid(1, testTa) # originTrustedApp]),
+      counter : 2, AS:AttributeSet > .
 
---- The trusted OS records itself on each TA kernel that it creates.
+--- The trusted OS records itself on each TA kernel that it creates, and creates the session of
+--- the requesting TA testTa on it.
 --- The TA instance is oid(N, osId) and its Storage is oid(0, TA instance).
 search [1] in COMPLETION-TEST :
   < osId : TrustedOS |
-      service-in : openTASession(TESTTA) nil, service-out : nil,
-      ta-prog-map : TESTTA |-> [P],
-      sess : empty, session-counter : 0 >
+      service-in : openTASession(TESTTA) nil, service-out : nil, service-request-ta-inst : testTa,
+      ta-config : TESTTA |-> taConfig(P, true, false), ta-instances : empty, ta-storages : empty,
+      session-counter : 0 >
 =>1
   < oid(0, osId) : TrustedApp |
       status : (normal).AppStatus, os-kernel : osId,
       storage : oid(0, oid(0, osId)), counter : 1,
       api-call : noCall,
       prog : P, proc : none,
-      client-service : none >
+      client-service : none, sessions : 1 >
   < oid(0, oid(0, osId)) : Storage |
       status : (normal).StorageStatus, files : empty, counter : 0 >
-  C .
+  < sessionId(0) : Session | source : testTa, destination : oid(0, osId), is-smc : false, state : idle >
+  < osId : TrustedOS | service-out : openSessionSuccess(sessionId(0)), OSATTS:AttributeSet > .
 
---- A received invocation runs the TA service to completion: the TA answers with invkTaRet
---- carrying the output value of res (22), and it is available again with no client-service.
+--- A received invocation runs the TA service to completion: the output parameter res gets the
+--- value 0 from the client, addService writes 22 to it, and the TA answers the client testRa with
+--- invkTaRet carrying 22.  The TA is available again with no client-service.
 search [1] in COMPLETION-TEST :
   (msg invkTa[addService (# 10 # 12 # 0)] from testRa to testTa)
   < testTa : TrustedApp |
@@ -67,50 +78,144 @@ search [1] in COMPLETION-TEST :
       AS2:AttributeSet >
   C .
 
---- mkConf(P, FID, VL) runs the program P and then callFunc(FID, VL): the output
---- parameter res is declared with the value of its argument (0), and addService is called
---- with the input values 3 and 4, so the output res is 7.
+--- mkConf(P, FID, VL) runs the program P and then callFunc(FID, VL): callFunc declares the
+--- variable res for the output parameter res with the value 0, and addService is called with
+--- the input values 3 and 4, so that variable holds 7 (getVals reads it).
 search [1] in COMPLETION-TEST :
   mkConf(serviceProg, addService, # 3 # 4 # 0)
 =>+
   k(.K) stack(nilStack) env((res |-> LOC) ; ENVM) store((LOC |-> # 7) ; MEMM) KSM:KConfig
   .
 
---- TeeInvokeTACommand resolves a top-level session handle in both directions.
---- The session object is oid(1, testTa); its handle is oid(2, testTa).
+--- TeeInvokeTACommand sends invkTa to the instance otherTa through the session that its handle
+--- oid(1, testTa) names, and a command is pending in the session.
 search [1] in COMPLETION-TEST :
-  (msg reqInvoke[# main # argNil] from testTa to oid(2, testTa))
-  < oid(1, testTa) : Session | req : noReq >
-  < oid(2, testTa) : TaSessionHandle | oid : oid(1, testTa) >
+  < testTa : TrustedApp | status : (normal).AppStatus, os-kernel : osId,
+      api-call : init(TeeInvokeTACommand[# oid(1, testTa) # main]),
+      proc : (k(.K) store(empty) nextLoc(0) arrlen(empty)) >
+  < oid(1, testTa) : TaSessionHandle | session : sessionId(0) >
+  < sessionId(0) : Session | source : testTa, destination : otherTa, is-smc : false, state : idle >
+=>1
+  (msg invkTa[main nil] from sessionId(0) to otherTa)
+  < sessionId(0) : Session | state : invoking, SSATTS:AttributeSet >
+  C .
+
+--- A request through the session of another client is not served.
+--- expect: no solution
+search [1] in COMPLETION-TEST :
+  < testTa : TrustedApp | status : (normal).AppStatus, os-kernel : osId,
+      api-call : init(TeeInvokeTACommand[# oid(1, testTa) # main]),
+      proc : (k(.K) store(empty) nextLoc(0) arrlen(empty)) >
+  < oid(1, testTa) : TaSessionHandle | session : sessionId(0) >
+  < sessionId(0) : Session | source : testRa, destination : otherTa, is-smc : true, state : idle >
 =>1
   C .
 
+--- The answer of otherTa returns TeeInvokeTACommand with success and the origin of the TA, and
+--- the session is idle again.
 search [1] in COMPLETION-TEST :
-  < oid(1, testTa) : Session |
-      ret : {oid(2, testTa), main, testTa, argNil} >
-  < oid(2, testTa) : TaSessionHandle | oid : oid(1, testTa) >
+  (msg invkTaRet[nil] from otherTa to sessionId(0))
+  < sessionId(0) : Session | source : testTa, destination : otherTa, is-smc : false, state : invoking >
+  < testTa : TrustedApp | status : (normal).AppStatus, os-kernel : osId,
+      api-call : final(TeeInvokeTACommand[# oid(1, testTa) # main]),
+      proc : (k(.K) store(empty) nextLoc(0) arrlen(empty)) >
 =>1
-  (msg finishReqInvoke[# main # argNil] from oid(2, testTa) to testTa)
-  C .
+  < testTa : TrustedApp | api-call : return(TeeInvokeTACommand[# success # originTrustedApp]),
+      AS:AttributeSet >
+  < sessionId(0) : Session | state : idle, SSATTS:AttributeSet > .
 
---- A TA that panics while serving the request of RA testRa returns target-dead to testRa,
---- and the TA is left with no client-service.
+--- A TA that panics while serving the request of the session of the RA testRa returns
+--- target-dead to testRa, the session is targetDead, and the TA is left with no client-service.
 search [1] in COMPLETION-TEST :
-  < osId : TrustedOS | OSATTS:AttributeSet >
-  < testTa : TrustedApp | status : panic, client-service : {testRa, addService}, TAATTS:AttributeSet >
-  C
+  < osId : TrustedOS | ta-instances : empty >
+  < sessionId(0) : Session | source : testRa, destination : testTa, is-smc : true, state : invoking >
+  < testTa : TrustedApp | status : panic, client-service : {sessionId(0), addService}, TAATTS:AttributeSet >
 =>1
   smcRet(testRa, # errorTargetDead)
   < osId : TrustedOS | OSATTS:AttributeSet >
-  < testTa : TrustedApp | status : panic, client-service : none, TAATTS:AttributeSet >
-  C .
+  < sessionId(0) : Session | state : targetDead, SSATTS:AttributeSet >
+  < testTa : TrustedApp | status : panic, client-service : none, TAATTS:AttributeSet > .
+
+--- The panicked instance is destroyed even while another session (sessionId(1), of the RA otherRa) is
+--- open on it: the TA TESTTA has no instance in ta-instances any more.  Both sessions stay until
+--- their clients close them.
+search [1] in COMPLETION-TEST :
+  < osId : TrustedOS | ta-instances : (TESTTA |-> testTa) >
+  < sessionId(0) : Session | source : testRa, destination : testTa, is-smc : true, state : invoking >
+  < sessionId(1) : Session | source : otherRa, destination : testTa, is-smc : true, state : idle >
+  < testTa : TrustedApp | status : panic, client-service : {sessionId(0), addService}, TAATTS:AttributeSet >
+=>1
+  smcRet(testRa, # errorTargetDead)
+  < osId : TrustedOS | ta-instances : empty, OSATTS:AttributeSet >
+  < sessionId(0) : Session | state : targetDead, SSATTS:AttributeSet >
+  < sessionId(1) : Session | source : otherRa, destination : testTa, is-smc : true, state : idle >
+  < testTa : TrustedApp | status : panic, client-service : none, TAATTS:AttributeSet > .
+
+--- The same panic while serving the session of the TA testTa returns its TeeInvokeTACommand with
+--- target-dead and the origin of the TEE; the shared objects of testTa are unchanged.
+search [1] in COMPLETION-TEST :
+  < osId : TrustedOS | ta-instances : empty >
+  < sessionId(0) : Session | source : testTa, destination : otherTa, is-smc : false, state : invoking >
+  < otherTa : TrustedApp | status : panic, client-service : {sessionId(0), addService}, TAATTS:AttributeSet >
+  < testTa : TrustedApp | status : (normal).AppStatus, os-kernel : osId,
+      api-call : final(TeeInvokeTACommand[# oid(1, testTa) # main]),
+      proc : (k(.K) store(0 |-> # 5) nextLoc(1) arrlen(empty)) >
+=>1
+  < osId : TrustedOS | OSATTS:AttributeSet >
+  < sessionId(0) : Session | state : targetDead, SSATTS:AttributeSet >
+  < otherTa : TrustedApp | status : panic, client-service : none, TAATTS:AttributeSet >
+  < testTa : TrustedApp | status : (normal).AppStatus, os-kernel : osId,
+      api-call : return(TeeInvokeTACommand[# errorTargetDead # originTee]),
+      proc : (k(.K) store(0 |-> # 5) nextLoc(1) arrlen(empty)) > .
+
+--- A request of testTa in its session is served by otherTa to completion: testTa gets success with
+--- the origin of the TA, and its shared object at location 0 gets the result 22.
+search [1] in COMPLETION-TEST :
+  < testTa : TrustedApp | status : (normal).AppStatus, os-kernel : osId,
+      api-call : init(TeeInvokeTACommand[# oid(1, testTa) # addService # 10 # 12 loc(0)]),
+      proc : (k(.K) store(0 |-> # 0) nextLoc(1) arrlen(empty)) >
+  < oid(1, testTa) : TaSessionHandle | session : sessionId(0) >
+  < sessionId(0) : Session | source : testTa, destination : otherTa, is-smc : false, state : idle >
+  < otherTa : TrustedApp | proc : none, prog : serviceProg, client-service : none,
+      status : (normal).AppStatus, storage : oid(0, otherTa), os-kernel : osId,
+      counter : 0, api-call : noCall >
+=>!
+  < testTa : TrustedApp | api-call : return(TeeInvokeTACommand[# success # originTrustedApp]),
+      proc : (k(.K) store(0 |-> # 22) KSM:KConfig), AS:AttributeSet >
+  C:Configuration .
+
+--- A request in a session whose destination has panicked, targetDead, returns
+--- TeeInvokeTACommand with target-dead and the origin of the TEE at once, and sends no request.
+search [1] in COMPLETION-TEST :
+  < testTa : TrustedApp | status : (normal).AppStatus, os-kernel : osId,
+      api-call : init(TeeInvokeTACommand[# oid(1, testTa) # main]),
+      proc : (k(.K) store(0 |-> # 5) nextLoc(1) arrlen(empty)) >
+  < oid(1, testTa) : TaSessionHandle | session : sessionId(0) >
+  < sessionId(0) : Session | source : testTa, destination : otherTa, is-smc : false, state : targetDead >
+=>1
+  < testTa : TrustedApp | status : (normal).AppStatus, os-kernel : osId,
+      api-call : return(TeeInvokeTACommand[# errorTargetDead # originTee]),
+      proc : (k(.K) store(0 |-> # 5) nextLoc(1) arrlen(empty)) >
+  < oid(1, testTa) : TaSessionHandle | session : sessionId(0) >
+  < sessionId(0) : Session | source : testTa, destination : otherTa, is-smc : false, state : targetDead > .
+
+--- A TA service function calls a TEE API in its body: the transient allocate returns success
+--- and the handle oid(1, testTa) to the output parameter res, which the TA returns.
+search [1] in COMPLETION-TEST :
+  (msg invkTa[allocService (# null)] from testRa to testTa)
+  < testTa : TrustedApp | proc : none, prog : allocBodyProg, client-service : none,
+      status : (normal).AppStatus, storage : oid(0, testTa), os-kernel : osId,
+      counter : 0, api-call : noCall >
+=>!
+  (msg invkTaRet[# oid(1, testTa)] from testTa to testRa)
+  C:Configuration .
 
 --- A TA program calls one TEE API (a transient allocate) and runs to completion: the call
 --- returns success and the output handle is assigned to res (the handle is oid(1, testTa)).
 search [1] in COMPLETION-TEST :
   C
   < testTa : TrustedApp |
-      proc : mkConf(allocProg, main, argNil), prog : allocProg, client-service : none,
+      proc : mkConf(allocProg, main, nil), prog : allocProg, client-service : none,
       status : (normal).AppStatus, api-call : noCall, counter : 0, TAATTS:AttributeSet >
 =>+
   < testTa : TrustedApp |

@@ -1,0 +1,173 @@
+--- Type queries and layout calculations for Rust Stable MIR (KMIR rt/types.md).
+--- This file contains RUST-TYPES, extracted from semantics.maude without rule changes.
+--- semantics.maude loads it after RUST-NUMBERS and RUST-LOOKUP are defined, before
+--- constant decoding and execution import RUST-TYPES. Load semantics.maude as the entry point.
+--- These are runtime type helpers, not a static wellTyped checker like lang/c/typing.maude.
+
+------------------------------------------------------------
+--- Types (rt/types.md)
+------------------------------------------------------------
+
+--- @kind program
+--- @feature rust
+fmod RUST-TYPES is
+  pr RUST-NUMBERS .
+  pr RUST-LOOKUP .
+
+  sort MaybeTy .
+  subsort Ty < MaybeTy .
+  op TyUnknown : -> MaybeTy [ctor] .
+
+  var TM : Map{Ty,TypeInfo} .
+  vars TY TY' : Ty .
+  var MTY : MaybeTy .
+  var PROJS : ProjectionElems .
+  var F : FieldIdx .
+  var L : Local .
+  vars A B C : MIRInt .
+  var D : MIRBool .
+  var VI : VariantIdx .
+  var TI : TypeInfo .
+  var MTC : MaybeTyConst .
+  var KIND : TyConstKind .
+  var ID : TyConstId .
+  var BS : Bytes .
+  var PM : ProvenanceMap .
+  var AL : Align .
+  var MU : Mutability .
+  var NAME : MIRString .
+  var ADT : AdtDef .
+  var FIELDS TYS : Tys .
+  var FIELDSS : Tyss .
+  var DS : Discriminants .
+  var LAYOUT : MaybeLayoutShape .
+  var OFFSETS : MachineSizes .
+  var FS : FieldsShape .
+  var VS : VariantsShape .
+  var VA : ValueAbi .
+  var MS : MachineSize .
+  var INTTY : IntTy .
+  var UINTTY : UintTy .
+  var FLOATTY : FloatTy .
+  var BITS BYTES : Int .
+  var IDX : Int .
+
+  op #isUnionType : TypeInfo -> Bool .
+  eq #isUnionType(typeInfoUnionType(NAME, ADT, FIELDS, LAYOUT)) = true .
+  eq #isUnionType(TI) = false [owise] .
+
+  op #zeroFieldOffset : MaybeLayoutShape -> Bool .
+  eq #zeroFieldOffset(LAYOUT) = #layoutOffsets(LAYOUT) == machineSize(0) .
+  op #layoutOffsets : MaybeLayoutShape -> MachineSizes .
+  eq #layoutOffsets(someLayoutShape(layoutShape(fieldsShapeArbitrary(mk(OFFSETS)), VS, VA, AL, MS))) = OFFSETS .
+  eq #layoutOffsets(LAYOUT) = .MachineSizes [owise] .
+
+  op getFieldTy : TypeInfo Int -> MaybeTy .
+  eq getFieldTy(typeInfoStructType(NAME, ADT, FIELDS, LAYOUT), IDX) = getFieldTyFromList(FIELDS, IDX) .
+  eq getFieldTy(typeInfoUnionType(NAME, ADT, FIELDS, LAYOUT), IDX) = getFieldTyFromList(FIELDS, IDX) .
+  eq getFieldTy(TI, IDX) = TyUnknown [owise] .
+  op getFieldTyFromList : Tys Int -> MaybeTy .
+  eq getFieldTyFromList(TY FIELDS, 0) = TY .
+  ceq getFieldTyFromList(TY FIELDS, IDX) = getFieldTyFromList(FIELDS, IDX - 1) if IDX > 0 .
+  eq getFieldTyFromList(FIELDS, IDX) = TyUnknown [owise] .
+
+  op #isArrayType : TypeInfo -> Bool .
+  eq #isArrayType(typeInfoArrayType(TY, MTC)) = true .
+  eq #isArrayType(TI) = false [owise] .
+
+  --- getTyOf(TYPESMAP, TY, PROJS): the type of the place of type TY projected by PROJS.
+  op getTyOf : Map{Ty,TypeInfo} MaybeTy ProjectionElems -> MaybeTy .
+  eq getTyOf(TM, TY, projectionElemDeref PROJS) = getTyOf(TM, pointeeTy(lookupTy(TM, TY)), PROJS) .
+  eq getTyOf(TM, TY', projectionElemField(F, TY) PROJS) = getTyOf(TM, TY, PROJS) .
+  eq getTyOf(TM, TY, projectionElemIndex(L) PROJS) = getTyOf(TM, elemTy(lookupTy(TM, TY)), PROJS) .
+  eq getTyOf(TM, TY, projectionElemConstantIndex(A, B, D) PROJS) = getTyOf(TM, elemTy(lookupTy(TM, TY)), PROJS) .
+  eq getTyOf(TM, TY, projectionElemSubslice(A, B, D) PROJS) = getTyOf(TM, TY, PROJS) .
+  eq getTyOf(TM, TY, projectionElemDowncast(VI) PROJS) = getTyOf(TM, TY, PROJS) .
+  eq getTyOf(TM, TY', projectionElemOpaqueCast(TY) PROJS) = getTyOf(TM, TY, PROJS) .
+  eq getTyOf(TM, TY', projectionElemSubtype(TY) PROJS) = getTyOf(TM, TY, PROJS) .
+  eq getTyOf(TM, TyUnknown, PROJS) = TyUnknown .
+  eq getTyOf(TM, TY, .ProjectionElems) = TY .
+  eq getTyOf(TM, MTY, PROJS) = TyUnknown [owise] .
+
+  op pointeeTy : TypeInfo -> MaybeTy .
+  eq pointeeTy(typeInfoPtrType(TY)) = TY .
+  eq pointeeTy(typeInfoRefType(TY)) = TY .
+  eq pointeeTy(TI) = TyUnknown [owise] .
+  op elemTy : TypeInfo -> MaybeTy .
+  eq elemTy(typeInfoArrayType(TY, MTC)) = TY .
+  eq elemTy(TI) = TyUnknown [owise] .
+
+  op #metadataSize : Map{Ty,TypeInfo} Ty ProjectionElems -> MetadataSize .
+  op #metadataSize : Map{Ty,TypeInfo} MaybeTy -> MetadataSize .
+  eq #metadataSize(TM, TY, PROJS) = #metadataSize(TM, getTyOf(TM, TY, PROJS)) .
+  eq #metadataSize(TM, TY) = #metadataSizeAux(TM, lookupTy(TM, TY)) .
+  eq #metadataSize(TM, TyUnknown) = noMetadataSize .
+  op #metadataSizeAux : Map{Ty,TypeInfo} TypeInfo -> MetadataSize .
+  eq #metadataSizeAux(TM, typeInfoArrayType(TY, someTyConst(tyConst(KIND, ID)))) = staticSize(readTyConstInt(TM, KIND)) .
+  eq #metadataSizeAux(TM, typeInfoArrayType(TY, noTyConst)) = dynamicSize(1) .
+  eq #metadataSizeAux(TM, TI) = noMetadataSize [owise] .
+
+  op readTyConstInt : Map{Ty,TypeInfo} TyConstKind -> Int .
+  ceq readTyConstInt(TM, tyConstKindValue(TY, allocation(BS, PM, AL, MU))) = Bytes2Int(BS, LE, Unsigned)
+    if isUintTy(#numTypeOf(lookupTy(TM, TY)))
+    /\ lengthBytes(BS) == #bitWidth(#numTypeOf(lookupTy(TM, TY))) quo 8 .
+  ceq readTyConstInt(TM, tyConstKindValue(TY, allocation(BS, PM, AL, MU))) = Bytes2Int(BS, LE, Signed)
+    if isIntTy(#numTypeOf(lookupTy(TM, TY)))
+    /\ lengthBytes(BS) == #bitWidth(#numTypeOf(lookupTy(TM, TY))) quo 8 .
+
+  op #zeroSizedType : TypeInfo -> Bool .
+  eq #zeroSizedType(typeInfoTupleType(.Tys, LAYOUT)) = true .
+  eq #zeroSizedType(typeInfoStructType(NAME, ADT, .Tys, LAYOUT)) = true .
+  eq #zeroSizedType(typeInfoVoidType) = true .
+  eq #zeroSizedType(typeInfoFunType(NAME)) = true .
+  eq #zeroSizedType(TI) = false [owise] .
+
+  op #msBytes : MachineSize -> Int .
+  eq #msBytes(machineSize(BITS)) = BITS quo 8 .
+
+  op #sizeOf : Map{Ty,TypeInfo} TypeInfo -> Int .
+  op #alignOf : Map{Ty,TypeInfo} TypeInfo -> Int .
+  eq #sizeOf(TM, typeInfoPrimitiveType(primTypeInt(INTTY))) = #bitWidth(INTTY) quo 8 .
+  eq #alignOf(TM, typeInfoPrimitiveType(primTypeInt(INTTY))) = #bitWidth(INTTY) quo 8 .
+  eq #sizeOf(TM, typeInfoPrimitiveType(primTypeUint(UINTTY))) = #bitWidth(UINTTY) quo 8 .
+  eq #alignOf(TM, typeInfoPrimitiveType(primTypeUint(UINTTY))) = #bitWidth(UINTTY) quo 8 .
+  eq #sizeOf(TM, typeInfoPrimitiveType(primTypeFloat(FLOATTY))) = #bitWidth(FLOATTY) quo 8 .
+  eq #alignOf(TM, typeInfoPrimitiveType(primTypeFloat(FLOATTY))) = #bitWidth(FLOATTY) quo 8 .
+  eq #sizeOf(TM, typeInfoPrimitiveType(primTypeBool)) = 1 .
+  eq #alignOf(TM, typeInfoPrimitiveType(primTypeBool)) = 1 .
+  eq #sizeOf(TM, typeInfoPrimitiveType(primTypeChar)) = 4 .
+  eq #alignOf(TM, typeInfoPrimitiveType(primTypeChar)) = 4 .
+  eq #sizeOf(TM, typeInfoPrimitiveType(primTypeStr)) = 0 .
+  eq #alignOf(TM, typeInfoPrimitiveType(primTypeStr)) = 4 .
+  eq #sizeOf(TM, typeInfoEnumType(NAME, ADT, DS, FIELDSS, someLayoutShape(layoutShape(FS, VS, VA, AL, machineSize(BITS))))) = BITS quo 8 .
+  eq #sizeOf(TM, typeInfoEnumType(NAME, ADT, DS, FIELDSS, noLayoutShape)) = 0 .
+  eq #alignOf(TM, typeInfoEnumType(NAME, ADT, DS, FIELDSS, someLayoutShape(layoutShape(FS, VS, VA, align(BYTES), MS)))) = BYTES .
+  eq #alignOf(TM, typeInfoEnumType(NAME, ADT, DS, FIELDSS, noLayoutShape)) = 1 .
+  eq #sizeOf(TM, typeInfoStructType(NAME, ADT, FIELDS, someLayoutShape(layoutShape(FS, VS, VA, AL, machineSize(BITS))))) = BITS quo 8 .
+  eq #sizeOf(TM, typeInfoStructType(NAME, ADT, FIELDS, noLayoutShape)) = 0 .
+  eq #alignOf(TM, typeInfoStructType(NAME, ADT, FIELDS, someLayoutShape(layoutShape(FS, VS, VA, align(BYTES), MS)))) = BYTES .
+  eq #alignOf(TM, typeInfoStructType(NAME, ADT, FIELDS, noLayoutShape)) = 1 .
+  eq #sizeOf(TM, typeInfoTupleType(TYS, someLayoutShape(layoutShape(FS, VS, VA, AL, machineSize(BITS))))) = BITS quo 8 .
+  eq #sizeOf(TM, typeInfoTupleType(TYS, noLayoutShape)) = 0 .
+  eq #alignOf(TM, typeInfoTupleType(TYS, someLayoutShape(layoutShape(FS, VS, VA, align(BYTES), MS)))) = BYTES .
+  eq #alignOf(TM, typeInfoTupleType(TYS, noLayoutShape)) = 1 .
+  eq #sizeOf(TM, typeInfoUnionType(NAME, ADT, FIELDS, someLayoutShape(layoutShape(FS, VS, VA, AL, machineSize(BITS))))) = BITS quo 8 .
+  eq #sizeOf(TM, typeInfoUnionType(NAME, ADT, FIELDS, noLayoutShape)) = 0 .
+  eq #alignOf(TM, typeInfoUnionType(NAME, ADT, FIELDS, someLayoutShape(layoutShape(FS, VS, VA, align(BYTES), MS)))) = BYTES .
+  eq #alignOf(TM, typeInfoUnionType(NAME, ADT, FIELDS, noLayoutShape)) = 1 .
+  eq #sizeOf(TM, typeInfoArrayType(TY, noTyConst)) = 0 .
+  eq #sizeOf(TM, typeInfoArrayType(TY, someTyConst(tyConst(KIND, ID))))
+   = #sizeOf(TM, lookupTy(TM, TY)) * readTyConstInt(TM, KIND) .
+  eq #alignOf(TM, typeInfoArrayType(TY, MTC)) = #alignOf(TM, lookupTy(TM, TY)) .
+  eq #sizeOf(TM, typeInfoPtrType(TY))
+   = #sizeOf(TM, typeInfoPrimitiveType(primTypeUint(uintTyUsize)))
+     * (if #metadataSize(TM, TY) == dynamicSize(1) then 2 else 1 fi) .
+  eq #sizeOf(TM, typeInfoRefType(TY))
+   = #sizeOf(TM, typeInfoPrimitiveType(primTypeUint(uintTyUsize)))
+     * (if #metadataSize(TM, TY) == dynamicSize(1) then 2 else 1 fi) .
+  eq #alignOf(TM, typeInfoPtrType(TY)) = #alignOf(TM, typeInfoPrimitiveType(primTypeUint(uintTyUsize))) .
+  eq #alignOf(TM, typeInfoRefType(TY)) = #alignOf(TM, typeInfoPrimitiveType(primTypeUint(uintTyUsize))) .
+  eq #sizeOf(TM, TI) = 0 [owise] .
+  eq #alignOf(TM, TI) = 0 [owise] .
+endfm
+

@@ -1,0 +1,967 @@
+------------------------------------------------------------
+--- Rust programs in the TEE model
+------------------------------------------------------------
+
+--- This file connects the Rust semantics of lang/rust/semantics.maude to the TEE model, as
+--- lang/c/tee-support.maude does for C (src/lang.maude, App. D):
+---   * a Rust program is its Stable MIR, a Pgm; a service of a TA is a function of it, named
+---     rustFn(NAME) by the name of its mono item;
+---   * a TA service runs from mkConf(P, FID, VL), the configuration that calls the function
+---     with the values VL, and getVals reads its outputs when it has finished (PROGRAM-RUN);
+---   * a call of a TEE API function, a foreign function such as TEE_AllocateTransientObject
+---     that has no body in the MIR, runs as $in(VL) ~> $wait(F) ~> $out(EL) (CALL-TASK), and
+---     assign(EL, VL) writes the values that F returns to the outputs EL.
+--- The TEE model and a Rust program see the same values differently: the model has abstract
+--- values (# typeAes, # success, # oid(N, TK)), and the program the integers of the
+--- GlobalPlatform API (TEE_TYPE_AES, TEE_SUCCESS) and opaque handles.  The values are converted
+--- at the boundary: an integer of the program by the kind of its parameter (RUST-TEE-VALUE), a
+--- allocated handle not at all (the program only passes it back).  A zero integer used as a
+--- handle becomes the null handle of the model.
+--- The supported model ABI follows every callable stub of lang/c, plus its REE client calls.
+--- The signature table (rustApi, rustSig in RUST-TEE-API) is the one list of the foreign
+--- functions; an extension adds its own equations.  It deliberately follows the abstract C
+--- model's parameters, which differ from native GP prototypes for buffers and session calls.
+--- RUST-SHARED-OBJECT handles copyIn/copyOut, and RICH-APP-RUST-BEHAVIOR handles REE calls.
+
+------------------------------------------------------------
+--- Values at the boundary
+------------------------------------------------------------
+
+--- The kinds of the parameters of a TEE API function, by how their values are converted.
+---   pkU32, pkUsize  an integer, # N in the model
+---   pkObjType       an object type (TEE_TYPE_*), # T with T a Type in the model
+---   pkHandle        an opaque handle; integer zero on input denotes the model's null handle
+---   pkBool          a Boolean, # B in the model
+---   pkRet           a return code (TEE_Result), # RC with RC a ReturnCode in the model
+
+--- @kind program
+--- @feature rust
+mod RUST-TEE-VALUE is
+  pr RUST-SEMANTICS .
+  pr TEE-API-PARAM .
+  pr RETURN-VALUE .
+  pr HANDLE .
+  pr GENERIC-OBJECT-VALUE .
+  pr BASIC-DATA .
+  pr QID .
+  pr CONVERSION .
+
+  sort ParamKind .
+  ops pkU32 pkUsize pkObjType pkHandle pkBool pkRet : -> ParamKind [ctor] .
+  ops pkModel pkInt pkBuffer pkFile pkStorage pkFlags pkSeek pkAlgorithm pkMode
+      pkAttrId pkAttrData pkAttrs pkObjectInfo pkTime pkApp pkFunc pkParams pkOrigin : -> ParamKind [ctor] .
+
+  var I W : Int .
+  var N : Nat .
+  var S B : Bool .
+  var V : Value .
+  var T : Type .
+  var RC : ReturnCode .
+  var IT : IntTy .
+  var UT : UintTy .
+  var TI : TypeInfo .
+  vars L L' : KList .
+  var DL : List{Data} .
+  var CA : Set{CryptoAttribute} .
+  var FLAGS : Set{DataAccessFlag} .
+  var USAGES : Set{Usage} .
+  vars N1 N2 N3 N4 : Nat .
+
+  --- convIn(PK, V): the value V of the program as an input of the model.
+  op convIn : ParamKind Value -> Value .
+  op rustApp : Nat -> AppId [ctor] .
+  op rustCommand : Nat -> FuncId [ctor] .
+  op rustShared : Value -> Value [ctor] .
+  op rustParamValues : Value -> List{Arg} .
+  op rustParamItems : KList -> List{Arg} .
+  op rustParamValue : Value -> Value .
+  eq rustParamValues(Aggregate(VI:VariantIdx, L)) = rustParamItems(L) .
+  eq rustParamValues(Range(L)) = rustParamItems(L) .
+  eq rustParamValues(Integer(0, W, S)) = nil .
+  eq rustParamItems(.List) = nil .
+  eq rustParamItems(ListItem(V) ; L) = rustParamValue(V) rustParamItems(L) .
+  ceq rustParamValue(V) = rustShared(V) if $rustIndirect(V) .
+  ceq rustParamValue(V) = toArg(V) if not $rustIndirect(V) .
+  op $rustIndirect : Value -> Bool .
+  eq $rustIndirect(Reference(OFF:Int, PL:Place, MU:Mutability, ME:Metadata)) = true .
+  eq $rustIndirect(PtrLocal(OFF:Int, PL:Place, MU:Mutability, ME:Metadata)) = true .
+  eq $rustIndirect(AllocRef(AID:AllocId, PR:ProjectionElems, ME:Metadata)) = true .
+  eq $rustIndirect(V) = false [owise] .
+  ceq convIn(pkU32, Integer(I, W, S)) = # I if I >= 0 .
+  ceq convIn(pkUsize, Integer(I, W, S)) = # I if I >= 0 .
+  eq convIn(pkObjType, Integer(I, W, S)) = # gpType(I) .
+  eq convIn(pkHandle, Integer(0, W, S)) = # null .
+  eq convIn(pkHandle, V) = V [owise] .
+  eq convIn(pkBool, BoolVal(B)) = # B .
+  eq convIn(pkModel, V) = V .
+  eq convIn(pkInt, Integer(I, W, S)) = # I .
+  eq convIn(pkStorage, Integer(1, W, S)) = # storagePrivate .
+  eq convIn(pkStorage, Integer(I, W, S)) = # storageIllegalValue [owise] .
+  eq convIn(pkFile, Integer(I, W, S)) = # fileName(qid(string(I, 10))) .
+  eq convIn(pkFlags, Integer(I, W, S)) = # rustFlags(I) .
+  eq convIn(pkSeek, Integer(0, W, S)) = # seekSet .
+  eq convIn(pkSeek, Integer(1, W, S)) = # seekCur .
+  eq convIn(pkSeek, Integer(2, W, S)) = # seekEnd .
+  eq convIn(pkMode, Integer(0, W, S)) = # modeEncrypt .
+  eq convIn(pkMode, Integer(1, W, S)) = # modeDecrypt .
+  eq convIn(pkMode, Integer(2, W, S)) = # modeSign .
+  eq convIn(pkMode, Integer(3, W, S)) = # modeVerify .
+  eq convIn(pkMode, Integer(4, W, S)) = # modeMac .
+  eq convIn(pkMode, Integer(5, W, S)) = # modeDigest .
+  eq convIn(pkMode, Integer(6, W, S)) = # modeDerive .
+  eq convIn(pkAlgorithm, Integer(805306372, W, S)) = # algHmacSha256 . --- 0x30000004
+  eq convIn(pkAlgorithm, Integer(268435728, W, S)) = # algAesCbcNopad . --- 0x10000110
+  eq convIn(pkAlgorithm, Integer(268435472, W, S)) = # algAesEcbNopad . --- 0x10000010
+  eq convIn(pkAlgorithm, Integer(268435984, W, S)) = # algAesCtr . --- 0x10000210
+  eq convIn(pkAlgorithm, Integer(1342177284, W, S)) = # algSha256 . --- 0x50000004
+  eq convIn(pkAlgorithm, Integer(268436240, W, S)) = # algAesCts . --- 0x10000310
+  eq convIn(pkAlgorithm, Integer(268436496, W, S)) = # algAesXts . --- 0x10000410
+  eq convIn(pkAlgorithm, Integer(1073743632, W, S)) = # algAesCcm . --- 0x40000710
+  eq convIn(pkAlgorithm, Integer(1073743888, W, S)) = # algAesGcm . --- 0x40000810
+  eq convIn(pkAlgorithm, Integer(1612775984, W, S)) = # algRsaesPkcs1OaepMgf1Sha1 . --- 0x60210230
+  eq convIn(pkAlgorithm, Integer(1613824560, W, S)) = # algRsaesPkcs1OaepMgf1Sha224 . --- 0x60310230
+  eq convIn(pkAlgorithm, Integer(1610612784, W, S)) = # algRsaNopad . --- 0x60000030
+  eq convIn(pkAlgorithm, Integer(1879066672, W, S)) = # algRsassaPkcs1V15Sha256 . --- 0x70004830
+  eq convIn(pkAlgorithm, Integer(2147483698, W, S)) = # algDhDeriveSharedSecret . --- 0x80000032
+  eq convIn(pkAlgorithm, Integer(1610612805, W, S)) = # algSm2Kep . --- 0x60000045
+  eq convIn(pkAttrId, Integer(3221225472, W, S)) = # secretValue . --- 0xC0000000
+  eq convIn(pkAttrId, Integer(3489661232, W, S)) = # rsaModulus . --- 0xD0000130
+  eq convIn(pkAttrId, Integer(3489661488, W, S)) = # rsaPublicExponent . --- 0xD0000230
+  eq convIn(pkAttrId, Integer(3221226288, W, S)) = # rsaPrivateExponent . --- 0xC0000330
+  eq convIn(pkAttrId, Integer(3221226544, W, S)) = # rsaPrime1 . --- 0xC0000430
+  eq convIn(pkAttrId, Integer(3221226800, W, S)) = # rsaPrime2 . --- 0xC0000530
+  eq convIn(pkAttrId, Integer(3221227056, W, S)) = # rsaExponent1 . --- 0xC0000630
+  eq convIn(pkAttrId, Integer(3221227312, W, S)) = # rsaExponent2 . --- 0xC0000730
+  eq convIn(pkAttrId, Integer(3221227568, W, S)) = # rsaCoefficient . --- 0xC0000830
+  eq convIn(pkAttrId, Integer(3489665073, W, S)) = # dsaPrime . --- 0xD0001031
+  eq convIn(pkAttrId, Integer(3489665329, W, S)) = # dsaSubprime . --- 0xD0001131
+  eq convIn(pkAttrId, Integer(3489665585, W, S)) = # dsaBase . --- 0xD0001231
+  eq convIn(pkAttrId, Integer(3489661233, W, S)) = # dsaPublicValue . --- 0xD0000131
+  eq convIn(pkAttrId, Integer(3221226033, W, S)) = # dsaPrivateValue . --- 0xC0000231
+  eq convIn(pkAttrId, Integer(3489665074, W, S)) = # dhPrime . --- 0xD0001032
+  eq convIn(pkAttrId, Integer(3489665330, W, S)) = # dhSubprime . --- 0xD0001132
+  eq convIn(pkAttrId, Integer(3489665586, W, S)) = # dhBase . --- 0xD0001232
+  eq convIn(pkAttrId, Integer(4026536754, W, S)) = # dhXBits . --- 0xF0001332
+  eq convIn(pkAttrId, Integer(3489661234, W, S)) = # dhPublicValue . --- 0xD0000132
+  eq convIn(pkAttrId, Integer(3221226034, W, S)) = # dhPrivateValue . --- 0xC0000232
+  eq convIn(pkAttrId, Integer(3489663280, W, S)) = # rsaOaepLabel . --- 0xD0000930
+  eq convIn(pkAttrId, Integer(4026534448, W, S)) = # rsaPssSaltLength . --- 0xF0000A30
+  eq convIn(pkAttrId, Integer(3489661249, W, S)) = # eccPublicValueX . --- 0xD0000141
+  eq convIn(pkAttrId, Integer(3489661505, W, S)) = # eccPublicValueY . --- 0xD0000241
+  eq convIn(pkAttrId, Integer(3221226305, W, S)) = # eccPrivateValue . --- 0xC0000341
+  eq convIn(pkAttrId, Integer(4026532929, W, S)) = # eccCurve . --- 0xF0000441
+  eq convIn(pkAttrId, Integer(3489662531, W, S)) = # ed25519Ctx . --- 0xD0000643
+  eq convIn(pkAttrId, Integer(4026531844, W, S)) = # ed25519Ph . --- 0xF0000004
+  eq convIn(pkAttrId, Integer(3489662787, W, S)) = # ed25519PublicValue . --- 0xD0000743
+  eq convIn(pkAttrId, Integer(3221227587, W, S)) = # ed25519PrivateValue . --- 0xC0000843
+  eq convIn(pkAttrId, Integer(3489663300, W, S)) = # x25519PublicValue . --- 0xD0000944
+  eq convIn(pkAttrId, Integer(3221228100, W, S)) = # x25519PrivateValue . --- 0xC0000A44
+  eq convIn(pkAttrId, Integer(3489660930, W, S)) = # ed448PublicValue . --- 0xD0000002
+  eq convIn(pkAttrId, Integer(3221225475, W, S)) = # ed448PrivateValue . --- 0xC0000003
+  eq convIn(pkAttrId, Integer(3489663557, W, S)) = # x448PublicValue . --- 0xD0000A45
+  eq convIn(pkAttrId, Integer(3221228102, W, S)) = # x448PrivateValue . --- 0xC0000A46
+  eq convIn(pkAttrId, Integer(3489662022, W, S)) = # sm2IdInitiator . --- 0xD0000446
+  eq convIn(pkAttrId, Integer(3489662278, W, S)) = # sm2IdResponder . --- 0xD0000546
+  eq convIn(pkAttrId, Integer(4026533446, W, S)) = # sm2KepUser . --- 0xF0000646
+  eq convIn(pkAttrId, Integer(3489662790, W, S)) = # sm2KepConfirmationIn . --- 0xD0000746
+  eq convIn(pkAttrId, Integer(3489663046, W, S)) = # sm2KepConfirmationOut . --- 0xD0000846
+  eq convIn(pkAttrData, Integer(I, W, S)) = # attrValue(I) .
+  eq convIn(pkAttrData, Range(L)) = # sizedAttrVal(8 * size(L), rustBytesNumber(L)) .
+  eq convIn(pkApp, Integer(N, W, S)) = # rustApp(N) .
+  eq convIn(pkFunc, Integer(N, W, S)) = # rustCommand(N) .
+  eq convIn(pkAttrs, Range(L)) = # rustAttrs(L) .
+  eq convIn(pkAttrs, # CA) = # CA .
+  eq convIn(pkBuffer, Range(L)) = # rustData(L) .
+  eq convIn(pkBuffer, Integer(0, W, S)) = # (nil).List{Data} .
+  eq convIn(pkBuffer, # DL) = # DL .
+  --- Abstract model values can also be supplied directly by Maude scenarios.
+  eq convIn(PK:ParamKind, V) = V [owise] .
+
+  op rustBytesNumber : KList -> Nat .
+  eq rustBytesNumber(.List) = 0 .
+  eq rustBytesNumber(ListItem(Integer(N, 8, false)) ; L) = N + 256 * rustBytesNumber(L) .
+  op rustData : KList -> List{Data} .
+  eq rustData(.List) = nil .
+  eq rustData(ListItem(Integer(N, W, S)) ; L) = data(N) rustData(L) .
+  op rustAttrs : KList -> Set{CryptoAttribute} .
+  eq rustAttrs(.List) = empty .
+  eq rustAttrs(ListItem(# CA) ; L) = (CA, rustAttrs(L)) .
+  op rustFlags : Int -> Set{DataAccessFlag} .
+  eq rustFlags(I) = ((if (I & 1) == 0 then empty else accessRead fi),
+                    (if (I & 2) == 0 then empty else accessWrite fi),
+                    (if (I & 4) == 0 then empty else accessWriteMeta fi),
+                    (if (I & 16) == 0 then empty else shareRead fi),
+                    (if (I & 32) == 0 then empty else shareWrite fi),
+                    (if (I & 1024) == 0 then empty else overwrite fi)) .
+  op rustFlagCode : Set{DataAccessFlag} -> Nat .
+  eq rustFlagCode(FLAGS) = (if accessRead in FLAGS then 1 else 0 fi)
+    + (if accessWrite in FLAGS then 2 else 0 fi) + (if accessWriteMeta in FLAGS then 4 else 0 fi)
+    + (if shareRead in FLAGS then 16 else 0 fi) + (if shareWrite in FLAGS then 32 else 0 fi)
+    + (if overwrite in FLAGS then 1024 else 0 fi) .
+  op rustUsageCode : Set{Usage} -> Nat .
+  eq rustUsageCode(USAGES) = (if usageExtractable in USAGES then 1 else 0 fi)
+    + (if usageEncrypt in USAGES then 2 else 0 fi) + (if usageDecrypt in USAGES then 4 else 0 fi)
+    + (if usageMac in USAGES then 8 else 0 fi) + (if usageSign in USAGES then 16 else 0 fi)
+    + (if usageVerify in USAGES then 32 else 0 fi) + (if usageDerive in USAGES then 64 else 0 fi) .
+
+  --- convOut(PK, V): the value V of the model as a value of the program.
+  op convOut : ParamKind Value -> Value .
+  eq convOut(pkRet, # RC) = Integer(gpCode(RC), 32, false) .
+  eq convOut(pkU32, # N) = Integer(N, 32, false) .
+  eq convOut(pkUsize, # N) = Integer(N, 64, false) .
+  eq convOut(pkObjType, # T) = Integer(gpTypeCode(T), 32, false) .
+  eq convOut(pkHandle, # null) = Integer(0, 64, false) .
+  eq convOut(pkHandle, V) = V [owise] .
+  eq convOut(pkRet, # corrupted) = Integer(4027580417, 32, false) .
+  eq convOut(pkRet, # notAvailable) = Integer(4027580419, 32, false) .
+  eq convOut(pkRet, # outOfSpace) = Integer(4294914113, 32, false) .
+  eq convOut(pkBool, # B) = BoolVal(B) .
+  eq convOut(pkObjectInfo, # teeObjectInfo(T, N, N1, USAGES, N2, N3, FLAGS))
+    = Aggregate(variantIdx(0), ListItem(Integer(gpTypeCode(T), 32, false)) ; ListItem(Integer(N, 32, false))
+      ; ListItem(Integer(N1, 32, false)) ; ListItem(Integer(rustUsageCode(USAGES), 32, false))
+      ; ListItem(Integer(N2, 32, false)) ; ListItem(Integer(N3, 32, false)) ; ListItem(Integer(rustFlagCode(FLAGS), 32, false))) .
+  eq convOut(pkOrigin, # originTee) = Integer(3, 32, false) .
+  eq convOut(pkOrigin, # originTrustedApp) = Integer(4, 32, false) .
+  eq convOut(PK:ParamKind, V) = V [owise] .
+
+  --- fromArg(V, TI): an argument V of a TA service as a value of the type TI; toArg(V): a
+  --- result of the service as a value of the model.  Integers and Booleans are converted; any
+  --- other value (a handle) is the same.
+  op fromArg : Value TypeInfo -> Value .
+  eq fromArg(# I, typeInfoPrimitiveType(primTypeInt(IT))) = Integer(I, #bitWidth(IT), true) .
+  eq fromArg(# I, typeInfoPrimitiveType(primTypeUint(UT))) = Integer(I, #bitWidth(UT), false) .
+  eq fromArg(# B, typeInfoPrimitiveType(primTypeBool)) = BoolVal(B) .
+  eq fromArg(V, TI) = V [owise] .
+  op toArg : Value -> Value .
+  eq toArg(Integer(I, W, S)) = # I .
+  eq toArg(BoolVal(B)) = # B .
+  eq toArg(V) = V [owise] .
+
+  --- The return codes of the API, [Internal Core] Table 3-4 (TEE_Result).
+  op gpCode : ReturnCode -> Int .
+  eq gpCode(success) = 0 .
+  eq gpCode(errorCorruptObject2) = 4027580418 .           --- 0xF0100002
+  eq gpCode(errorStorageNotAvailable2) = 4027580420 .     --- 0xF0100004
+  eq gpCode(errorGeneric) = 4294901760 .                  --- 0xFFFF0000
+  eq gpCode(errorAccessDenied) = 4294901761 .             --- 0xFFFF0001
+  eq gpCode(errorAccessConflict) = 4294901763 .           --- 0xFFFF0003
+  eq gpCode(errorBadParameters) = 4294901766 .            --- 0xFFFF0006
+  eq gpCode(errorBadState) = 4294901767 .                 --- 0xFFFF0007
+  eq gpCode(errorItemNotFound) = 4294901768 .             --- 0xFFFF0008
+  eq gpCode(errorNotSupported) = 4294901770 .             --- 0xFFFF000A
+  eq gpCode(errorOutOfMemory) = 4294901772 .              --- 0xFFFF000C
+  eq gpCode(errorBusy) = 4294901773 .                     --- 0xFFFF000D
+  eq gpCode(errorSecurity) = 4294901775 .                 --- 0xFFFF000F
+  eq gpCode(errorShortBuffer) = 4294901776 .              --- 0xFFFF0010
+  eq gpCode(errorOverflow) = 4294914063 .                 --- 0xFFFF300F
+  eq gpCode(errorTargetDead) = 4294914084 .               --- 0xFFFF3024
+  eq gpCode(errorMacInvalid) = 4294914161 .               --- 0xFFFF3071
+  eq gpCode(errorSignatureInvalid) = 4294914162 .         --- 0xFFFF3072
+  eq gpCode(errorCiphertextInvalid) = 4294914163 .        --- 0xFFFF3073
+
+  --- The object types, [Internal Core] Table 6-13 (TEE_TYPE_*).
+  op gpType : Int -> Type .
+  op gpTypeCode : Type -> Int .
+  eq gpType(2684354576) = typeAes .                --- 0xA0000010
+  eq gpType(2684354577) = typeDes .                --- 0xA0000011
+  eq gpType(2684354579) = typeDes3 .               --- 0xA0000013
+  eq gpType(2684354561) = typeHmacMd5 .            --- 0xA0000001
+  eq gpType(2684354562) = typeHmacSha1 .           --- 0xA0000002
+  eq gpType(2684354563) = typeHmacSha224 .         --- 0xA0000003
+  eq gpType(2684354564) = typeHmacSha256 .         --- 0xA0000004
+  eq gpType(2684354565) = typeHmacSha384 .         --- 0xA0000005
+  eq gpType(2684354566) = typeHmacSha512 .         --- 0xA0000006
+  eq gpType(2684354608) = rsaPubKey .              --- 0xA0000030
+  eq gpType(2701131824) = rsaKeyPair .             --- 0xA1000030
+  eq gpType(2684354609) = dsaPubKey .              --- 0xA0000031
+  eq gpType(2701131825) = dsaKeypair .             --- 0xA1000031
+  eq gpType(2701131826) = typeDhKeypair .          --- 0xA1000032
+  eq gpType(2684354625) = typeEcdsaPublicKey .     --- 0xA0000041
+  eq gpType(2701131841) = typeEcdsaKeypair .       --- 0xA1000041
+  eq gpType(2684354626) = typeEcdhPublicKey .      --- 0xA0000042
+  eq gpType(2701131842) = typeEcdhKeypair .        --- 0xA1000042
+  eq gpType(2684354627) = typeEd25519PublicKey .   --- 0xA0000043
+  eq gpType(2701131843) = typeEd25519Keypair .     --- 0xA1000043
+  eq gpType(2684354628) = typeX25519PublicKey .    --- 0xA0000044
+  eq gpType(2701131844) = typeX25519Keypair .      --- 0xA1000044
+  eq gpTypeCode(typeAes) = 2684354576 .     --- 0xA0000010
+  eq gpTypeCode(typeDes) = 2684354577 .     --- 0xA0000011
+  eq gpTypeCode(typeDes3) = 2684354579 .    --- 0xA0000013
+  eq gpTypeCode(typeHmacMd5) = 2684354561 . --- 0xA0000001
+  eq gpTypeCode(typeHmacSha1) = 2684354562 . --- 0xA0000002
+  eq gpTypeCode(typeHmacSha224) = 2684354563 . --- 0xA0000003
+  eq gpTypeCode(typeHmacSha256) = 2684354564 . --- 0xA0000004
+  eq gpTypeCode(typeHmacSha384) = 2684354565 . --- 0xA0000005
+  eq gpTypeCode(typeHmacSha512) = 2684354566 . --- 0xA0000006
+  eq gpTypeCode(rsaPubKey) = 2684354608 .   --- 0xA0000030
+  eq gpTypeCode(rsaKeyPair) = 2701131824 .  --- 0xA1000030
+  eq gpTypeCode(dsaPubKey) = 2684354609 .   --- 0xA0000031
+  eq gpTypeCode(dsaKeypair) = 2701131825 .  --- 0xA1000031
+  eq gpTypeCode(typeDhKeypair) = 2701131826 . --- 0xA1000032
+  eq gpTypeCode(typeEcdsaPublicKey) = 2684354625 . --- 0xA0000041
+  eq gpTypeCode(typeEcdsaKeypair) = 2701131841 . --- 0xA1000041
+  eq gpTypeCode(typeEcdhPublicKey) = 2684354626 . --- 0xA0000042
+  eq gpTypeCode(typeEcdhKeypair) = 2701131842 . --- 0xA1000042
+  eq gpTypeCode(typeEd25519PublicKey) = 2684354627 . --- 0xA0000043
+  eq gpTypeCode(typeEd25519Keypair) = 2701131843 . --- 0xA1000043
+  eq gpTypeCode(typeX25519PublicKey) = 2684354628 . --- 0xA0000044
+  eq gpTypeCode(typeX25519Keypair) = 2701131844 . --- 0xA1000044
+  eq gpType(2684354560) = typeGenericSecret .
+  eq gpTypeCode(typeGenericSecret) = 2684354560 .
+  eq gpType(2684354567) = typeHmacSm3 .
+  eq gpTypeCode(typeHmacSm3) = 2684354567 .
+  eq gpType(2684354568) = typeHmacSha3224 .
+  eq gpTypeCode(typeHmacSha3224) = 2684354568 .
+  eq gpType(2684354569) = typeHmacSha3256 .
+  eq gpTypeCode(typeHmacSha3256) = 2684354569 .
+  eq gpType(2684354570) = typeHmacSha3384 .
+  eq gpTypeCode(typeHmacSha3384) = 2684354570 .
+  eq gpType(2684354571) = typeHmacSha3512 .
+  eq gpTypeCode(typeHmacSha3512) = 2684354571 .
+  eq gpType(2684354632) = typeEd448PublicKey .
+  eq gpTypeCode(typeEd448PublicKey) = 2684354632 .
+  eq gpType(2701131848) = typeEd448Keypair .
+  eq gpTypeCode(typeEd448Keypair) = 2701131848 .
+  eq gpType(2684354633) = typeX448PublicKey .
+  eq gpTypeCode(typeX448PublicKey) = 2684354633 .
+  eq gpType(2701131849) = typeX448Keypair .
+  eq gpTypeCode(typeX448Keypair) = 2701131849 .
+  eq gpType(2684354629) = typeSm2DsaPublicKey .
+  eq gpTypeCode(typeSm2DsaPublicKey) = 2684354629 .
+  eq gpType(2701131845) = typeSm2DsaKeypair .
+  eq gpTypeCode(typeSm2DsaKeypair) = 2701131845 .
+  eq gpType(2684354630) = typeSm2KepPublicKey .
+  eq gpTypeCode(typeSm2KepPublicKey) = 2684354630 .
+  eq gpType(2701131846) = typeSm2KepKeypair .
+  eq gpTypeCode(typeSm2KepKeypair) = 2701131846 .
+  eq gpType(2684354631) = typeSm2PkePublicKey .
+  eq gpTypeCode(typeSm2PkePublicKey) = 2684354631 .
+  eq gpType(2701131847) = typeSm2PkeKeypair .
+  eq gpTypeCode(typeSm2PkeKeypair) = 2701131847 .
+  eq gpType(2684354580) = typeSm4 .
+  eq gpTypeCode(typeSm4) = 2684354580 .
+  eq gpType(2684354751) = pureData .
+  eq gpTypeCode(pureData) = 2684354751 .
+endm
+
+------------------------------------------------------------
+--- TEE API functions
+------------------------------------------------------------
+
+--- rustApi(NAME): the TEE API function of the foreign function NAME of the program, or noApi.
+--- rustSig(F): how the program calls F, sig(RESULT, PARAMS): RESULT is retCode when F returns a
+--- TEE_Result and noResult for a void function, and PARAMS gives each parameter, in the order
+--- of the C prototype, as inP(PK) for an input or outP(PK) for an output, a pointer to which F
+--- writes.  The outputs are those of lang/c/tee-support.maude (getFuncParams), in the same order.
+
+--- @kind program
+--- @feature rust
+mod RUST-TEE-API is
+  pr RUST-TEE-VALUE .
+  pr TEE-API .
+  --- The API groups whose functions are listed below.
+  pr TRANSIENT-OBJECT-FUNC .
+  pr PERSISTENT-OBJECT-FUNC .
+  pr GENERIC-OBJECT-FUNC .
+  pr DATA-STREAM-OBJECT-FUNC .
+  pr CRYPTO-OPERATION-FUNC .
+  pr TEE-INTERNAL-CLIENT-FUNC .
+  pr TEE-CLIENT-FUNC .
+
+  sorts ApiResult ParamDir ParamDirs RustSig .
+  ops retCode noResult : -> ApiResult [ctor] .
+  op inP : ParamKind -> ParamDir [ctor] .
+  op outP : ParamKind -> ParamDir [ctor] .
+  ops readP skipP inoutP : ParamKind -> ParamDir [ctor] .
+  subsort ParamDir < ParamDirs .
+  op .ParamDirs : -> ParamDirs [ctor] .
+  op __ : ParamDirs ParamDirs -> ParamDirs [ctor assoc id: .ParamDirs] .
+  op sig : ApiResult ParamDirs -> RustSig [ctor] .
+
+  op rustApi : String -> TeeApi? .
+  op rustSig : TeeApi -> RustSig .
+  var S : String .
+  eq rustApi(S) = noApi [owise] .
+
+  --- $arity(SIG): the number of parameters of a signature; $nOps(OPS): the number of arguments.
+  op $arity : RustSig -> Nat .
+  op $count : ParamDirs -> Nat .
+  op $nOps : Operands -> Nat .
+  --- $isClient(F): F is a function of the TEE Client API (an REE call).
+  op $isClient : TeeApi -> Bool .
+  var SRK : ApiResult .
+  var SPD : ParamDir .
+  var SPDS : ParamDirs .
+  var SOP : Operand .
+  var SOPS : Operands .
+  var SAPI : TeeClientApi .
+  var STF : TeeApi .
+  eq $arity(sig(SRK, SPDS)) = $count(SPDS) .
+  eq $count(.ParamDirs) = 0 .
+  eq $count(SPD SPDS) = s $count(SPDS) .
+  eq $nOps(.Operands) = 0 .
+  eq $nOps((SOP, SOPS)) = s $nOps(SOPS) .
+  eq $isClient(SAPI) = true .
+  eq $isClient(STF) = false [owise] .
+
+  --- The errors of a call of a foreign function, reported as #ProgramError: a name that is no
+  --- function of the model (unknownForeignFunction), a call with another number of arguments
+  --- than the signature (foreignArity(NAME, PARAMS, ARGS)), and a function of the other side,
+  --- that is a client call made by a TA or a TA call made by an RA (foreignCallerRole).
+  op unknownForeignFunction : String -> MIRError [ctor] .
+  op foreignArity : String Nat Nat -> MIRError [ctor] .
+  op foreignCallerRole : String -> MIRError [ctor] .
+
+  --- The foreign functions of the model ABI: rustApi of each name (the API name, and an alias
+  --- where the C stubs have one), rustSig of each function.
+  eq rustApi("allocateTransientObject") = allocateTransientObject .
+  eq rustApi("TEE_AllocateTransientObject") = allocateTransientObject .
+  eq rustSig(allocateTransientObject) = sig(retCode, inP(pkObjType) inP(pkU32) outP(pkHandle)) .
+  eq rustApi("freeTransientObject") = freeTransientObject .
+  eq rustApi("TEE_FreeTransientObject") = freeTransientObject .
+  eq rustSig(freeTransientObject) = sig(noResult, inP(pkHandle)) .
+  eq rustApi("resetTransientObject") = resetTransientObject .
+  eq rustApi("TEE_ResetTransientObject") = resetTransientObject .
+  eq rustSig(resetTransientObject) = sig(noResult, inP(pkHandle)) .
+  eq rustApi("populateTransientObject") = populateTransientObject .
+  eq rustSig(populateTransientObject) = sig(retCode, inP(pkHandle) readP(pkAttrs)) .
+  eq rustApi("initRefAttribute") = initRefAttribute .
+  eq rustSig(initRefAttribute) = sig(noResult, inP(pkAttrId) readP(pkAttrData) outP(pkModel)) .
+  eq rustApi("getObjectInfo1") = getObjectInfo1 .
+  eq rustSig(getObjectInfo1) = sig(retCode, inP(pkHandle) outP(pkObjectInfo)) .
+  eq rustApi("closeObject") = closeObject .
+  eq rustSig(closeObject) = sig(noResult, inP(pkHandle)) .
+  eq rustApi("openPersistentObject") = openPersistentObject .
+  eq rustSig(openPersistentObject) = sig(retCode, inP(pkStorage) readP(pkFile) inP(pkFlags) outP(pkHandle)) .
+  eq rustApi("createPersistent") = createPersistent .
+  eq rustSig(createPersistent) = sig(retCode, skipP(pkModel) readP(pkFile) inP(pkFlags) inP(pkHandle) readP(pkBuffer) skipP(pkModel) inoutP(pkHandle)) .
+  eq rustApi("closeAndDeletePersistentObject1") = closeAndDeletePersistentObject1 .
+  eq rustSig(closeAndDeletePersistentObject1) = sig(retCode, inoutP(pkHandle)) .
+  eq rustApi("readObjData") = readObjData .
+  eq rustSig(readObjData) = sig(retCode, inP(pkHandle) inP(pkU32) outP(pkBuffer)) .
+  eq rustApi("writeObjectData") = writeObjectData .
+  eq rustSig(writeObjectData) = sig(retCode, inP(pkHandle) readP(pkBuffer)) .
+  eq rustApi("truncateObjectData") = truncateObjectData .
+  eq rustSig(truncateObjectData) = sig(retCode, inP(pkHandle) inP(pkU32)) .
+  eq rustApi("seekObjectData") = seekObjectData .
+  eq rustSig(seekObjectData) = sig(retCode, inP(pkHandle) inP(pkInt) inP(pkSeek)) .
+  eq rustApi("renamePersistentObject") = renamePersistentObject .
+  eq rustSig(renamePersistentObject) = sig(retCode, inP(pkHandle) readP(pkFile)) .
+  eq rustApi("allocOperation") = allocOperation .
+  eq rustSig(allocOperation) = sig(retCode, inP(pkAlgorithm) inP(pkMode) inP(pkU32) outP(pkHandle)) .
+  eq rustApi("freeOperation") = freeOperation .
+  eq rustSig(freeOperation) = sig(noResult, inP(pkHandle)) .
+  eq rustApi("resetOperation") = resetOperation .
+  eq rustSig(resetOperation) = sig(noResult, inP(pkHandle)) .
+  eq rustApi("setOperationKey") = setOperationKey .
+  eq rustSig(setOperationKey) = sig(retCode, inP(pkHandle) inP(pkHandle)) .
+  eq rustApi("cipherInit") = cipherInit .
+  eq rustSig(cipherInit) = sig(noResult, inP(pkHandle) skipP(pkModel)) .
+  eq rustApi("cipherUpdate") = cipherUpdate .
+  eq rustSig(cipherUpdate) = sig(retCode, inP(pkHandle) readP(pkBuffer) outP(pkBuffer)) .
+  eq rustApi("macInit") = macInit .
+  eq rustSig(macInit) = sig(noResult, inP(pkHandle) readP(pkBuffer)) .
+  eq rustApi("macUpdate") = macUpdate .
+  eq rustSig(macUpdate) = sig(noResult, inP(pkHandle) readP(pkBuffer)) .
+  eq rustApi("macComputeFinal") = macComputeFinal .
+  eq rustSig(macComputeFinal) = sig(retCode, inP(pkHandle) readP(pkBuffer) outP(pkBuffer)) .
+  eq rustApi("macCompareFinal") = macCompareFinal .
+  eq rustSig(macCompareFinal) = sig(retCode, inP(pkHandle) readP(pkBuffer) readP(pkBuffer)) .
+  eq rustApi("generateRandom") = generateRandom .
+  eq rustSig(generateRandom) = sig(noResult, outP(pkBuffer)) .
+  eq rustApi("getSystemTime") = getSystemTime .
+  eq rustSig(getSystemTime) = sig(noResult, outP(pkTime)) .
+  eq rustApi("TeeOpenTASession") = TeeOpenTASession .
+  eq rustSig(TeeOpenTASession) = sig(retCode, inP(pkApp) inP(pkU32) outP(pkHandle) outP(pkOrigin)) .
+  eq rustApi("TeeInvokeTACommand") = TeeInvokeTACommand .
+  eq rustSig(TeeInvokeTACommand) = sig(retCode, inP(pkHandle) inP(pkFunc) inP(pkParams) outP(pkOrigin)) .
+  eq rustApi("TeecOpenSession") = teecOpenSession .
+  eq rustApi("teecOpenSession") = teecOpenSession .
+  eq rustSig(teecOpenSession) = sig(retCode, inP(pkApp) outP(pkHandle)) .
+  eq rustApi("TeecCloseSession") = teecCloseSession .
+  eq rustApi("teecCloseSession") = teecCloseSession .
+  eq rustSig(teecCloseSession) = sig(retCode, inP(pkHandle)) .
+  eq rustApi("TeecInvokeCommand") = teecInvokeCommand .
+  eq rustApi("teecInvokeCommand") = teecInvokeCommand .
+  eq rustSig(teecInvokeCommand) = sig(retCode, inP(pkHandle) inP(pkFunc) inP(pkParams)) .
+endm
+
+------------------------------------------------------------
+--- Outputs and their assignment (PARAM-LIST, CALL-TASK)
+------------------------------------------------------------
+
+--- The parameter lists of PARAM-LIST (src/lang.maude) for Rust: lists of
+---   inArg(I)          the argument I of a call (1 for the first)
+---   outLocal(I)       the local I of the frame that calls a TA service, which holds the value of
+---                     an output of the service
+---   outTo(PLACE, PK)  a place of the caller (the destination of a TEE API call)
+---   outVia(PTR, PK)   the place that the pointer or reference PTR points to
+--- separated by _,_.  assign(EL, VL) writes the values VL to the outputs EL, each converted by
+--- the kind PK of its output.  As in C, the first value is the return code, which a void
+--- function of the API returns as # noReturnCode and which is then not assigned; the
+--- assignment ends with the outputs or with the values.
+
+--- @kind program
+--- @feature rust
+mod RUST-TEE-OUTPUT is
+  pr RUST-TEE-API .
+  pr CALL-TASK .
+
+  sort RExp .
+  subsort RExp < ExpList .
+  op .ExpList : -> ExpList [ctor] .
+  op _,_ : ExpList ExpList -> ExpList [ctor assoc id: .ExpList] .
+  op inArg : Int -> RExp [ctor] .
+  op outLocal : Int -> RExp [ctor] .
+  op outTo : Place ParamKind -> RExp [ctor] .
+  op outVia : Value ParamKind -> RExp [ctor] .
+
+  op $assignR : ExpList List{Arg} -> K .
+  op $write : RExp Value -> KLabel [ctor] .
+
+  var OUT : ExpList .
+  var X : RExp .
+  var VL : List{Arg} .
+  var V : Value .
+  var RC : ReturnCode .
+  vars I J : Int .
+
+  eq assign(OUT, # noReturnCode VL) = $assignR(OUT, VL) .
+  eq assign(OUT, # RC VL) = $assignR(OUT, # RC VL) .
+  --- The model returns seconds and millis as two scalars for a single TEE_Time output.
+  eq $assignR((outVia(V, pkTime), OUT), # I # J VL)
+    = $write(outVia(V, pkTime), Aggregate(variantIdx(0), ListItem(Integer(I, 32, false)) ; ListItem(Integer(J, 32, false))))
+      ~> $assignR(OUT, VL) .
+  eq $assignR((X, OUT), V VL) = $write(X, V) ~> $assignR(OUT, VL) [owise] .
+  eq $assignR(.ExpList, VL) = .K .
+  eq $assignR(OUT, nil) = .K .
+endm
+
+--- Writing an output: to a place of the current frame, or through a pointer into the current
+--- frame (offset 0) or into a frame below it, as the dereferencing of rt/data.md does.
+
+--- @kind program
+--- @feature rust
+mod RUST-TEE-WRITE is
+  pr RUST-TEE-OUTPUT .
+
+  var K : K .
+  var PLACE : Place .
+  var PK : ParamKind .
+  var V : Value .
+  var OFF : Int .
+  var LOCAL : Local .
+  var PROJS : ProjectionElems .
+  var MUT : Mutability .
+  var META : Metadata .
+  var STACK : KList .
+
+  eq k($write(outTo(PLACE, PK), V) ~> K) = k(#setLocalValue(PLACE, convOut(PK, V)) ~> K) .
+  eq k($write(outVia(Reference(0, PLACE, MUT, META), PK), V) ~> K) = k(#setLocalValue(PLACE, convOut(PK, V)) ~> K) .
+  eq k($write(outVia(PtrLocal(0, PLACE, MUT, META), PK), V) ~> K) = k(#setLocalValue(PLACE, convOut(PK, V)) ~> K) .
+  ceq k($write(outVia(Reference(OFF, place(LOCAL, PROJS), MUT, META), PK), V) ~> K) stack(STACK)
+    = k(#traverseProjection(toStack(OFF, LOCAL), #localFromFrame(STACK[OFF - 1], LOCAL, OFF), PROJS, .Contexts)
+        ~> #writeProjection(convOut(PK, V)) ~> K) stack(STACK)
+    if 0 < OFF /\ OFF <= size(STACK) .
+  ceq k($write(outVia(PtrLocal(OFF, place(LOCAL, PROJS), MUT, META), PK), V) ~> K) stack(STACK)
+    = k(#traverseProjection(toStack(OFF, LOCAL), #localFromFrame(STACK[OFF - 1], LOCAL, OFF), PROJS, .Contexts)
+        ~> #writeProjection(convOut(PK, V)) ~> K) stack(STACK)
+    if 0 < OFF /\ OFF <= size(STACK) .
+endm
+
+------------------------------------------------------------
+--- Programs of TAs (PROGRAM-RUN)
+------------------------------------------------------------
+
+--- A TA service rustFn(NAME) is called as KMIR calls a function (RUST-SEMANTICS, #callConfig):
+--- from a frame whose locals 1 to N hold the N arguments.  The values VL of the model are
+--- converted to the types of the parameters (fromArg).  A parameter of a reference or pointer
+--- type is an output: its value is held by a local N + J of the calling frame, and the argument
+--- is a reference to it (a pointer for a pointer parameter).  When the service has returned,
+--- that frame is the one left on the stack (#EndProgram), and getVals reads those locals.
+
+--- @kind program
+--- @feature rust
+mod RUST-TEE-PROGRAM is
+  pr RUST-TEE-WRITE .
+  pr PROGRAM-RUN .
+
+  subsort Pgm < Program .
+  op rustFn : String -> FuncId [ctor] .
+
+  var NAME : String .
+  vars SYMN SYM : Symbol .
+  var DID : DefId .
+  var BD : Body .
+  var MB : MaybeBody .
+  vars ITEMS ITEMS' : MonoItems .
+  vars FNS FNS' : FunctionNames .
+  var PNAME : Symbol .
+  var ALLOCS : GlobalAllocs .
+  var TYPES : TypeMappings .
+  var MACH : MachineInfo .
+  var P : Pgm .
+  var TY : Ty .
+  vars PTY RTY : Ty .
+  var MUT : Mutability .
+  var SP : Span .
+  var LDS : LocalDecls .
+  var BBS : BasicBlocks .
+  var ARGC : Int .
+  var OPQ : Opaque .
+  var MLOC : MaybeLocal .
+  var TM : Map{Ty,TypeInfo} .
+  var V : Value .
+  var VL : List{Arg} .
+  vars I J N : Int .
+  vars LOCALS STORE : KList .
+  var PL IN OUT : ExpList .
+  var K : K .
+  var KS : KConfig .
+  vars CALLER : Ty .
+  var DEST : Place .
+  var TARGET : MaybeBasicBlockIdx .
+  var UNWIND : UnwindAction .
+  var REST : KList .
+  var FS : Span .
+  var C : Nat .
+  eq mkConf(P, rustCommand(C), VL) = mkConf(P, rustFn("cmd_" + string(C, 10)), VL) .
+  eq getFuncParams(P, rustCommand(C)) = getFuncParams(P, rustFn("cmd_" + string(C, 10))) .
+
+  --- The function NAME of the program: its type and its body.
+  op $fnTy : Pgm String -> Ty .
+  eq $fnTy(pgm(PNAME, ALLOCS, FNS functionName(TY, functionNormalSym(SYMN)) FNS',
+               ITEMS monoItem(SYMN, monoItemFn(symbol(NAME), DID, MB)) ITEMS', TYPES, MACH), NAME) = TY .
+  op $fnBody : Pgm String -> Body .
+  eq $fnBody(pgm(PNAME, ALLOCS, FNS, ITEMS monoItem(SYMN, monoItemFn(symbol(NAME), DID, someBody(BD))) ITEMS', TYPES, MACH), NAME) = BD .
+  op $types : Pgm -> Map{Ty,TypeInfo} .
+  eq $types(pgm(PNAME, ALLOCS, FNS, ITEMS, TYPES, MACH)) = #typesMap(TYPES) .
+
+  --- $params(LDS, ARGC): the declarations of the ARGC parameters, the first ARGC of the
+  --- declarations LDS of the locals from 1.
+  op $params : LocalDecls Int -> LocalDecls .
+  eq $params(LDS, ARGC) = $take(LDS, ARGC) .
+  op $take : LocalDecls Int -> LocalDecls .
+  eq $take(LDS, 0) = .LocalDecls .
+  ceq $take(localDecl(PTY, SP, MUT) LDS, I) = localDecl(PTY, SP, MUT) $take(LDS, I - 1) if I > 0 .
+
+  op $isOut : TypeInfo -> Bool .
+  eq $isOut(typeInfoRefType(PTY)) = true .
+  eq $isOut(typeInfoPtrType(PTY)) = true .
+  eq $isOut(TI) = false [owise] .
+  var TI : TypeInfo .
+
+  --- $args(TM, PARAMS, VL, N, I, J, LOCALS, STORE): the locals of the calling frame.  The
+  --- parameter I (from 1) gets the value of VL; an output parameter J (from 1) gets a reference
+  --- to the local N + J of STORE, which holds the value.
+  op $args : Map{Ty,TypeInfo} LocalDecls List{Arg} Int Int Int KList KList -> KList .
+  eq $args(TM, .LocalDecls, nil, N, I, J, LOCALS, STORE) = LOCALS ; STORE .
+  ceq $args(TM, localDecl(PTY, SP, MUT) LDS, V VL, N, I, J, LOCALS, STORE)
+    = $args(TM, LDS, VL, N, I + 1, J, LOCALS ; ListItem(typedValue(fromArg(V, lookupTy(TM, PTY)), PTY, mutabilityNot)), STORE)
+    if not $isOut(lookupTy(TM, PTY)) .
+  eq $args(TM, localDecl(PTY, SP, MUT) LDS, V VL, N, I, J, LOCALS, STORE)
+   = $args(TM, LDS, VL, N, I + 1, J + 1,
+           LOCALS ; ListItem(typedValue($outRef(lookupTy(TM, PTY), N + J), PTY, mutabilityNot)),
+           STORE ; ListItem(typedValue(fromArg(V, lookupTy(TM, pointeeTy(lookupTy(TM, PTY)))), pointeeTy(lookupTy(TM, PTY)), mutabilityMut)))
+   [owise] .
+  op $outRef : TypeInfo Int -> Value .
+  eq $outRef(typeInfoRefType(PTY), I) = Reference(0, place(local(I), .ProjectionElems), mutabilityMut, metadata(noMetadataSize, 0, noMetadataSize)) .
+  eq $outRef(typeInfoPtrType(PTY), I) = PtrLocal(0, place(local(I), .ProjectionElems), mutabilityMut, metadata(noMetadataSize, 0, noMetadataSize)) .
+
+  --- mkConf(P, FID, VL) (PROGRAM-RUN): the configuration that calls the service with VL.
+  ceq mkConf(P, rustFn(NAME), VL)
+    = #callConfigOps(P, $fnTy(P, NAME),
+                     $args($types(P), $params(LDS, ARGC), VL, ARGC, 1, 1, ListItem(newLocal(RTY, mutabilityMut)), .List),
+                     #callArgs(1, ARGC))
+    if body(BBS, localDecl(RTY, SP, MUT) LDS, ARGC, OPQ, MLOC, FS) := $fnBody(P, NAME) .
+
+  --- getFuncParams(P, FID) (PROGRAM-RUN): its parameters, the inputs (the value parameters) and
+  --- the outputs (the locals of the calling frame that hold the outputs).
+  ceq getFuncParams(P, rustFn(NAME)) = $sig($types(P), $params(LDS, ARGC), ARGC, 1, 1, .ExpList, .ExpList, .ExpList)
+    if body(BBS, localDecl(RTY, SP, MUT) LDS, ARGC, OPQ, MLOC, FS) := $fnBody(P, NAME) .
+  op $sig : Map{Ty,TypeInfo} LocalDecls Int Int Int ExpList ExpList ExpList -> ParamSig .
+  eq $sig(TM, .LocalDecls, N, I, J, PL, IN, OUT) = PL | IN | OUT .
+  ceq $sig(TM, localDecl(PTY, SP, MUT) LDS, N, I, J, PL, IN, OUT)
+    = $sig(TM, LDS, N, I + 1, J, (PL, inArg(I)), (IN, inArg(I)), OUT)
+    if not $isOut(lookupTy(TM, PTY)) .
+  ceq $sig(TM, localDecl(PTY, SP, MUT) LDS, N, I, J, PL, IN, OUT)
+    = $sig(TM, LDS, N, I + 1, J + 1, (PL, inArg(I)), IN, (OUT, outLocal(N + J)))
+    if $isOut(lookupTy(TM, PTY)) .
+
+  --- getVals(OUT, KS) (PROGRAM-RUN): the values of the outputs, in the frame that called the
+  --- service, the last frame of the stack.
+  eq getVals((outLocal(I), OUT), stack(REST ; ListItem(StackFrame(CALLER, DEST, TARGET, UNWIND, LOCALS, FS))) KS)
+   = toArg(getValue(LOCALS, I)) getVals(OUT, stack(REST ; ListItem(StackFrame(CALLER, DEST, TARGET, UNWIND, LOCALS, FS))) KS) .
+  eq getVals(.ExpList, KS) = nil .
+
+  --- A service has finished when its function has returned: KMIR leaves #EndProgram, the TEE
+  --- model expects an empty k cell (handle-invoke-ta-finish).
+  eq k(#EndProgram ~> K) = k(.K) .
+endm
+
+------------------------------------------------------------
+--- TEE API calls of a TA
+------------------------------------------------------------
+
+--- @kind behavior
+--- @feature rust
+omod TRUST-APP-RUST-BEHAVIOR is
+  pr TRUST-APP-BEHAVIOR .
+  pr TRUST-APP-CALL-BEHAVIOR .
+  pr RUST-TEE-PROGRAM .
+
+  op #teeCall : TeeApi Place MaybeBasicBlockIdx -> KLabel [ctor] .
+  op #teeReady : TeeApi Place MaybeBasicBlockIdx KList -> KLabel [ctor] .
+  op #teeMarshal : ParamDirs KList KList -> KLabel [ctor] .
+  op #teeNext : ParamDirs KList KList -> KLabel [ctor] .
+  op #teeRead : Value -> Evaluation [ctor] .
+
+  var TI : Oid .
+  var K : K .
+  var KS : KConfig .
+  var FTY : Ty .
+  var NAME : String .
+  var DID : DefId .
+  var OPS : Operands .
+  var DEST : Place .
+  var TARGET : MaybeBasicBlockIdx .
+  var UNWIND : UnwindAction .
+  var SPAN : Span .
+  var TF : TeeApi .
+  var VALS : KList .
+  var RK : ApiResult .
+  var PDS : ParamDirs .
+  var PK : ParamKind .
+  var V : Value .
+  var PD : ParamDir .
+  vars REST ACC L STACK : KList .
+  var LOCAL : Local .
+  var PROJS : ProjectionElems .
+  var MUT : Mutability .
+  var META : Metadata .
+  var OFF : Int .
+  var AID : AllocId .
+  var AM : Map{AllocId,RustValue} .
+
+  --- rust-tee-api-call: a call of a foreign function that is a TEE API function TF, made by a TA
+  --- that is normal and has no call in progress, reads its arguments, then runs as the task
+  --- $in(VL) ~> $wait(TF) ~> $out(EL) of CALL-TASK, and continues at the target block of the
+  --- call with #continueAt.  The inputs VL and the outputs EL are given by rustSig(TF).
+  crl [rust-tee-api-call] :
+    < TI : TrustedApp | proc : (k(#execTerminatorCall(FTY, monoItemFn(symbol(NAME), DID, noBody), OPS, DEST, TARGET, UNWIND, SPAN) ~> K) KS) ,
+                        api-call : noCall , status : (normal).AppStatus >
+    =>
+    < TI : TrustedApp | proc : (k(#readOperands(OPS) ~> #teeCall(TF, DEST, TARGET)) KS) >
+  if TF := rustApi(NAME) /\ not $isClient(TF) /\ $arity(rustSig(TF)) == $nOps(OPS) .
+
+  --- The errors: a call of a foreign function that rust-tee-api-call does not make.
+  crl [rust-tee-api-call-unknown] :
+    < TI : TrustedApp | proc : (k(#execTerminatorCall(FTY, monoItemFn(symbol(NAME), DID, noBody), OPS, DEST, TARGET, UNWIND, SPAN) ~> K) KS) ,
+                        api-call : noCall , status : (normal).AppStatus >
+    =>
+    < TI : TrustedApp | proc : (k(#ProgramError(unknownForeignFunction(NAME)) ~> K) KS) >
+  if rustApi(NAME) == noApi .
+  crl [rust-tee-api-call-role] :
+    < TI : TrustedApp | proc : (k(#execTerminatorCall(FTY, monoItemFn(symbol(NAME), DID, noBody), OPS, DEST, TARGET, UNWIND, SPAN) ~> K) KS) ,
+                        api-call : noCall , status : (normal).AppStatus >
+    =>
+    < TI : TrustedApp | proc : (k(#ProgramError(foreignCallerRole(NAME)) ~> K) KS) >
+  if TF := rustApi(NAME) /\ $isClient(TF) .
+  crl [rust-tee-api-call-arity] :
+    < TI : TrustedApp | proc : (k(#execTerminatorCall(FTY, monoItemFn(symbol(NAME), DID, noBody), OPS, DEST, TARGET, UNWIND, SPAN) ~> K) KS) ,
+                        api-call : noCall , status : (normal).AppStatus >
+    =>
+    < TI : TrustedApp | proc : (k(#ProgramError(foreignArity(NAME, $arity(rustSig(TF)), $nOps(OPS))) ~> K) KS) >
+  if TF := rustApi(NAME) /\ not $isClient(TF) /\ $arity(rustSig(TF)) =/= $nOps(OPS) .
+
+  eq k(VALS ~> #teeCall(TF, DEST, TARGET) ~> K)
+   = k(#teeMarshal($teeDirs(rustSig(TF)), VALS, .List) ~> #teeReady(TF, DEST, TARGET, VALS)) .
+  op $teeDirs : RustSig -> ParamDirs .
+  eq $teeDirs(sig(RK, PDS)) = PDS .
+  eq k(VALS ~> #teeReady(TF, DEST, TARGET, REST) ~> K)
+   = k($in($teeIn(rustSig(TF), VALS)) ~> $wait(TF) ~> $out($teeOut(rustSig(TF), DEST, REST)) ~> #continueAt(TARGET)) .
+  rl k(#teeMarshal(.ParamDirs, .List, ACC) ~> K) => k(ACC ~> K) .
+  rl k(#teeMarshal(readP(PK) PDS, ListItem(V) ; REST, ACC) ~> K)
+    => k(#teeRead(V) ~> #teeNext(PDS, REST, ACC) ~> K) .
+  rl k(#teeMarshal(inoutP(PK) PDS, ListItem(V) ; REST, ACC) ~> K)
+    => k(#teeRead(V) ~> #teeNext(PDS, REST, ACC) ~> K) .
+  rl k(#teeMarshal(inP(PK) PDS, ListItem(V) ; REST, ACC) ~> K)
+    => k(#teeMarshal(PDS, REST, ACC ; ListItem(V)) ~> K) .
+  rl k(#teeMarshal(outP(PK) PDS, ListItem(V) ; REST, ACC) ~> K)
+    => k(#teeMarshal(PDS, REST, ACC ; ListItem(V)) ~> K) .
+  rl k(#teeMarshal(skipP(PK) PDS, ListItem(V) ; REST, ACC) ~> K)
+    => k(#teeMarshal(PDS, REST, ACC ; ListItem(V)) ~> K) .
+  rl k(V ~> #teeNext(PDS, REST, ACC) ~> K)
+    => k(#teeMarshal(PDS, REST, ACC ; ListItem(V)) ~> K) .
+
+  --- Read input buffers/attributes from their actual Rust place, including caller frames.
+  rl k(#teeRead(Reference(0, place(local(OFF), PROJS), MUT, META)) ~> K) locals(L)
+    => k(#traverseProjection(toLocal(OFF), getValue(L, OFF), PROJS, .Contexts) ~> #readProjection(false) ~> K) locals(L) .
+  rl k(#teeRead(PtrLocal(0, place(local(OFF), PROJS), MUT, META)) ~> K) locals(L)
+    => k(#traverseProjection(toLocal(OFF), getValue(L, OFF), PROJS, .Contexts) ~> #readProjection(false) ~> K) locals(L) .
+  crl k(#teeRead(Reference(OFF, place(LOCAL, PROJS), MUT, META)) ~> K) stack(STACK)
+    => k(#traverseProjection(toStack(OFF, LOCAL), #localFromFrame(STACK[OFF - 1], LOCAL, OFF), PROJS, .Contexts) ~> #readProjection(false) ~> K) stack(STACK)
+    if 0 < OFF /\ OFF <= size(STACK) .
+  crl k(#teeRead(PtrLocal(OFF, place(LOCAL, PROJS), MUT, META)) ~> K) stack(STACK)
+    => k(#traverseProjection(toStack(OFF, LOCAL), #localFromFrame(STACK[OFF - 1], LOCAL, OFF), PROJS, .Contexts) ~> #readProjection(false) ~> K) stack(STACK)
+    if 0 < OFF /\ OFF <= size(STACK) .
+  rl k(#teeRead(AllocRef(AID, PROJS, META)) ~> K) memory(AM)
+    => k(#traverseProjection(toAlloc(AID), lookupAlloc(AM, AID), PROJS, .Contexts) ~> #readProjection(false) ~> K) memory(AM) .
+  crl k(#teeRead(V) ~> K) => k(V ~> K) if not $rustIndirect(V) .
+
+  --- $teeIn(SIG, VALS): the inputs of the call, converted; $teeOut(SIG, DEST, VALS): its outputs,
+  --- the destination of the call for the return code, then the places that the output
+  --- arguments point to.
+  op $teeIn : RustSig KList -> List{Arg} .
+  op $ins : ParamDirs KList -> List{Arg} .
+  eq $teeIn(sig(RK, PDS), VALS) = $ins(PDS, VALS) .
+  eq $ins(.ParamDirs, .List) = nil .
+  eq $ins(inP(pkParams) PDS, ListItem(V) ; VALS) = rustParamValues(V) $ins(PDS, VALS) .
+  eq $ins(inP(PK) PDS, ListItem(V) ; VALS) = convIn(PK, V) $ins(PDS, VALS) [owise] .
+  eq $ins(outP(PK) PDS, ListItem(V) ; VALS) = $ins(PDS, VALS) .
+  eq $ins(readP(PK) PDS, ListItem(V) ; VALS) = convIn(PK, V) $ins(PDS, VALS) .
+  eq $ins(inoutP(PK) PDS, ListItem(V) ; VALS) = convIn(PK, V) $ins(PDS, VALS) .
+  eq $ins(skipP(PK) PDS, ListItem(V) ; VALS) = $ins(PDS, VALS) .
+  op $teeOut : RustSig Place KList -> ExpList .
+  op $outs : ParamDirs KList -> ExpList .
+  eq $teeOut(sig(retCode, PDS), DEST, VALS) = outTo(DEST, pkRet), $outs(PDS, VALS) .
+  eq $teeOut(sig(noResult, PDS), DEST, VALS) = $outs(PDS, VALS) .
+  eq $outs(.ParamDirs, .List) = .ExpList .
+  eq $outs(inP(PK) PDS, ListItem(V) ; VALS) = $outs(PDS, VALS) .
+  eq $outs(outP(PK) PDS, ListItem(V) ; VALS) = outVia(V, PK), $outs(PDS, VALS) .
+  eq $outs(inoutP(PK) PDS, ListItem(V) ; VALS) = outVia(V, PK), $outs(PDS, VALS) .
+  eq $outs(readP(PK) PDS, ListItem(V) ; VALS) = $outs(PDS, VALS) .
+  eq $outs(skipP(PK) PDS, ListItem(V) ; VALS) = $outs(PDS, VALS) .
+endom
+
+--- @kind program
+--- @feature rust
+mod RUST-SHARED-OBJECT is
+  pr RUST-TEE-PROGRAM .
+  pr SHARED-OBJECT .
+  vars V OLD PTR : Value .
+  vars VL RET : List{Arg} .
+  vars KS : KConfig .
+  vars L STACK : KList .
+  var K : K .
+  vars I W OFF : Int .
+  var S : Bool .
+  var MU : Mutability .
+  var ME : Metadata .
+  var PROJS : ProjectionElems .
+  var LOCAL : Local .
+  var VI : VariantIdx .
+  var TY : Ty .
+  op outShared : Value Value -> RExp [ctor] .
+  op rustSharedOutputs : List{Arg} KConfig -> ExpList .
+  eq rustSharedOutputs(nil, KS) = .ExpList .
+  eq rustSharedOutputs(rustShared(PTR) VL, KS) = (outShared(PTR, rustReadPure(PTR, KS)), rustSharedOutputs(VL, KS)) .
+  eq rustSharedOutputs(V VL, KS) = rustSharedOutputs(VL, KS) [owise] .
+  eq k($write(outShared(PTR, OLD), V) ~> K) = k($write(outVia(PTR, pkModel), rustLike(V, OLD)) ~> K) .
+  op rustReadPure : Value KConfig -> Value .
+  op rustProject : Value ProjectionElems -> Value .
+  eq rustReadPure(Reference(0, place(local(I), PROJS), MU, ME), locals(L) KS) = rustProject(getValue(L, I), PROJS) .
+  eq rustReadPure(PtrLocal(0, place(local(I), PROJS), MU, ME), locals(L) KS) = rustProject(getValue(L, I), PROJS) .
+  ceq rustReadPure(Reference(OFF, place(LOCAL, PROJS), MU, ME), stack(STACK) KS)
+    = rustProject(#localFromFrame(STACK[OFF - 1], LOCAL, OFF), PROJS) if 0 < OFF /\ OFF <= size(STACK) .
+  ceq rustReadPure(PtrLocal(OFF, place(LOCAL, PROJS), MU, ME), stack(STACK) KS)
+    = rustProject(#localFromFrame(STACK[OFF - 1], LOCAL, OFF), PROJS) if 0 < OFF /\ OFF <= size(STACK) .
+  eq rustProject(V, .ProjectionElems) = V .
+  eq rustProject(Aggregate(VI, L), projectionElemField(fieldIdx(I), TY) PROJS) = rustProject(getValue(L, I), PROJS) .
+  eq rustProject(Range(L), projectionElemConstantIndex(I, W, false) PROJS) = rustProject(getValue(L, I), PROJS) .
+  op rustCopyIn : List{Arg} KConfig -> List{Arg} .
+  eq copyIn(VL, locals(L) KS) = rustCopyIn(VL, locals(L) KS) .
+  eq rustCopyIn(nil, KS) = nil .
+  eq rustCopyIn(rustShared(PTR) VL, KS) = toArg(rustReadPure(PTR, KS)) rustCopyIn(VL, KS) .
+  eq rustCopyIn(V VL, KS) = V rustCopyIn(VL, KS) [owise] .
+  op rustSharedWrites : List{Arg} List{Arg} KConfig -> K .
+  op rustLike : Value Value -> Value .
+  eq rustLike(# I, Integer(OFF, W, S)) = Integer(I, W, S) .
+  eq rustLike(# B:Bool, BoolVal(S)) = BoolVal(B:Bool) .
+  eq rustLike(V, OLD) = V [owise] .
+  eq copyOut(VL, RET, k(K) locals(L) KS) = k(rustSharedWrites(VL, RET, locals(L) KS) ~> K) locals(L) KS .
+  eq rustSharedWrites(nil, RET, KS) = .K .
+  eq rustSharedWrites(VL, nil, KS) = .K .
+  eq rustSharedWrites(rustShared(PTR) VL, V RET, KS)
+    = $write(outVia(PTR, pkModel), rustLike(V, rustReadPure(PTR, KS))) ~> rustSharedWrites(VL, RET, KS) .
+  eq rustSharedWrites(V VL, RET, KS) = rustSharedWrites(VL, RET, KS) [owise] .
+endm
+
+--- @kind behavior
+--- @feature rust
+omod RICH-APP-RUST-BEHAVIOR is
+  pr RICH-APP-BEHAVIOR .
+  pr TRUST-APP-RUST-BEHAVIOR .
+  pr RUST-SHARED-OBJECT .
+  var RI : Oid . var K : K . var KS : KConfig .
+  var FTY : Ty . var NAME : String . var DID : DefId . var OPS : Operands .
+  var DEST : Place . var TARGET : MaybeBasicBlockIdx . var UW : UnwindAction . var SP : Span .
+  var API : TeeClientApi . vars VALS RAW : KList .
+  var OUT : ExpList . var VL : List{Arg} . var RC : ReturnCode .
+  op #raCall : TeeClientApi Place MaybeBasicBlockIdx -> KLabel [ctor] .
+  op #raReady : TeeClientApi Place MaybeBasicBlockIdx KList -> KLabel [ctor] .
+  op #raOutputs : ExpList -> KLabel [ctor] .
+  var TF : TeeApi .
+  crl [rust-ra-api-call] :
+    < RI : RichApp | proc : (k(#execTerminatorCall(FTY, monoItemFn(symbol(NAME), DID, noBody), OPS, DEST, TARGET, UW, SP) ~> K) KS) >
+    => < RI : RichApp | proc : (k(#readOperands(OPS) ~> #raCall(API, DEST, TARGET)) KS) >
+    if API := rustApi(NAME) /\ $arity(rustSig(API)) == $nOps(OPS) .
+  --- The errors of a foreign call of an RA, as for a TA (rust-tee-api-call-unknown, -role, -arity).
+  crl [rust-ra-api-call-unknown] :
+    < RI : RichApp | proc : (k(#execTerminatorCall(FTY, monoItemFn(symbol(NAME), DID, noBody), OPS, DEST, TARGET, UW, SP) ~> K) KS) >
+    => < RI : RichApp | proc : (k(#ProgramError(unknownForeignFunction(NAME)) ~> K) KS) >
+    if rustApi(NAME) == noApi .
+  crl [rust-ra-api-call-role] :
+    < RI : RichApp | proc : (k(#execTerminatorCall(FTY, monoItemFn(symbol(NAME), DID, noBody), OPS, DEST, TARGET, UW, SP) ~> K) KS) >
+    => < RI : RichApp | proc : (k(#ProgramError(foreignCallerRole(NAME)) ~> K) KS) >
+    if TF := rustApi(NAME) /\ not $isClient(TF) .
+  crl [rust-ra-api-call-arity] :
+    < RI : RichApp | proc : (k(#execTerminatorCall(FTY, monoItemFn(symbol(NAME), DID, noBody), OPS, DEST, TARGET, UW, SP) ~> K) KS) >
+    => < RI : RichApp | proc : (k(#ProgramError(foreignArity(NAME, $arity(rustSig(API)), $nOps(OPS))) ~> K) KS) >
+    if API := rustApi(NAME) /\ $arity(rustSig(API)) =/= $nOps(OPS) .
+  eq k(VALS ~> #raCall(API, DEST, TARGET) ~> K)
+    = k(#teeMarshal($teeDirs(rustSig(API)), VALS, .List) ~> #raReady(API, DEST, TARGET, VALS)) .
+  rl < RI : RichApp | proc : (k(VALS ~> #raReady(API, DEST, TARGET, RAW) ~> K) KS) >
+    => < RI : RichApp | proc : (k($in(rustRaInputs(API, VALS, KS)) ~> $wait(API)
+      ~> #raOutputs(rustRaOutputs(API, DEST, RAW, KS)) ~> #continueAt(TARGET)) KS) > .
+  rl smcRet(RI, # RC VL)
+     < RI : RichApp | proc : (k($wait(API) ~> #raOutputs(OUT) ~> K) KS) >
+    => < RI : RichApp | proc : (k($assignR(OUT, # RC VL) ~> K) KS) > .
+  op rustRaInputs : TeeClientApi KList KConfig -> List{Arg} .
+  eq rustRaInputs(teecInvokeCommand, VALS, KS) = rustCopyIn($teeIn(rustSig(teecInvokeCommand), VALS), KS) .
+  eq rustRaInputs(API, VALS, KS) = $teeIn(rustSig(API), VALS) [owise] .
+  op rustRaOutputs : TeeClientApi Place KList KConfig -> ExpList .
+  eq rustRaOutputs(teecInvokeCommand, DEST, RAW, KS) = ($teeOut(rustSig(teecInvokeCommand), DEST, RAW), rustSharedOutputs(rustParamValues(getValue(RAW, 2)), KS)) .
+  eq rustRaOutputs(API, DEST, RAW, KS) = $teeOut(rustSig(API), DEST, RAW) [owise] .
+endom
+
+------------------------------------------------------------
+--- Objects of model extensions
+------------------------------------------------------------
+
+--- rustExtObjects: the objects that a model extension (rust2maude --ext) adds to the initial
+--- configuration of a run, none without one.  An extension that needs objects defines it:
+---   eq rustExtObjects = < ext : ExtClass | attr : init > .
+
+--- @kind program
+--- @feature rust
+mod RUST-EXT-OBJECTS is
+  pr CONFIGURATION .
+  op rustExtObjects : -> Configuration .
+  eq rustExtObjects = none [owise] .
+endm
+
+------------------------------------------------------------
+--- The Rust side of the model
+------------------------------------------------------------
+
+--- TEE-RUST-BEHAVIOR: the counterpart of TEE-C-BEHAVIOR (src/main.maude) for Rust TAs.
+
+--- @kind assembly
+--- @feature rust
+mod TEE-RUST-BEHAVIOR is
+  pr RUST-EXT-OBJECTS .
+  pr TRUST-APP-RUST-BEHAVIOR .
+  pr RUST-SHARED-OBJECT .
+  pr RICH-APP-RUST-BEHAVIOR .
+endm

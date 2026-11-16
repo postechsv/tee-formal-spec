@@ -1,65 +1,68 @@
 # TEE Formal Specification
 
-An executable [Maude](https://maude.cs.illinois.edu/) specification of the GlobalPlatform TEE Internal Core API. It models successful API calls, error returns, panics, storage conditions, and the state transitions of cryptographic operations, together with the trusted application (TA) kernel and the storage and OS services that the API calls depend on. `src/main.maude` is the entry point for the specification.
+An executable [Maude](https://maude.cs.illinois.edu/) specification of the GlobalPlatform TEE Internal Core API. It models successful API calls, error returns, panics, storage conditions, and the state transitions of cryptographic operations, together with the trusted application (TA) kernel and the storage and OS services that the API calls depend on.
+
+This repository holds the specification, its build (feature selection), its test suites and its documentation site. Transforming it (DM-Check, maude2lean, ghost composition) and analyzing applications on top of it is done in [tee-formal-analysis](https://github.com/postechsv/tee-formal-analysis), which fetches a revision of this repository and builds it with `make`.
+
+## Publications
+
+- Geunyeol Yu, Seunghyun Chae, Kyungmin Bae, Sungkun Moon, Siheung Kim.
+  [Formal Specification of Trusted Execution Environment APIs and Model Checking of Trusted Applications](https://doi.org/10.1145/3837076).
+  Formal Aspects of Computing, ACM, 2026.
+- Geunyeol Yu, Seunghyun Chae, Kyungmin Bae, Sungkun Moon.
+  [Formal Specification of Trusted Execution Environment APIs](https://doi.org/10.1007/978-3-031-57259-3_5).
+  FASE 2024, LNCS, Springer.
 
 ## Features
 
 - Generic, transient, and persistent object APIs
 - Persistent data stream access and persistent object enumeration
-- Cryptographic operations (switchable with the `CRYPTO` feature)
+- Shared memory of a client and a TA: the TA runs on the memory that the client passes with the call
+- Cryptographic operations
 - Programmer errors and invalid handles, modeled as panics
-- Model programs (`src/imp.maude`) whose calls are translated into TEE API calls (`src/tee-imp.maude`)
-- Build variants that drop feature groups or individual modules
+- Model programs (`lang/c/semantics.maude`) whose calls are translated into TEE API calls (`lang/c/tee-support.maude`)
+- Concrete Rust Stable MIR execution and a TEE adapter covering the C model's
+  29 callable TEE stubs and three REE client calls
 
-## Requirements
+## Using the specification
 
-- Maude 3
-- GNU Make
-- Python 3 (for the test runners and the DM-Check generator)
+The entry point is `src/main.maude`, with every feature on; a build of a feature configuration filters it into `build/<NAME>/src/main.maude` (GNU Make, Python 3). Its comments explain the specification and end with sample `rew` and `search` commands on a small scenario (module `MAIN-SAMPLE`: an RA opens a session with a TA, invokes a command that calls a TEE API, and closes it), to paste at the Maude prompt:
 
-`make` reads the Maude path from `MAUDE` in a `config.mk` file at the repository root. This file is gitignored, so each user creates it:
+```bash
+maude src/main.maude    # load the specification, then paste a sample command
+```
+
+## Building
+
+`make` builds a feature configuration of the specification into `build/<NAME>/` (GNU Make, Python 3):
+
+```bash
+make                         # build/default/src and build/default/tests
+make NAME=t CRYPTO=0         # a build without the cryptographic operation API
+make NAME=t CONFIG=x.toml    # the features set by x.toml (see features.toml)
+make NAME=t test             # build, then run the API suite and the check suite on it
+make docs                    # documentation site in build/docs
+make help                    # features, settings and targets
+```
+
+Set the Maude binary in `config.mk` (gitignored) for the tests:
 
 ```make
-# config.mk
 MAUDE := /path/to/maude
 ```
 
-Alternatively, set the `MAUDE_BIN` environment variable. The Python test runner looks for Maude in this order: `MAUDE_BIN`, a sibling `tee-formal-analysis/3rd_party` (or `zenodo/tee-formal-analysis/3rd_party`) binary, then `maude` on `PATH`.
+The API groups below are feature groups (`features.mk`): a build without some of them (`make CRYPTO=0`) drops their files from `build/<NAME>/src/main.maude` and their tests.
 
-## Quick start
+A build configuration file selects features: `make CONFIG=x.toml` reads its `F = V` lines
+(`features.toml` sets every feature on). The file is TOML with top-level keys only, which is also
+make syntax, so the Makefile includes it; a key that is not a feature is an error. A feature it does
+not set keeps its default (`features.mk`), and the command line overrides it
+(`make CONFIG=x.toml CRYPTO=1`). Like the other settings, CONFIG is cached in `build/<NAME>/config.mk`.
 
-Build the default configuration and run both test suites:
-
-```bash
-make            # build build/default/src and build/default/tests
-make test       # build, then run the API suite and the check suite
-make help       # list features, test selection, and current values
+```toml
+CRYPTO = 0
+SHM = 0
 ```
-
-Build variants use a separate build directory selected with `NAME`:
-
-```bash
-make NAME=nocrypto CRYPTO=0 test   # without the cryptographic operation APIs
-make NAME=t WITHOUT=MODULE         # drop a module; MODULE must be a pr line in src/main.maude
-make DMC=1                         # DM-Check-compatible build (tools/gen-dmc.py)
-make V=1 test                      # stream the Maude output of each test file
-```
-
-Run one suite or clean up:
-
-```bash
-make test-api                # API-level black-box searches (tests/api)
-make test-checks             # completion and GlobalPlatform conformance checks
-make check-dmc               # regenerate the DM-Check build and run its ground checks
-make clean NAME=default      # remove build/default
-make distclean               # remove build/
-```
-
-Each build directory `build/$(NAME)/` holds a copy of the selected `src/` and `tests/` trees (or the DM-Check output with `DMC=1`) and the settings used for the build. Settings are cached in `build/$(NAME)/config.mk`.
-
-## Feature selection
-
-Features are defined in `mk/features.mk`. Each one is a variable set to `1` (on, the default) or `0` (off), for example `make CRYPTO=0`.
 
 | Feature | Covers | Requires |
 | --- | --- | --- |
@@ -69,33 +72,33 @@ Features are defined in `mk/features.mk`. Each one is a variable set to `1` (on,
 | `GENERIC` | Generic object API | |
 | `DATA_STREAM` | Persistent data stream access | `PERSISTENT` |
 | `ENUMERATOR` | Persistent object enumeration | `PERSISTENT` |
-
-When a feature is off, its files are dropped from `src/main.maude` and its tests are skipped.
+| `SHM` | Shared memory of a client and a TA (the C client call `teecInvokeCommand`) | |
 
 ## Repository layout
 
 ```text
 tee-formal-spec/
-├── Makefile              # build driver and test targets
-├── mk/
-│   └── features.mk       # feature table
-├── src/                  # Maude specification
+├── src/                  # Maude specification (main.maude: the entry point)
+├── lang/c/               # the TA programming language: semantics.maude (syntax and K-style
+│                         # semantics), typing.maude (type checker), tee-support.maude (program calls to TEE API calls); loaded by src/main.maude
 ├── tests/
 │   ├── api/              # API-level black-box searches (test-*.maude)
-│   ├── cases/            # API-specific test cases (not run by make)
+│   ├── cases/            # API-specific test cases
 │   ├── completion/       # completion regressions, one file per API group
 │   ├── gp-conformance/   # GlobalPlatform conformance reductions, one file per module group
-│   ├── run-api-suite.py  # runner for tests/api
-│   └── run-checks.py     # runner for completion/ and gp-conformance/
+│   └── main.maude        # shared test modules
 ├── tools/
-│   ├── select-main.awk   # filter that builds src/main.maude for a feature selection
-│   ├── gen-dmc.py        # DM-Check generator
-│   └── gen-docs.py       # documentation site generator (make docs)
+│   ├── strip-modules.py  # main.maude and the spec files of a feature configuration
+│   ├── rust2maude.py     # Rust source -> Stable MIR -> Maude, and its evaluation
+│   ├── test/             # the test runners (run-api-suite.py, run-checks.py)
+│   └── docs/             # the documentation site: gen-docs.py, gen-examples.py, their inputs, and
+│                         # annotations.md (the machine-readable module annotations of src/)
+├── .github/workflows/docs.yml   # builds the site and deploys it to GitHub Pages
+├── Makefile              # build, tests, docs
+├── features.mk           # feature groups a build can drop
 ├── LICENSE
 └── README.md
 ```
-
-`build/` is created by `make` and is not tracked.
 
 ### API behavior models
 
@@ -117,22 +120,30 @@ tee-formal-spec/
 | `handle.maude` | Object, enumerator, operation, and session handles |
 | `constants.maude` | GlobalPlatform constants, types, key sizes, and usages |
 | `tee-data-type.maude` | Models of GlobalPlatform API data structures |
-| `tee-api.maude`, `tee-api-call.maude` | API identifiers, call parameters, and return values |
+| `tee-api.maude`, `tee-api-call.maude` | API identifiers, call parameters, return values, and the values `# X` of the API data |
 | `tee-msg.maude` | Message layer of the TEE API models |
-| `session.maude` | Session handling |
+| `session.maude` | Sessions of an RA or a TA client: opening a session (TEEC_OpenSession, TEE_OpenTASession) with the TA instance it creates, and invoking a command in it |
 | `tee-kernel.maude` | TA kernel and API execution state |
-| `tee-panic.maude` | General programmer errors and invalid-handle panics |
-| `persistent-panic.maude`, `data-stream-panic.maude`, `crypto-panic.maude` | Panics of the storage and cryptographic APIs |
+| `tee-panic.maude` | Panics: GENERAL-PANIC (general programmer errors) and the panic module of each feature group (PERSISTENT-PANIC, DATA-STREAM-PANIC, CRYPTO-PANIC), cut by the build when the group is off |
 | `os.maude`, `os-service.maude` | Trusted OS and storage services |
-| `app.maude`, `ree-app.maude`, `tee-app.maude`, `tee-client.maude` | REE/TEE applications and client behavior |
+| `app.maude`, `ree-app.maude`, `tee-app.maude` | REE/TEE applications and client behavior |
+| `shared-memory.maude` | Shared memory of a client and a TA (language-independent part; the C client call `teecInvokeCommand` is in `../lang/c/tee-support.maude`) |
 
 ### Program execution
+
+`src/` does not depend on the language of the programs: `lang.maude` declares what the
+model needs from it, and a language under `lang/` gives it. `main.maude` loads the language files
+after every file of `src/`.
 
 | File | Purpose |
 | --- | --- |
 | `k-prelude.maude` | Foundations for the K-style execution semantics |
-| `imp.maude` | Syntax and semantics of model programs |
-| `tee-imp.maude` | Translation of program calls into TEE API calls |
+| `lang.maude` | What the model shares with the program language: values `# X`, argument lists `List{Arg}`, function identifiers, programs, parameter lists, the tasks of an API call (`$in`, `$wait`, `$out`), running a TA service (`mkConf`, `getVals`), shared objects of a client TA |
+| `../lang/c/semantics.maude` | Syntax and semantics of model programs (a C subset) |
+| `../lang/c/typing.maude` | Static type checking of model programs (`wellTyped`) |
+| `../lang/c/tee-support.maude` | The C side of the model: TEE API calls of programs (`getFuncParams` of each API function), client calls, running a TA service, shared memory |
+| `../lang/rust/semantics.maude` | Concrete Stable MIR execution translated from KMIR |
+| `../lang/rust/tee-support.maude` | Rust TA services and transient-object API calls (`TEE-RUST-BEHAVIOR`) |
 
 ## Core modeling principles
 
@@ -149,28 +160,16 @@ Handles are top-level objects in the configuration rather than nested inside the
 
 `tee-panic.maude` evaluates invalid handles and other GlobalPlatform programmer errors against the active `TAKernel` call state and top-level handle objects. A panic path converges to `status : panic` on the `TAKernel`, with the API call in a finished state.
 
-## Documentation site
-
-`make docs` builds a static HTML site from `src/` into `build/docs/` (generated by `tools/gen-docs.py`, standard library only):
-
-```bash
-make docs                                     # build build/docs and check its links
-xdg-open build/docs/index.html                # or open the file in a browser
-python3 tools/gen-docs.py --src src --out build/docs --check   # the same, run directly
-```
-
-The index page's body is the hand-written fragment `docs/overview.html`, in which `[[op:Name]]`-style macros (`mod`, `sort`, `class`, `op`, `rule`, `attr`, `file`; optional `|text`) become links and unknown targets fail the build; the generator adds the site chrome and a table of the files. The site opens from `file://` and needs no network access. It has one page per `src/*.maude` file, where every identifier links to its definition and doc comments appear as prose; and index pages for modules and views, sorts and classes (with class attributes), operators, and rule and equation labels. `--check` verifies every local link and `#anchor`, and exits nonzero if one is missing.
-
 ## Testing
 
-The test groups are:
+The test files are plain Maude:
 
-- `tests/api`: black-box searches that verify external API calls and returns (`make test-api`)
-- `tests/completion/<group>.maude`: checks that completed paths converge to final success, error, or panic states (`make test-checks`)
-- `tests/gp-conformance/<group>.maude`: focused reductions derived from GlobalPlatform tables and clauses (`make test-checks`)
-- `tests/cases`: API-specific test cases; not run by the make targets
+- `tests/api`: black-box searches that verify external API calls and returns
+- `tests/completion/<group>.maude`: checks that completed paths converge to final success, error, or panic states
+- `tests/gp-conformance/<group>.maude`: focused reductions derived from GlobalPlatform tables and clauses
+- `tests/cases`: API-specific test cases
 
-`make test` runs the API suite and the check suite. Each runs even if the other fails, and the exit status is nonzero if either fails. Without `V=1`, only summary lines are printed, for example `[test-suite] API-level: ...` and `[checks] FILE: ...`.
+`make test` builds the specification and runs the API suite and the check suite on it (`make test-api`, `make test-checks`).
 
 ## License
 

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Build a static documentation site for the Maude TEE specification.
 
-    python3 tools/gen-docs.py --src src --out build/docs [--overview docs/overview.html]
-                              [--examples docs/examples.json] [--check]
+    python3 tools/docs/gen-docs.py --src src --out build/docs [--overview tools/docs/input/overview.html]
+                              [--examples tools/docs/input/examples.json] [--check]
 
---examples adds the verified examples of tools/gen-examples.py under rules and ops, collapsed
+--examples adds the verified examples of tools/docs/gen-examples.py under rules and ops, collapsed
 and hidden by default (inline in the file pages only).
 
 Standard library only. The site opens from file:// and needs no network.
-index.html is the hand-written fragment docs/overview.html wrapped in the site chrome, with
+index.html is the hand-written fragment tools/docs/input/overview.html wrapped in the site chrome, with
 [[kind:Name]] and [[kind:Name|text]] cross-reference macros resolved (an unknown target is an
 error); the file table is generated and appended.
 Output is deterministic: nothing is time-stamped, and every collection is
@@ -71,17 +71,17 @@ CATEGORIES = [
                                  'transient-object', 'persistent-object']),
     ('TEE API interface and TA kernel', ['tee-api', 'tee-api-call', 'tee-msg', 'session',
                                          'tee-kernel']),
-    ('Trusted OS and applications', ['os', 'os-service', 'app', 'ree-app', 'tee-app',
-                                     'tee-client']),
+    ('Trusted OS and applications', ['os', 'os-service', 'app', 'ree-app', 'tee-app']),
     ('API behavior models', ['transient', 'persistent', 'generic', 'data-stream', 'enumerator',
                              'cryptographic']),
-    ('Panics', ['tee-panic', 'persistent-panic', 'data-stream-panic', 'crypto-panic']),
-    ('Program execution', ['k-prelude', 'imp', 'tee-imp']),
+    ('Panics', ['tee-panic']),
+    ('Program execution', ['k-prelude', 'lang', 'lang-c-semantics', 'lang-c-typing',
+                           'lang-c-tee-support']),
 ]
 CATEGORY_OF = {stem: name for name, stems in CATEGORIES for stem in stems}
 
-# Module annotations (docs/annotations.md). Kinds are listed in the order the modules page
-# shows them; the explanations are the ones of docs/annotations.md.
+# Module annotations (tools/docs/annotations.md). Kinds are listed in the order the modules page
+# shows them; the explanations are the ones of tools/docs/annotations.md.
 KINDS = [
     ('constants', 'Enumerations and constant values: error codes, flags, type identifiers, ids.'),
     ('data', 'Data structures: sorts and functions over them, with no rules.'),
@@ -98,17 +98,17 @@ KIND_TEXT = dict(KINDS)
 KIND_TEXT['view'] = 'A view maps a theory onto a module. Views have no kind.'
 DATA_KINDS = {'constants', 'data', 'state', 'messages'}
 RULE_KINDS = {'behavior', 'panic'}
-# @feature groups, in the order of mk/features.mk, then the groups without a feature flag
-FEATURES = ['crypto', 'transient', 'persistent', 'generic', 'data-stream', 'enumerator',
-            'ta-session', 'client', 'os', 'imp', 'core']
-FLAG_FEATURES = {'crypto', 'transient', 'persistent', 'generic', 'data-stream', 'enumerator'}
+# @feature groups, in the order of features.mk, then the groups without a feature flag
+FEATURES = ['crypto', 'transient', 'persistent', 'generic', 'data-stream', 'enumerator', 'shm',
+            'ta-session', 'client', 'os', 'c', 'rust', 'core']
+FLAG_FEATURES = {'crypto', 'transient', 'persistent', 'generic', 'data-stream', 'enumerator', 'shm'}
 FEATURE_RANK = {f: i for i, f in enumerate(FEATURES)}
 ANNOT_RE = re.compile(r'\s*(?:---|\*\*\*)\s*@(kind|feature|related)\b(.*)$')
 RELATED_CAP = 8     # related modules shown per group before the "+N more" expander
 
 
 def feature_label(f):
-    """The name used in mk/features.mk for a feature with a flag, else the group name."""
+    """The name used in features.mk for a feature with a flag, else the group name."""
     return f.upper().replace('-', '_') if f in FLAG_FEATURES else f
 
 TOKEN_RE = re.compile(r'"(?:[^"\\]|\\.)*"|[(),{}]|[^\s(),{}"]+')
@@ -194,7 +194,7 @@ class Def:
         self.role = None         # @kind of a module (None for views)
         self.feature = None      # @feature of a module
         self.related = []        # @related module names, as written
-        self.examples = []       # verified examples (docs/examples.json) of a rule or op
+        self.examples = []       # verified examples (tools/docs/input/examples.json) of a rule or op
 
 
 class SrcFile:
@@ -1385,7 +1385,7 @@ EX_OBJ_RE = re.compile(r'< [^\s<>|]+ : ')
 
 
 def load_examples(path):
-    """The entries of docs/examples.json (tools/gen-examples.py). A missing file is a warning and
+    """The entries of tools/docs/input/examples.json (tools/docs/gen-examples.py). A missing file is a warning and
     no examples are shown; a file that is not a JSON object is an error."""
     if not os.path.isfile(path):
         print('[gen-docs] warning: examples file not found: %s (no examples shown)' % path,
@@ -1408,8 +1408,22 @@ def _stmt_line(d):
     return d.line
 
 
+def file_stem(path):
+    """The docs name of a spec file: its base name for src/x.maude, the path from lang joined
+    with '-' for a language file (lang/c/semantics.maude: lang-c-semantics)."""
+    parts = os.path.splitext(os.path.normpath(path or ''))[0].replace(os.sep, '/').split('/')
+    if 'lang' in parts[:-1]:
+        return '-'.join(parts[len(parts) - 1 - parts[::-1].index('lang'):])
+    return parts[-1]
+
+
+def file_title(f):
+    """The file name shown on a file page: src files by base name, language files by path."""
+    return f.stem.replace('-', '/', 2) + '.maude' if f.stem.startswith('lang-') else f.stem + '.maude'
+
+
 def _stem(path):
-    return os.path.splitext(os.path.basename(path or ''))[0]
+    return file_stem(path)
 
 
 def _match_rule(site, label, e):
@@ -1438,7 +1452,7 @@ def _match_op(site, key, e):
 
 
 def attach_examples(site, examples):
-    """Attach each entry of docs/examples.json to its definition (Def.examples). Entries that
+    """Attach each entry of tools/docs/input/examples.json to its definition (Def.examples). Entries that
     match no definition are kept in site.ex_missing; counts are in site.ex_stats."""
     site.ex_stats = collections.Counter()
     site.ex_missing = []
@@ -1679,14 +1693,14 @@ def render_file(site, f):
             sidebar.append('<li><a href="#%s">%s</a></li>' % (esc(aid), heading))
         sidebar.append('</ul>\n')
     sidebar.append(side_lists(site, '', '../', f.stem))
-    head = '<h1>%s.maude</h1>\n' % esc(f.stem)
+    head = '<h1>%s</h1>\n' % esc(file_title(f))
     if f.summary:
         head += '<p class="lead">%s</p>\n' % esc(f.summary)
     if n_examples:
         head += ('<div class="exctl"><button type="button" class="exbtn">Show all examples</button>'
                  '</div>\n')
     body = head + '<div class="code">\n' + ''.join(out) + '</div>\n'
-    return page(site, cur_dir, '%s.maude' % f.stem, body, ''.join(sidebar))
+    return page(site, cur_dir, file_title(f), body, ''.join(sidebar))
 
 
 INDEX_LINKS = [('index.html', 'Overview'), ('modules.html', 'Modules and views'),
@@ -1847,9 +1861,9 @@ def modules_page(site):
 
     def mod_row(d):
         imps = ', '.join(module_name_link(site, root, x) for x in dict.fromkeys(site.imports.get(d.name, [])))
-        imp_by = ', '.join(module_name_link(site, root, m) for m in sorted(site.importers.get(d.name, ())))
+        c_by = ', '.join(module_name_link(site, root, m) for m in sorted(site.importers.get(d.name, ())))
         return (d.anchor, [def_link(site, root, d), file_link(root, d.stem),
-                           esc(first_sentence(d.doc)), imps, imp_by])
+                           esc(first_sentence(d.doc)), imps, c_by])
 
     head = ''.join('<th>%s</th>' % kind_badge(k, '#kind-' + k) for k in KIND_NAMES)
     matrix_rows = []
@@ -2171,7 +2185,7 @@ table.map .meta{font-size:11px;display:block;font-weight:400}
 .side .kbadge{font-size:10px;padding:0 4px;margin-top:1px}
 .side li{line-height:1.6}
 .tip-role{margin-left:4px}
-/* Verified examples under rules and ops (docs/examples.json): collapsed until opened. */
+/* Verified examples under rules and ops (tools/docs/input/examples.json): collapsed until opened. */
 details.example{margin:1px 0 4px 3.5em;font-size:12px;line-height:1.4}
 details.example>summary{cursor:pointer;color:var(--muted);padding:1px 0;white-space:nowrap;list-style-position:inside}
 details.example>summary:hover{color:var(--link)}
@@ -2388,11 +2402,21 @@ def write(path, text):
 
 def build(src, out, overview, examples=None):
     site = Site()
+    # main.maude gives the load order.
     main_path = os.path.join(src, 'main.maude')
     main_text = open(main_path, encoding='utf-8').read() if os.path.isfile(main_path) else ''
-    load_order = re.findall(r'^\s*load\s+(\S+)', main_text, re.M)
     paths = {os.path.splitext(os.path.basename(p))[0]: p
              for p in glob.glob(os.path.join(src, '*.maude'))}
+    # main.maude loads the language files from outside src (load ../lang/c/semantics); they
+    # are read too, under a flat stem (lang-c-semantics) so pages stay in one directory.
+    load_order = []
+    for name in re.findall(r'^\s*load\s+(\S+)', main_text, re.M):
+        if '/' in name:
+            p = os.path.normpath(os.path.join(src, name + '.maude'))
+            if os.path.isfile(p):
+                name = file_stem(p)
+                paths[name] = p
+        load_order.append(name)
     stems = [s for s in load_order if s in paths]
     stems += sorted(s for s in paths if s not in stems)
     site.stems = set(paths)
@@ -2533,14 +2557,14 @@ def main(argv):
     ap.add_argument('--out', default='build/docs', help='output directory (default: build/docs)')
     ap.add_argument('--overview', default=None,
                     help='hand-written overview fragment for index.html '
-                         '(default: docs/overview.html next to --src)')
+                         '(default: input/overview.html next to this script)')
     ap.add_argument('--examples', default=None, metavar='JSON',
-                    help='verified examples (docs/examples.json from tools/gen-examples.py), '
+                    help='verified examples (tools/docs/input/examples.json from tools/docs/gen-examples.py), '
                          'shown collapsed under rules and ops (default: none)')
     ap.add_argument('--check', action='store_true', help='verify every local href and #anchor')
     args = ap.parse_args(argv)
     src = args.src
-    overview = args.overview or os.path.join(os.path.dirname(os.path.abspath(src)), 'docs', 'overview.html')
+    overview = args.overview or os.path.join(os.path.dirname(os.path.abspath(__file__)), 'input', 'overview.html')
     try:
         examples = load_examples(args.examples) if args.examples else None
         site = build(src, args.out, overview, examples)

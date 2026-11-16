@@ -1,0 +1,39 @@
+load ../../src/main
+mod RUST-ARITHMETIC-TEST is
+  pr RUST-SEMANTICS .
+  ops u32 one : -> Bytes .
+  op add1 : -> Pgm .
+  eq one = bytes(byte(1) byte(0) byte(0) byte(0)) .
+  eq add1 = pgm(symbol("t1"), .GlobalAllocs,
+     functionName(ty(10), functionNormalSym(symbol("add1"))),
+     monoItem(symbol("add1"), monoItemFn(symbol("add1"), defId(1), someBody(body(
+       basicBlock(
+         statement(statementKindAssign(place(local(2), .ProjectionElems),
+           rvalueCheckedBinaryOp(binOpAdd, operandCopy(place(local(1), .ProjectionElems)),
+             operandConstant(constOperand(span(1), noUserTypeAnnotationIndex,
+               mirConst(constantKindAllocated(allocation(one, provenanceMap(.ProvenanceMapEntries), align(4), mutabilityNot)), ty(1), mirConstId(1)))))), span(1)),
+         terminator(assert(operandMove(place(local(2), projectionElemField(fieldIdx(1), ty(3)))), false,
+                           assertMessageOverflow(binOpAdd, operandCopy(place(local(1), .ProjectionElems)), operandCopy(place(local(1), .ProjectionElems))),
+                           basicBlockIdx(1), unwindActionContinue), span(2)))
+       | basicBlock(
+         statement(statementKindAssign(place(local(0), .ProjectionElems),
+           rvalueUse(operandMove(place(local(2), projectionElemField(fieldIdx(0), ty(1)))))), span(3)),
+         terminator(terminatorKindReturn, span(4))),
+       localDecl(ty(1), span(0), mutabilityMut) localDecl(ty(1), span(0), mutabilityNot) localDecl(ty(2), span(0), mutabilityMut),
+       1, opaque(""), noLocal, span(0))))),
+     TypeMapping(ty(1), typeInfoPrimitiveType(primTypeUint(uintTyU32)))
+     TypeMapping(ty(2), typeInfoTupleType(ty(1) ty(3), noLayoutShape))
+     TypeMapping(ty(3), typeInfoPrimitiveType(primTypeBool))
+     TypeMapping(ty(10), typeInfoFunType("add1")),
+     machineInfo(opaque(""))) .
+endm
+
+--- Checked addition returns 42 and leaves the synthetic caller frame on the stack.
+search [1] in RUST-ARITHMETIC-TEST :
+  #callConfig(add1, ty(10), ListItem(newLocal(ty(1), mutabilityMut)) ; ListItem(typedValue(Integer(41, 32, false), ty(1), mutabilityNot)))
+=>! k(#EndProgram) retVal(return(Integer(42, 32, false))) KS:KConfig .
+
+--- Overflow reaches an assertion error; it cannot silently wrap and return.
+search [1] in RUST-ARITHMETIC-TEST :
+  #callConfig(add1, ty(10), ListItem(newLocal(ty(1), mutabilityMut)) ; ListItem(typedValue(Integer(4294967295, 32, false), ty(1), mutabilityNot)))
+=>! k(#ProgramError(AssertError(AM:AssertMessage)) ~> K:K) KS:KConfig .

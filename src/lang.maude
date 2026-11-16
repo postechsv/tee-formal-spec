@@ -1,0 +1,151 @@
+--- This file declares what the TEE model shares with the language of the programs that RAs and
+--- TAs run (App. D).  The model is parametric in that language: a language (lang/, such as the C
+--- subset of lang/c) imports these modules, extends the values and gives the sorts their
+--- constructors and the operators their equations.  Nothing here depends on a particular
+--- language.
+---   * the values # X that calls, messages and sessions carry, argument lists, and the
+---     identifiers of functions (TEE API functions and TA services);
+---   * programs, parameter lists, the tasks of an API call, running a TA service, and the shared
+---     objects of a client TA, which the language defines.
+
+--- Values.  An item of an API call or a message is a value # item (App. A, Section 3.3).
+--- undef is the content of a location that holds no value yet.
+
+--- @kind data
+--- @feature core
+fmod TEE-VALUE is
+  pr INT .
+  sorts Value Value? .
+  subsort Value < Value? .
+
+  op undef : -> Value? [ctor] .
+  op #_ : Bool -> Value [ctor] .
+  op #_ : Int -> Value [ctor] .
+endfm
+
+--- Arguments.  An argument is a value written # item.
+
+--- @kind data
+--- @feature core
+fmod TEE-ARG is
+  pr TEE-VALUE .
+
+  sort Arg .
+  subsort Value < Arg .
+endfm
+
+view Arg from TRIV to TEE-ARG is
+  sort Elt to Arg .
+endv
+
+--- Argument lists, List{Arg} as in the paper (App. A): a juxtaposition list of arguments.  The
+--- value lists of the RA, the TrustedOS and the TA (API call inputs, invocation payloads and
+--- output values) are argument lists, and nil is the empty list.  In a language whose
+--- expressions are below a comma list with its own empty list nil (C, lang/c), Value is below
+--- both Arg and that list: the language then gives the two constants a common least sort (see
+--- C-EXP-LIST).  The juxtaposition keeps the default precedence, so that # A # B parses as a
+--- list of two arguments.
+
+--- @kind data
+--- @feature core
+fmod TEE-ARG-LIST is
+  pr LIST{Arg} * (op __ : List{Arg} List{Arg} -> List{Arg} to __ [prec 41]) .
+endfm
+
+view Value? from TRIV to TEE-VALUE is
+  sort Elt to Value? .
+endv
+
+--- Function identifiers.  APIFuncId is used for both TEE API functions and TA service entry
+--- points; the function identifiers of a program refine it.  A TEE API name is a function
+--- identifier (so a program can call it, and a checker can test a name with ::).
+
+--- @kind data
+--- @feature core
+fmod FUNC-ID is
+  pr TEE-API .
+
+  sorts FuncId APIFuncId .
+  subsort FuncId < APIFuncId .
+  subsort TeeApi < FuncId .
+endfm
+
+--- Programs.  The prog attribute of an App holds a Program (App. D.1).
+
+--- @kind interface
+--- @feature core
+fmod PROGRAM is
+  sort Program .
+endfm
+
+--- Parameter lists.  ExpList is the sort of the parameter and argument lists of the language.
+--- The parameters of a function F, a TEE API function or a TA service, are PL | IN | OUT as in
+--- App. D.2: its parameter list PL, its input parameters IN, whose values a call carries, and
+--- its output parameters OUT, to which the values that it returns are assigned.  The comma of a
+--- language's lists binds tighter than |, so PL, IN and OUT need no parentheses.
+
+--- @kind interface
+--- @feature core
+fmod PARAM-LIST is
+  sort ExpList .
+  sort ParamSig .
+  op _|_|_ : ExpList ExpList ExpList -> ParamSig [ctor prec 80] .
+endfm
+
+--- The tasks of an API call in the k cell (App. D.2): $in(VL) carries the input values VL to the
+--- call, $wait(F) waits for the API function F to return, and $out(OUT) is replaced by
+--- assign(OUT, VL), which assigns the values VL that F returns to the outputs OUT.  IStmt is the
+--- sort of these internal items: a subsort of K, not of the programs, so a program cannot contain
+--- them.  The language gives assign its equations.
+
+--- @kind interface
+--- @feature core
+fmod CALL-TASK is
+  inc K-COMPUTATION .
+  pr TEE-API .
+  pr TEE-CLIENT-API .
+  pr TEE-ARG-LIST .
+  pr PARAM-LIST .
+
+  sort IStmt .
+  subsort IStmt < K .
+  op $wait : TeeApi -> IStmt [ctor] .
+  op $in(_) : List{Arg} -> IStmt [ctor] .
+  op $out(_) : ExpList -> IStmt [ctor] .
+  op assign : ExpList List{Arg} -> K .
+endfm
+
+--- Running a TA service (App. D.3): mkConf(P, FID, VL) is the initial configuration that runs the
+--- service FID of the program P with the values VL, getFuncParams(P, FID) gives the parameters
+--- of FID, and getVals(OUT, KS) the values of the output parameters OUT in the configuration KS
+--- after FID has finished.  The language gives their equations.
+
+--- @kind interface
+--- @feature core
+fmod PROGRAM-RUN is
+  pr PROGRAM .
+  pr FUNC-ID .
+  pr PARAM-LIST .
+  pr TEE-ARG-LIST .
+  pr K-CONFIG .
+
+  op mkConf : Program FuncId List{Arg} -> KConfig .
+  op getFuncParams : Program FuncId -> ParamSig .
+  op getVals : ExpList KConfig -> List{Arg} .
+endfm
+
+--- Shared objects of a client TA (TEE_InvokeTACommand).  copyIn(VL, KS): the argument values VL
+--- with each shared object of the client replaced by its content in the configuration KS of the
+--- client.  copyOut(VL, RET, KS): KS with the results RET written, in order, to the shared
+--- objects of VL.  Which values are shared objects (in C, the locations loc(L)) and where their
+--- contents are is given by the language.
+
+--- @kind interface
+--- @feature client
+fmod SHARED-OBJECT is
+  pr TEE-ARG-LIST .
+  pr K-CONFIG .
+
+  op copyIn : List{Arg} KConfig -> List{Arg} .
+  op copyOut : List{Arg} List{Arg} KConfig -> KConfig .
+endfm

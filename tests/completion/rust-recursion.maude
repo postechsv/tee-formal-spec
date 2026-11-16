@@ -1,0 +1,64 @@
+load ../../src/main
+mod RUST-RECURSION-TEST is
+  pr RUST-SEMANTICS .
+  op p : Nat -> Place .
+  ops f0 f1 : Nat -> Place .
+  op c32 : Nat -> Operand .
+  op asg : Place Rvalue -> Statement .
+  op term : TerminatorKind -> Terminator .
+  op bb : Nat -> BasicBlockIdx .
+  op chkAssert : Nat Nat -> TerminatorKind .
+  op call : Operand Place Nat -> TerminatorKind .
+  op fibTy : -> Ty .
+  op fib : -> Pgm .
+  vars N M : Nat .  var PL : Place .  var RV : Rvalue .  var TK : TerminatorKind .  var O : Operand .
+  eq p(N) = place(local(N), .ProjectionElems) .
+  eq f0(N) = place(local(N), projectionElemField(fieldIdx(0), ty(1))) .
+  eq f1(N) = place(local(N), projectionElemField(fieldIdx(1), ty(3))) .
+  eq c32(N) = operandConstant(constOperand(span(0), noUserTypeAnnotationIndex,
+      mirConst(constantKindAllocated(allocation(bytes(byte(N) byte(0) byte(0) byte(0)), provenanceMap(.ProvenanceMapEntries), align(4), mutabilityNot)), ty(1), mirConstId(0)))) .
+  eq asg(PL, RV) = statement(statementKindAssign(PL, RV), span(0)) .
+  eq term(TK) = terminator(TK, span(0)) .
+  eq bb(N) = basicBlockIdx(N) .
+  eq chkAssert(N, M) = assert(operandMove(f1(N)), false, assertMessageOverflow(binOpSub, c32(0), c32(0)), bb(M), unwindActionContinue) .
+  eq call(O, PL, N) = terminatorKindCall(operandConstant(constOperand(span(0), noUserTypeAnnotationIndex, mirConst(constantKindZeroSized, fibTy, mirConstId(0)))),
+                                         O, PL, someBasicBlockIdx(bb(N)), unwindActionContinue) .
+  eq fibTy = ty(10) .
+  eq fib = pgm(symbol("t3"), .GlobalAllocs,
+     functionName(fibTy, functionNormalSym(symbol("fib"))),
+     monoItem(symbol("fib"), monoItemFn(symbol("fib"), defId(1), someBody(body(
+       --- bb0
+       basicBlock(.Statements, term(terminatorKindSwitchInt(operandCopy(p(1)), switchTargets(branch(0, bb(2)) branch(1, bb(2)), bb(1)))))
+       --- bb1
+     | basicBlock(asg(p(3), rvalueCheckedBinaryOp(binOpSub, operandCopy(p(1)), c32(1))), term(chkAssert(3, 3)))
+       --- bb2
+     | basicBlock(asg(p(0), rvalueUse(c32(1))), term(terminatorKindGoto(bb(8))))
+       --- bb3
+     | basicBlock(asg(p(4), rvalueUse(operandCopy(f0(3)))), term(call(operandMove(p(4)), p(2), 4)))
+       --- bb4
+     | basicBlock(asg(p(6), rvalueCheckedBinaryOp(binOpSub, operandCopy(p(1)), c32(2))), term(chkAssert(6, 5)))
+       --- bb5
+     | basicBlock(asg(p(8), rvalueUse(operandCopy(f0(6)))), term(call(operandMove(p(8)), p(5), 6)))
+       --- bb6
+     | basicBlock(asg(p(7), rvalueCheckedBinaryOp(binOpAdd, operandCopy(p(2)), operandCopy(p(5)))), term(chkAssert(7, 7)))
+       --- bb7
+     | basicBlock(asg(p(0), rvalueUse(operandMove(f0(7)))), term(terminatorKindGoto(bb(8))))
+       --- bb8
+     | basicBlock(.Statements, term(terminatorKindReturn)),
+       localDecl(ty(1), span(0), mutabilityMut) localDecl(ty(1), span(0), mutabilityNot)
+       localDecl(ty(1), span(0), mutabilityMut) localDecl(ty(2), span(0), mutabilityMut)
+       localDecl(ty(1), span(0), mutabilityMut) localDecl(ty(1), span(0), mutabilityMut)
+       localDecl(ty(2), span(0), mutabilityMut) localDecl(ty(2), span(0), mutabilityMut)
+       localDecl(ty(1), span(0), mutabilityMut),
+       1, opaque(""), noLocal, span(0))))),
+     TypeMapping(ty(1), typeInfoPrimitiveType(primTypeUint(uintTyU32)))
+     TypeMapping(ty(2), typeInfoTupleType(ty(1) ty(3), noLayoutShape))
+     TypeMapping(ty(3), typeInfoPrimitiveType(primTypeBool))
+     TypeMapping(fibTy, typeInfoFunType("fib")),
+     machineInfo(opaque(""))) .
+endm
+
+--- Two recursive calls per non-base block, checked arithmetic, frame push/pop.
+search [1] in RUST-RECURSION-TEST :
+  #callConfig(fib, fibTy, ListItem(newLocal(ty(1), mutabilityMut)) ; ListItem(typedValue(Integer(10, 32, false), ty(1), mutabilityNot)))
+=>! k(#EndProgram) retVal(return(Integer(89, 32, false))) KS:KConfig .

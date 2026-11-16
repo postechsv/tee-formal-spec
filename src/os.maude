@@ -1,32 +1,38 @@
---- This module defines calls to invoke TA. The request
---- invkTa[FID VL] carries the TA service FID and its argument values VL; the response
---- invkTaRet[VL] carries the values of the output parameters.
+--- This module defines calls to invoke TA (App D.1).  The request invkTa[FID VL], from the client
+--- of a session to the TA instance of the session, carries the TA service FID and its argument
+--- values VL; the response invkTaRet[RET], from the TA instance to the client, carries the results
+--- RET, the values of the output parameters of FID (see getVals).
 
 --- @kind messages
 --- @feature os
 omod INVOKE-TA-CALL is
   pr TEE-MSG .
-  pr IMP-FUNC-SIG .
-  pr IMP-EXP-LIST .
+  pr SESSION-ID .
+  pr FUNC-ID .
 
-  op invkTa[__] : APIFuncId ArgList -> Req [ctor] .
-  op invkTaRet[_] : ArgList -> Req [ctor] .
+  op invkTa[__] : APIFuncId List{Arg} -> Req [ctor] .
+  op invkTaRet[_] : List{Arg} -> Req [ctor] .
 endom
 
---- This module defines SMC calls between REE and TEE execution environments.
---- smcReq(RI, SID, FID, VL) is an SMC request of RA RI for service FID in session SID;
---- smcRet(RI, VL) is the response carrying the output values VL.
+--- This module defines SMC calls between REE and TEE execution environments (App D.1).
+--- smcReq(RI, SID, FID, VL) is the SMC request of TEEC_InvokeCommand of RA RI: the service FID
+--- in the session SID with the values VL.  smcReq(RI, API, VL) is the SMC request of the
+--- session API API of RI: teecOpenSession with # TN, the TA TN, or teecCloseSession with # SID,
+--- the session SID.  smcRet(RI, VL) is the response with the values VL, the return code first:
+--- the results of the service, the new session # SID of teecOpenSession, or the code alone.
 
 --- @kind messages
 --- @feature os
 omod SECURE-MONITOR-CALL is
   pr OBJECT-ID .
   pr SESSION-ID .
-  pr IMP-FUNC-SIG .
-  pr IMP-EXP-LIST .
+  pr TEE-CLIENT-API .
+  pr FUNC-ID .
+  pr TEE-ARG-LIST .
 
-  msg smcReq : Oid SessionId APIFuncId ArgList -> Msg .
-  msg smcRet : Oid ArgList -> Msg .
+  msg smcReq : Oid SessionId APIFuncId List{Arg} -> Msg .
+  msg smcReq : Oid TeeClientApi List{Arg} -> Msg .
+  msg smcRet : Oid List{Arg} -> Msg .
 endom
 
 --- This module defines execution environments for REE and TEE.
@@ -43,7 +49,8 @@ mod EXECUTION-ENV is
   vars RI : Oid .
   var SID : SessionId .
   var FID : APIFuncId .
-  var VL : ArgList .
+  var API : TeeClientApi .
+  var VL : List{Arg} .
 
   op {_}|{_} : Configuration Configuration -> Envs [ctor] .
 
@@ -54,8 +61,14 @@ mod EXECUTION-ENV is
     =>
     {REE} | {TEE smcReq(RI, SID, FID, VL)} .
 
-  --- return-smc-request: the TEE response smcRet(RI, VL) is moved from the TEE environment to
-  --- the REE environment.
+  --- accept-smc-session-request: the same for the session request smcReq(RI, API, VL).
+  rl [accept-smc-session-request] :
+    {REE smcReq(RI, API, VL)} | {TEE}
+    =>
+    {REE} | {TEE smcReq(RI, API, VL)} .
+
+  --- return-smc-request: the TEE response smcRet(RI, VL) is moved from the TEE environment to the
+  --- REE environment.
   rl [return-smc-request] :
     {REE} | {TEE smcRet(RI, VL)}
     =>
@@ -73,6 +86,25 @@ fmod STORAGE-STATUS is
   op outOfSpace : -> StorageStatus [ctor] .
   op corrupted : -> StorageStatus [ctor] .
   op notAvailable : -> StorageStatus [ctor] .
+endfm
+
+------------------------------------------------------------
+--- TEE Return values
+------------------------------------------------------------
+
+--- This module defines the values # X of API return codes.
+
+--- @kind data
+--- @feature core
+fmod RETURN-VALUE is
+  pr TEE-VALUE .
+  pr RETURN-CODE .
+  pr STORAGE-STATUS .
+
+  op #_ : ReturnCode -> Value [ctor] .
+  op #_ : ReturnCode? -> Value [ctor] .
+  --- A storage failure is returned as its status: # corrupted, # notAvailable, # outOfSpace.
+  op #_ : StorageStatus -> Value [ctor] .
 endfm
 
 view StorageStatus from TRIV to STORAGE-STATUS is
@@ -93,23 +125,34 @@ view ServiceReturn from TRIV to SERVICE is
   sort Elt to ServiceReturn .
 endv
 
---- @kind data
---- @feature os
-fmod PROGRAM-CELL is
-  pr IMP-PROGRAM .
-
-  sort ProgramCell .
-  
-  op [_] : Program -> ProgramCell [ctor] .
-endfm
-
-view ProgramCell from TRIV to PROGRAM-CELL is
-  sort Elt to ProgramCell .
-endv
-
 --- OBJECT-ID gives Oid its constructors (the sort itself is CONFIGURATION's).
 view Oid from TRIV to OBJECT-ID is
   sort Elt to Oid .
+endv
+
+--- This module defines a TA as the TrustedOS knows it: its program and configuration, see
+--- [Internal Core] 4.5.
+--- taConfig(P, SI, MS): P is the program of the TA, from which the TrustedOS creates its
+--- instances; SI is gpd.ta.singleInstance, whether one TA instance serves all the client
+--- sessions (true) or each session has its own instance (false); MS is gpd.ta.multiSession,
+--- whether the instance accepts more than one session at a time (ignored when SI is false).
+--- The TrustedOS serves taConfig(P, true, false), a single instance with a single session at a
+--- time, taConfig(P, true, true), a single instance with several sessions, and
+--- taConfig(P, false, MS), an instance for each session.
+
+--- @kind data
+--- @feature os
+fmod TA-CONFIG is
+  pr BOOL .
+  pr PROGRAM .
+
+  sort TaConfig .
+
+  op taConfig : Program Bool Bool -> TaConfig [ctor] .
+endfm
+
+view TaConfig from TRIV to TA-CONFIG is
+  sort Elt to TaConfig .
 endv
 
 --- This module defines the trusted OS.
@@ -121,8 +164,8 @@ omod TEE-OS is
   pr OBJECT-ID .
   pr STORAGE-STATUS .
   pr SET{FileName} .
-  pr MAP{AppId,ProgramCell} .
-  pr MAP{SessionId,Oid} .
+  pr MAP{AppId,TaConfig} .
+  pr MAP{AppId,Oid} .
   pr MAP{Oid,Set{Oid}} * (op undefined to noObject) .
   pr LIST{Service} .
   pr LIST{ServiceReturn} .
@@ -131,14 +174,18 @@ omod TEE-OS is
 --- TA storage state is held by separate Storage objects.
   class Storage | status : StorageStatus, files : Set{FileName}, counter : Nat .
 
-  --- The further attributes are session-counter, service-request-ta-inst, service-in,
-  --- service-out, temporary-objects and ta-prog-map, which hold the service queues and maps.
-  class TrustedOS | sess : Map{SessionId,Oid},
-                    session-counter : Nat,
+  --- The further attributes are session-counter, service-request-ta-inst, service-in and
+  --- service-out, which hold the service queues.
+  --- ta-config gives the program and configuration of each TA, ta-instances the instance of each
+  --- single-instance TA that has one, and ta-storages the storage of each TA that has one: the
+  --- storage of a TA is shared by all its instances, see [Internal Core] 2.2.  The open sessions
+  --- are Session objects (SESSION); session-counter numbers them.
+  class TrustedOS | session-counter : Nat,
                     service-request-ta-inst : Oid?,
                     service-in : List{Service}, service-out : List{ServiceReturn},
-                    temporary-objects : Map{Oid,Set{Oid}},
-                    ta-prog-map : Map{AppId,ProgramCell} .
+                    ta-config : Map{AppId,TaConfig},
+                    ta-instances : Map{AppId,Oid},
+                    ta-storages : Map{AppId,Oid} .
 endom
 
 --- @kind interface
@@ -147,10 +194,14 @@ mod TEE-OS-SERVICE is
   pr SERVICE .
   pr APP-ID .
   pr OBJECT-ID .
+  pr SESSION-ID .
+  pr RETURN-CODE .
 
---- Session
+--- Session: openSessionSuccess(SID) gives the new session SID, and openSessionFail(RET) the
+--- code RET of a session that is not opened.
   op openTASession : AppId -> Service [ctor] .
-  op openSessionSuccess : Oid -> ServiceReturn [ctor] .
+  op openSessionSuccess : SessionId -> ServiceReturn [ctor] .
+  op openSessionFail : ReturnCode -> ServiceReturn [ctor] .
 endm
 
 --- This module defines a device class, holding the execution environments of a device.

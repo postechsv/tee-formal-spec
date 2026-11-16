@@ -1,32 +1,32 @@
-# Build driver for the TEE formal spec.
+# Build driver of the TEE formal specification: feature selection, test suites, documentation.
 #
 #   make                    build build/default/src and build/default/tests
 #   make NAME=t             build build/t/src and build/t/tests
-#   make NAME=t CRYPTO=0    build without the crypto modules
-#   make NAME=t WITHOUT=M   build without module M (must be a pr line in main.maude)
-#   make NAME=t DMC=1       build the DM-Check version (tools/gen-dmc.py) instead of a plain copy
+#   make NAME=t CRYPTO=0    build without the crypto modules (features.mk lists the features)
+#   make NAME=t CONFIG=x.toml  the features set by x.toml (lines CRYPTO = 0, ...; see features.toml)
+#   make NAME=t WITHOUT=M   build without module M (must be a pr line in src/main.maude)
 #   make NAME=t test        build, then run test-api and test-checks in build/t/tests
 #   make test-api           API-level black-box tests (tests/api/test-*.maude)
 #   make test-checks        search/red checks (completion/*.maude, gp-conformance/*.maude)
-#   make V=1 test           verbose: stream the Maude output of each test file / check file as it
-#                           runs, and echo the build commands (VERBOSE=1 is the same). Display
-#                           only: not cached, does not change the build; V=0 is the default
-#   make dmc                same as make DMC=1 (the setting is cached like the features)
-#   make check-dmc          regenerate the DMC build and run gen-dmc's ground checks (exit 2 on mismatch)
-#   make docs               build the documentation site: build/docs/index.html (reads src/ and docs/overview.html)
+#   make V=1 test           verbose: stream the Maude output of each test file / check file
+#   make docs               build the documentation site: build/docs/index.html
 #   make help               list features, test selection and current values
 #   make clean NAME=t       remove build/t
 #
 # build/$(NAME)/ holds:
-#   src/, tests/   the final tree: a copy of the selected sources (DMC=0) or the gen-dmc
-#                  output (DMC=1). Nothing else is written there by the DMC build.
-#   .dmc-cache/    DMC=1 bookkeeping (reflection cache, manifest.json, check-build). Kept across
-#                  builds; only make clean removes it.
+#   src/, lang/,   the selected sources (src/main.maude, filtered for the features,
+#                  loads them, and the language files of
+#   tests/         lang/ with ../lang/... paths) and a copy of tests/ with the
+#                  test runners (tools/test/), so relative loads such as ../src/main resolve
+#   tests.txt      the selected test files, relative to tests/: lines "api FILE" and "check FILE",
+#                  and "api-full" when every API test is selected (the runner then checks the total)
 #   config.mk, config.want, .inputs (the selected input list), .stamp (build marker)
 #   .stage/        intermediate, removed after each successful build. A failed build leaves
 #                  the stamp untouched, so the next run rebuilds.
 #
-# Setting precedence: command line > build/$(NAME)/config.mk (cache) > mk/features.mk.
+# Setting precedence: command line > CONFIG file > build/$(NAME)/config.mk (cache) > features.mk.
+# The cache keeps every setting of the last build, CONFIG (the file name) included: a feature
+# that is no longer given keeps its last value (give it, or make clean, to get the default).
 # Personal settings such as the Maude path go in config.mk at the repo root (gitignored).
 
 # Ignore a NAME inherited from the shell environment; only make arguments or config.mk set it.
@@ -49,10 +49,26 @@ export MAUDE_BIN := $(MAUDE)
 -include $(OUT)/config.mk
 
 # Feature table (defaults with ?=).
-include mk/features.mk
+include features.mk
 
-# DM-Check transform (tools/gen-dmc.py). Not a spec feature: it does not drop any files.
-DMC ?= 0
+# Build configuration file: "F = V" lines (features.toml sets every feature). It is TOML with
+# top-level keys only and a makefile at once, so it is included: it overrides the cache and
+# features.mk, and the command line overrides it. A key that is not a feature, or a [table], is an
+# error. Cached like WITHOUT; CONFIG= turns it off. Like NAME, an inherited environment value is
+# ignored.
+ifneq ($(filter environment%,$(origin CONFIG)),)
+CONFIG :=
+endif
+CONFIG ?=
+ifneq ($(strip $(CONFIG)),)
+$(if $(wildcard $(CONFIG)),,$(error CONFIG file '$(CONFIG)' not found))
+CONFIG_KEYS := $(shell sed -n -e 's/^[[:space:]]*\([A-Za-z0-9_-]*\)[[:space:]]*=.*/\1/p' \
+	-e 's/^[[:space:]]*\[.*/[table]/p' $(CONFIG))
+CONFIG_BAD := $(filter-out $(FEATURES),$(CONFIG_KEYS))
+$(if $(CONFIG_BAD),$(error CONFIG file '$(CONFIG)': not a feature of features.mk: $(CONFIG_BAD) (the features are: $(FEATURES))))
+# Plain assignments: they replace the cached value and the default, but not a command-line value.
+include $(CONFIG)
+endif
 
 # Verbose output (V=1 or VERBOSE=1): the test runners stream Maude's output and the recipes
 # are echoed. Display only, so it is not written to config.want or the cache, and changing it
@@ -67,71 +83,70 @@ V ?= $(or $(VERBOSE),0)
 Q = $(if $(filter 1,$(V)),,@)
 VFLAG = $(if $(filter 1,$(V)),-v)
 
-.PHONY: all src test test-api test-checks dmc check-dmc docs help config clean distclean FORCE
+.PHONY: all src test test-api test-checks test-rust docs help config clean distclean FORCE
 
 all: src
 
 # Stop early on invalid values or unmet requirements.
 $(if $(filter-out 0 1,$(V)),$(error V must be 0 or 1, got '$(V)'))
-$(if $(filter-out 0 1,$(DMC)),$(error DMC must be 0 or 1, got '$(DMC)'))
 $(foreach F,$(FEATURES),\
   $(if $(filter-out 0 1,$($(F))),$(error $(F) must be 0 or 1, got '$($(F))'))\
   $(if $(filter 1,$($(F))),\
     $(foreach G,$($(F)_REQUIRES),$(if $(filter 0,$($(G))),$(error $(F) requires $(G))))))
 
-# Arguments for tools/select-main.awk. Disabled features contribute their lists.
+# Arguments for tools/strip-modules.py. Disabled features contribute their lists.
 DROP_LOADS := $(foreach F,$(FEATURES),$(if $(filter 0,$($(F))),$($(F)_LOADS)))
 DROP_MODULES := $(foreach F,$(FEATURES),$(if $(filter 0,$($(F))),$($(F)_MODULES))) $(WITHOUT)
+# "M:F" for each module M of a disabled feature F.
+# Their definitions are cut from the staged src files (WITHOUT only drops the pr line).
+STRIP_MODULES := $(foreach F,$(FEATURES),$(if $(filter 0,$($(F))),$(addsuffix :$(F),$($(F)_MODULES))))
 
+# The entry point: build/$(NAME)/src/main.maude is this file, filtered for the features.
 MAIN_SRC := src/main.maude
-# Spec files in the stage: every src/*.maude except main.maude and the files of disabled features.
+# Spec files in the stage: every src/*.maude except main.maude and the files of disabled
+# features.
 DROP_SRC := $(addprefix src/,$(addsuffix .maude,$(DROP_LOADS)))
 SRC_FILES := $(filter-out $(MAIN_SRC) $(DROP_SRC),$(wildcard src/*.maude))
+# Programming-language files (lang/<language>/*.maude), next to src/ and loaded by main.maude
+# with ../lang/... paths. Staged at the same relative paths, so those loads resolve.
+LANG_FILES := $(sort $(wildcard lang/*/*.maude))
 
-# Test selection. Names are relative to tests/. Files listed in F_TESTS of a
-# disabled feature are dropped.
+# Test selection. Names are relative to tests/. Files listed in F_TESTS of a disabled feature
+# are dropped.
 ALL_API_TESTS := $(patsubst tests/%,%,$(wildcard tests/api/test-*.maude))
 ALL_CHECK_TESTS := $(patsubst tests/%,%,$(wildcard tests/completion/*.maude tests/gp-conformance/*.maude))
 DROP_TESTS := $(foreach F,$(FEATURES),$(if $(filter 0,$($(F))),$($(F)_TESTS)))
 API_TESTS := $(filter-out $(DROP_TESTS),$(ALL_API_TESTS))
 CHECK_TESTS := $(filter-out $(DROP_TESTS),$(ALL_CHECK_TESTS))
-# The test runners run in $(OUT)/tests. A full copy of tests/ (all files, including the
-# runners and the README) is made, so relative loads such as ../src/main resolve inside $(OUT).
+# The test runners run in $(OUT)/tests, a full copy of tests/ with the runners next to it.
 # With every API test selected, run the runner without arguments so it checks the total.
 API_FULL := $(if $(filter-out $(API_TESTS),$(ALL_API_TESTS)),,1)
 API_ARGS = $(if $(API_FULL),,$(addprefix $(OUT)/tests/,$(API_TESTS)))
 CHECK_ARGS = $(addprefix $(OUT)/tests/,$(CHECK_TESTS))
 TEST_SRCS := $(shell find tests -type f)
+RUNNERS := tools/test/run-api-suite.py tools/test/run-checks.py
 
-# gen-dmc reads the stage and writes $(OUT)/src; derived tests go to $(OUT)/tests. Its
-# bookkeeping lives in $(OUT)/.dmc-cache, outside src/ (the DMC=0 path replaces src/ wholesale).
-# DMC_CHECK=1 (set by check-dmc) adds --check.
-GEN_DMC = python3 tools/gen-dmc.py $(STAGE)/src $(OUT)/src --tests $(STAGE)/tests --tests-out $(OUT)/tests --cache-dir $(OUT)/.dmc-cache --maude $(MAUDE) $(if $(DMC_CHECK),--check)
-
-# Everything that decides the final tree. config.want changes with every setting; .inputs
-# with the selected file list, so deleting a file (which no longer appears in the lists) rebuilds.
-FINAL_INPUTS := $(MAIN_SRC) $(SRC_FILES) $(TEST_SRCS) tools/select-main.awk mk/features.mk $(OUT)/config.want $(OUT)/.inputs
-FINAL_INPUTS += $(if $(filter 1,$(DMC)),tools/gen-dmc.py $(wildcard tools/dmc-lib/*))
+# Everything that decides the build. config.want changes with every setting; .inputs with the
+# selected file list, so deleting a file (which no longer appears in the lists) rebuilds.
+FINAL_INPUTS := $(MAIN_SRC) $(SRC_FILES) $(LANG_FILES) $(TEST_SRCS) $(RUNNERS) tools/strip-modules.py features.mk $(OUT)/config.want $(OUT)/.inputs
 
 # The cache is updated last, so a failed build never leaves bad settings behind.
 src: $(FINAL_STAMP)
-	@echo "config: NAME=$(NAME) $(foreach F,$(FEATURES),$(F)=$($(F))) WITHOUT='$(WITHOUT)' DMC=$(DMC)"
+	@echo "config: NAME=$(NAME) $(foreach F,$(FEATURES),$(F)=$($(F))) WITHOUT='$(WITHOUT)' CONFIG='$(CONFIG)'"
 	@cmp -s $(OUT)/config.want $(OUT)/config.mk || cp $(OUT)/config.want $(OUT)/config.mk
 
-# Stage, then the final tree, then the stage is removed. A failure before the touch
-# leaves the stamp old, so the next run rebuilds (and starts by removing the stage).
+# Stage, then the build, then the stage is removed. A failure before the touch leaves the stamp
+# old, so the next run rebuilds (and starts by removing the stage).
 $(FINAL_STAMP): $(FINAL_INPUTS) | $(OUT)
-	$(Q)rm -rf $(STAGE) $(OUT)/tests
+	$(Q)rm -rf $(STAGE) $(OUT)/src $(OUT)/lang $(OUT)/tests
 	$(Q)mkdir -p $(STAGE)/src $(STAGE)/tests
-	$(Q)awk -v skip_loads='$(DROP_LOADS)' -v skip_mods='$(DROP_MODULES)' -v without='$(WITHOUT)' \
-		-f tools/select-main.awk $(MAIN_SRC) > $(STAGE)/src/main.maude
-	$(Q)$(if $(SRC_FILES),cp $(SRC_FILES) $(STAGE)/src/)
+	$(Q)python3 tools/strip-modules.py --out $(STAGE) --main $(MAIN_SRC) \
+		--drop-loads '$(DROP_LOADS)' --drop-prs '$(DROP_MODULES)' --without '$(WITHOUT)' \
+		--cut '$(STRIP_MODULES)' $(SRC_FILES) $(LANG_FILES)
 	$(Q)cp -R tests/. $(STAGE)/tests/
-	$(Q)if [ '$(DMC)' = 1 ]; then \
-		rm -rf $(OUT)/src && $(GEN_DMC); \
-	else \
-		rm -rf $(OUT)/src && cp -R $(STAGE)/src $(OUT)/src && cp -R $(STAGE)/tests $(OUT)/tests; \
-	fi
+	$(Q)cp $(RUNNERS) $(STAGE)/tests/
+	$(Q)printf '%s\n' $(addprefix 'api ',$(API_TESTS)) $(addprefix 'check ',$(CHECK_TESTS)) $(if $(API_FULL),api-full) > $(STAGE)/tests.txt
+	$(Q)mv $(STAGE)/src $(if $(LANG_FILES),$(STAGE)/lang) $(STAGE)/tests $(STAGE)/tests.txt $(OUT)/
 	$(Q)rm -rf $(STAGE)
 	$(Q)touch $@
 
@@ -149,36 +164,31 @@ test-api: src
 test-checks: src
 	@if [ -z '$(CHECK_TESTS)' ]; then echo '[checks] no check files selected'; else python3 $(OUT)/tests/run-checks.py $(VFLAG) $(CHECK_ARGS); fi
 
-# The DMC build is a cached setting, like the features: DMC=1 stays until DMC=0 is given.
-dmc:
-	@$(MAKE) --no-print-directory DMC=1 src
+# Optional compiler-to-Maude pipeline tests (requires rustc in addition to Maude).
+test-rust:
+	python3 -m unittest discover -s tests/rust -v
 
-# Always regenerates (-B), then runs the ground checks. gen-dmc exits 2 on a mismatch.
-check-dmc:
-	@$(MAKE) --no-print-directory -B DMC=1 DMC_CHECK=1 src
-
-# Static documentation site from src/ (tools/gen-docs.py). Independent of NAME and the features.
-# docs/overview.html is the hand-written body of index.html. docs/examples.json (tools/gen-examples.py)
-# gives the verified examples shown, collapsed, under rules and ops.
-docs: docs/overview.html tools/gen-docs.py docs/examples.json
-	python3 tools/gen-docs.py --src src --out build/docs --overview docs/overview.html --examples docs/examples.json --check
+# Static documentation site from src/ (tools/docs/gen-docs.py). Independent of NAME and the features.
+# tools/docs/input/overview.html is the hand-written body of index.html. tools/docs/input/examples.json
+# (tools/docs/gen-examples.py) gives the verified examples shown, collapsed, under rules and ops.
+docs: tools/docs/input/overview.html tools/docs/gen-docs.py tools/docs/input/examples.json
+	python3 tools/docs/gen-docs.py --src src --out build/docs --overview tools/docs/input/overview.html --examples tools/docs/input/examples.json --check
 
 help config:
 	@echo "NAME=$(NAME)  OUT=$(OUT)  MAUDE=$(MAUDE)"
 	@echo "features:"
 	@$(foreach F,$(FEATURES),echo '  $(F)=$($(F))';) echo '  WITHOUT=$(WITHOUT)'
-	@echo "  DMC=$(DMC)"
+	@echo "  CONFIG=$(CONFIG)  (file of F = V lines that sets features, such as features.toml)"
 	@echo "  V=$(V)  (display only: not cached; V=1 streams test output)"
 	@echo "tests (relative to tests/):"
 	@echo "  api:    $(API_TESTS)"
 	@echo "  checks: $(CHECK_TESTS)"
 	@echo "targets:"
-	@echo "  make [src]     build $(OUT)/src and $(OUT)/tests (DMC=1: gen-dmc output)"
+	@echo "  make [src]     build $(OUT)/src, $(OUT)/lang and $(OUT)/tests"
 	@echo "  make test      test-api and test-checks (V=1: stream each file's Maude output)"
 	@echo "  make test-api  API-level tests (run-api-suite.py)"
 	@echo "  make test-checks  search/red checks (run-checks.py)"
-	@echo "  make dmc       same as DMC=1 (cached)"
-	@echo "  make check-dmc regenerate the DMC build and run its ground checks"
+	@echo "  make test-rust  Rust source -> MIR -> Maude integration tests (requires rustc)"
 	@echo "  make docs      build the documentation site in build/docs (open build/docs/index.html)"
 	@echo "  make clean     remove $(OUT)"
 	@echo "  make distclean remove build/"
@@ -192,18 +202,18 @@ distclean:
 $(OUT):
 	@mkdir -p $@
 
-# Desired settings, rewritten only when they change. The final tree depends on it.
+# Desired settings, rewritten only when they change. The build depends on it.
 # Copied to the cache config.mk (read by the next run) after a successful build.
 # Gated so help/clean never create build directories.
-ifeq (,$(filter help config clean distclean,$(MAKECMDGOALS)))
+ifeq (,$(filter help config clean distclean docs,$(MAKECMDGOALS)))
 $(OUT)/config.want: FORCE | $(OUT)
-	@printf '%s\n' '# Generated by Makefile. Do not edit.' $(foreach F,$(FEATURES),'$(F) := $($(F))') 'WITHOUT := $(WITHOUT)' 'DMC := $(DMC)' > $@.tmp
+	@printf '%s\n' '# Generated by Makefile. Do not edit.' $(foreach F,$(FEATURES),'$(F) := $($(F))') 'WITHOUT := $(WITHOUT)' 'CONFIG := $(CONFIG)' > $@.tmp
 	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv $@.tmp $@; fi
 
 # Selected input files (sorted), rewritten only when the list changes. A deleted or added file
 # changes the list, so the stamp becomes stale.
 $(OUT)/.inputs: FORCE | $(OUT)
-	@printf '%s\n' $(sort $(SRC_FILES) $(TEST_SRCS)) > $@.tmp
+	@printf '%s\n' $(sort $(SRC_FILES) $(LANG_FILES) $(TEST_SRCS)) > $@.tmp
 	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv $@.tmp $@; fi
 endif
 

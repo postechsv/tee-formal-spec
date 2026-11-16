@@ -87,12 +87,12 @@ tee-formal-spec/
 │   ├── completion/       # completion regressions, one file per API group
 │   ├── gp-conformance/   # GlobalPlatform conformance reductions, one file per module group
 │   └── main.maude        # shared test modules
-├── docs/annotations.md   # the machine-readable module annotations of src/
 ├── tools/
 │   ├── strip-modules.py  # main.maude and the spec files of a feature configuration
 │   ├── rust2maude.py     # Rust source -> Stable MIR -> Maude, and its evaluation
 │   ├── test/             # the test runners (run-api-suite.py, run-checks.py)
-│   └── docs/             # the documentation site: gen-docs.py, gen-examples.py and their inputs
+│   └── docs/             # the documentation site: gen-docs.py, gen-examples.py, their inputs, and
+│                         # annotations.md (the machine-readable module annotations of src/)
 ├── .github/workflows/docs.yml   # builds the site and deploys it to GitHub Pages
 ├── Makefile              # build, tests, docs
 ├── features.mk           # feature groups a build can drop

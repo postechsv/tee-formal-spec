@@ -80,8 +80,8 @@ CATEGORIES = [
 ]
 CATEGORY_OF = {stem: name for name, stems in CATEGORIES for stem in stems}
 
-# Module annotations (docs/annotations.md). Kinds are listed in the order the modules page
-# shows them; the explanations are the ones of docs/annotations.md.
+# Module annotations (tools/docs/annotations.md). Kinds are listed in the order the modules page
+# shows them; the explanations are the ones of tools/docs/annotations.md.
 KINDS = [
     ('constants', 'Enumerations and constant values: error codes, flags, type identifiers, ids.'),
     ('data', 'Data structures: sorts and functions over them, with no rules.'),

@@ -4,14 +4,14 @@
 --- the active TAKernel call and the referenced handle directly; they never
 --- traverse an owner's resource object.
 ---
---- GENERAL-PANIC holds the nullHandlePanics operator with all of its equations,
---- its owise default and the null-handle rule.  The equations are about API names,
---- which all live in tee-api.maude (always loaded), so they are not split by
---- feature.  PERSISTENT-PANIC and DATA-STREAM-PANIC hold the access rules of
---- their group, in persistent-panic.maude and data-stream-panic.maude; disabling
---- their feature group in a build (features.mk) also removes
---- those files.  The modules import data
---- modules only, never behaviors.
+--- GENERAL-PANIC is the common base of the panic modules: it imports the API names
+--- of tee-api.maude, which is always loaded.  The panic modules of the feature groups,
+--- PERSISTENT-PANIC, DATA-STREAM-PANIC and CRYPTO-PANIC, follow it in this file.  A
+--- build that disables a group cuts that group's panic module out of this file: the
+--- module is in F_MODULES of features.mk, and tools/strip-modules.py cuts it, so
+--- the rest of the file still loads without the group's behavior file.  A cut module's
+--- comment block, which ends in its @kind/@feature lines directly above the header, is
+--- cut with it.
 --- @kind panic
 --- @feature core
 omod GENERAL-PANIC is
@@ -26,68 +26,180 @@ omod GENERAL-PANIC is
   pr DATA-STREAM-OBJECT-FUNC .
   pr CRYPTO-OPERATION-FUNC .
 
-  var TK : Oid .
-  var API : TeeApi .
-  var HANDLE : Oid .
-  var PARAMS : ArgList .
+endom
 
-  --- nullHandlePanics(API): true for the APIs for which TEE_HANDLE_NULL is a programmer error.
-  --- The rule null-handle-panic matches the first argument, so only APIs whose first argument is
-  --- the handle are listed.  copyObjAttrs1 and copyOperation take a target handle first and
-  --- never panic on it, as before.
-  --- Free-style APIs explicitly accept NULL and are intentionally excluded, so they map to
-  --- false.
-  op nullHandlePanics : TeeApi -> Bool .
-  eq nullHandlePanics(populateTransientObject) = true .
-  eq nullHandlePanics(generateKey) = true .
-  eq nullHandlePanics(renamePersistentObject) = true .
-  eq nullHandlePanics(getObjectInfo1) = true .
-  eq nullHandlePanics(restrictObjectUsage1) = true .
-  eq nullHandlePanics(getObjectBufferAttribute) = true .
-  eq nullHandlePanics(getObjectValueAttribute) = true .
-  eq nullHandlePanics(startPersistentObjectEnumerator) = true .
-  eq nullHandlePanics(getNextPersistentObject) = true .
-  eq nullHandlePanics(readObjData) = true .
-  eq nullHandlePanics(writeObjectData) = true .
-  eq nullHandlePanics(truncateObjectData) = true .
-  eq nullHandlePanics(seekObjectData) = true .
-  eq nullHandlePanics(getOperationInfo) = true .
-  eq nullHandlePanics(getOperationInfoMultiple) = true .
-  eq nullHandlePanics(resetOperation) = true .
-  eq nullHandlePanics(setOperationKey) = true .
-  eq nullHandlePanics(setOperationKey2) = true .
-  eq nullHandlePanics(digestUpdate) = true .
-  eq nullHandlePanics(digestDoFinal) = true .
-  eq nullHandlePanics(digestExtract) = true .
-  eq nullHandlePanics(cipherInit) = true .
-  eq nullHandlePanics(cipherUpdate) = true .
-  eq nullHandlePanics(cipherDoFinal) = true .
-  eq nullHandlePanics(macInit) = true .
-  eq nullHandlePanics(macUpdate) = true .
-  eq nullHandlePanics(macComputeFinal) = true .
-  eq nullHandlePanics(macCompareFinal) = true .
-  eq nullHandlePanics(aeInit) = true .
-  eq nullHandlePanics(aeUpdateAAD) = true .
-  eq nullHandlePanics(aeUpdate) = true .
-  eq nullHandlePanics(aeEncryptFinal) = true .
-  eq nullHandlePanics(aeDecryptFinal) = true .
-  eq nullHandlePanics(asymmetricEncrypt) = true .
-  eq nullHandlePanics(asymmetricDecrypt) = true .
-  eq nullHandlePanics(asymmetricSignDigest) = true .
-  eq nullHandlePanics(asymmetricVerifyDigest) = true .
-  eq nullHandlePanics(deriveKey) = true .
-  ---@dmc scope(TEE-BEHAVIOR)
-  ---@dmc owise enumerate(API)
-  eq nullHandlePanics(API) = false [owise] .
+--- Panic conditions for the persistent object APIs.
+--- @kind panic
+--- @related PERSISTENT-OBJECT-BEHAVIOR
+--- @feature persistent
+omod PERSISTENT-PANIC is
+  inc GENERAL-PANIC .
+  pr TEE-MSG .
+  pr TEE-OS-BEHAVIOR .
 
-  --- null-handle-panic: an init call of an API whose handle argument HANDLE is the null handle
-  --- panics the TA when nullHandlePanics(API) holds.  The TA status becomes panic, and the
-  --- api-call becomes noCall, so no rule of the call continues: like a panic of the paper
-  --- artifact, the call ends without a return value.  The other panic rules of an init call
-  --- whose conditions do not exclude the normal rules of the call do the same.
-  crl [null-handle-panic] :
-    < TK : TAKernel | status : (normal).AppStatus , api-call : init(API[# HANDLE PARAMS]) >
+  var O : Oid .
+
+  --- The access rights of closeAndDeletePersistentObject1 and renamePersistentObject are checked
+  --- by the handle (close-and-delete-persistent-top-level-fail, rename-persistent-top-level-check-
+  --- handle-fail in PERSISTENT-OBJECT-BEHAVIOR), whose failure panics the TA.
+
+  op create : -> ReqId [ctor] .
+  var ARGS : List{Arg} .
+  var SI : Oid .
+  var STATUS : StorageStatus .
+
+  --- create-persistent-abnormal-storage-panic: the G.P. documentation gives no result for
+  --- createPersistent when the storage status is abnormal, so the TA panics as in the other
+  --- failure cases.
+  crl [create-persistent-abnormal-storage-panic] :
+    (msg create[ARGS] from O to SI)
+    < O : TAKernel | status : (normal).AppStatus >
+    < SI : Storage | status : STATUS >
     =>
-    < TK : TAKernel | status : panic , api-call : noCall >
-  if nullHandle(HANDLE) and nullHandlePanics(API) .
+    < O : TAKernel | status : panic >
+    < SI : Storage | >
+  if abnormalStorage(STATUS) .
+endom
+
+--- Panic conditions for the data stream access APIs.
+--- @kind panic
+--- @related DATA-STREAM-OBJECT-BEHAVIOR
+--- @feature data-stream
+omod DATA-STREAM-PANIC is
+  inc GENERAL-PANIC .
+  pr DATA-STREAM-OBJECT-BEHAVIOR .
+
+  var O : Oid .
+  var HI : Oid .
+  var ARGS : List{Arg} .
+  var PARAMS : List{Arg} .
+  var FLAGS : Set{DataAccessFlag} .
+
+  --- Persistent data-stream access rights are checked by the handle when it gets the request,
+  --- after the storage check: the handle rules of DATA-STREAM-OBJECT-BEHAVIOR need the right, and
+  --- the rules below answer a handle without it with a failure, which panics the TA.
+  op failReadData : -> ReqId [ctor] .
+  op failWriteData : -> ReqId [ctor] .
+  op failTruncateData : -> ReqId [ctor] .
+
+  --- read-object-data-access-fail: a handle without accessRead refuses the read.
+  crl [read-object-data-access-fail] :
+    (msg read[ARGS] from O to HI)
+    < HI : ObjHandle | flags : FLAGS >
+    =>
+    < HI : ObjHandle | >
+    (msg failReadData[] from HI to O)
+  if not isReadable(FLAGS) .
+
+  --- read-access-panic: a refused read panics the TA.
+  rl [read-access-panic] :
+    (msg failReadData[] from HI to O)
+    < O : TAKernel | status : (normal).AppStatus , api-call : final(readObjData[PARAMS]) >
+    =>
+    < O : TAKernel | status : panic > .
+
+  --- write-object-data-access-fail: a handle without accessWrite refuses the write.
+  crl [write-object-data-access-fail] :
+    (msg reqWriteObjectData[ARGS] from O to HI)
+    < HI : ObjHandle | flags : FLAGS >
+    =>
+    < HI : ObjHandle | >
+    (msg failWriteData[] from HI to O)
+  if not isWritable(FLAGS) .
+
+  --- write-access-panic: a refused write panics the TA.
+  rl [write-access-panic] :
+    (msg failWriteData[] from HI to O)
+    < O : TAKernel | status : (normal).AppStatus , api-call : final(writeObjectData[PARAMS]) >
+    =>
+    < O : TAKernel | status : panic > .
+
+  --- truncate-object-data-access-fail: a handle without accessWrite refuses the truncation.
+  crl [truncate-object-data-access-fail] :
+    (msg reqTruncateObjectData[ARGS] from O to HI)
+    < HI : ObjHandle | flags : FLAGS >
+    =>
+    < HI : ObjHandle | >
+    (msg failTruncateData[] from HI to O)
+  if not isWritable(FLAGS) .
+
+  --- truncate-access-panic: a refused truncation panics the TA.
+  rl [truncate-access-panic] :
+    (msg failTruncateData[] from HI to O)
+    < O : TAKernel | status : (normal).AppStatus , api-call : final(truncateObjectData[PARAMS]) >
+    =>
+    < O : TAKernel | status : panic > .
+endom
+
+--- Panic conditions for the cryptographic operation APIs.
+--- @kind panic
+--- @feature crypto
+omod CRYPTO-PANIC is
+  pr CRYPTO-OPERATION-BEHAVIOR .
+
+  var O : Oid .
+  var API : TeeApi .
+  var HI : Oid .
+  var CI : Oid .
+  var ARGS : List{Arg} .
+  var HS : HandleState .
+  var HSF : Set{HandleFlag} .
+  var CLASS : OpClass .
+
+  --- operationClassCompatible(API, CLASS): true when the operation class CLASS is one that API accepts.
+  --- Other combinations of API and CLASS are not compatible.
+  op operationClassCompatible : TeeApi OpClass -> Bool .
+  eq operationClassCompatible(freeOperation, CLASS) = true .
+  eq operationClassCompatible(getOperationInfo, CLASS) = true .
+  eq operationClassCompatible(getOperationInfoMultiple, CLASS) = true .
+  eq operationClassCompatible(resetOperation, CLASS) = true .
+  eq operationClassCompatible(setOperationKey, CLASS) = true .
+  eq operationClassCompatible(setOperationKey2, CLASS) = true .
+  eq operationClassCompatible(copyOperation, CLASS) = true .
+  eq operationClassCompatible(digestUpdate, clsDigest) = true .
+  eq operationClassCompatible(digestDoFinal, clsDigest) = true .
+  eq operationClassCompatible(digestExtract, clsDigest) = true .
+  eq operationClassCompatible(cipherInit, clsCipher) = true .
+  eq operationClassCompatible(cipherUpdate, clsCipher) = true .
+  eq operationClassCompatible(cipherDoFinal, clsCipher) = true .
+  eq operationClassCompatible(macInit, clsMAC) = true .
+  eq operationClassCompatible(macUpdate, clsMAC) = true .
+  eq operationClassCompatible(macComputeFinal, clsMAC) = true .
+  eq operationClassCompatible(macCompareFinal, clsMAC) = true .
+  eq operationClassCompatible(aeInit, clsAE) = true .
+  eq operationClassCompatible(aeUpdateAAD, clsAE) = true .
+  eq operationClassCompatible(aeUpdate, clsAE) = true .
+  eq operationClassCompatible(aeEncryptFinal, clsAE) = true .
+  eq operationClassCompatible(aeDecryptFinal, clsAE) = true .
+  eq operationClassCompatible(asymmetricEncrypt, clsAsymmetricCipher) = true .
+  eq operationClassCompatible(asymmetricDecrypt, clsAsymmetricCipher) = true .
+  eq operationClassCompatible(asymmetricSignDigest, clsAsymmetricSignature) = true .
+  eq operationClassCompatible(asymmetricVerifyDigest, clsAsymmetricSignature) = true .
+  eq operationClassCompatible(deriveKey, clsKeyDerivation) = true .
+  eq operationClassCompatible(API, CLASS) = false [owise] .
+
+  --- operation-api-class-mismatch-panic: the operation class CLASS is assigned to OpHandle.  A class mismatch
+  --- is a programmer error and sets the kernel status to panic before an operation-specific rule runs.
+  ceq [operation-api-class-mismatch-panic] :
+    < O : TAKernel | api-call : init(API[# HI ARGS]) >
+    < HI : OpHandle | oid : CI, opclass : CLASS >
+    =
+    < O : TAKernel | status : panic , api-call : noCall >
+    < HI : OpHandle | >
+  if not operationClassCompatible(API, CLASS) .
+
+  --- No initialized-state panic for setOperationKey: setOperationKey leaves the INIT state (set or
+  --- clear), so the operation-specific rules in cryptographic.maude handle it.
+
+  --- set-operation-key2-initialized-panic: GP 6.2.7 applies the same initial-state precondition to
+  --- the two-key API. A handle in the init state makes TEE_SetOperationKey2 set the kernel status
+  --- to panic.
+  rl [set-operation-key2-initialized-panic] :
+    < O : TAKernel | status : (normal).AppStatus , api-call : init(setOperationKey2[# HI ARGS]) >
+    < HI : OpHandle | state : handleState((init, HSF)) >
+    =>
+    < O : TAKernel | status : panic >
+    < HI : OpHandle | >
+  .
+
 endom

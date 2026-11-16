@@ -17,14 +17,14 @@ FASE 2024, LNCS, Springer.
 - Shared memory of a client and a TA: the TA runs on the memory that the client passes with the call
 - Cryptographic operations
 - Programmer errors and invalid handles, modeled as panics
-- Model programs (`src/imp.maude`) whose calls are translated into TEE API calls (`src/tee-imp.maude`)
+- Model programs (`lang/c/semantics.maude`) whose calls are translated into TEE API calls (`lang/c/tee-support.maude`)
 
 ## Using the specification
 
-`src/main.maude` is the entry point and needs only Maude 3:
+The entry point is `src/main.maude`, with every feature on; a build of a feature configuration filters it into `build/<NAME>/src/main.maude` (GNU Make, Python 3). Its comments explain the specification and end with sample `rew` and `search` commands on a small scenario (module `MAIN-SAMPLE`: an RA opens a session with a TA, invokes a command that calls a TEE API, and closes it), to paste at the Maude prompt:
 
 ```bash
-maude src/main.maude
+maude src/main.maude    # load the specification, then paste a sample command
 ```
 
 ## Building
@@ -67,13 +67,15 @@ SHM = 0
 | `GENERIC` | Generic object API | |
 | `DATA_STREAM` | Persistent data stream access | `PERSISTENT` |
 | `ENUMERATOR` | Persistent object enumeration | `PERSISTENT` |
-| `SHM` | Shared memory of a client and a TA (the IMP client call `teecInvokeCommand`) | |
+| `SHM` | Shared memory of a client and a TA (the C client call `teecInvokeCommand`) | |
 
 ## Repository layout
 
 ```text
 tee-formal-spec/
-├── src/                  # Maude specification (src/main.maude loads it)
+├── src/                  # Maude specification (main.maude: the entry point)
+├── lang/c/               # the TA programming language: semantics.maude (syntax and K-style
+│                         # semantics), typing.maude (type checker), tee-support.maude (program calls to TEE API calls); loaded by src/main.maude
 ├── tests/
 │   ├── api/              # API-level black-box searches (test-*.maude)
 │   ├── cases/            # API-specific test cases
@@ -112,23 +114,28 @@ tee-formal-spec/
 | `handle.maude` | Object, enumerator, operation, and session handles |
 | `constants.maude` | GlobalPlatform constants, types, key sizes, and usages |
 | `tee-data-type.maude` | Models of GlobalPlatform API data structures |
-| `tee-api.maude`, `tee-api-call.maude` | API identifiers, call parameters, and return values |
+| `tee-api.maude`, `tee-api-call.maude` | API identifiers, call parameters, return values, and the values `# X` of the API data |
 | `tee-msg.maude` | Message layer of the TEE API models |
 | `session.maude` | Sessions of an RA or a TA client: opening a session (TEEC_OpenSession, TEE_OpenTASession) with the TA instance it creates, and invoking a command in it |
 | `tee-kernel.maude` | TA kernel and API execution state |
-| `tee-panic.maude` | General programmer errors and invalid-handle panics |
-| `persistent-panic.maude`, `data-stream-panic.maude`, `crypto-panic.maude` | Panics of the storage and cryptographic APIs |
+| `tee-panic.maude` | Panics: GENERAL-PANIC (general programmer errors) and the panic module of each feature group (PERSISTENT-PANIC, DATA-STREAM-PANIC, CRYPTO-PANIC), cut by the build when the group is off |
 | `os.maude`, `os-service.maude` | Trusted OS and storage services |
 | `app.maude`, `ree-app.maude`, `tee-app.maude` | REE/TEE applications and client behavior |
-| `shared-memory.maude` | Shared memory of a client and a TA: the client passes its memory with the call, the TA runs on it and passes it back; the IMP client call `teecInvokeCommand` |
+| `shared-memory.maude` | Shared memory of a client and a TA (language-independent part; the C client call `teecInvokeCommand` is in `../lang/c/tee-support.maude`) |
 
 ### Program execution
+
+`src/` does not depend on the language of the programs: `lang.maude` declares what the
+model needs from it, and a language under `lang/` gives it. `main.maude` loads the language files
+after every file of `src/`.
 
 | File | Purpose |
 | --- | --- |
 | `k-prelude.maude` | Foundations for the K-style execution semantics |
-| `imp.maude` | Syntax and semantics of model programs |
-| `tee-imp.maude` | Translation of program calls into TEE API calls |
+| `lang.maude` | What the model shares with the program language: values `# X`, argument lists `List{Arg}`, function identifiers, programs, parameter lists, the tasks of an API call (`$in`, `$wait`, `$out`), running a TA service (`mkConf`, `getVals`), shared objects of a client TA |
+| `../lang/c/semantics.maude` | Syntax and semantics of model programs (a C subset) |
+| `../lang/c/typing.maude` | Static type checking of model programs (`wellTyped`) |
+| `../lang/c/tee-support.maude` | The C side of the model: TEE API calls of programs (`getFuncParams` of each API function), client calls, running a TA service, shared memory |
 
 ## Core modeling principles
 

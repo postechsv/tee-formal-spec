@@ -15,7 +15,6 @@ fmod STORAGE-IDENTIFER is
 
   op supportedStorage : StorageIdentifier -> Bool .
   eq supportedStorage(storagePrivate) = true .
-  ---@dmc owise enumerate(STORID)
   eq supportedStorage(STORID) = false [owise] .
 
   var STORID : StorageIdentifier .
@@ -52,9 +51,7 @@ fmod RETURN-CODE is
 
   op noReturnCode : -> ReturnCode? [ctor] .
   op success : -> ReturnCode [ctor] .
-  op errorCorruptObject : -> ReturnCode [ctor] .
   op errorCorruptObject2 : -> ReturnCode [ctor] .
-  op errorStorageNotAvailable : -> ReturnCode [ctor] .
   op errorStorageNotAvailable2 : -> ReturnCode [ctor] .
   op errorGeneric : -> ReturnCode [ctor] .
   op errorAccessConflict : -> ReturnCode [ctor] .
@@ -66,7 +63,6 @@ fmod RETURN-CODE is
   op errorSecurity : -> ReturnCode [ctor] .
   op errorShortBuffer : -> ReturnCode [ctor] .
   op errorOverflow : -> ReturnCode [ctor] .
-  op errorStorageNoSpace : -> ReturnCode [ctor] .
   op errorMacInvalid : -> ReturnCode [ctor] .
   op errorSignatureInvalid : -> ReturnCode [ctor] .
   op errorCiphertextInvalid : -> ReturnCode [ctor] .
@@ -88,13 +84,13 @@ endv
 fmod DATA-FLAG is
   sort DataAccessFlag .
 
-  op accessRead : -> DataAccessFlag .
-  op accessWrite : -> DataAccessFlag .
-  op accessWriteMeta : -> DataAccessFlag .
-  op shareRead : -> DataAccessFlag .
-  op shareWrite : -> DataAccessFlag .
-  op overwrite : -> DataAccessFlag .
-  op exclusive : -> DataAccessFlag . --- deprecated
+  op accessRead : -> DataAccessFlag [ctor] .
+  op accessWrite : -> DataAccessFlag [ctor] .
+  op accessWriteMeta : -> DataAccessFlag [ctor] .
+  op shareRead : -> DataAccessFlag [ctor] .
+  op shareWrite : -> DataAccessFlag [ctor] .
+  op overwrite : -> DataAccessFlag [ctor] .
+  op exclusive : -> DataAccessFlag [ctor] . --- deprecated
 endfm
 
 view DataAccessFlag from TRIV to DATA-FLAG is
@@ -222,19 +218,6 @@ endfm
 
 --- This module defines the data structure for key material.
 
---- @kind constants
---- @feature crypto
-fmod CRYPTO-KEY is
-  pr SET{CryptoAttribute} .
-
-  sort CryptoKey .
-  op key : Set{CryptoAttribute} -> CryptoKey [ctor] .
-endfm
-
-view CryptoKey from TRIV to CRYPTO-KEY is
-  sort Elt to CryptoKey .
-endv
-
 --- This module defines a basic sort for cryptographic key size.
 
 --- @kind data
@@ -256,8 +239,6 @@ fmod CRYPTO-KEY-SIZE is
   op attrsKeySize : Set{CryptoAttribute} -> Nat .
   eq attrsKeySize((attr(secretValue,
                            sizedAttrVal(N, MATERIAL)), ATTRS)) = N .
-  ---@dmc scope(TEE-BEHAVIOR)
-  ---@dmc owise recurse(sep=_,_, empty=empty)
   eq attrsKeySize(ATTRS) = 0 [owise] .
 
 endfm
@@ -333,8 +314,8 @@ fmod POSSIBLE-CRYPTO-KEY-SIZE is
   pr CRYPTO-KEY-SIZE .
 
   var N : Nat .
-  var OBJTYPE : Type .
-  var KEYSIZE : Nat .
+  var TYPE : Type .
+  var SIZE : Nat .
 
   op supported : Type Nat -> Bool .
 
@@ -401,8 +382,7 @@ fmod POSSIBLE-CRYPTO-KEY-SIZE is
     if 80 <= N and N <= 1024 and N rem 8 == 0 .
   ceq supported(typeGenericSecret , N) = true
     if 8 <= N and N <= 4096 and N rem 8 == 0 .
----@dmc owise enumerate(arg1, arg2)
-  eq supported(OBJTYPE , KEYSIZE) = false [owise] .
+  eq supported(TYPE , SIZE) = false [owise] .
 
 endfm
 
@@ -503,9 +483,7 @@ endfm
 fmod OPERATION-STATE is
   sort State .
 
-  op initial : -> State [ctor] .
-  op active : -> State [ctor] .
-  op extract : -> State [ctor] .
+  ops initial active extract : -> State [ctor] .
 endfm
 
 --- @kind constants
@@ -579,9 +557,7 @@ endm
 --- @feature persistent
 fmod FILE-ID is
   pr QID .
-  ---@dmc close-sort(FileName=mkFileName)
   sort FileName .
-  ---@dmc qid-literals(FileName)
   op fileName : Qid -> FileName [ctor] .
 endfm
 
@@ -596,7 +572,7 @@ fmod NAME-LENGTH is
 
   sort FileNameLength .
 
-  var FI : FileName .
+  var FILE : FileName .
   vars L1 L2 : FileNameLength .
 
   op idLength : FileName -> FileNameLength [ctor] .
@@ -614,7 +590,6 @@ endfm
 --- @kind constants
 --- @feature ta-session
 fmod APP-ID is
-  ---@dmc close-sort(AppId=mkAppId)
   sorts AppId AppId? .
   subsort AppId < AppId? .
 

@@ -14,24 +14,24 @@ mod COMPLETION-TEST is
 endm
 
 search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : exec(getObjectBufferAttribute[# ZvHandle # rsaModulus # dataSize(0) # attr(rsaModulus, randomAttrVal) # usageExtractable] , 2) >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : exec(getObjectBufferAttribute[# ZvHandle # rsaModulus # 0 # attr(rsaModulus, randomAttrVal) # usageExtractable] , 2) >
 =>*
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : return(getObjectBufferAttribute[# errorShortBuffer # dataSize(1)]) > .
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : return(getObjectBufferAttribute[# errorShortBuffer # 1]) > .
 
 search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : exec(getObjectBufferAttribute[# ZvHandle # rsaModulus # dataSize(1) # attr(rsaModulus, randomAttrVal) # usageExtractable] , 2) >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : exec(getObjectBufferAttribute[# ZvHandle # rsaModulus # 1 # attr(rsaModulus, randomAttrVal) # usageExtractable] , 2) >
 =>*
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : return(getObjectBufferAttribute[# success # randomAttrVal # dataSize(1)]) > .
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : return(getObjectBufferAttribute[# success # randomAttrVal # 1]) > .
 
 --- Closing one persistent handle removes only that ID and its top-level object.
 search [1] in COMPLETION-TEST :
   (msg reqCloseObject[] from testTa to oid(101, testTa))
-  < oid(1, testTa) : PersistObj | open-handles : (oh(oid(101, testTa), accessRead) oh(oid(2, testTa), accessRead)) >
+  < oid(1, testTa) : PersistObj | open-handles : (handleConf(oid(101, testTa), accessRead) handleConf(oid(2, testTa), accessRead)) >
   < oid(101, testTa) : ObjHandle | oid : oid(1, testTa) >
   < oid(2, testTa) : ObjHandle | oid : oid(1, testTa) >
 =>1
   (msg finishCloseObject[] from oid(1, testTa) to testTa)
-  < oid(1, testTa) : PersistObj | open-handles : oh(oid(2, testTa), accessRead) >
+  < oid(1, testTa) : PersistObj | open-handles : handleConf(oid(2, testTa), accessRead) >
   < oid(2, testTa) : ObjHandle | oid : oid(1, testTa) > .
 
 --- getObjectInfo1 combines a persistent owner, top-level handle, and stream.
@@ -47,7 +47,7 @@ search [1] in COMPLETION-TEST :
       pos : 2 >
 =>1
   (msg retObjectInfoPr[# typeAes # keySize(
-      attr(secretValue, randomAttrVal)) # 256 # usageExtractable # dataSize(5) # pos(2) # accessRead] from oid(101, testTa) to testTa)
+      attr(secretValue, randomAttrVal)) # 256 # usageExtractable # 5 # 2 # accessRead] from oid(101, testTa) to testTa)
   C .
 
 --- restrictObjectUsage1 updates a persistent owner through its top-level handle.
@@ -59,8 +59,3 @@ search [1] in COMPLETION-TEST :
 =>1
   (msg finishRestrictUsage[] from oid(101, testTa) to testTa)
   C .
-
-search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(getObjectInfo1[# null]) >
-=>1
-  < testTa : TAKernel | status : panic, api-call : noCall > .

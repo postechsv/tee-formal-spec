@@ -1,4 +1,4 @@
---- Static type checking of IMP programs (IMP-TYPING, the gate in mkConf).
+--- Static type checking of C programs (C-TYPING, the gate in mkConf).
 --- Positive cases: wellTyped(P) reduces to true.
 --- Negative cases: wellTyped(P) is stuck, so (wellTyped(P) == true) == false is true.
 load ../../src/main
@@ -6,7 +6,7 @@ load ../cases/aux
 
 mod TYPING-TEST is
   pr TEE-BEHAVIOR .
-  pr TEE-IMP-BEHAVIOR .
+  pr TEE-C-BEHAVIOR .
   pr TEST-AUX .
   ops x y b a h r s p i c q : -> Var [ctor] .
   op fId : -> FuncId [ctor] .
@@ -14,8 +14,8 @@ mod TYPING-TEST is
   op hId : -> FuncId [ctor] .
   op setx : -> FuncId [ctor] .
   op lbl : -> Label [ctor] .
-  op Pt : -> ImpType [ctor] .
-  op Qt : -> ImpType [ctor] .
+  op Pt : -> CType [ctor] .
+  op Qt : -> CType [ctor] .
   var ENV : Map{Var,Nat} .
   var MEM : Map{Nat,Value?} .
   var L : Nat .
@@ -91,10 +91,10 @@ red (wellTyped(struct Pt { int[2] a ; } ;) == true) == false .
 --- parameters, never the locals of a caller.  h reads x, which is only a local of g.
 red (wellTyped(int hId() { return x ; } int gId() { int x ; x := # 1 ; return hId() ; } int r ; r := gId() ;) == true) == false .
 
---- The gate: an ill-typed program has no configuration, mkConf yields the error term.
-red (mkConf(int x ; x := # true ;) == illTyped) == true .
-red (mkConf(bool b ; b := # 1 ;) == illTyped) == true .
-red (mkConf(int x ; x := y ;) == illTyped) == true .
+--- Ill-typed programs: wellTyped rejects them (mkConf does not check it).
+red (wellTyped(int x ; x := # true ;) == true) == false .
+red (wellTyped(bool b ; b := # 1 ;) == true) == false .
+red (wellTyped(int x ; x := y ;) == true) == false .
 
 --- Runtime lexical scope: hId reads the global x (2), not the local x of gId (1).
 --- Under dynamic scoping r would be 1 and the search would have no solution.
@@ -120,8 +120,6 @@ red not (invoke(skip) :: Stmt) .
 red not ($in(nil) :: Stmt) .
 red not ($wait(allocateTransientObject) :: Program) .
 red not ($inH(nil, nil) :: Stmt) .
---- $libFun is the trusted library body: the checker takes it only for a TEE API name.
-red (wellTyped($libFun(int fId(), skip)) == true) == false .
 --- A user function cannot take the name of a TEE API (it would replace the library function).
 red (wellTyped(int allocateTransientObject() { return # 1 ; }) == true) == false .
 

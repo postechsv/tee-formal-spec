@@ -1,60 +1,102 @@
---- This file defines the sessions between a client and a TA: opening a session, and invoking a
---- command in it ([Internal Core] 4.3, 4.5, 4.9, [Client API] 4.5.7, 4.5.9).
+--- This file defines the sessions between a client and a TA: opening a session, invoking a command
+--- in it, and closing it ([Internal Core] 2.1, 4.3, 4.5, 4.9, [Client API] 4.5.7-4.5.9).
 ---
---- The TrustedOS keeps every open session in sess: sessionId(N) |-> session(CL, TI), the
---- client CL and the TA instance TI that serves it.  The client is an RA, reeClient(RI), or a TA,
---- taClient(TK).  Both kinds of client go through the TrustedOS in the same way, and the
---- TrustedOS answers each through its own channel:
+--- A session is a Session object, sessionId(N), created by the TrustedOS when it opens the
+--- session.  Its source is the client that opened it, an RA or a TA, and its destination the TA
+--- instance that serves it; is-smc tells whether the source is an RA, reached through SMC, or a
+--- TA, whose client identity is TEE_LOGIN_TRUSTED_APP ([Internal Core] 4.2.2, 4.6).  The two
+--- kinds of client are one kind of session, see [Internal Core] 2.1: they differ only in the
+--- channel of their requests and answers.
 ---
 ---                       RA client (TEEC_*)                  TA client (TEE_*TASession, ...)
----   open request        smcReq(RI, TeecOpenSession, ...)    reqTrustedOS(openTASession(TN), TK)
----   open answer         smcRet(RI, (# success # SID), CS)   retTrustedOS(openSessionSuccess(SID), TK)
----   invoke request      smcReq(RI, TeecInvokeCommand, ...)  msg reqInvoke[...] from TK to KI
----   to the TA instance  msg invkTa[SID, FID, VL, CS] from KI to TI
----   from the instance   msg invkTaRet[SID, CS] from TI to KI
----   invoke answer       smcRet(RI, # success, CS)           msg finishReqInvoke[...] from KI to TK
+---   open request        smcReq(RI, teecOpenSession, # TN)   reqTrustedOS(openTASession(TN), TK)
+---   open answer         smcRet(RI, (# success # SID))       retTrustedOS(openSessionSuccess(SID), TK)
+---   invoke request      smcReq(RI, SID, FID, VL)            init(TeeInvokeTACommand[...]) of TK
+---   to the TA instance  msg invkTa[FID VL] from SID to TI   msg invkTa[FID VL] from SID to TI
+---   from the instance   msg invkTaRet[RET] from TI to SID   msg invkTaRet[RET] from TI to SID
+---   invoke answer       smcRet(RI, (# success RET))         return(TeeInvokeTACommand[...]) of TK
+---
+--- VL are the argument values of the service, the values of the shared objects of the client, and
+--- RET the results of the TA instance, the values of its output parameters (getVals).  The
+--- session is the sender of the request to the instance, so the instance records the session in
+--- its client-service, {SID, FID}, and answers it.
 ---
 --- An RA holds the session as the value # SID; a TA holds a handle, a TaSessionHandle object
---- whose session attribute is SID.  The TA instance records the session of the request it serves
---- in its client-service, {SID, FID}, so that the TrustedOS finds the client of its answer.
+--- whose session attribute is SID.
+---
+--- The state of a session:
+---   * idle: the session is open and no command is pending in it;
+---   * invoking: a command of the source is pending, see [Internal Core] 2.1.3: there is at most
+---     one in a session;
+---   * targetDead: the destination has panicked while it served the pending command, see
+---     [Internal Core] 2.3.3; a later command gets TEE_ERROR_TARGET_DEAD at once.
 ---
 --- Opening a session.  The TrustedOS decides in the same way for both kinds of client:
 ---   * the single-instance TA TN has no instance: the TrustedOS creates the instance from the
----     program of TN in ta-prog-map, with the storage of TN, records it in ta-instances, and
+---     program of TN in ta-config, with the storage of TN, records it in ta-instances, and
 ---     opens the session on it;
 ---   * the instance of TN already has a session, and TN accepts one session at a time,
----     taConfig(true, false): TEE_ERROR_BUSY, TEEC_ERROR_BUSY for an RA;
----   * TN has an instance and accepts several sessions, taConfig(true, true): the session is
+---     taConfig(P, true, false): TEE_ERROR_BUSY, TEEC_ERROR_BUSY for an RA;
+---   * TN has an instance and accepts several sessions, taConfig(P, true, true): the session is
 ---     opened on that instance, which all the sessions of TN share, see [Internal Core] 2.1.6;
----   * TN is a multi-instance TA, taConfig(false, MS): the TrustedOS creates a new instance for
+---   * TN is a multi-instance TA, taConfig(P, false, MS): the TrustedOS creates a new instance for
 ---     the session, see [Internal Core] 2.1.6, with the storage of TN; MS is ignored, see
 ---     [Internal Core] 4.5, as each instance has one session;
 ---   * no TA has the identifier TN: TEE_ERROR_ITEM_NOT_FOUND.
---- The storage of a TA is shared by all its instances, see [Internal Core] 2.2: the TrustedOS
---- creates it, oid(0, TI), with the first instance TI of the TA, records it in ta-storages, and
---- gives it to the later instances.  The entry points TA_CreateEntryPoint and
---- TA_OpenSessionEntryPoint are not modeled: the instance is created and the session opened at
---- once.  An RA gets the return code, and the new session after success; it is not given the
---- return origin.  A TA gets the code, the handle (TEE_HANDLE_NULL on failure) and the origin.
+--- An instance counts its open sessions in sessions.  The storage of a TA is shared by all its
+--- instances, see [Internal Core] 2.2: the TrustedOS creates it, oid(0, TI), with the first
+--- instance TI of the TA, records it in ta-storages, and gives it to the later instances.  The
+--- entry points TA_CreateEntryPoint and TA_OpenSessionEntryPoint are not modeled: the instance is
+--- created and the session opened at once.  An RA gets the return code, and the new session
+--- after success; it is not given the return origin.  A TA gets the code, the handle, which is
+--- TEE_HANDLE_NULL on failure, and the origin.
 ---
---- Invoking a command.  The TrustedOS forwards the request of the client of a session to the TA
---- instance of the session; a request through a session of another client is not served.  The
---- instance serves one request at a time, see [Internal Core] 2.1.3: the other requests to it
---- wait, as invkTa messages, until it is free, and the next one is chosen nondeterministically.
---- A finished service succeeds, as a service is a void function: the client gets success, with
---- the origin of the TA for a TA client.  A TA instance that panics while it serves the request
---- answers TEE_ERROR_TARGET_DEAD, with the origin of the TEE for a TA client, see [Internal Core]
---- 4.9.3.  In both cases the client gets the memory back as the TA instance has left it.  Every
---- later or waiting request to a panicked instance gets TEE_ERROR_TARGET_DEAD too, with the
---- memory of the client unchanged, see [Internal Core] 2.3.3.
+--- Invoking a command.  The source of an idle session sends its request to the destination
+--- through the session; a request through the session of another client is not served.  The
+--- instance serves one request at a time, see [Internal Core] 2.1.3: the requests of the other
+--- sessions wait, as invkTa messages, until it is free, and the next one is chosen
+--- nondeterministically.  A finished service succeeds, as a service is a void function: the
+--- client gets success, with the origin of the TA for a TA client.  A TA instance that panics
+--- while it serves the request answers TEE_ERROR_TARGET_DEAD, with the origin of the TEE for a TA
+--- client, see [Internal Core] 4.9.3, and no results: the shared objects of the client are
+--- unchanged.  Every waiting or later request to a panicked instance gets TEE_ERROR_TARGET_DEAD
+--- too, see [Internal Core] 2.3.3.  The panicked instance is destroyed at once, see [Internal
+--- Core] 2.3.3: the TA has no instance any more (it is removed from ta-instances), even while
+--- other sessions are still open on it.  The sessions stay until their clients close them; a
+--- later TEEC_OpenSession of a single-instance TA creates a new instance.
 ---
---- TEEC_CloseSession and TEE_CloseTASession are not modeled: a session, once open, stays open.
---- The IMP call of an RA, teecOpenSession, is in RICH-APP-BEHAVIOR, and teecInvokeCommand in
+--- Closing a session (TEEC_CloseSession of an RA, [Client API] 4.5.8).  The Session object is
+--- removed.  When it was the last session of its instance, the instance is destroyed: the TA has
+--- no instance any more; its storage stays, see [Internal Core] 2.2.  This is the rule of
+--- gpd.ta.instanceKeepAlive false ([Internal Core] 4.5), the only one the model has: an instance of
+--- a multi-instance TA has one session, and a single-instance TA is not kept alive.  A later
+--- TEEC_OpenSession of a single-instance TA whose storage exists creates a new instance with that
+--- storage.  The entry points TA_CloseSessionEntryPoint and TA_DestroyEntryPoint are not modeled,
+--- and the objects that the destroyed instance owned (its handles) are left in the configuration,
+--- unreachable.  TEE_CloseTASession of a TA is not modeled.
+--- The C call of an RA, teecOpenSession, is in RICH-APP-BEHAVIOR, and teecInvokeCommand in
 --- SHARED-MEMORY-BEHAVIOR.
+
+--- @kind state
+--- @feature ta-session
+omod SESSION is
+  pr OBJECT-ID .
+  pr SESSION-ID .
+
+  subsort SessionId < Oid .
+
+  sort SessionState .
+  op idle : -> SessionState [ctor] .
+  op invoking : -> SessionState [ctor] .
+  op targetDead : -> SessionState [ctor] .
+
+  class Session | source : Oid , destination : Oid , is-smc : Bool , state : SessionState .
+endom
 
 --- @kind behavior
 --- @feature ta-session
 omod SESSION-BEHAVIOR is
+  pr SESSION .
   pr TEE-OS-BEHAVIOR .
   pr TRUST-APP .
   pr SECURE-MONITOR-CALL .
@@ -63,232 +105,293 @@ omod SESSION-BEHAVIOR is
   pr TEE-MSG .
   pr TEE-CLIENT-FUNC .
   pr TEE-INTERNAL-CLIENT-FUNC .
-  pr TEE-CLIENT-IMP-VALUE .
-  pr RETURN-IMP-VALUE .
+  pr TEE-CLIENT-VALUE .
+  pr RETURN-VALUE .
+  pr SHARED-OBJECT .
 
   op #_ : FuncId -> Value [ctor] .
-  op #_ : ArgList -> Value [ctor] .
+  op #_ : List{Arg} -> Value [ctor] .
 
-  op reqInvoke : -> ReqId [ctor] .
-  op finishReqInvoke : -> ReqId [ctor] .
-
-  vars KI RI TK TI HANDLE : Oid .
-  var CL : Client .
+  vars OS RI O TI HI : Oid .
   vars TN TA : AppId .
-  var N : Nat .
+  vars N M : Nat .
   var MS : Bool .
   var P : Program .
-  vars CS : CStore .
   var SIL : List{Service} .
   var SOL : List{ServiceReturn} .
-  vars SID SID' : SessionId .
-  var SESS : Map{SessionId,SessionInfo} .
-  var PROGC : Map{AppId,ProgramCell} .
+  var SID : SessionId .
   var CFG : Map{AppId,TaConfig} .
   vars IM ST : Map{AppId,Oid} .
   var SI : Oid .
   var FID : FuncId .
-  var VL : ArgList .
-  var PARAMS : ArgList .
-  var RET : ReturnCode .
-  var RO : ReturnOrigin .
-  vars MEM MEM' : Map{Nat,Value?} .
-  vars L L' : Nat .
-  vars AL AL' : Map{Nat,Nat} .
+  vars VL RET : List{Arg} .
+  var V : Value .
+  var ARGS : List{Arg} .
+  var RC : ReturnCode .
   var KS : KConfig .
-  var ZsTeeOpenTASession1 : Value .
-  var ZrTeeOpenTASession : ArgList .
-  vars ZsTeeInvokeTACommand1 ZsTeeInvokeTACommand2 : Value .
-  var ZrTeeInvokeTACommand : ArgList .
+  var TIMEOUTARG : Value .
+  var RESTARGS : List{Arg} .
 
 ------------------------------------------------------------
 --- Opening a session: the TrustedOS, for an RA (TEEC_OpenSession)
 ------------------------------------------------------------
 
 --- teec-open-session: the single-instance TA TN has no instance, so the TrustedOS creates the TA
---- instance oid(N, KI) with the program P of TN and the storage of TN, records them, and opens the
---- session sessionId(N) of the RA RI on it.  The memory CS of the RA comes back unchanged.
+--- instance oid(N, OS) with the program P of TN and the storage of TN, records them, and opens the
+--- session sessionId(N) of the RA RI on it.
   crl [teec-open-session] :
-    smcReq(RI, TeecOpenSession, # TN, CS)
-    < KI : TrustedOS | ta-prog-map : (TN |-> [P] , PROGC) ,
-                       ta-config : (TN |-> taConfig(true, MS) , CFG) , ta-instances : IM ,
-                       ta-storages : ST , sess : SESS , session-counter : N >
+    smcReq(RI, teecOpenSession, # TN)
+    < OS : TrustedOS | ta-config : (TN |-> taConfig(P, true, MS) , CFG) , ta-instances : IM ,
+                       ta-storages : ST , session-counter : N >
     =>
-    < KI : TrustedOS | ta-instances : (TN |-> oid(N, KI) , IM) ,
-                       ta-storages : (TN |-> oid(0, oid(N, KI)) , ST) ,
-                       sess : (sessionId(N) |-> session(reeClient(RI), oid(N, KI)) , SESS) ,
+    < OS : TrustedOS | ta-instances : (TN |-> oid(N, OS) , IM) ,
+                       ta-storages : (TN |-> oid(0, oid(N, OS)) , ST) ,
                        session-counter : N + 1 >
-    < oid(N, KI) : TrustedApp | proc : none , prog : P ,
+    < sessionId(N) : Session | source : RI , destination : oid(N, OS) , is-smc : true , state : idle >
+    < oid(N, OS) : TrustedApp | proc : none , prog : P ,
                                  status : (normal).AppStatus , api-call : noCall , counter : 1 ,
-                                 storage : oid(0, oid(N, KI)) , os-kernel : KI ,
-                                 client-service : none >
-    < oid(0, oid(N, KI)) : Storage | status : (normal).StorageStatus , files : empty , counter : 0 >
-    smcRet(RI, (# success # sessionId(N)), CS)
+                                 storage : oid(0, oid(N, OS)) , os-kernel : OS ,
+                                 client-service : none , sessions : 1 >
+    < oid(0, oid(N, OS)) : Storage | status : (normal).StorageStatus , files : empty , counter : 0 >
+    smcRet(RI, (# success # sessionId(N)))
   if not $hasMapping(IM, TN) /\ not $hasMapping(ST, TN) .
 
---- teec-open-session-busy: the instance TI of TN already has the session SID', and TN accepts
---- one session at a time: TEEC_ERROR_BUSY.
+--- teec-open-session-busy: the instance TI of TN already has a session, and TN accepts one
+--- session at a time: TEEC_ERROR_BUSY.
   rl [teec-open-session-busy] :
-    smcReq(RI, TeecOpenSession, # TN, CS)
-    < KI : TrustedOS | ta-config : (TN |-> taConfig(true, false) , CFG) ,
-                       ta-instances : (TN |-> TI , IM) , sess : (SID' |-> session(CL, TI) , SESS) >
+    smcReq(RI, teecOpenSession, # TN)
+    < OS : TrustedOS | ta-config : (TN |-> taConfig(P, true, false) , CFG) ,
+                       ta-instances : (TN |-> TI , IM) >
+    < TI : TrustedApp | sessions : s M >
     =>
-    < KI : TrustedOS | >
-    smcRet(RI, # errorBusy, CS) .
+    < OS : TrustedOS | >
+    < TI : TrustedApp | >
+    smcRet(RI, # errorBusy) .
 
 --- teec-open-session-instance: TN is a multi-instance TA, so the TrustedOS creates the instance
---- oid(N, KI) for the session sessionId(N) of the RA RI.  TN has no storage yet: it is created
---- with this first instance, oid(0, oid(N, KI)), and recorded.
+--- oid(N, OS) for the session sessionId(N) of the RA RI.  TN has no storage yet: it is created
+--- with this first instance, oid(0, oid(N, OS)), and recorded.
   crl [teec-open-session-instance] :
-    smcReq(RI, TeecOpenSession, # TN, CS)
-    < KI : TrustedOS | ta-prog-map : (TN |-> [P] , PROGC) ,
-                       ta-config : (TN |-> taConfig(false, MS) , CFG) ,
-                       ta-storages : ST , sess : SESS , session-counter : N >
+    smcReq(RI, teecOpenSession, # TN)
+    < OS : TrustedOS | ta-config : (TN |-> taConfig(P, false, MS) , CFG) ,
+                       ta-storages : ST , session-counter : N >
     =>
-    < KI : TrustedOS | ta-storages : (TN |-> oid(0, oid(N, KI)) , ST) ,
-                       sess : (sessionId(N) |-> session(reeClient(RI), oid(N, KI)) , SESS) ,
+    < OS : TrustedOS | ta-storages : (TN |-> oid(0, oid(N, OS)) , ST) ,
                        session-counter : N + 1 >
-    < oid(N, KI) : TrustedApp | proc : none , prog : P ,
+    < sessionId(N) : Session | source : RI , destination : oid(N, OS) , is-smc : true , state : idle >
+    < oid(N, OS) : TrustedApp | proc : none , prog : P ,
                                  status : (normal).AppStatus , api-call : noCall , counter : 1 ,
-                                 storage : oid(0, oid(N, KI)) , os-kernel : KI ,
-                                 client-service : none >
-    < oid(0, oid(N, KI)) : Storage | status : (normal).StorageStatus , files : empty , counter : 0 >
-    smcRet(RI, (# success # sessionId(N)), CS)
+                                 storage : oid(0, oid(N, OS)) , os-kernel : OS ,
+                                 client-service : none , sessions : 1 >
+    < oid(0, oid(N, OS)) : Storage | status : (normal).StorageStatus , files : empty , counter : 0 >
+    smcRet(RI, (# success # sessionId(N)))
   if not $hasMapping(ST, TN) .
 
 --- teec-open-session-instance-storage: the same, when TN has the storage SI: the new instance
 --- gets SI.
   rl [teec-open-session-instance-storage] :
-    smcReq(RI, TeecOpenSession, # TN, CS)
-    < KI : TrustedOS | ta-prog-map : (TN |-> [P] , PROGC) ,
-                       ta-config : (TN |-> taConfig(false, MS) , CFG) ,
-                       ta-storages : (TN |-> SI , ST) , sess : SESS , session-counter : N >
+    smcReq(RI, teecOpenSession, # TN)
+    < OS : TrustedOS | ta-config : (TN |-> taConfig(P, false, MS) , CFG) ,
+                       ta-storages : (TN |-> SI , ST) , session-counter : N >
     =>
-    < KI : TrustedOS | sess : (sessionId(N) |-> session(reeClient(RI), oid(N, KI)) , SESS) ,
-                       session-counter : N + 1 >
-    < oid(N, KI) : TrustedApp | proc : none , prog : P ,
+    < OS : TrustedOS | session-counter : N + 1 >
+    < sessionId(N) : Session | source : RI , destination : oid(N, OS) , is-smc : true , state : idle >
+    < oid(N, OS) : TrustedApp | proc : none , prog : P ,
                                  status : (normal).AppStatus , api-call : noCall , counter : 1 ,
-                                 storage : SI , os-kernel : KI ,
-                                 client-service : none >
-    smcRet(RI, (# success # sessionId(N)), CS) .
+                                 storage : SI , os-kernel : OS ,
+                                 client-service : none , sessions : 1 >
+    smcRet(RI, (# success # sessionId(N))) .
 
 --- teec-open-session-shared: TN has the instance TI and accepts several sessions, so the
 --- session sessionId(N) of the RA RI is opened on TI.
   rl [teec-open-session-shared] :
-    smcReq(RI, TeecOpenSession, # TN, CS)
-    < KI : TrustedOS | ta-config : (TN |-> taConfig(true, true) , CFG) ,
-                       ta-instances : (TN |-> TI , IM) , sess : SESS , session-counter : N >
+    smcReq(RI, teecOpenSession, # TN)
+    < OS : TrustedOS | ta-config : (TN |-> taConfig(P, true, true) , CFG) ,
+                       ta-instances : (TN |-> TI , IM) , session-counter : N >
+    < TI : TrustedApp | sessions : M >
     =>
-    < KI : TrustedOS | sess : (sessionId(N) |-> session(reeClient(RI), TI) , SESS) ,
+    < OS : TrustedOS | session-counter : N + 1 >
+    < TI : TrustedApp | sessions : s M >
+    < sessionId(N) : Session | source : RI , destination : TI , is-smc : true , state : idle >
+    smcRet(RI, (# success # sessionId(N))) .
+
+--- teec-open-session-storage: the single-instance TA TN has no instance but has the storage SI (its
+--- earlier instance was destroyed, see teec-close-session-last), so the TrustedOS creates the
+--- instance oid(N, OS) with the program P of TN and the storage SI, records it, and opens the
+--- session sessionId(N) of the RA RI on it.
+  crl [teec-open-session-storage] :
+    smcReq(RI, teecOpenSession, # TN)
+    < OS : TrustedOS | ta-config : (TN |-> taConfig(P, true, MS) , CFG) , ta-instances : IM ,
+                       ta-storages : (TN |-> SI , ST) , session-counter : N >
+    =>
+    < OS : TrustedOS | ta-instances : (TN |-> oid(N, OS) , IM) ,
                        session-counter : N + 1 >
-    smcRet(RI, (# success # sessionId(N)), CS) .
+    < sessionId(N) : Session | source : RI , destination : oid(N, OS) , is-smc : true , state : idle >
+    < oid(N, OS) : TrustedApp | proc : none , prog : P ,
+                                 status : (normal).AppStatus , api-call : noCall , counter : 1 ,
+                                 storage : SI , os-kernel : OS ,
+                                 client-service : none , sessions : 1 >
+    smcRet(RI, (# success # sessionId(N)))
+  if not $hasMapping(IM, TN) .
 
 --- teec-open-session-not-found: no TA has the identifier TN: TEEC_ERROR_ITEM_NOT_FOUND.
   crl [teec-open-session-not-found] :
-    smcReq(RI, TeecOpenSession, # TN, CS)
-    < KI : TrustedOS | ta-prog-map : PROGC >
+    smcReq(RI, teecOpenSession, # TN)
+    < OS : TrustedOS | ta-config : CFG >
     =>
-    < KI : TrustedOS | >
-    smcRet(RI, # errorItemNotFound, CS)
-  if not $hasMapping(PROGC, TN) .
+    < OS : TrustedOS | >
+    smcRet(RI, # errorItemNotFound)
+  if not $hasMapping(CFG, TN) .
+
+------------------------------------------------------------
+--- Closing a session: an RA (TEEC_CloseSession)
+------------------------------------------------------------
+
+--- teec-close-session: the session SID of the RA RI is removed; its instance TI has another
+--- session, so it stays.
+  rl [teec-close-session] :
+    smcReq(RI, teecCloseSession, # SID)
+    < SID : Session | source : RI , destination : TI , is-smc : true >
+    < TI : TrustedApp | sessions : s s M >
+    =>
+    < TI : TrustedApp | sessions : s M >
+    smcRet(RI, # success) .
+
+--- teec-close-session-last: the session SID of RI was the last session of its instance TI, which
+--- is destroyed: the TA of TI has no instance.
+  rl [teec-close-session-last] :
+    smcReq(RI, teecCloseSession, # SID)
+    < SID : Session | source : RI , destination : TI , is-smc : true >
+    < TI : TrustedApp | client-service : none , sessions : 1 >
+    < OS : TrustedOS | ta-instances : IM >
+    =>
+    < TI : TrustedApp | sessions : 0 >
+    < OS : TrustedOS | ta-instances : dropInstance(TI, IM) >
+    smcRet(RI, # success) .
+
+  --- dropInstance(TI, IM): IM without the entry of the instance TI.  A multi-instance TA has no
+  --- entry, and a single-instance TA whose instance TI has panicked may have a newer instance.
+  op dropInstance : Oid Map{AppId,Oid} -> Map{AppId,Oid} .
+  eq dropInstance(TI, (TN |-> TI , IM)) = IM .
+  eq dropInstance(TI, IM) = IM [owise] .
 
 ------------------------------------------------------------
 --- Opening a session: the TrustedOS, for a TA (openTASession)
 ------------------------------------------------------------
 
 --- open-ta-session: the single-instance TA TN has no instance, so the TrustedOS creates the TA
---- instance oid(N, KI) with the program P of TN from ta-prog-map and the storage of TN,
---- oid(0, oid(N, KI)) with no files, records them, and opens the session sessionId(N) of the
---- requesting TA TK on it.  openSessionSuccess(sessionId(N)) is queued in service-out.
+--- instance oid(N, OS) with the program P of TN from ta-config and the storage of TN,
+--- oid(0, oid(N, OS)) with no files, records them, and opens the session sessionId(N) of the
+--- requesting TA O on it.  openSessionSuccess(sessionId(N)) is queued in service-out.
   crl [open-ta-session] :
-    < KI : TrustedOS | service-in : (openTASession(TN) SIL) , service-out : SOL ,
-                       service-request-ta-inst : TK ,
-                       ta-prog-map : (TN |-> [P] , PROGC) ,
-                       ta-config : (TN |-> taConfig(true, MS) , CFG) , ta-instances : IM ,
-                       ta-storages : ST , sess : SESS , session-counter : N >
+    < OS : TrustedOS | service-in : (openTASession(TN) SIL) , service-out : SOL ,
+                       service-request-ta-inst : O ,
+                       ta-config : (TN |-> taConfig(P, true, MS) , CFG) , ta-instances : IM ,
+                       ta-storages : ST , session-counter : N >
     =>
-    < KI : TrustedOS | service-in : SIL , service-out : (SOL openSessionSuccess(sessionId(N))) ,
-                       ta-instances : (TN |-> oid(N, KI) , IM) ,
-                       ta-storages : (TN |-> oid(0, oid(N, KI)) , ST) ,
-                       sess : (sessionId(N) |-> session(taClient(TK), oid(N, KI)) , SESS) ,
+    < OS : TrustedOS | service-in : SIL , service-out : (SOL openSessionSuccess(sessionId(N))) ,
+                       ta-instances : (TN |-> oid(N, OS) , IM) ,
+                       ta-storages : (TN |-> oid(0, oid(N, OS)) , ST) ,
                        session-counter : N + 1 >
-    < oid(N, KI) : TrustedApp | proc : none , prog : P ,
+    < sessionId(N) : Session | source : O , destination : oid(N, OS) , is-smc : false , state : idle >
+    < oid(N, OS) : TrustedApp | proc : none , prog : P ,
                                  status : (normal).AppStatus , api-call : noCall , counter : 1 ,
-                                 storage : oid(0, oid(N, KI)) , os-kernel : KI ,
-                                 client-service : none >
-    < oid(0, oid(N, KI)) : Storage | status : (normal).StorageStatus , files : empty , counter : 0 >
+                                 storage : oid(0, oid(N, OS)) , os-kernel : OS ,
+                                 client-service : none , sessions : 1 >
+    < oid(0, oid(N, OS)) : Storage | status : (normal).StorageStatus , files : empty , counter : 0 >
   if not $hasMapping(IM, TN) /\ not $hasMapping(ST, TN) .
 
---- open-ta-session-busy: the instance TI of TN already has the session SID', and TN accepts one
---- session at a time, so the session is not opened: TEE_ERROR_BUSY, [Internal Core] 4.9.1.
+--- open-ta-session-busy: the instance TI of TN already has a session, and TN accepts one session
+--- at a time, so the session is not opened: TEE_ERROR_BUSY, [Internal Core] 4.9.1.
   rl [open-ta-session-busy] :
-    < KI : TrustedOS | service-in : (openTASession(TN) SIL) , service-out : SOL ,
-                       ta-config : (TN |-> taConfig(true, false) , CFG) ,
-                       ta-instances : (TN |-> TI , IM) , sess : (SID' |-> session(CL, TI) , SESS) >
+    < OS : TrustedOS | service-in : (openTASession(TN) SIL) , service-out : SOL ,
+                       ta-config : (TN |-> taConfig(P, true, false) , CFG) ,
+                       ta-instances : (TN |-> TI , IM) >
+    < TI : TrustedApp | sessions : s M >
     =>
-    < KI : TrustedOS | service-in : SIL , service-out : (SOL openSessionFail(errorBusy)) >
+    < OS : TrustedOS | service-in : SIL , service-out : (SOL openSessionFail(errorBusy)) >
+    < TI : TrustedApp | >
   .
 
 --- open-ta-session-instance: TN is a multi-instance TA, so the TrustedOS creates the instance
---- oid(N, KI) for the session sessionId(N) of the requesting TA TK.  TN has no storage yet: it is
---- created with this first instance, oid(0, oid(N, KI)), and recorded.
+--- oid(N, OS) for the session sessionId(N) of the requesting TA O.  TN has no storage yet: it is
+--- created with this first instance, oid(0, oid(N, OS)), and recorded.
   crl [open-ta-session-instance] :
-    < KI : TrustedOS | service-in : (openTASession(TN) SIL) , service-out : SOL ,
-                       service-request-ta-inst : TK ,
-                       ta-prog-map : (TN |-> [P] , PROGC) ,
-                       ta-config : (TN |-> taConfig(false, MS) , CFG) ,
-                       ta-storages : ST , sess : SESS , session-counter : N >
+    < OS : TrustedOS | service-in : (openTASession(TN) SIL) , service-out : SOL ,
+                       service-request-ta-inst : O ,
+                       ta-config : (TN |-> taConfig(P, false, MS) , CFG) ,
+                       ta-storages : ST , session-counter : N >
     =>
-    < KI : TrustedOS | service-in : SIL , service-out : (SOL openSessionSuccess(sessionId(N))) ,
-                       ta-storages : (TN |-> oid(0, oid(N, KI)) , ST) ,
-                       sess : (sessionId(N) |-> session(taClient(TK), oid(N, KI)) , SESS) ,
+    < OS : TrustedOS | service-in : SIL , service-out : (SOL openSessionSuccess(sessionId(N))) ,
+                       ta-storages : (TN |-> oid(0, oid(N, OS)) , ST) ,
                        session-counter : N + 1 >
-    < oid(N, KI) : TrustedApp | proc : none , prog : P ,
+    < sessionId(N) : Session | source : O , destination : oid(N, OS) , is-smc : false , state : idle >
+    < oid(N, OS) : TrustedApp | proc : none , prog : P ,
                                  status : (normal).AppStatus , api-call : noCall , counter : 1 ,
-                                 storage : oid(0, oid(N, KI)) , os-kernel : KI ,
-                                 client-service : none >
-    < oid(0, oid(N, KI)) : Storage | status : (normal).StorageStatus , files : empty , counter : 0 >
+                                 storage : oid(0, oid(N, OS)) , os-kernel : OS ,
+                                 client-service : none , sessions : 1 >
+    < oid(0, oid(N, OS)) : Storage | status : (normal).StorageStatus , files : empty , counter : 0 >
   if not $hasMapping(ST, TN) .
 
 --- open-ta-session-instance-storage: the same, when TN has the storage SI: the new instance gets
 --- SI.
   rl [open-ta-session-instance-storage] :
-    < KI : TrustedOS | service-in : (openTASession(TN) SIL) , service-out : SOL ,
-                       service-request-ta-inst : TK ,
-                       ta-prog-map : (TN |-> [P] , PROGC) ,
-                       ta-config : (TN |-> taConfig(false, MS) , CFG) ,
-                       ta-storages : (TN |-> SI , ST) , sess : SESS , session-counter : N >
+    < OS : TrustedOS | service-in : (openTASession(TN) SIL) , service-out : SOL ,
+                       service-request-ta-inst : O ,
+                       ta-config : (TN |-> taConfig(P, false, MS) , CFG) ,
+                       ta-storages : (TN |-> SI , ST) , session-counter : N >
     =>
-    < KI : TrustedOS | service-in : SIL , service-out : (SOL openSessionSuccess(sessionId(N))) ,
-                       sess : (sessionId(N) |-> session(taClient(TK), oid(N, KI)) , SESS) ,
+    < OS : TrustedOS | service-in : SIL , service-out : (SOL openSessionSuccess(sessionId(N))) ,
                        session-counter : N + 1 >
-    < oid(N, KI) : TrustedApp | proc : none , prog : P ,
+    < sessionId(N) : Session | source : O , destination : oid(N, OS) , is-smc : false , state : idle >
+    < oid(N, OS) : TrustedApp | proc : none , prog : P ,
                                  status : (normal).AppStatus , api-call : noCall , counter : 1 ,
-                                 storage : SI , os-kernel : KI ,
-                                 client-service : none >
+                                 storage : SI , os-kernel : OS ,
+                                 client-service : none , sessions : 1 >
   .
 
 --- open-ta-session-shared: TN has the instance TI and accepts several sessions, so the session
---- sessionId(N) of the requesting TA TK is opened on TI.
+--- sessionId(N) of the requesting TA O is opened on TI.
   rl [open-ta-session-shared] :
-    < KI : TrustedOS | service-in : (openTASession(TN) SIL) , service-out : SOL ,
-                       service-request-ta-inst : TK ,
-                       ta-config : (TN |-> taConfig(true, true) , CFG) ,
-                       ta-instances : (TN |-> TI , IM) , sess : SESS , session-counter : N >
+    < OS : TrustedOS | service-in : (openTASession(TN) SIL) , service-out : SOL ,
+                       service-request-ta-inst : O ,
+                       ta-config : (TN |-> taConfig(P, true, true) , CFG) ,
+                       ta-instances : (TN |-> TI , IM) , session-counter : N >
+    < TI : TrustedApp | sessions : M >
     =>
-    < KI : TrustedOS | service-in : SIL , service-out : (SOL openSessionSuccess(sessionId(N))) ,
-                       sess : (sessionId(N) |-> session(taClient(TK), TI) , SESS) ,
+    < OS : TrustedOS | service-in : SIL , service-out : (SOL openSessionSuccess(sessionId(N))) ,
                        session-counter : N + 1 >
+    < TI : TrustedApp | sessions : s M >
+    < sessionId(N) : Session | source : O , destination : TI , is-smc : false , state : idle >
   .
+
+--- open-ta-session-storage: the single-instance TA TN has no instance but has the storage SI, so
+--- the TrustedOS creates the instance oid(N, OS) with the program P of TN and the storage SI,
+--- records it, and opens the session sessionId(N) of the requesting TA O on it.
+  crl [open-ta-session-storage] :
+    < OS : TrustedOS | service-in : (openTASession(TN) SIL) , service-out : SOL ,
+                       service-request-ta-inst : O ,
+                       ta-config : (TN |-> taConfig(P, true, MS) , CFG) , ta-instances : IM ,
+                       ta-storages : (TN |-> SI , ST) , session-counter : N >
+    =>
+    < OS : TrustedOS | service-in : SIL , service-out : (SOL openSessionSuccess(sessionId(N))) ,
+                       ta-instances : (TN |-> oid(N, OS) , IM) ,
+                       session-counter : N + 1 >
+    < sessionId(N) : Session | source : O , destination : oid(N, OS) , is-smc : false , state : idle >
+    < oid(N, OS) : TrustedApp | proc : none , prog : P ,
+                                 status : (normal).AppStatus , api-call : noCall , counter : 1 ,
+                                 storage : SI , os-kernel : OS ,
+                                 client-service : none , sessions : 1 >
+  if not $hasMapping(IM, TN) .
 
 --- open-ta-session-not-found: no TA has the identifier TN, so the session is not opened:
 --- TEE_ERROR_ITEM_NOT_FOUND, [Internal Core] 4.9.1.
   crl [open-ta-session-not-found] :
-    < KI : TrustedOS | service-in : (openTASession(TN) SIL) , service-out : SOL ,
-                       ta-prog-map : PROGC >
+    < OS : TrustedOS | service-in : (openTASession(TN) SIL) , service-out : SOL ,
+                       ta-config : CFG >
     =>
-    < KI : TrustedOS | service-in : SIL , service-out : (SOL openSessionFail(errorItemNotFound)) >
-  if not $hasMapping(PROGC, TN) .
+    < OS : TrustedOS | service-in : SIL , service-out : (SOL openSessionFail(errorItemNotFound)) >
+  if not $hasMapping(CFG, TN) .
 
 ------------------------------------------------------------
 --- Opening a session: the TA (TEE_OpenTASession)
@@ -300,155 +403,171 @@ omod SESSION-BEHAVIOR is
   --- open-session-subroutine: the init call of TeeOpenTASession becomes final, and the
   --- TrustedOS is asked to open a session with the TA TA.
   rl [open-session-subroutine] :
-    < TK : TAKernel | status : (normal).AppStatus , api-call : init(TeeOpenTASession[# TA ZsTeeOpenTASession1 ZrTeeOpenTASession]) >
+    < O : TAKernel | status : (normal).AppStatus , api-call : init(TeeOpenTASession[# TA TIMEOUTARG RESTARGS]) >
     =>
-    < TK : TAKernel | api-call : final(TeeOpenTASession[# TA ZsTeeOpenTASession1 ZrTeeOpenTASession]) >
-    reqTrustedOS(openTASession(TA) , TK)
+    < O : TAKernel | api-call : final(TeeOpenTASession[# TA TIMEOUTARG RESTARGS]) >
+    reqTrustedOS(openTASession(TA) , O)
   .
 
   --- open-session-success: the openSessionSuccess(SID) answer of the TrustedOS finishes the
-  --- call with success and the handle oid(N, TK) of the session SID, which is created, and the
+  --- call with success and the handle oid(N, O) of the session SID, which is created, and the
   --- counter advances by one.
   rl [open-session-success] :
-    retTrustedOS(openSessionSuccess(SID), TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-call : final(TeeOpenTASession[PARAMS]) , counter : N >
+    retTrustedOS(openSessionSuccess(SID), O)
+    < O : TAKernel | status : (normal).AppStatus , api-call : final(TeeOpenTASession[ARGS]) , counter : N >
     =>
-    < TK : TAKernel | api-call : return(TeeOpenTASession[# success # oid(N, TK) # originTrustedApp]) ,
+    < O : TAKernel | api-call : return(TeeOpenTASession[# success # oid(N, O) # originTrustedApp]) ,
                       counter : N + 1 >
-    freshSessionHandle(N, TK, SID)
+    freshSessionHandle(N, O, SID)
   .
 
-  --- open-session-fail: the openSessionFail(RET) answer of the TrustedOS finishes the call with
-  --- the code RET, the origin of the TEE, and TEE_HANDLE_NULL as the handle, see [Internal Core]
+  --- open-session-fail: the openSessionFail(RC) answer of the TrustedOS finishes the call with
+  --- the code RC, the origin of the TEE, and TEE_HANDLE_NULL as the handle, see [Internal Core]
   --- 4.9.1.  No handle is created.
   rl [open-session-fail] :
-    retTrustedOS(openSessionFail(RET), TK)
-    < TK : TAKernel | status : (normal).AppStatus , api-call : final(TeeOpenTASession[PARAMS]) >
+    retTrustedOS(openSessionFail(RC), O)
+    < O : TAKernel | status : (normal).AppStatus , api-call : final(TeeOpenTASession[ARGS]) >
     =>
-    < TK : TAKernel | api-call : return(TeeOpenTASession[# RET # null # originTee]) >
+    < O : TAKernel | api-call : return(TeeOpenTASession[# RC # null # originTee]) >
   .
 
 ------------------------------------------------------------
---- Invoking a command: the TrustedOS
+--- Invoking a command: an RA (TEEC_InvokeCommand)
 ------------------------------------------------------------
 
---- handle-smc-request: the TrustedOS forwards the TEEC_InvokeCommand request of the RA RI in its
---- session SID to the TA instance of the session, with the memory CS of the RA.
+--- handle-smc-request: the SMC request of the RA RI in its idle session SID is sent by the
+--- session to its destination TI as invkTa (App D.3), and a command is pending in SID.  A request
+--- through the session of another client is not served.
   rl [handle-smc-request] :
-    smcReq(RI, TeecInvokeCommand, (# SID # FID VL), CS)
-    < KI : TrustedOS | sess : (SID |-> session(reeClient(RI), TI) , SESS) >
+    smcReq(RI, SID, FID, VL)
+    < SID : Session | source : RI , destination : TI , is-smc : true , state : idle >
     =>
-    < KI : TrustedOS | >
-    (msg invkTa[SID, FID, VL, CS] from KI to TI) .
+    < SID : Session | state : invoking >
+    (msg invkTa[FID VL] from SID to TI) .
 
---- handle-session-request: the TrustedOS forwards the TEE_InvokeTACommand request of the TA TK in
---- its session SID to the TA instance of the session, with the memory CS of TK.
-  rl [handle-session-request] :
-    (msg reqInvoke[# SID # FID # CS # VL] from TK to KI)
-    < KI : TrustedOS | sess : (SID |-> session(taClient(TK), TI) , SESS) >
+--- handle-smc-request-target-dead: the destination of the session SID has panicked, so a request
+--- of the RA RI in it gets TEE_ERROR_TARGET_DEAD at once.
+  rl [handle-smc-request-target-dead] :
+    smcReq(RI, SID, FID, VL)
+    < SID : Session | source : RI , is-smc : true , state : targetDead >
     =>
-    < KI : TrustedOS | >
-    (msg invkTa[SID, FID, VL, CS] from KI to TI) .
+    < SID : Session | >
+    smcRet(RI, # errorTargetDead) .
 
---- handle-smc-request-finish: the TA instance has finished the request of the session SID of the
---- RA RI; the TrustedOS returns the memory as an SMC response with the return code success.
+--- handle-smc-request-finish: the response invkTaRet of the destination TI to the session SID is
+--- sent to the RA RI as an SMC response, with the return code success; SID is idle again.
   rl [handle-smc-request-finish] :
-    (msg invkTaRet[SID, CS] from TI to KI)
-    < KI : TrustedOS | sess : (SID |-> session(reeClient(RI), TI) , SESS) >
+    (msg invkTaRet[RET] from TI to SID)
+    < SID : Session | source : RI , destination : TI , is-smc : true , state : invoking >
     =>
-    < KI : TrustedOS | >
-    smcRet(RI, # success, CS) .
+    < SID : Session | state : idle >
+    smcRet(RI, (# success RET)) .
 
---- handle-session-request-finish: the TA instance has finished the request of the session SID of
---- the TA TK; the TrustedOS returns the memory to TK with the origin of the TA and success.
-  rl [handle-session-request-finish] :
-    (msg invkTaRet[SID, CS] from TI to KI)
-    < KI : TrustedOS | sess : (SID |-> session(taClient(TK), TI) , SESS) >
-    =>
-    < KI : TrustedOS | >
-    (msg finishReqInvoke[# CS # originTrustedApp # success] from KI to TK) .
-
---- return-smc-request-panic: a TA instance that panics while it serves the request of the
---- session SID of the RA RI returns target-dead to RI, with the memory as the TA has left it:
---- what the TA wrote before the panic stays.  The TA has no client-service afterwards.
+--- return-smc-request-panic: a TA instance that panics while it serves the request of the session
+--- SID of the RA RI returns TEE_ERROR_TARGET_DEAD to RI (Fig 21).  The TA has no client-service
+--- afterwards, the session is targetDead, and the instance is destroyed: the TA has no instance
+--- in ta-instances any more.
   rl [return-smc-request-panic] :
-    < TI : TrustedApp | status : panic, client-service : {SID , FID},
-                        proc : (store(MEM) nextLoc(L) arrlen(AL) KS) >
-    < KI : TrustedOS | sess : (SID |-> session(reeClient(RI), TI) , SESS) >
+    < TI : TrustedApp | status : panic , client-service : {SID , FID} >
+    < SID : Session | source : RI , is-smc : true , state : invoking >
+    < OS : TrustedOS | ta-instances : IM >
     =>
-    < KI : TrustedOS | >
-    < TI : TrustedApp | status : panic, client-service : none >
-    smcRet(RI, # errorTargetDead, cstore(MEM, L, AL)) .
-
---- return-session-request-panic: a TA instance that panics while it serves the request of the
---- session SID of the TA TK returns TEE_ERROR_TARGET_DEAD with the origin of the TEE to TK, see
---- [Internal Core] 4.9.3, with the memory as the TA has left it.  The TA has no client-service
---- afterwards.
-  rl [return-session-request-panic] :
-    < TI : TrustedApp | status : panic, client-service : {SID , FID},
-                        proc : (store(MEM) nextLoc(L) arrlen(AL) KS) >
-    < KI : TrustedOS | sess : (SID |-> session(taClient(TK), TI) , SESS) >
-    =>
-    < KI : TrustedOS | >
-    < TI : TrustedApp | status : panic, client-service : none >
-    (msg finishReqInvoke[# cstore(MEM, L, AL) # originTee # errorTargetDead] from KI to TK) .
+    < TI : TrustedApp | client-service : none >
+    < SID : Session | state : targetDead >
+    < OS : TrustedOS | ta-instances : dropInstance(TI, IM) >
+    smcRet(RI, # errorTargetDead) .
 
 --- return-smc-request-dead: a request of the session SID of the RA RI to a TA instance that has
---- panicked, waiting or sent after the panic, is not served: TEE_ERROR_TARGET_DEAD, with the
---- memory CS of the RA unchanged.
+--- panicked, waiting or sent after the panic, is not served: TEE_ERROR_TARGET_DEAD, and the
+--- session is targetDead.
   rl [return-smc-request-dead] :
-    (msg invkTa[SID, FID, VL, CS] from KI to TI)
+    (msg invkTa[FID VL] from SID to TI)
     < TI : TrustedApp | status : panic >
-    < KI : TrustedOS | sess : (SID |-> session(reeClient(RI), TI) , SESS) >
+    < SID : Session | source : RI , is-smc : true , state : invoking >
     =>
     < TI : TrustedApp | >
-    < KI : TrustedOS | >
-    smcRet(RI, # errorTargetDead, CS) .
-
---- return-session-request-dead: the same for a request of the session SID of the TA TK: the
---- origin is the TEE.
-  rl [return-session-request-dead] :
-    (msg invkTa[SID, FID, VL, CS] from KI to TI)
-    < TI : TrustedApp | status : panic >
-    < KI : TrustedOS | sess : (SID |-> session(taClient(TK), TI) , SESS) >
-    =>
-    < TI : TrustedApp | >
-    < KI : TrustedOS | >
-    (msg finishReqInvoke[# CS # originTee # errorTargetDead] from KI to TK) .
+    < SID : Session | state : targetDead >
+    smcRet(RI, # errorTargetDead) .
 
 ------------------------------------------------------------
---- Invoking a command: the TA (TEE_InvokeTACommand)
+--- Invoking a command: a TA (TEE_InvokeTACommand)
 ------------------------------------------------------------
 
   --- The 'TEE_InvokeTACommand' function invokes a command within a session opened between the
   --- client Trusted Application instance and a destination Trusted Application instance.
   --- See page 101 of the G.P. documentation for more details.
 
-  --- invoke-ta-command-subroutine (request): the init call of TeeInvokeTACommand becomes final,
-  --- and the reqInvoke message with the session SID of the handle HANDLE, FID, the memory of TK
-  --- and VL is sent to the TrustedOS KI of TK.  TK waits for the answer, so its memory does not
-  --- change meanwhile.
-  rl [invoke-ta-command-subroutine] :
-    < TK : TrustedApp | status : (normal).AppStatus , os-kernel : KI ,
-                        api-call : init(TeeInvokeTACommand[# HANDLE # FID # VL ZrTeeInvokeTACommand]) ,
-                        proc : (store(MEM) nextLoc(L) arrlen(AL) KS) >
-    < HANDLE : TaSessionHandle | session : SID >
+  --- copyIn and copyOut (SHARED-OBJECT): the shared objects of the client, given by the language.
+
+  --- invoke-ta-command-request: the init call of TeeInvokeTACommand becomes final, and the idle
+  --- session SID that the handle HI names sends invkTa to its destination TI, with the values
+  --- of the arguments VL; a command is pending in SID.  A request through the session of another
+  --- client is not served.
+  rl [invoke-ta-command-request] :
+    < O : TrustedApp | status : (normal).AppStatus ,
+                        api-call : init(TeeInvokeTACommand[# HI # FID VL]) ,
+                        proc : KS >
+    < HI : TaSessionHandle | session : SID >
+    < SID : Session | source : O , destination : TI , is-smc : false , state : idle >
     =>
-    < TK : TrustedApp | api-call : final(TeeInvokeTACommand[# HANDLE # FID # VL ZrTeeInvokeTACommand]) >
-    < HANDLE : TaSessionHandle | >
-    (msg reqInvoke[# SID # FID # cstore(MEM, L, AL) # VL] from TK to KI)
+    < O : TrustedApp | api-call : final(TeeInvokeTACommand[# HI # FID VL]) >
+    < HI : TaSessionHandle | >
+    < SID : Session | state : invoking >
+    (msg invkTa[FID copyIn(VL, KS)] from SID to TI)
   .
 
-  --- invoke-ta-command-subroutine (finish): the finishReqInvoke message gives TK its memory
-  --- back, as the destination TA has left it, and the return origin RO and the return code RET
-  --- to the final call of TeeInvokeTACommand, which becomes return.
-  rl [invoke-ta-command-subroutine] :
-    (msg finishReqInvoke[# cstore(MEM', L', AL') # RO # RET] from KI to TK)
-    < TK : TrustedApp | status : (normal).AppStatus , os-kernel : KI ,
-                        api-call : final(TeeInvokeTACommand[# HANDLE ZsTeeInvokeTACommand1 ZsTeeInvokeTACommand2 ZrTeeInvokeTACommand]) ,
-                        proc : (store(MEM) nextLoc(L) arrlen(AL) KS) >
+  --- invoke-ta-command-target-dead: the destination of the session SID has panicked, so the call
+  --- returns TEE_ERROR_TARGET_DEAD with the origin of the TEE at once.
+  rl [invoke-ta-command-target-dead] :
+    < O : TrustedApp | status : (normal).AppStatus ,
+                        api-call : init(TeeInvokeTACommand[# HI # FID VL]) >
+    < HI : TaSessionHandle | session : SID >
+    < SID : Session | source : O , is-smc : false , state : targetDead >
     =>
-    < TK : TrustedApp | api-call : return(TeeInvokeTACommand[# RET # RO]) ,
-                        proc : (store(MEM') nextLoc(L') arrlen(AL') KS) >
+    < O : TrustedApp | api-call : return(TeeInvokeTACommand[# errorTargetDead # originTee]) >
+    < HI : TaSessionHandle | >
+    < SID : Session | >
   .
+
+  --- invoke-ta-command-finish: the response invkTaRet of the destination TI to the session SID of
+  --- the TA O: the results RET are copied back to the shared objects of O, TeeInvokeTACommand
+  --- returns success with the origin of the TA, and SID is idle again.
+  rl [invoke-ta-command-finish] :
+    (msg invkTaRet[RET] from TI to SID)
+    < SID : Session | source : O , destination : TI , is-smc : false , state : invoking >
+    < O : TrustedApp | status : (normal).AppStatus ,
+                        api-call : final(TeeInvokeTACommand[# HI # FID VL]) ,
+                        proc : KS >
+    =>
+    < SID : Session | state : idle >
+    < O : TrustedApp | api-call : return(TeeInvokeTACommand[# success # originTrustedApp]) ,
+                        proc : copyOut(VL, RET, KS) >
+  .
+
+  --- return-session-request-panic: a TA instance that panics while it serves the request of the
+  --- session SID of the TA O returns TeeInvokeTACommand of O with TEE_ERROR_TARGET_DEAD and the
+  --- origin of the TEE, see [Internal Core] 4.9.3; the shared objects of O are unchanged.  The
+  --- instance is destroyed as in return-smc-request-panic.
+  rl [return-session-request-panic] :
+    < TI : TrustedApp | status : panic , client-service : {SID , FID} >
+    < SID : Session | source : O , is-smc : false , state : invoking >
+    < O : TrustedApp | status : (normal).AppStatus , api-call : final(TeeInvokeTACommand[ARGS]) >
+    < OS : TrustedOS | ta-instances : IM >
+    =>
+    < TI : TrustedApp | client-service : none >
+    < SID : Session | state : targetDead >
+    < O : TrustedApp | api-call : return(TeeInvokeTACommand[# errorTargetDead # originTee]) >
+    < OS : TrustedOS | ta-instances : dropInstance(TI, IM) > .
+
+  --- return-session-request-dead: the same for a request of the session SID of the TA O to a
+  --- panicked instance, waiting or sent after the panic.
+  rl [return-session-request-dead] :
+    (msg invkTa[FID VL] from SID to TI)
+    < TI : TrustedApp | status : panic >
+    < SID : Session | source : O , is-smc : false , state : invoking >
+    < O : TrustedApp | status : (normal).AppStatus , api-call : final(TeeInvokeTACommand[ARGS]) >
+    =>
+    < TI : TrustedApp | >
+    < SID : Session | state : targetDead >
+    < O : TrustedApp | api-call : return(TeeInvokeTACommand[# errorTargetDead # originTee]) > .
 endom

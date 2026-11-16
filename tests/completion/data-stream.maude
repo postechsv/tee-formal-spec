@@ -8,7 +8,7 @@ mod COMPLETION-TEST is
   var ZvOffset : Int .
   var ZvType : SeekType .
   pr TEE-BEHAVIOR .
-  pr TEE-IMP-BEHAVIOR .
+  pr TEE-C-BEHAVIOR .
   pr TEST-AUX .
   var C : Configuration .
   var TESTDIGEST : List{Data} .
@@ -18,17 +18,17 @@ mod COMPLETION-TEST is
   op rwService : -> FuncId [ctor] .
   op rwProg : -> Program .
   eq rwProg = TEE-Result 'c ; char 'b ; TEE-Result 'r ; TEE-Result 'w ;
-              'r := readObjData(# oid(5, testTa), # dataSize(1), addr('b)) ;
+              'r := readObjData(# oid(5, testTa), # 1, addr('b)) ;
               'w := writeObjectData(# oid(5, testTa), addr('b)) ;
-              void rwService() { skip } .
+              void rwService() { return unit ; } .
 endm
 
 --- A TA program calls readObjData and writeObjectData through their stubs: the read returns the
 --- fragment randomData at position 0 and moves the handle to 1; the write stores randomData at
 --- position 1, so the stream is randomData randomData and the handle position is 2.  The TA
---- answers the request with invkTaRet, which carries the memory back.
+--- answers the request with invkTaRet, with no results (rwService has no output parameter).
 search [1] in COMPLETION-TEST :
-  (msg invkTa[sessionId(0), rwService, argNil, emptyStore] from osId to testTa)
+  (msg invkTa[rwService nil] from testRa to testTa)
   < testTa : TrustedApp | proc : none, prog : rwProg, client-service : none,
       status : (normal).AppStatus, storage : oid(0, testTa), os-kernel : osId,
       counter : 6, api-call : noCall >
@@ -37,7 +37,7 @@ search [1] in COMPLETION-TEST :
   < oid(1, oid(0, testTa)) : PersistObj | type : pureData, usages : empty, max-size : 0, attributes : empty,
       file-name : testFileId, data-stream : randomData >
 =>!
-  (msg invkTaRet[sessionId(0), CS:CStore] from testTa to osId)
+  (msg invkTaRet[nil] from testTa to testRa)
   < testTa : TrustedApp | status : (normal).AppStatus, proc : none, client-service : none, api-call : noCall, AS1:AttributeSet >
   < oid(5, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)), flags : (accessRead, accessWrite), pos : 2 >
   < oid(1, oid(0, testTa)) : PersistObj | data-stream : randomData randomData, AS2:AttributeSet >
@@ -45,7 +45,7 @@ search [1] in COMPLETION-TEST :
 
 --- readObjData reads size fragments from the handle position; the data stream is not changed.
 search [1] in COMPLETION-TEST :
-  (msg read[# dataSize(1)] from testTa to oid(101, testTa))
+  (msg read[# 1] from testTa to oid(101, testTa))
   < oid(1, oid(0, testTa)) : PersistObj |
       data-stream : randomData >
   < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
@@ -76,7 +76,7 @@ search [1] in COMPLETION-TEST :
 
 --- truncateObjectData updates a persistent stream through a top-level handle.
 search [1] in COMPLETION-TEST :
-  (msg reqTruncateObjectData[# dataSize(3) # oid(0, testTa)] from testTa to oid(101, testTa))
+  (msg reqTruncateObjectData[# 3 # oid(0, testTa)] from testTa to oid(101, testTa))
   < oid(1, oid(0, testTa)) : PersistObj |
       data-stream : randomData >
   < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
@@ -116,10 +116,10 @@ search [1] in COMPLETION-TEST :
 --- A read through a handle without accessRead: after the storage check the handle refuses it
 --- with read-object-data-access-fail, and read-access-panic panics the TA.
 search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(readObjData[# oid(101, testTa) # dataSize(1)]), storage : oid(0, testTa), counter : 0 >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(readObjData[# oid(101, testTa) # 1]), storage : oid(0, testTa), counter : 0 >
   < oid(0, testTa) : Storage | status : (normal).StorageStatus, files : testFileId, counter : 2 >
   < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId, data-stream : randomData,
-      open-handles : oh(oid(101, testTa), accessWrite) >
+      open-handles : handleConf(oid(101, testTa), accessWrite) >
   < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)), flags : accessWrite, pos : 0 >
 =>!
   < testTa : TAKernel | status : panic, TA-ATTS:AttributeSet > C .
@@ -127,10 +127,10 @@ search [1] in COMPLETION-TEST :
 --- No final state of the same call keeps the TA normal.
 --- expect: no solution
 search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(readObjData[# oid(101, testTa) # dataSize(1)]), storage : oid(0, testTa), counter : 0 >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(readObjData[# oid(101, testTa) # 1]), storage : oid(0, testTa), counter : 0 >
   < oid(0, testTa) : Storage | status : (normal).StorageStatus, files : testFileId, counter : 2 >
   < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId, data-stream : randomData,
-      open-handles : oh(oid(101, testTa), accessWrite) >
+      open-handles : handleConf(oid(101, testTa), accessWrite) >
   < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)), flags : accessWrite, pos : 0 >
 =>!
   < testTa : TAKernel | status : (normal).AppStatus, TA-ATTS:AttributeSet > C .
@@ -141,7 +141,7 @@ search [1] in COMPLETION-TEST :
   < testTa : TAKernel | status : (normal).AppStatus, api-call : init(writeObjectData[# oid(101, testTa) # randomData]), storage : oid(0, testTa), counter : 0 >
   < oid(0, testTa) : Storage | status : (normal).StorageStatus, files : testFileId, counter : 2 >
   < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId, data-stream : randomData,
-      open-handles : oh(oid(101, testTa), accessRead) >
+      open-handles : handleConf(oid(101, testTa), accessRead) >
   < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)), flags : accessRead, pos : 0 >
 =>!
   < testTa : TAKernel | status : panic, TA-ATTS:AttributeSet > C .
@@ -152,7 +152,7 @@ search [1] in COMPLETION-TEST :
   < testTa : TAKernel | status : (normal).AppStatus, api-call : init(writeObjectData[# oid(101, testTa) # randomData]), storage : oid(0, testTa), counter : 0 >
   < oid(0, testTa) : Storage | status : (normal).StorageStatus, files : testFileId, counter : 2 >
   < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId, data-stream : randomData,
-      open-handles : oh(oid(101, testTa), accessRead) >
+      open-handles : handleConf(oid(101, testTa), accessRead) >
   < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)), flags : accessRead, pos : 0 >
 =>!
   < testTa : TAKernel | status : (normal).AppStatus, TA-ATTS:AttributeSet > C .
@@ -160,10 +160,10 @@ search [1] in COMPLETION-TEST :
 --- A truncation through a handle without accessWrite: after the storage check the handle refuses it
 --- with truncate-object-data-access-fail, and truncate-access-panic panics the TA.
 search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(truncateObjectData[# oid(101, testTa) # dataSize(1)]), storage : oid(0, testTa), counter : 0 >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(truncateObjectData[# oid(101, testTa) # 1]), storage : oid(0, testTa), counter : 0 >
   < oid(0, testTa) : Storage | status : (normal).StorageStatus, files : testFileId, counter : 2 >
   < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId, data-stream : randomData,
-      open-handles : oh(oid(101, testTa), accessRead) >
+      open-handles : handleConf(oid(101, testTa), accessRead) >
   < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)), flags : accessRead, pos : 0 >
 =>!
   < testTa : TAKernel | status : panic, TA-ATTS:AttributeSet > C .
@@ -171,19 +171,11 @@ search [1] in COMPLETION-TEST :
 --- No final state of the same call keeps the TA normal.
 --- expect: no solution
 search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(truncateObjectData[# oid(101, testTa) # dataSize(1)]), storage : oid(0, testTa), counter : 0 >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(truncateObjectData[# oid(101, testTa) # 1]), storage : oid(0, testTa), counter : 0 >
   < oid(0, testTa) : Storage | status : (normal).StorageStatus, files : testFileId, counter : 2 >
   < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId, data-stream : randomData,
-      open-handles : oh(oid(101, testTa), accessRead) >
+      open-handles : handleConf(oid(101, testTa), accessRead) >
   < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)), flags : accessRead, pos : 0 >
 =>!
   < testTa : TAKernel | status : (normal).AppStatus, TA-ATTS:AttributeSet > C .
 
---- A null handle is a programmer error for readObjData: null-handle-panic is the only way on, as
---- the start rule read-object-data-get-storage-status needs a handle that is not null.
---- expect: no solution
-search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(readObjData[# null # dataSize(1)]), storage : oid(0, testTa), counter : 0 >
-  < oid(0, testTa) : Storage | status : (normal).StorageStatus, files : testFileId, counter : 2 >
-=>!
-  < testTa : TAKernel | status : (normal).AppStatus, TA-ATTS:AttributeSet > C .

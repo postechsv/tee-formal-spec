@@ -38,7 +38,7 @@ search [1] in TEST-AUX :
 
 --- [BB-P-OP-3] open-persistent-out-of-memory
 search [1] in TEST-AUX :
-  < ta : TAKernel | status : outOfMemory, api-call : init(openPersistentObject[ZsOpenPersistentObject0 # testFileId # accessRead]), counter : 0, storage : oid(0, ta) >
+  < ta : TAKernel | status : outOfMemory, api-call : init(openPersistentObject[STORIDARG # testFileId # accessRead]), counter : 0, storage : oid(0, ta) >
 =>*
   < ta : TAKernel | api-call : return(openPersistentObject[# errorOutOfMemory # null]) > .
 
@@ -47,7 +47,7 @@ search [1] in TEST-AUX :
   (msg retStatus[# (corrupted).StorageStatus] from oid(0, ta) to ta)
   < ta : TAKernel | status : (normal).AppStatus, api-call : init(openPersistentObject[# testFileId # accessRead]), counter : 0, storage : oid(0, ta) >
 =>*
-  < ta : TAKernel | api-call : return(openPersistentObject[# errorCorruptObject # null]) > .
+  < ta : TAKernel | api-call : return(openPersistentObject[# corrupted # null]) > .
 
 --- ============================================================
 --- createPersistent
@@ -55,7 +55,7 @@ search [1] in TEST-AUX :
 
 --- [BB-P-CP-1] create-persistent-success (transform transient)
 search [1] in TEST-AUX :
-  < ta : TAKernel | status : (normal).AppStatus, api-call : init(createPersistent[ZsCreatePersistentObject0 # testFileId # accessRead # oid(1, ta) # (nil).List{Data} # dataSize(0) # null]), storage : oid(0, ta), counter : 0 >
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(createPersistent[# testFileId # accessRead # oid(1, ta) # (nil).List{Data} # null]), storage : oid(0, ta), counter : 0 >
   < oid(1, ta) : ObjHandle | oid : t, flags : empty, pos : 0 >
   < t : TransObj | type : typeAes, max-size : 128, usages : usageEncrypt, attributes : attr(secretValue, randomAttrVal), initialized : true >
   < oid(0, ta) : Storage | status : (normal).StorageStatus, files : empty, counter : 0 >
@@ -64,14 +64,14 @@ search [1] in TEST-AUX :
 
 --- [BB-P-CP-2] create-persistent-success (pure data, new file)
 search [1] in TEST-AUX :
-  < ta : TAKernel | status : (normal).AppStatus, api-call : init(createPersistent[ZsCreatePersistentObject0 # testFileId # accessRead # null # (nil).List{Data} # dataSize(0) # null]), storage : oid(0, ta), counter : 0 >
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(createPersistent[# testFileId # accessRead # null # (nil).List{Data} # null]), storage : oid(0, ta), counter : 0 >
   < oid(0, ta) : Storage | status : (normal).StorageStatus, files : empty, counter : 0 >
 =>*
   < ta : TAKernel | api-call : return(createPersistent[# success # oid(0, oid(0, ta))]) > .
 
 --- [BB-P-CP-3] create-persistent-access-conflict
 search [1] in TEST-AUX :
-  < ta : TAKernel | status : (normal).AppStatus, api-call : init(createPersistent[ZsCreatePersistentObject0 # testFileId # accessRead # null # (nil).List{Data} # dataSize(0) # null]), storage : oid(0, ta), counter : 0 >
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(createPersistent[# testFileId # accessRead # null # (nil).List{Data} # null]), storage : oid(0, ta), counter : 0 >
   < oid(0, ta) : Storage | status : (normal).StorageStatus, files : testFileId, counter : 0 >
   < oid(0, oid(0, ta)) : PersistObj | file-name : testFileId, data-stream : nil, open-handles : noHandles >
 =>*
@@ -79,13 +79,13 @@ search [1] in TEST-AUX :
 
 --- [BB-P-CP-4] create-persistent-out-of-memory
 search [1] in TEST-AUX :
-  < ta : TAKernel | status : outOfMemory, api-call : init(createPersistent[ZsCreatePersistentObject0 ZsCreatePersistentObject1 ZsCreatePersistentObject2 ZsCreatePersistentObject3 ZsCreatePersistentObject4 ZsCreatePersistentObject5 ZsCreatePersistentObject6]), counter : 0 >
+  < ta : TAKernel | status : outOfMemory, api-call : final(createPersistent[FILEARG FLAGSARG HANDLEARG DATAARG OPTARG]), counter : 0 >
 =>*
   < ta : TAKernel | api-call : return(createPersistent[# errorOutOfMemory # null]) > .
 
 --- [BB-P-CP-5] create-persistent-overwrite (overwrite flag forwards create to the existing object)
 search [1] in TEST-AUX :
-  < ta : TAKernel | status : (normal).AppStatus, api-call : init(createPersistent[ZsCreatePersistentObject0 # testFileId # (accessRead , overwrite) # null # randomData # dataSize(1) # null]), storage : oid(0, ta), counter : 0 >
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(createPersistent[# testFileId # (accessRead , overwrite) # null # randomData # null]), storage : oid(0, ta), counter : 0 >
   < oid(0, ta) : Storage | status : (normal).StorageStatus, files : testFileId, counter : 0 >
   < oid(0, oid(0, ta)) : PersistObj | file-name : testFileId, data-stream : nil, open-handles : noHandles >
 =>*
@@ -94,7 +94,7 @@ search [1] in TEST-AUX :
 
 --- [BB-P-CP-6] create-persistent-abnormal-storage-panic (no rule is given for this case: an abnormal storage status panics the TA)
 search [1] in TEST-AUX :
-  < ta : TAKernel | status : (normal).AppStatus, api-call : init(createPersistent[ZsCreatePersistentObject0 # testFileId # accessRead # null # (nil).List{Data} # dataSize(0) # null]), storage : oid(0, ta), counter : 0 >
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(createPersistent[# testFileId # accessRead # null # (nil).List{Data} # null]), storage : oid(0, ta), counter : 0 >
   < oid(0, ta) : Storage | status : (corrupted).StorageStatus, files : empty, counter : 0 >
 =>*
   < ta : TAKernel | status : panic > .
@@ -115,7 +115,7 @@ search [1] in TEST-AUX :
                            max-size : 128,
                            attributes : empty,
                            usages : empty, file-name : testFileId,
-                           open-handles : oh(oid(2, ta), accessWriteMeta) >
+                           open-handles : handleConf(oid(2, ta), accessWriteMeta) >
 =>*
   < ta : TAKernel | api-call : return(closeAndDeletePersistentObject1[# success]) > .
 
@@ -130,7 +130,7 @@ search [1] in TEST-AUX :
   (msg retStatus[# (notAvailable).StorageStatus] from oid(0, ta) to ta)
   < ta : TAKernel | status : (normal).AppStatus, api-call : exec(closeAndDeletePersistentObject1[# oid(2, ta)] , 0), counter : 0, storage : oid(0, ta) >
 =>*
-  < ta : TAKernel | api-call : return(closeAndDeletePersistentObject1[# errorStorageNotAvailable]) > .
+  < ta : TAKernel | api-call : return(closeAndDeletePersistentObject1[# notAvailable]) > .
 
 --- ============================================================
 --- renamePersistentObject
@@ -148,7 +148,7 @@ search [1] in TEST-AUX :
                            attributes : empty,
                            usages : empty,
                            file-name : testFileId,
-                           open-handles : oh(oid(106, ta), accessWriteMeta) >
+                           open-handles : handleConf(oid(106, ta), accessWriteMeta) >
 =>*
   < ta : TAKernel | api-call : return(renamePersistentObject[# success]) > .
 
@@ -165,7 +165,7 @@ search [1] in TEST-AUX :
   (msg retStatus[# (corrupted).StorageStatus] from oid(0, ta) to ta)
   < ta : TAKernel | status : (normal).AppStatus, api-call : init(renamePersistentObject[# oid(6, ta) # newTestFileId]), counter : 0, storage : oid(0, ta) >
 =>*
-  < ta : TAKernel | api-call : return(renamePersistentObject[# errorCorruptObject]) > .
+  < ta : TAKernel | api-call : return(renamePersistentObject[# corrupted]) > .
 
 --- ============================================================
 --- copyObjAttrs1 (persistent source)
@@ -176,7 +176,7 @@ search [1] in TEST-AUX :
 search [1] in TEST-AUX :
   < ta : TAKernel | status : (normal).AppStatus, api-call : init(copyObjAttrs1[# oid(3, ta) # oid(2, ta)]), counter : 0, storage : oid(0, ta) >
   < oid(2, ta) : ObjHandle | oid : oid(1, oid(0, ta)), flags : accessRead, pos : 0 >
-  < oid(1, oid(0, ta)) : PersistObj | type : typeAes, max-size : 128, attributes : attr(secretValue, randomAttrVal), usages : usageEncrypt, file-name : testFileId, open-handles : oh(oid(2, ta), accessRead) >
+  < oid(1, oid(0, ta)) : PersistObj | type : typeAes, max-size : 128, attributes : attr(secretValue, randomAttrVal), usages : usageEncrypt, file-name : testFileId, open-handles : handleConf(oid(2, ta), accessRead) >
   < oid(3, ta) : ObjHandle | oid : t, flags : empty, pos : 0 >
   < t : TransObj | type : typeAes, max-size : 128, usages : usageEncrypt, attributes : empty, initialized : false >
 =>*

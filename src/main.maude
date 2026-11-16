@@ -1,40 +1,87 @@
---- This file contains the TEE storage/cryptographic operation APIs, defined in chapter 5 and 6 of G.P. documentation.
+--- main.maude: the entry point of the TEE formal specification, with every feature on.
+---
+---   maude src/main.maude                  load the specification
+---   make NAME=t CRYPTO=0                  build/t/src/main.maude without the crypto APIs
+---
+--- make (see Makefile and features.mk) filters this file with tools/strip-modules.py
+--- and writes the result to build/<NAME>/src/main.maude, next to the selected spec files.
+--- With a feature off, its files lose their load lines and its modules their pr lines; the
+--- feature that owns each file is noted in brackets below, and files without a note are
+--- always loaded.  The filter rules:
+---   * only active lines count: a line that starts with load, or with pr in a module;
+---   * a comment whose text is itself a load or pr command is removed from the output, so
+---     disabled code must not be kept here as a comment;
+---   * every other comment line, such as this one, is copied unchanged.
+---
+--- The top modules
+---   TEE-BEHAVIOR       the TEE system: the TrustedOS, TA instances and their kernels,
+---                      sessions, rich applications (RAs), the storage and cryptographic
+---                      object APIs of the GlobalPlatform TEE Internal Core API (chapters 5
+---                      and 6), the panics of programmer errors, and shared memory.
+---   TEE-C-BEHAVIOR   the program side: how a call written in a TA or RA program, in the
+---                      language of lang/c/semantics.maude, becomes a TEE API call and gets
+---                      its result back: lang/c/tee-support.maude and the *-TEE-CALL modules.
+--- A model that runs programs imports both; a model that starts from API calls written
+--- directly in the configuration, api-call : init(...), needs only TEE-BEHAVIOR.
+---
+--- A configuration is a multiset of objects and messages:
+---   < ra : RichApp | prog : P, proc : K >          an RA running the program P
+---   < tos : TrustedOS | ta-config : ..., ... >     the OS, with the program of each TA
+---   < sessionId(N) : Session | source : ..., destination : ..., state : ... >
+---   < oid(N, tos) : TrustedApp | prog : P, ... >   a TA instance, created by the OS
+---   < oid(N, ta) : TransObj | ... >, ObjHandle, PersistObj, Storage, ...  TEE objects
+---   msg r[args] from O to O'                       a message in flight
+---
+--- main.maude runs no commands, because every test file and analysis model loads it.  The
+--- sample commands at the end of this file are comments: load main.maude in Maude and paste
+--- them at the prompt.
 
---- The following Maude files define behaviors of the TEE storage APIs.
+--- Values, data and the imperative language
+load constants                   --- object types, usages, flags, algorithms, return codes
+load data                        --- abstract data of data streams and buffers
+load tee-data-type               --- API structures such as TEE_ObjectInfo
+load k-prelude                   --- the K-style configuration of program execution
+load tee-api                     --- the sort of TEE API names
+load lang                        --- what the model shares with the program language
 
-load constants
-load data
-load tee-data-type
-load k-prelude
-load tee-api
-load imp
-load objects
-load handle
-load tee-msg
-load tee-api-call
-load os
-load app
-load tee-kernel
-load tee-imp
-load tee-app
-load os-service
-load session
-load transient-object
-load transient
-load persistent-object
-load persistent
-load data-stream
-load generic
-load enumerator
-load cryptographic
-load tee-panic
-load persistent-panic
-load data-stream-panic
-load crypto-panic
-load ree-app
-load shared-memory
+--- Objects, handles and messages
+load objects                     --- object classes of the storage and crypto APIs
+load handle                      --- opaque handles (object, operation, session, enumerator)
+load tee-msg                     --- messages msg r[args] from sender to receiver
+load tee-api-call                --- values carried by TEE API calls
 
---- This module includes all defined behaviors of the TEE storage/cryptographic operation APIs.
+--- The TEE system: OS, applications, sessions
+load os                          --- the TrustedOS, TA configurations, TA invocation
+load app                         --- the App class shared by TAs and RAs
+load tee-kernel                  --- the TA kernel and its API call state
+load tee-app                     --- the TrustedApp class and its commands
+load os-service                  --- the services of the TrustedOS
+load session                     --- open, invoke and close of client-TA sessions
+
+--- Storage object APIs (GP Internal Core API, chapter 5)
+load transient-object            --- TransObj class, shared by the other storage files
+load transient                   --- transient object APIs              [TRANSIENT]
+load persistent-object           --- PersistObj class, shared by the other storage files
+load persistent                  --- persistent object APIs             [PERSISTENT]
+load data-stream                 --- data stream access APIs            [DATA_STREAM]
+load generic                     --- generic object APIs                [GENERIC]
+load enumerator                  --- persistent object enumeration      [ENUMERATOR]
+
+--- Cryptographic operation APIs (chapter 6)
+load cryptographic               --- operations, keys, cipher, MAC, digest  [CRYPTO]
+
+--- Panics, the REE side, shared memory
+load tee-panic                   --- panics of programmer errors and invalid handles
+load ree-app                     --- the RichApp class and the TEE Client API calls
+load shared-memory               --- memory references of TEEC_InvokeCommand  [SHM]
+
+--- The language of the programs (lang/c): its TEE API calls, client calls and program runs.
+load ../lang/c/semantics         --- syntax and semantics of the TA/RA language
+load ../lang/c/typing            --- static type checking (wellTyped) of its programs
+load ../lang/c/tee-support       --- program calls translated into TEE API calls
+
+--- TEE-BEHAVIOR: the rewrite rules of the TEE system and of every API group.  Each pr line
+--- of a feature module is dropped by the build when the feature is off.
 
 --- @kind assembly
 --- @feature core
@@ -44,24 +91,24 @@ mod TEE-BEHAVIOR is
   pr GENERIC-OBJECT-BEHAVIOR .
   pr TRANSIENT-OBJECT-BEHAVIOR .
   pr PERSISTENT-OBJECT-BEHAVIOR .
-  --- pr PROTECTED-PERSISTENT-OBJECT-BEHAVIOR .
   pr DATA-STREAM-OBJECT-BEHAVIOR .
   pr ENUMERATOR-OBJECT-BEHAVIOR .
   pr CRYPTO-OPERATION-BEHAVIOR .
   pr TRUST-APP-BEHAVIOR .
+  pr TRUST-APP-CALL-BEHAVIOR .
   pr RICH-APP-BEHAVIOR .
   pr GENERAL-PANIC .
   pr PERSISTENT-PANIC .
   pr DATA-STREAM-PANIC .
   pr CRYPTO-PANIC .
-  pr SHARED-MEMORY-BEHAVIOR .
 endm
 
---- This module includes the IMP behaviors of the TEE API calls and of the trusted application.
+--- TEE-C-BEHAVIOR: the TEE API calls of programs (one *-TEE-CALL module per API group),
+--- the calls of a TA to other TAs, and the program execution of a TA.
 
 --- @kind assembly
---- @feature imp
-mod TEE-IMP-BEHAVIOR is
+--- @feature c
+mod TEE-C-BEHAVIOR is
   pr TRANSIENT-OBJECT-TEE-CALL .
   pr PERSISTENT-OBJECT-TEE-CALL .
   pr GENERIC-OBJECT-TEE-CALL .
@@ -69,5 +116,117 @@ mod TEE-IMP-BEHAVIOR is
   pr ENUMERATOR-OBJECT-TEE-CALL .
   pr CRYPTO-OPERATION-TEE-CALL .
   pr TEE-INTERNAL-CLIENT-CALL .
-  pr TRUST-APP-IMP-BEHAVIOR .
+  pr TRUST-APP-C-BEHAVIOR .
+  pr RICH-APP-C-BEHAVIOR .
+  pr SHARED-OBJECT-C .
+  pr SHARED-MEMORY-BEHAVIOR .
 endm
+
+--- MAIN-SAMPLE: the scenario of the sample commands below.  A rich application ra opens a
+--- session with the TA SAMPLE-TA, invokes its command keyCheck, and closes the session.
+--- keyCheck calls TEE_AllocateTransientObject for an AES key of N bits: on success it copies
+--- the input buffer of the RA to the output, and on an error it writes noData to the output.
+--- The TrustedOS tos creates the TA instance when the session is opened; the initial
+--- configuration init(N, F) has no TA instance.  The RA calls teecInvokeCommand, so a build
+--- with SHM=0 cuts this module out.  [SHM]
+--- @kind program
+--- @feature shm
+mod MAIN-SAMPLE is
+  pr TEE-BEHAVIOR .
+  pr TEE-C-BEHAVIOR .
+
+  op ra : -> Oid [ctor] .
+  op tos : -> Oid [ctor] .
+  op SAMPLE-TA : -> AppId [ctor] .
+  op keyCheck : -> FuncId [ctor] .
+
+  var N : Nat .
+  var F : FuncId .
+
+  --- The TA program: the command keyCheck.  buf points to the input object of the client,
+  --- and out is the output object; both are shared memory of the RA.  Quoted identifiers
+  --- such as 'rr are program variables.
+  op taProg : Nat -> Program .
+  eq taProg(N) =
+    void keyCheck(char * 'buf, char & 'out) {
+      TEE-Result 'rr ; TEE-ObjectHandle 'h ;
+      'rr := allocateTransientObject(# typeAes, # N, 'h) ;
+      if ('rr == # success) { 'out := deref('buf) ; } else { 'out := # noData ; }
+      return unit ; } .
+
+  --- The RA program: open a session, invoke F with the locations of b and out, close.
+  --- r1, r2 and r3 get the return codes of the three TEE Client API calls.
+  op raProg : FuncId -> Program .
+  eq raProg(F) =
+    TEEC-Session 's ; char 'b ; char 'out ; TEE-Result 'r1 ; TEE-Result 'r2 ; TEE-Result 'r3 ;
+    'b := # data(1) ; 'out := # noData ;
+    'r1 := teecOpenSession(# SAMPLE-TA, 's) ;
+    'r2 := teecInvokeCommand('s, # F, (addr('b), addr('out))) ;
+    'r3 := teecCloseSession('s) ; .
+
+  --- init(N, F): the RA runs raProg(F); SAMPLE-TA is a single-instance TA with one session
+  --- at a time, taConfig(P, true, false), whose program allocates an N-bit AES key.
+  op init : Nat FuncId -> Configuration .
+  eq init(N, F) =
+    < ra : RichApp | prog : raProg(F), proc : mkConf(raProg(F)) >
+    < tos : TrustedOS | session-counter : 0,
+        ta-config : (SAMPLE-TA |-> taConfig(taProg(N), true, false)),
+        ta-instances : empty, ta-storages : empty > .
+endm
+
+--- Sample commands
+---
+--- They run on the scenario of the module MAIN-SAMPLE above; init(N, keyCheck) is its
+--- initial configuration.  Load main.maude
+--- and paste a command at the Maude prompt, without the leading "---"; each prints its
+--- result in a few milliseconds.
+---
+--- 1. One run to the end.  In the result, the store of ra holds sessionId(0) for s, data(1)
+---    for out, and success for r1, r2 and r3; the TA instance oid(0, tos) holds the
+---    transient object it allocated.
+---
+---   rew in MAIN-SAMPLE : init(128, keyCheck) .
+---
+--- 2. All final states.  The run is deterministic up to interleaving: one final state.
+---
+---   search in MAIN-SAMPLE : init(128, keyCheck) =>! C:Configuration .
+---
+--- 3. A pattern on the final state: the RA has finished, and the TA copied data(1) to out.
+---    LO and L2 are the locations of the RA variables out and r2 in its store.
+---
+---   search [1] in MAIN-SAMPLE : init(128, keyCheck) =>!
+---     < ra : RichApp | proc : (k(.K)
+---         env(('out |-> LO:Nat) ; ('r2 |-> L2:Nat) ; ENV:Map{Var,Nat})
+---         store((LO:Nat |-> # data(1)) ; (L2:Nat |-> # success) ; MEM:Map{Nat,Value?})
+---         KS:KConfig), AS:AttributeSet >
+---     C:Configuration .
+---
+--- 4. The error path: a 64-bit AES key is not supported, so allocateTransientObject returns
+---    TEE_ERROR_NOT_SUPPORTED and keyCheck writes noData to out.  The invocation itself
+---    still succeeds: r2 is success.  Maude does not reduce search patterns, so the pattern
+---    writes noData in its normal form, # (nil).List{Data}.
+---
+---   search [1] in MAIN-SAMPLE : init(64, keyCheck) =>!
+---     < ra : RichApp | proc : (k(.K)
+---         env(('out |-> LO:Nat) ; ('r2 |-> L2:Nat) ; ENV:Map{Var,Nat})
+---         store((LO:Nat |-> # (nil).List{Data}) ; (L2:Nat |-> # success) ; MEM:Map{Nat,Value?})
+---         KS:KConfig), AS:AttributeSet >
+---     C:Configuration .
+---
+--- 5. An invariant over every reachable state: no TA ever panics.  Expected: No solution.
+---
+---   search in MAIN-SAMPLE : init(128, keyCheck) =>*
+---     < O:Oid : TrustedApp | status : panic, AS:AttributeSet > C:Configuration .
+---
+--- 6. A reachable intermediate state: the session is invoking, that is, the TA is serving
+---    the command of the RA.
+---
+---   search [1] in MAIN-SAMPLE : init(128, keyCheck) =>*
+---     < S:SessionId : Session | source : ra, state : invoking, AS:AttributeSet >
+---     C:Configuration .
+---
+--- To see how a state was reached, take its number from a search result and run, e.g.,
+---   show path labels 34 .
+--- Other runs: init(256, keyCheck), or edit taProg in MAIN-SAMPLE to call other TEE
+--- APIs; lang/c/tee-support.maude lists their program signatures, and tests/completion/*.maude has
+--- more scenarios.

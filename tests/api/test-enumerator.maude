@@ -16,13 +16,13 @@ set print color off .
 
 --- [BB-E-AL-1] alloc-enumerator-success
 search [1] in TEST-AUX :
-  < ta : TAKernel | status : (normal).AppStatus, api-call : init(allocatePersistentObjectEnumerator[argNil]), counter : 0 >
+  < ta : TAKernel | status : (normal).AppStatus, api-call : init(allocatePersistentObjectEnumerator[nil]), counter : 0 >
 =>*
   < ta : TAKernel | api-call : return(allocatePersistentObjectEnumerator[# success # oid(1, ta)]) > .
 
 --- [BB-E-AL-2] alloc-enumerator-out-of-memory
 search [1] in TEST-AUX :
-  < ta : TAKernel | status : outOfMemory, api-call : init(allocatePersistentObjectEnumerator[argNil]), counter : 0 >
+  < ta : TAKernel | status : outOfMemory, api-call : init(allocatePersistentObjectEnumerator[nil]), counter : 0 >
 =>*
   < ta : TAKernel | api-call : return(allocatePersistentObjectEnumerator[# errorOutOfMemory # null]) > .
 
@@ -92,7 +92,7 @@ search [1] in TEST-AUX :
   (msg retStatus[# (corrupted).StorageStatus] from oid(0, ta) to ta)
   < ta : TAKernel | status : (normal).AppStatus, api-call : init(startPersistentObjectEnumerator[# oid(4, ta) # storagePrivate]), counter : 0, storage : oid(0, ta) >
 =>*
-  < ta : TAKernel | api-call : return(startPersistentObjectEnumerator[# errorCorruptObject]) > .
+  < ta : TAKernel | api-call : return(startPersistentObjectEnumerator[# corrupted]) > .
 
 --- ============================================================
 --- getNextPersistentObject
@@ -103,14 +103,14 @@ search [1] in TEST-AUX :
   (msg retNextObject[# teeObjectInfo(typeAes,
                               keySize(attr(secretValue, randomAttrVal)),
                               128, usageEncrypt,
-                              dataSize(3), pos(0), empty)] from oid(9, ta) to ta)
-  < ta : TAKernel | status : (normal).AppStatus, api-call : final(getNextPersistentObject[ZsGetNextPersistentObject0 # testFileId]), counter : 0 >
+                              3, 0, empty)] from oid(9, ta) to ta)
+  < ta : TAKernel | status : (normal).AppStatus, api-call : final(getNextPersistentObject[HANDLEARG # testFileId]), counter : 0 >
 =>*
-  < ta : TAKernel | api-call : return(getNextPersistentObject[# success # teeObjectInfo(typeAes, keySize(attr(secretValue, randomAttrVal)), 128, usageEncrypt, dataSize(3), pos(0), empty) # testFileId]) > .
+  < ta : TAKernel | api-call : return(getNextPersistentObject[# success # teeObjectInfo(typeAes, keySize(attr(secretValue, randomAttrVal)), 128, usageEncrypt, 3, 0, empty) # testFileId]) > .
 
 --- [BB-E-GN-2] get-next-storage-not-available
 search [1] in TEST-AUX :
   (msg retStatus[# (notAvailable).StorageStatus] from oid(0, ta) to ta)
   < ta : TAKernel | status : (normal).AppStatus, api-call : init(getNextPersistentObject[# oid(9, ta)]), counter : 0, storage : oid(0, ta) >
 =>*
-  < ta : TAKernel | api-call : return(getNextPersistentObject[# errorStorageNotAvailable]) > .
+  < ta : TAKernel | api-call : return(getNextPersistentObject[# notAvailable]) > .

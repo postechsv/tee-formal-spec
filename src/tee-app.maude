@@ -1,18 +1,18 @@
 --- This file defines the abstract trusted application (TA) class and the commands it uses
 
---- The client-service attribute of a TA: either {SID, FID}, the session SID of the request and
---- the service function FID, or none.  The TrustedOS knows the client of the session.
+--- The client-service attribute of a TA: either {CI, FID}, the sender CI of the request (the
+--- session, for a request through a session) and the service function FID, or none (App D.1).
 --- @kind interface
 --- @feature client
 omod CLIENT-SERVICE is
   pr CONFIGURATION .
-  pr SESSION-ID .
-  pr IMP-FUNC-SIG .
+  pr OBJECT-ID .
+  pr FUNC-ID .
 
   sorts ClientService ClientService? .
   subsort ClientService < ClientService? .
 
-  op {_,_} : SessionId APIFuncId -> ClientService [ctor] .
+  op {_,_} : Oid APIFuncId -> ClientService [ctor] .
   op none : -> ClientService? [ctor] .
 endom
 
@@ -27,7 +27,8 @@ omod TRUST-APP is
 
   --- Whether the TA is serving a request, or has just started or finished one, is not part of
   --- its state: analyses that need it add it as ghost state.
-  class TrustedApp | client-service : ClientService? .
+  --- sessions is the number of open sessions of the TA instance (SESSION-BEHAVIOR).
+  class TrustedApp | client-service : ClientService? , sessions : Nat .
   subclass TrustedApp < App TAKernel .
 endom
 
@@ -37,115 +38,92 @@ endom
 --- @feature ta-session
 omod TRUST-APP-BEHAVIOR is
   pr TRUST-APP .
-  pr TEE-API-IMP-PROGRAM .
-  pr PROGRAM-APP-AUX .
+  pr PROGRAM-RUN .
   pr INVOKE-TA-CALL .
+  pr TEE-API-CALL .
+  pr RETURN-VALUE .
 
-  var KI : Oid .
-  var TI : Oid .
-  var SID : SessionId .
+  vars CI TI : Oid .
   var FID : FuncId .
   var P : Program .
   var KS : KConfig .
-  var VL : ArgList .
-  var CS : CStore .
-  var MEM : Map{Nat,Value?} .
-  var L : Nat .
-  var AL : Map{Nat,Nat} .
+  var VL : List{Arg} .
+  var RET : List{Arg} .
+  vars PL IN OUT : ExpList .
 
-  --- handle-invoke-ta: an invkTa request of its TrustedOS KI, in the session SID, for the
-  --- service FID with the values VL and the memory CS of the client starts the program of the TA
-  --- with mkConf(syscalls P, FID, VL, CS), on that memory, and records {SID, FID} as its
-  --- client-service.
+  --- mkConf(P, FID, VL) and getFuncParams(P, FID) (PROGRAM-RUN) are given by the language.
+
+  --- handle-invoke-ta: when a TA receives invkTa[FID VL] from the client CI and is available, its
+  --- proc is the initial configuration mkConf(P, FID, VL), and its client-service is {CI, FID}.
   rl [handle-invoke-ta] :
-    (msg invkTa[SID, FID, VL, CS] from KI to TI)
-    < TI : TrustedApp | proc : none , client-service : none , os-kernel : KI ,
+    (msg invkTa[FID VL] from CI to TI)
+    < TI : TrustedApp | proc : none , client-service : none ,
                         prog : P , status : (normal).AppStatus >
     =>
-    < TI : TrustedApp | proc : mkConf(syscalls P , FID , VL , CS) ,
-                        client-service : {SID , FID} >
+    < TI : TrustedApp | proc : mkConf(P , FID , VL) , client-service : {CI , FID} >
   .
 
-  --- handle-invoke-ta-finish: when the program has finished, its memory, with what the service
-  --- wrote to the objects of the client, is returned to the TrustedOS as invkTaRet of the session,
-  --- and the TA is available again.  The objects of the TA stay in the memory, past the locations
-  --- of the client.
-  rl [handle-invoke-ta-finish] :
-    < TI : TrustedApp | proc : (k(.K) store(MEM) nextLoc(L) arrlen(AL) KS) , os-kernel : KI ,
-                        client-service : {SID , FID} , status : (normal).AppStatus >
+  --- handle-invoke-ta-finish: after the execution of FID, the TA retrieves the results, the values
+  --- of the output parameters of FID (getVals), clears its client-service, and sends invkTaRet
+  --- to the client (App D.3).
+  crl [handle-invoke-ta-finish] :
+    < TI : TrustedApp | proc : (k(.K) KS) , client-service : {CI , FID} ,
+                        status : (normal).AppStatus , prog : P >
     =>
     < TI : TrustedApp | proc : none , client-service : none >
-    (msg invkTaRet[SID, cstore(MEM, L, AL)] from TI to KI)
-  .
+    (msg invkTaRet[RET] from TI to CI)
+  if PL | IN | OUT := getFuncParams(P, FID) /\ RET := getVals(OUT, KS) .
 
+  --- get-system-time: TEE_GetSystemTime, [Internal Core] 7.2.1.  The model has no clock: the
+  --- system time is always 0 seconds and 0 milliseconds.  So the time a TA reads never advances,
+  --- and a timeout that it computes from the system time never expires.
+  var O : Oid .
+  var ARGS : List{Arg} .
+  rl [get-system-time] :
+    < O : TAKernel | status : (normal).AppStatus , api-call : init(getSystemTime[ARGS]) >
+    =>
+    < O : TAKernel | api-call : return(getSystemTime[# noReturnCode # 0 # 0]) >
+  .
 endom
 
---- This module defines IMP call and return for trust applications.
+--- This module defines C call and return for trust applications.
+
+--- This module defines how a TA accepts a TEE API call of its program and returns from it,
+--- with the tasks $in, $wait and $out of the call (CALL-TASK, App. D.2).
 
 --- @kind behavior
---- @feature imp
-omod TRUST-APP-IMP-BEHAVIOR is
+--- @feature ta-session
+omod TRUST-APP-CALL-BEHAVIOR is
   pr TRUST-APP .
-  pr IMP-AUX .
-  pr TEE-API-IMP-PROGRAM .
-  pr TEE-API-IMP-CALL .
+  pr CALL-TASK .
+  pr TEE-API-CALL .
 
   var TI : Oid .
   var K : K .
-  var TEEAPI : TeeApi .
-  var VL : ArgList .
-  var EL : ExpList .
-  var KS : KConfig .
-  var RET : ReturnCode? .
-  var PARAMS : ArgList .
   var TF : TeeApi .
-  var PL : ExpList .
-  var IN : ExpList .
-
-  --- A null input buffer (NULL, as for the initial data of TEE_CreatePersistentObject) has no
-  --- content: the stub reads no data (see inBuf in IMP-STRICTNESS).
-  eq k({ nullptr } ~> $inbuf ~> K) = k({ # (nil).List{Data} } ~> K) .
+  var VL : List{Arg} .
   var OUT : ExpList .
-
-------------------------------------------------------------
---- IMP Semantics
-------------------------------------------------------------
-
-  --- tee-api-call: a call of a TEE API TF, made by a TA that is normal and has no call in
-  --- progress, runs the stub of TF as a function call: its parameters PL are zipped with the
-  --- arguments EL, and the stub body (signature, $inH, $wait, $out, return) is invoked.  The
-  --- signature PL | IN | OUT is read from the stub (getFuncParams). The rule needs a stub for TF:
-  --- getStub gives skip for a name with no stub.
-  ---@dmc keep-builtin
-  ---@dmc shape-cond(getStub(TF) =/= skip => $sig(DMSI:ExpList, DMSO:ExpList) ~> DMSK:K)
-  ---@dmc inline-match
-  crl [tee-api-call] :
-    < TI : TrustedApp | proc : (k({ TF(EL) } ~> K) KS) ,
-                        api-call : noCall , status : (normal).AppStatus >
-    =>
-    < TI : TrustedApp | proc : (k(zip(nil, zipL(PL, EL)) ~> invoke(getStub(TF)) ~> K) KS) >
-  if pSig(PL, IN, OUT) := getFuncParams(TF) /\ getStub(TF) =/= skip .
+  var KS : KConfig .
 
   --- tee-api-call-accept: the $in task of a TEE API call, with the TA in normal status and
   --- no call in progress, accepts the call and sets its api-call to init.  The call itself
   --- is run by the object rules of the TEE API.
   rl [tee-api-call-accept] :
-    < TI : TrustedApp | proc : (k($in(VL) ~> $wait(TEEAPI) ~> K) KS) ,
+    < TI : TrustedApp | proc : (k($in(VL) ~> $wait(TF) ~> K) KS) ,
                         api-call : noCall , status : (normal).AppStatus >
     =>
-    < TI : TrustedApp | proc : (k($wait(TEEAPI) ~> K) KS) ,
-                        api-call : init(makeCall(TEEAPI , VL)) >
+    < TI : TrustedApp | proc : (k($wait(TF) ~> K) KS) ,
+                        api-call : init(TF[VL]) >
   .
 
-  --- tee-api-call-return: when the call has returned, the $out task is replaced by the
-  --- statement makeReturnStmt(TEEAPI, RET, PARAMS, EL), which assigns the return values to
-  --- the output parameters, and the api-call is set to noCall.
+  --- tee-api-call-return: when the call has returned the values VL, the $out task is replaced
+  --- by assign(OUT, VL), which assigns them to the output parameters OUT, and the api-call is set
+  --- to noCall.
   rl [tee-api-call-return] :
-    < TI : TrustedApp | proc : (k($wait(TEEAPI) ~> $out(EL) ~> K) KS) ,
-                        api-call : return(TEEAPI[# RET PARAMS]) , status : (normal).AppStatus >
+    < TI : TrustedApp | api-call : return(TF[VL]) ,
+                        status : (normal).AppStatus , proc : (k($wait(TF) ~> $out(OUT) ~> K) KS) >
     =>
-    < TI : TrustedApp | proc : (k(makeReturnStmt(TEEAPI, RET, PARAMS, EL) ~> K) KS) ,
+    < TI : TrustedApp | proc : (k(assign(OUT, VL) ~> K) KS) ,
                         api-call : noCall >
   .
-
 endom

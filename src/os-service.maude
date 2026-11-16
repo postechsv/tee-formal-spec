@@ -11,100 +11,94 @@ omod TEE-OS-BEHAVIOR is
   pr TRUST-APP .
   pr TEE-OS-SERVICE .
   pr RETURN-CODE .
+  pr RETURN-VALUE .
 
-  op #_ : StorageStatus -> Value [ctor] .
-
-  var KI : Oid .
+  var OS : Oid .
   var SIL : List{Service} .
   var NESOL : NeList{ServiceReturn} .
-  var TK : Oid .
+  var O : Oid .
   var STATUS : StorageStatus .
   var SI : Oid .
   vars FILE FILE' : FileName .
-  var FL : Set{FileName} .
+  var FILES : Set{FileName} .
 
   msg reqTrustedOS : List{Service} Oid -> Msg .
   msg retTrustedOS : List{ServiceReturn} Oid -> Msg .
 
   --- service-receive: the TrustedOS takes the service list SIL of the request reqTrustedOS(SIL,
-  --- TK) when it has no pending services, and records TK as service-request-ta-inst.
+  --- O) when it has no pending services, and records O as service-request-ta-inst.
   rl [service-receive] :
-    reqTrustedOS(SIL , TK)
-    < KI : TrustedOS | service-in : nil , service-out : nil ,
+    reqTrustedOS(SIL , O)
+    < OS : TrustedOS | service-in : nil , service-out : nil ,
                          service-request-ta-inst : noOid >
     =>
-    < KI : TrustedOS | service-in : SIL ,
-                         service-request-ta-inst : TK >
+    < OS : TrustedOS | service-in : SIL ,
+                         service-request-ta-inst : O >
   .
 
   --- service-finish: once all services are done, the collected service-out values NESOL are
-  --- returned to TK as retTrustedOS, and service-request-ta-inst is cleared.
+  --- returned to O as retTrustedOS, and service-request-ta-inst is cleared.
   rl [service-finish] :
-    < KI : TrustedOS | service-in : nil , service-out : NESOL ,
-                         service-request-ta-inst : TK >
+    < OS : TrustedOS | service-in : nil , service-out : NESOL ,
+                         service-request-ta-inst : O >
     =>
-    < KI : TrustedOS | service-out : nil ,
+    < OS : TrustedOS | service-out : nil ,
                          service-request-ta-inst : noOid >
-    retTrustedOS(NESOL , TK)
+    retTrustedOS(NESOL , O)
   .
 
   --- abnormalStorage(STATUS): true when STATUS is not normal.
   op abnormalStorage : StorageStatus -> Bool .
   eq abnormalStorage(normal) = false .
-  ---@dmc owise enumerate(STATUS)
   eq abnormalStorage(STATUS) = true [owise] .
 
-  --- storageErrCode(STATUS): the return code of the storage failure STATUS.
-  op storageErrCode : StorageStatus -> ReturnCode .
-  eq storageErrCode(corrupted) = errorCorruptObject .
-  eq storageErrCode(notAvailable) = errorStorageNotAvailable .
-  eq storageErrCode(outOfSpace) = errorStorageNoSpace .
-
+  --- A storage failure STATUS is returned as the return code # STATUS: # corrupted is
+  --- TEE_ERROR_CORRUPT_OBJECT, # notAvailable TEE_ERROR_STORAGE_NOT_AVAILABLE and # outOfSpace
+  --- TEE_ERROR_STORAGE_NO_SPACE (the preprocessor maps the C constants to these values).
   --- storageErrCode2(STATUS): the return code of the storage failure STATUS of the second key
-  --- object of TEE_SetOperationKey2.  It differs from storageErrCode for corrupted and
-  --- notAvailable only.
-  op storageErrCode2 : StorageStatus -> ReturnCode .
-  eq storageErrCode2(corrupted) = errorCorruptObject2 .
-  eq storageErrCode2(notAvailable) = errorStorageNotAvailable2 .
-  eq storageErrCode2(outOfSpace) = errorStorageNoSpace .
+  --- object of TEE_SetOperationKey2, which has its own codes for corrupted and notAvailable.
+  op storageErrCode2 : StorageStatus -> Value .
+  eq storageErrCode2(corrupted) = # errorCorruptObject2 .
+  eq storageErrCode2(notAvailable) = # errorStorageNotAvailable2 .
+  eq storageErrCode2(outOfSpace) = # outOfSpace .
 
 --- Storage side of the TA-Storage messages.  The TA sends the request to its storage SI;
 --- the storage answers.  The TA-side rules are in the API modules.
 
 --- return-storage-status: the storage answers getStatus with its status.
   rl [return-storage-status] :
-    < SI : Storage | status : STATUS > (msg getStatus[] from TK to SI)
-  => < SI : Storage | > (msg retStatus[# STATUS] from SI to TK) .
+    < SI : Storage | status : STATUS > (msg getStatus[] from O to SI)
+  => < SI : Storage | > (msg retStatus[# STATUS] from SI to O) .
 
 --- return-file-exist: the storage answers checkFileExist with whether the file is in its
 --- file set.
   rl [return-file-exist] :
-    < SI : Storage | files : FL > (msg checkFileExist[# FILE] from TK to SI)
-  => < SI : Storage | > (msg retFileExist[# (FILE in FL)] from SI to TK) .
+    < SI : Storage | files : FILES > (msg checkFileExist[# FILE] from O to SI)
+  => < SI : Storage | > (msg retFileExist[# (FILE in FILES)] from SI to O) .
 
 --- return-persistent-list: the storage answers getPersistentList with its file set (the TA
 --- decides whether it is empty).
   rl [return-persistent-list] :
-    < SI : Storage | files : FL > (msg getPersistentList[] from TK to SI)
-  => < SI : Storage | > (msg retPersistentList[# FL] from SI to TK) .
+    < SI : Storage | files : FILES > (msg getPersistentList[] from O to SI)
+  => < SI : Storage | > (msg retPersistentList[# FILES] from SI to O) .
 
 --- notify-file-deletion: the storage removes the file FILE from its file set.  The TA waits
 --- for acceptNotification.
   rl [notify-file-deletion] :
-    < SI : Storage | files : (FILE , FL) > (msg notifyFileDeletion[# FILE] from TK to SI)
-  => < SI : Storage | files : FL > (msg acceptNotification[] from SI to TK) .
+    < SI : Storage | files : (FILE , FILES) > (msg notifyFileDeletion[# FILE] from O to SI)
+  => < SI : Storage | files : FILES > (msg acceptNotification[] from SI to O) .
 
 --- notify-file-deletion-absent: deleting a file that is not in the file set leaves the set
 --- unchanged, and the notification is accepted.
   crl [notify-file-deletion-absent] :
-    < SI : Storage | files : FL > (msg notifyFileDeletion[# FILE] from TK to SI)
-  => < SI : Storage | > (msg acceptNotification[] from SI to TK)
-  if not (FILE in FL) .
+    < SI : Storage | files : FILES > (msg notifyFileDeletion[# FILE] from O to SI)
+  => < SI : Storage | > (msg acceptNotification[] from SI to O)
+  if not (FILE in FILES) .
 
 --- notify-file-rename: the storage replaces the old file name FILE' with the new name FILE
 --- in its file set, and the notification is accepted.
   rl [notify-file-rename] :
-    < SI : Storage | files : (FILE' , FL) > (msg notifyFileRename[# FILE' # FILE] from TK to SI)
-  => < SI : Storage | files : (FILE , FL) > (msg acceptNotification[] from SI to TK) .
+    < SI : Storage | files : (FILE' , FILES) > (msg notifyFileRename[# FILE' # FILE] from O to SI)
+  => < SI : Storage | files : (FILE , FILES) > (msg acceptNotification[] from SI to O) .
 
 endom

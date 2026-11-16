@@ -17,84 +17,64 @@ endom
 --- @feature client
 omod RICH-APP-BEHAVIOR is
   pr RICH-APP .
-  pr IMP-SEMANTICS .
+  pr CALL-TASK .
   pr SECURE-MONITOR-CALL .
   pr TEE-CLIENT-FUNC .
-  pr TEE-CLIENT-IMP-VALUE .
-  pr ID-IMP-VALUE .
-  pr RETURN-IMP-VALUE .
-  pr TEE-IMP-VALUE-TYPE .
+  pr TEE-CLIENT-VALUE .
+  pr ID-VALUE .
+  pr RETURN-VALUE .
 
   var RI : Oid .
   var K : K .
   var SID : SessionId .
+  var FID : FuncId .
   var API : TeeClientApi .
-  vars VL VL' : ArgList .
+  vars VL RET : List{Arg} .
   var V : Value .
   var KS : KConfig .
-  vars EU ES : Exp .
-  var EL : ExpList .
-  vars MEM MEM' : Map{Nat,Value?} .
-  vars L L' : Nat .
-  vars AL AL' : Map{Nat,Nat} .
+  vars EL OUT : ExpList .
 
-------------------------------------------------------------
---- IMP Syntax
-------------------------------------------------------------
-
-  --- teecOpenSession(EU, ES): TEEC_OpenSession ([Client API] 4.5.7) with the TA EU.  Its value
-  --- is the return code; after success the new session is written to the lvalue ES (the
-  --- session structure that the client passes, &session in C).  The context, the connection
-  --- method and data, the operation and the return origin are not modeled.
-  op teecOpenSession : Exp Exp -> Exp [ctor] .
-
-  --- teecOpenSession(EU, ES) runs as the stub of TEEC_OpenSession: EU is evaluated and sent by
-  --- client-api-smc, and ES waits in $out for the response (client-api-finish).
-  eq k({ teecOpenSession(EU, ES) } ~> K)
-   = k($inH(argNil, EU) ~> $wait(TeecOpenSession) ~> $out(ES) ~> K) .
-
-  --- Typing (IMP-TYPING): the TA is a TEE-UUID and the session a TEEC-Session lvalue.  The call
-  --- is a TEE-Result.
-  eq tk($te(teecOpenSession(EU, ES)) ~> K)
-   = tk($te(EU) ~> $tchk(TEE-UUID) ~> $tl(ES) ~> $tchk(TEEC-Session) ~> $tres(TEE-Result) ~> K) .
-
-------------------------------------------------------------
---- IMP Semantics
-------------------------------------------------------------
+  op #_ : FuncId -> Value [ctor] .
 
 --- A client API call API of an RA is $in(VL) ~> $wait(API) ~> $out(EL), as a TEE API call of a
---- TA (TRUST-APP-IMP-BEHAVIOR): the input values VL go to the TEE with the SMC request, and the
---- output lvalues EL get the values of the response (clientReturn).
+--- TA (TRUST-APP-CALL-BEHAVIOR): the input values VL go to the TEE with the SMC request, and the
+--- outputs EL get the values of the response (assign, CALL-TASK).  The first value of a response
+--- is the return code, so the language makes the first output of a client call the value of
+--- the call.
 
---- client-api-smc: the $in task of the client API call API creates the SMC request, with the
---- memory of the RA (its store, location counter and array lengths).  The RA waits until the
---- response, so its memory does not change meanwhile.
-  rl [client-api-smc] :
-    < RI : RichApp | proc : (k($in(VL) ~> $wait(API) ~> K)
-                             store(MEM) nextLoc(L) arrlen(AL) KS) >
+--- invoke-ta-smc: for TEEC_InvokeCommand, the $in task creates an smcReq message with the session
+--- SID, the service FID and the values VL (App D.2).
+  rl [invoke-ta-smc] :
+    < RI : RichApp | proc : (k($in(# SID # FID VL) ~> $wait(teecInvokeCommand) ~> K) KS) >
     =>
-    < RI : RichApp | proc : (k($wait(API) ~> K) store(MEM) nextLoc(L) arrlen(AL) KS) >
-    smcReq(RI, API, VL, cstore(MEM, L, AL))
+    < RI : RichApp | proc : (k($wait(teecInvokeCommand) ~> K) KS) >
+    smcReq(RI, SID, FID, VL)
   .
 
---- client-api-finish: the SMC response gives the RA its memory back, as the TEE has left it,
---- also when the TA panicked, and clientReturn(API, VL', EL) gives the value of the call and
---- assigns the output values to EL.
-  rl [client-api-finish] :
-    smcRet(RI, VL', cstore(MEM', L', AL'))
-    < RI : RichApp | proc : (k($wait(API) ~> $out(EL) ~> K) store(MEM) nextLoc(L) arrlen(AL) KS) >
+--- invoke-ta-finish: the smcRet response RET completes the invocation: the return values are
+--- assigned to the output parameters OUT (App D.2).
+  rl [invoke-ta-finish] :
+    smcRet(RI, RET)
+    < RI : RichApp | proc : (k($wait(teecInvokeCommand) ~> $out(OUT) ~> K) KS) >
     =>
-    < RI : RichApp | proc : (k(clientReturn(API, VL', EL) ~> K) store(MEM') nextLoc(L') arrlen(AL') KS) >
+    < RI : RichApp | proc : (k(assign(OUT, RET) ~> K) KS) >
   .
 
-  --- clientReturn(API, VL, EL): the values VL of the response to the call API, as the value of
-  --- the call followed by the assignment of the output values to the lvalues EL.  The values
-  --- are the return code alone, or for TEEC_OpenSession after success, the code and the session.
-  --- A failed TEEC_OpenSession leaves the session structure as it is ([Client API] 4.5.7: its
-  --- content is then undefined).
-  op clientReturn : TeeClientApi ArgList ExpList -> K .
-  eq clientReturn(TeecInvokeCommand, V, nil) = { V } .
-  eq clientReturn(TeecOpenSession, (# success # SID), ES) = $assign(# SID, ES) ~> { # success } .
-  eq clientReturn(TeecOpenSession, V, ES) = { V } .
+--- client-api-smc: the $in task of the session API call API (TEEC_OpenSession,
+--- TEEC_CloseSession) creates the SMC request with the input values VL.
+  crl [client-api-smc] :
+    < RI : RichApp | proc : (k($in(VL) ~> $wait(API) ~> K) KS) >
+    =>
+    < RI : RichApp | proc : (k($wait(API) ~> K) KS) >
+    smcReq(RI, API, VL)
+  if API =/= teecInvokeCommand .
 
+--- client-api-finish: the SMC response VL of the session API call API is assigned to the
+--- outputs EL, as in invoke-ta-finish.
+  crl [client-api-finish] :
+    smcRet(RI, VL)
+    < RI : RichApp | proc : (k($wait(API) ~> $out(EL) ~> K) KS) >
+    =>
+    < RI : RichApp | proc : (k(assign(EL, VL) ~> K) KS) >
+  if API =/= teecInvokeCommand .
 endom

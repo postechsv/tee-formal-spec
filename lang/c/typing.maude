@@ -1,0 +1,429 @@
+--- This file defines the static type system of the imperative language (C-TYPING): the
+--- type checker wellTyped of programs.  It extends the syntax of semantics.maude and is loaded
+--- after it; the semantics does not depend on it.
+
+--- Static type system for C, in the style of SIMPLE typed static, the type checker of
+--- the K definition of SIMPLE (K tutorial, pl-tutorial/2_languages/1_simple/2_typed/1_static).
+--- As in SIMPLE, the program is rewritten to its type in the k cell of a task: a typed
+--- expression is its type ty(T), a typed statement is stmt, operands are typed left to right
+--- by strictness, and blocks and function bodies are typed as separate tasks.  A program is well
+--- typed when every task finishes (wellTyped(P) = true).  A task that is stuck leaves
+--- wellTyped(P) unreduced, which is how an ill-typed program is rejected.  The steps are
+--- equations: type checking is deterministic, and wellTyped is a function.
+--- Scoping follows the semantics: a function body sees its parameters, its own
+--- locals and the globals declared before its definition (body scope).  A
+--- top-level statement sees the top-level locals and only the functions defined
+--- before it.  Struct declarations must precede their use.  Labels are per
+--- statement sequence: the top-level labels (tlab facts) are visible in the top
+--- scope only, and the labels of a function body (lab facts) in its body scope
+--- only.  A goto to a label of another sequence, or to an unknown label, is
+--- rejected.  Labels are direct elements of their sequence (not in if/while bodies).
+--- Declarations are hoisted to the entry of their block at run time (see hoistK),
+--- so a name used before its declaration in the same block would be bound to the
+--- hoisted local, not to the outer binding it names in C.  Such a use is rejected: the
+--- names declared in a block are pending (tpend cell, PM[X] true) from the block
+--- entry until their declaration is reached.
+
+view Bool from TRIV to BOOL is
+  sort Elt to Bool .
+endv
+
+--- @kind program
+--- @feature c
+fmod C-TYPING is
+  pr C-PROGRAM .
+  pr C-LVALUE .
+  pr MAP{Var,CType} * (op _,_ to _;_) .
+  pr MAP{Var,Bool} * (op _,_ to _;_) .
+
+  --- Facts: signatures, defined functions, struct definitions and labels.
+  sorts Fact Facts .
+  subsort Fact < Facts .
+  op nofact : -> Facts [ctor] .
+  op _%_ : Facts Facts -> Facts [ctor assoc comm id: nofact] .
+  op fsig : FuncSig -> Fact [ctor] .
+  op fdef : FuncSig -> Fact [ctor] .
+  op sdef : SType Map{Var,CType} -> Fact [ctor] .
+  op tlab : Label -> Fact [ctor] .
+  op lab : Label -> Fact [ctor] .
+
+  --- Results.  SIMPLE: syntax Exp ::= Type, and BlockOrStmtType ::= "block" | "stmt", with
+  --- Type a KResult.  Here a typed expression is ty(T) and a typed statement is stmt; both
+  --- are items of the k cell of a task.
+  sorts TypeR MemberR TRes .
+  subsort TypeR < TRes < K .
+  op ty : CType -> TypeR [ctor] .
+  op stmt : -> TRes [ctor] .
+  op mm : Map{Var,CType} -> MemberR [ctor] .
+
+  op noRet : -> CType [ctor] .
+
+  --- A program is typed in the k cell.
+  subsort Program < K .
+
+  --- Typing items (the frozen contexts of the strict constructs of SIMPLE).
+  sort TItem .
+  subsort TItem < K .
+  --- $te(E): type the expression E.  $tl(E): type the lvalue E (SIMPLE: ltype).
+  ops $te $tl : Exp -> TItem [ctor] .
+  --- $tchk(T): the operand just typed has the type T.  $tres(T): the result type.
+  ops $tchk $tres : CType -> TItem [ctor] .
+  --- $targ(T): an argument for a by-value parameter of type T.
+  op $targ : CType -> TItem [ctor] .
+  --- $targs(PL, EL): the arguments EL of a call, against the parameters PL.
+  op $targs : ExpList ExpList -> TItem [ctor] .
+  op $teq : Exp -> TItem [ctor] .
+  op $tmem : Var -> TItem [ctor] .
+  op $tidx : Exp -> TItem [ctor] .
+  op $tstmt : -> TItem [ctor] .
+  op $tasg : Exp -> TItem [ctor] .
+  op $tret : -> TItem [ctor] .
+  op $tif : Stmt Stmt -> TItem [ctor] .
+  op $twhile : Stmt -> TItem [ctor] .
+  --- $tptr: the address of the lvalue just typed.  $tderef: the object the pointer just typed
+  --- points to.
+  ops $tptr $tderef $tmal : -> TItem [ctor] .
+
+  --- Tasks.  SIMPLE: <tasks> <task*> <k/> <tenv?/> <returnType?/> </task> </tasks> <gtenv/>.
+  --- A task here has the cells
+  ---   tkind   top (the program), fun (a function body) or blk (an if/while branch),
+  ---   tmode   top or body: the scope the statements are checked in (blocks inherit it),
+  ---   tk      the computation,
+  ---   tenv    the locals (for the top task, the top-level variables: the gtenv of SIMPLE),
+  ---   tglob   the globals a function body sees: the top-level variables declared before
+  ---           its definition (SIMPLE: gtenv, shared by all tasks),
+  ---   tret    the return type (SIMPLE: returnType),
+  ---   tfacts  the signatures, struct definitions and labels in scope,
+  ---   tpend   the pending names (declared later in an enclosing block),
+  ---   tscope  the names declared in the current scope (a block, a function body with its
+  ---           parameters, or the top level).  A name is declared once per scope; an inner
+  ---           block may declare a name of an outer scope again, which hides it (C11 6.2.1p4;
+  ---           SIMPLE: Rho[X <- T]).
+  sorts TKind TMode TCell TCells Task Tasks .
+  ops tkTop tkFun tkBlk : -> TKind [ctor] .
+  ops tmTop tmBody : -> TMode [ctor] .
+  subsort TCell < TCells .
+  op noTCell : -> TCells [ctor] .
+  op __ : TCells TCells -> TCells [ctor assoc comm id: noTCell] .
+  op tkind : TKind -> TCell [ctor] .
+  op tmode : TMode -> TCell [ctor] .
+  op tk : K -> TCell [ctor] .
+  ops tenv tglob : Map{Var,CType} -> TCell [ctor] .
+  op tret : CType -> TCell [ctor] .
+  op tfacts : Facts -> TCell [ctor] .
+  op tpend : Map{Var,Bool} -> TCell [ctor] .
+  op tscope : Map{Var,Bool} -> TCell [ctor] .
+  subsort Task < Tasks .
+  op noTask : -> Tasks [ctor] .
+  op __ : Tasks Tasks -> Tasks [ctor assoc comm id: noTask] .
+  op task : TCells -> Task [ctor] .
+
+  op wellTyped : Program -> Bool .
+
+  vars T U : CType .
+  var I : Int .
+  var B : Bool .
+  var X : Var .
+  var E E1 E2 : Exp .
+  var LE : LExp .
+  var EL PL : ExpList .
+  var FID : FuncId .
+  var S S' : Stmt .
+  vars P P' : Program .
+  var LB : Label .
+  var L G M NL M1 M2 : Map{Var,CType} .
+  var F F' : Facts .
+  var ST : SType .
+  var SL : SList .
+  var PM PM' SC : Map{Var,Bool} .
+  vars K K' : K .
+  var CB : ConcBType .
+  var NA : Nat .
+  var V : Value .
+  var C : TCells .
+  var KD : TKind .
+
+  --- Maps and facts.
+  op lookupT : Var Map{Var,CType} -> TypeR .
+  eq lookupT(X, (X |-> T) ; L) = ty(T) .
+
+  --- Pending names.  A block declares its names when it is entered, and its declarations
+  --- are hoisted to the block entry at run time (hoistK).  So a use of a name before its
+  --- declaration in the same block would name the outer binding in C but the hoisted local
+  --- at run time: such a use is rejected.  PM[X] is true while X is pending and false once
+  --- its declaration is reached.
+  op isTrue : [Bool] -> Bool .
+  eq isTrue(true) = true .
+  eq isTrue(false) = false .
+  eq isTrue(undefined) = false .
+
+  op declsOf : SList -> Map{Var,Bool} .
+  eq declsOf(nilElem) = empty .
+  eq declsOf(< T X ; > SL) = insert(X, true, declsOf(SL)) .
+  eq declsOf(< LB : T X ; > SL) = insert(X, true, declsOf(SL)) .
+  eq declsOf(< S > SL) = declsOf(SL) [owise] .
+
+  op addDecls : Map{Var,Bool} Map{Var,Bool} -> Map{Var,Bool} .
+  eq addDecls(PM, empty) = PM .
+  eq addDecls(PM, (X |-> B) ; PM') = addDecls(insert(X, B, PM), PM') .
+
+  --- Functions: every body sees all signatures (mutual recursion); a top-level
+  --- call needs a definition that comes before it.
+  op sigOfDef : FuncId Facts -> FuncSig .
+  eq sigOfDef(FID, fdef(T FID(PL)) % F) = T FID(PL) .
+  op sigOfDecl : FuncId Facts -> FuncSig .
+  eq sigOfDecl(FID, fsig(T FID(PL)) % F) = T FID(PL) .
+
+  --- A parameter of array type (by value, or as the referenced type of U &) is rejected.
+  op arrPar : CType -> Bool .
+  ceq arrPar(T) = true if T :: AType /\ not T :: RType .
+  ceq arrPar(T) = false if not T :: AType /\ not T :: RType .
+  ceq arrPar(U &) = true if U :: AType .
+  ceq arrPar(U &) = false if not U :: AType .
+  op noArrParams : ExpList -> Bool .
+  eq noArrParams(nil) = true .
+  ceq noArrParams((T X, PL)) = noArrParams(PL) if not arrPar(T) .
+
+  --- Index check: a literal index is within 0 <= I < NA; any other expression passes.
+  op idxOk : Exp Nat -> Bool .
+  ceq idxOk(# I, NA) = true if I >= 0 /\ I < NA .
+  ceq idxOk(E, NA) = true if not E :: Value .
+
+  --- Parameters: a by-reference parameter U & X names an object of type U inside the callee.
+  op bindParams : ExpList -> Map{Var,CType} .
+  eq bindParams(nil) = empty .
+  ceq bindParams((T X, PL)) = insert(X, T, bindParams(PL)) if not T :: RType .
+  eq bindParams((U & X, PL)) = insert(X, U, bindParams(PL)) .
+
+  --- paramScope(PL): the parameter names, the first names declared in the scope of a
+  --- function body (C11 6.2.1p4: the parameters and the outermost block share one scope).
+  op paramScope : ExpList -> Map{Var,Bool} .
+  eq paramScope(nil) = empty .
+  eq paramScope((T X, PL)) = insert(X, true, paramScope(PL)) .
+
+  --- Declarations.  A struct member is a base type or a struct (okDecl); a variable may
+  --- also be an array of N > 0 elements (okVar).
+  op okDecl : CType Facts -> Bool .
+  ceq okDecl(T, F) = true if T :: ConcBType .
+  ceq okDecl(struct T, F) = true if sdef(struct T, M) % F' := F .
+  op okVar : CType Facts -> Bool .
+  ceq okVar(CB [ NA ], F) = true if NA > 0 .
+  ceq okVar(T, F) = true if not T :: AType /\ okDecl(T, F) = true .
+
+  --- Struct members.
+  op memberMap : Stmt Facts -> MemberR .
+  ceq memberMap(T X ;, F) = mm((X |-> T)) if okDecl(T, F) = true .
+  ceq memberMap(S S', F) = mm(M1 ; M2) if mm(M1) := memberMap(S, F) /\ mm(M2) := memberMap(S', F) .
+
+  --- ptrConv(U, T): a value of the pointer type U converts implicitly to the pointer type T
+  --- because one of them is void *.
+  op ptrConv : CType CType -> Bool .
+  eq ptrConv(void *, T *) = true .
+  eq ptrConv(T *, void *) = true .
+
+  op hasLab : Label Facts -> Bool .
+  eq hasLab(LB, lab(LB) % F) = true .
+  op hasTLab : Label Facts -> Bool .
+  eq hasTLab(LB, tlab(LB) % F) = true .
+
+  ------------------------------------------------------------
+  --- Strictness: an operand is typed, then checked ($tchk), then the next operand is
+  --- typed; $tres gives the result type.  SIMPLE: the strict attribute heats the operands
+  --- to types, the KResults, and a rule such as "int + int => int" applies.
+  ------------------------------------------------------------
+
+  eq tk(ty(T) ~> $tchk(T) ~> K) = tk(K) .
+  --- void * and any other pointer type convert to each other implicitly (C11 6.3.2.3p1, and
+  --- 6.5.16.1p1 for assignment, 6.5.2.2p7 for arguments, 6.8.6.4p3 for return).
+  ceq tk(ty(U) ~> $tchk(T) ~> K) = tk(K) if ptrConv(U, T) = true /\ U =/= T .
+  eq tk($tres(T) ~> K) = tk(ty(T) ~> K) .
+  --- SIMPLE: context ltype(HOLE) requires isLValue(HOLE).
+  ceq tk($tl(E) ~> K) = tk($te(E) ~> K) if E :: LExp .
+
+  ------------------------------------------------------------
+  --- Expressions
+  ------------------------------------------------------------
+
+  --- Literals.  SIMPLE: rule _:Int => int, rule _:Bool => bool.  The values of the
+  --- other modules give their own types with tyV (TEE-C-VALUE-TYPE, CRYPTO-C-VALUE-TYPE).
+  op tyV : Value -> TypeR .
+  eq tyV(# I) = ty(int) .
+  eq tyV(# B) = ty(bool) .
+  --- The null pointer is a void * (NULL, C11 7.19p3).
+  eq tyV(nullptr) = ty(void *) .
+  eq tk($te(V) ~> K) = tk(tyV(V) ~> K) .
+  --- unit has the type void, so return unit; is well typed in a void function only.
+  eq tk($te(unit) ~> K) = tk(ty(void) ~> K) .
+
+  --- Variables.  SIMPLE: <k> X => T </k> <tenv>... X |-> T ...</tenv>, and the gtenv when X is
+  --- not local.  A pending name has no type.
+  ceq task(tk($te(X) ~> K) tenv(L) tpend(PM) C)
+    = task(tk(ty(T) ~> K) tenv(L) tpend(PM) C)
+    if isTrue(PM[X]) = false /\ ty(T) := lookupT(X, L) .
+  ceq task(tk($te(X) ~> K) tenv(L) tglob(G) tpend(PM) C)
+    = task(tk(ty(T) ~> K) tenv(L) tglob(G) tpend(PM) C)
+    if isTrue(PM[X]) = false /\ $hasMapping(L, X) = false /\ ty(T) := lookupT(X, G) .
+
+  --- Operators.  SIMPLE: int + int => int, int <= int => bool, T == T => bool,
+  --- bool && bool => bool, ! bool => bool.
+  eq tk($te(E1 + E2) ~> K) = tk($te(E1) ~> $tchk(int) ~> $te(E2) ~> $tchk(int) ~> $tres(int) ~> K) .
+  eq tk($te(E1 - E2) ~> K) = tk($te(E1) ~> $tchk(int) ~> $te(E2) ~> $tchk(int) ~> $tres(int) ~> K) .
+  eq tk($te(E1 * E2) ~> K) = tk($te(E1) ~> $tchk(int) ~> $te(E2) ~> $tchk(int) ~> $tres(int) ~> K) .
+  eq tk($te(E1 / E2) ~> K) = tk($te(E1) ~> $tchk(int) ~> $te(E2) ~> $tchk(int) ~> $tres(int) ~> K) .
+  eq tk($te(E1 <= E2) ~> K) = tk($te(E1) ~> $tchk(int) ~> $te(E2) ~> $tchk(int) ~> $tres(bool) ~> K) .
+  eq tk($te(E1 && E2) ~> K) = tk($te(E1) ~> $tchk(bool) ~> $te(E2) ~> $tchk(bool) ~> $tres(bool) ~> K) .
+  eq tk($te(E1 || E2) ~> K) = tk($te(E1) ~> $tchk(bool) ~> $te(E2) ~> $tchk(bool) ~> $tres(bool) ~> K) .
+  eq tk($te(! E) ~> K) = tk($te(E) ~> $tchk(bool) ~> $tres(bool) ~> K) .
+  --- Equality: both operands have the same type, which is not a struct or an array.
+  eq tk($te(E1 == E2) ~> K) = tk($te(E1) ~> $teq(E2) ~> K) .
+  ceq tk(ty(T) ~> $teq(E2) ~> K) = tk($te(E2) ~> $tchk(T) ~> $tres(bool) ~> K)
+    if not T :: SType /\ not T :: AType .
+
+  --- Struct member (not in SIMPLE): the member type in the struct definition.
+  eq tk($te(LE . X) ~> K) = tk($te(LE) ~> $tmem(X) ~> K) .
+  ceq task(tk(ty(struct T) ~> $tmem(X) ~> K) tfacts(F) C)
+    = task(tk(ty(U) ~> K) tfacts(F) C)
+    if sdef(struct T, M) % F' := F /\ ty(U) := lookupT(X, M) .
+
+  --- Address and indirection (not in SIMPLE, C11 6.5.3.2).  &E of an lvalue E of type T has the
+  --- type T *, except for an array (arrays do not decay to pointers here).  *E of a pointer E
+  --- of type T * is an lvalue of type T; a void * is not dereferenced.
+  eq tk($te(addr(E)) ~> K) = tk($tl(E) ~> $tptr ~> K) .
+  ceq tk(ty(T) ~> $tptr ~> K) = tk(ty(T *) ~> K) if not T :: AType .
+  eq tk($te(deref(E)) ~> K) = tk($te(E) ~> $tderef ~> K) .
+  ceq tk(ty(T *) ~> $tderef ~> K) = tk(ty(T) ~> K) if T =/= void .
+  --- malloc returns a void * (C11 7.22.3.4), whatever the type of its initial content.  The null
+  --- pointer is a void * too (see C-AUX).
+  eq tk($te(malloc(E)) ~> K) = tk($te(E) ~> $tmal ~> K) .
+  ceq tk(ty(T) ~> $tmal ~> K) = tk(ty(void *) ~> K) if not T :: AType .
+
+  --- Array element.  SIMPLE: (T[])[int, Ts] => T[Ts].  The index must be an int; a literal
+  --- index is checked against the bounds (0 <= I < N).  A non-literal index is not checked
+  --- statically (see README): an out-of-range one is stuck at run time.
+  eq tk($te(LE [ E ]) ~> K) = tk($te(LE) ~> $tidx(E) ~> K) .
+  ceq tk(ty(CB [ NA ]) ~> $tidx(E) ~> K) = tk($te(E) ~> $tchk(int) ~> $tres(CB) ~> K)
+    if idxOk(E, NA) = true .
+
+  --- Calls.  SIMPLE: (Ts -> T)(Ts) => T.  A top-level call needs a definition before it,
+  --- see sigOfDef; a body sees every signature, see sigOfDecl.  A by-value parameter takes a value
+  --- of its type (a base type or a struct, which is copied); a by-reference parameter U & takes
+  --- an lvalue of type U (ltype).  An array is never a parameter.
+  ceq task(tk($te(FID(EL)) ~> K) tmode(tmTop) tfacts(F) C)
+    = task(tk($targs(PL, EL) ~> $tres(T) ~> K) tmode(tmTop) tfacts(F) C)
+    if T FID(PL) := sigOfDef(FID, F) .
+  ceq task(tk($te(FID(EL)) ~> K) tmode(tmBody) tfacts(F) C)
+    = task(tk($targs(PL, EL) ~> $tres(T) ~> K) tmode(tmBody) tfacts(F) C)
+    if T FID(PL) := sigOfDecl(FID, F) .
+  ceq tk($targs((T X, PL), (E, EL)) ~> K) = tk($te(E) ~> $targ(T) ~> $targs(PL, EL) ~> K)
+    if not T :: RType /\ not T :: AType .
+  ceq tk($targs((U & X, PL), (E, EL)) ~> K) = tk($tl(E) ~> $tchk(U) ~> $targs(PL, EL) ~> K)
+    if not U :: AType .
+  eq tk($targs(nil, nil) ~> K) = tk(K) .
+  eq tk(ty(T) ~> $targ(T) ~> K) = tk(K) .
+  ceq tk(ty(U) ~> $targ(T) ~> K) = tk(K) if ptrConv(U, T) = true /\ U =/= T .
+
+  ------------------------------------------------------------
+  --- Statements
+  ------------------------------------------------------------
+
+  --- Sequential composition.  SIMPLE: Stmt Stmt [seqstrict], and stmt stmt => stmt.
+  eq tk((P P') ~> K) = tk(P ~> P' ~> K) .
+  eq tk(stmt ~> P ~> K) = tk(P ~> K) .
+  eq tk(skip ~> K) = tk(stmt ~> K) .
+
+  --- Declarations.  SIMPLE: <k> T X; => stmt </k> <tenv> Rho => Rho[X <- T] </tenv>, and for
+  --- the top task <gtenv> requires notBool(X in keys(Rho)).  Here a name is declared once per
+  --- scope (tscope); a declaration in an inner block hides a name of an outer scope.  Reaching
+  --- the declaration makes the name not pending.
+  ceq task(tk((T X ;) ~> K) tenv(L) tpend(PM) tscope(SC) tfacts(F) C)
+    = task(tk(stmt ~> K) tenv(insert(X, T, L)) tpend(insert(X, false, PM)) tscope(insert(X, true, SC))
+           tfacts(F) C)
+    if $hasMapping(SC, X) = false /\ okVar(T, F) = true .
+
+  --- Assignment.  SIMPLE: context (HOLE => ltype(HOLE)) = _, and T = T => T.  A struct is
+  --- assigned from a struct of the same type (copied member by member).  An array is not
+  --- assigned.
+  eq tk((E1 := E2 ;) ~> K) = tk($tl(E1) ~> $tasg(E2) ~> K) .
+  ceq tk(ty(T) ~> $tasg(E2) ~> K) = tk($te(E2) ~> $tchk(T) ~> stmt ~> K) if not T :: AType .
+
+  --- Expression statements (calls for their effect).  SIMPLE: _:Type; => stmt.
+  ceq tk((E ;) ~> K) = tk($te(E) ~> $tstmt ~> K) if not E :: PExp .
+  ceq tk(ty(T) ~> $tstmt ~> K) = tk(stmt ~> K) if not T :: AType .
+
+  --- Conditionals and loops.  SIMPLE: if (bool) block else block => stmt, and
+  --- while (bool) block => stmt, where a block {S} => block spawns a task with the same tenv
+  --- and returnType.  Here each branch is such a task (tkBlk), which also gets the pending
+  --- names of its own declarations and a new scope.  Its declarations are not kept after it.
+  eq tk(if(E){S}else{S'} ~> K) = tk($te(E) ~> $tchk(bool) ~> $tif(S, S') ~> K) .
+  eq tk(while(E){S} ~> K) = tk($te(E) ~> $tchk(bool) ~> $twhile(S) ~> K) .
+  eq task(tkind(KD) tk($tif(S, S') ~> K) tpend(PM) tscope(SC) C)
+    = task(tkind(KD) tk(stmt ~> K) tpend(PM) tscope(SC) C)
+      task(tkind(tkBlk) tk(S) tpend(addDecls(PM, declsOf(getSList(S)))) tscope(empty) C)
+      task(tkind(tkBlk) tk(S') tpend(addDecls(PM, declsOf(getSList(S')))) tscope(empty) C) .
+  eq task(tkind(KD) tk($twhile(S) ~> K) tpend(PM) tscope(SC) C)
+    = task(tkind(KD) tk(stmt ~> K) tpend(PM) tscope(SC) C)
+      task(tkind(tkBlk) tk(S) tpend(addDecls(PM, declsOf(getSList(S)))) tscope(empty) C) .
+  --- SIMPLE: a finished task with a tenv is dissolved.
+  eq task(tkind(tkBlk) tk(stmt) C) = noTask .
+
+  --- Labels and goto (not in SIMPLE).  The top scope sees the top-level labels, a body
+  --- scope the labels of its own function body.
+  ceq task(tk((LB : S) ~> K) tmode(tmTop) tfacts(F) C) = task(tk(S ~> K) tmode(tmTop) tfacts(F) C)
+    if hasTLab(LB, F) = true .
+  ceq task(tk((LB : S) ~> K) tmode(tmBody) tfacts(F) C) = task(tk(S ~> K) tmode(tmBody) tfacts(F) C)
+    if hasLab(LB, F) = true .
+  ceq task(tk((goto LB ;) ~> K) tmode(tmTop) tfacts(F) C) = task(tk(stmt ~> K) tmode(tmTop) tfacts(F) C)
+    if hasTLab(LB, F) = true .
+  ceq task(tk((goto LB ;) ~> K) tmode(tmBody) tfacts(F) C) = task(tk(stmt ~> K) tmode(tmBody) tfacts(F) C)
+    if hasLab(LB, F) = true .
+
+  --- Return.  SIMPLE: <k> return T; => stmt </k> <returnType> T </returnType>.  Only in a body
+  --- scope, and not of a struct.
+  eq tk((return E ;) ~> K) = tk($te(E) ~> $tret ~> K) .
+  ceq task(tk(ty(T) ~> $tret ~> K) tmode(tmBody) tret(T) C) = task(tk(stmt ~> K) tmode(tmBody) tret(T) C)
+    if not T :: SType .
+  ceq task(tk(ty(U) ~> $tret ~> K) tmode(tmBody) tret(T) C) = task(tk(stmt ~> K) tmode(tmBody) tret(T) C)
+    if ptrConv(U, T) = true /\ U =/= T .
+
+  --- Struct declaration (top level, not in SIMPLE).
+  ceq task(tk((ST {S} ;) ~> K) tmode(tmTop) tfacts(F) C) = task(tk(stmt ~> K) tmode(tmTop) tfacts(sdef(ST, NL) % F) C)
+    if mm(NL) := memberMap(S, F) .
+
+  --- Function definition (top level).  SIMPLE: T F(Ps) S => getTypes(Ps) -> T F; and a task
+  --- <k> mkDecls(Ps) S </k> <tenv> .Map </tenv> <returnType> T </returnType> is spawned.  Here the
+  --- parameters are bound in the tenv of the body task (bindParams), and the globals it sees are
+  --- the top-level variables declared so far (tglob).  A user function cannot take the name
+  --- of a TEE API (those are library functions only).
+  ceq task(tk((T FID(PL) {S}) ~> K) tmode(tmTop) tenv(L) tfacts(F) C)
+    = task(tk(stmt ~> K) tmode(tmTop) tenv(L) tfacts(fdef(T FID(PL)) % F) C)
+      task(tkind(tkFun) tmode(tmBody) tk(S) tenv(bindParams(PL)) tglob(L) tret(T)
+           tfacts(F % collectB(getSList(S))) tpend(declsOf(getSList(S))) tscope(paramScope(PL)))
+    if not FID :: TeeApi /\ not T :: AType /\ noArrParams(PL) = true .
+  --- A finished function body is dissolved.
+  eq task(tkind(tkFun) tk(stmt) C) = noTask .
+
+  --- Pre-collection: signatures and labels, as the runtime gathers them (C-AUX,
+  --- labelsOf).  Only the direct elements of the top-level sequence (or of a
+  --- function body) are labels; a label inside a nested block is not collected.
+  op collectF : Program -> Facts .
+  op collectT : SList -> Facts .
+  op collectB : SList -> Facts .
+  eq collectF(P) = collectT(getSList(P)) .
+  eq collectT(< T FID(PL) {S} > SL) = fsig(T FID(PL)) % collectT(SL) .
+  eq collectT(< LB : S > SL) = tlab(LB) % collectT(SL) .
+  --- An element that holds several statements (a library constant such as syscalls) is split
+  --- first.
+  eq collectT(< S S' > SL) = collectT(< S > < S' > SL) .
+  eq collectT(< S > SL) = collectT(SL) [owise] .
+  eq collectT(nilElem) = nofact .
+  eq collectB(< LB : S > SL) = lab(LB) % collectB(SL) .
+  eq collectB(< S > SL) = collectB(SL) [owise] .
+  eq collectB(nilElem) = nofact .
+
+  --- The program is the k cell of the top task.  SIMPLE: <k> $PGM:Stmt </k> in one task.  It
+  --- is well typed when the top task has finished and every spawned task has been dissolved.
+  ceq wellTyped(P) = true
+    if task(tkind(tkTop) tk(stmt) C)
+         := task(tkind(tkTop) tmode(tmTop) tk(P) tenv(empty) tglob(empty) tret(noRet)
+                 tfacts(collectF(P)) tpend(empty) tscope(empty)) .
+endfm

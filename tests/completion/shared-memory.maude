@@ -1,16 +1,16 @@
---- Shared memory of a client and a TA (src/shared-memory.maude): the TA runs on the memory of
---- its client.  An RA invokes a TA service through the TrustedOS, and a TA invokes another TA
---- through a session, with the locations of its objects b and res as the arguments.
+--- Shared memory of a client and a TA (src/shared-memory.maude): the values of the shared objects
+--- go to the TA, and its results come back to them.  An RA invokes a TA service through the
+--- TrustedOS, and a TA invokes another TA through a session, with its objects b and res shared.
 load ../../src/main
 load ../cases/aux
 
 mod SHM-TEST is
   pr TEE-BEHAVIOR .
-  pr TEE-IMP-BEHAVIOR .
+  pr TEE-C-BEHAVIOR .
   pr TEST-AUX .
 
   op sid : -> SessionId [ctor] .
-  ops buf b res r rr bb : -> Var [ctor] .
+  ops buf b res r rr oph : -> Var [ctor] .
   ops check fill : -> FuncId [ctor] .
   var P : Program .
   var S : Program .
@@ -19,19 +19,20 @@ mod SHM-TEST is
   --- dfProg reads the input through the pointer buf and copies it to the output res.
   op dfProg : -> Program .
   eq dfProg = void check(char * buf, char & res) {
-      if (deref(buf) == # data(1)) { res := deref(buf) ; } else { res := # noData ; } } .
+      if (deref(buf) == # data(1)) { res := deref(buf) ; } else { res := # noData ; } return unit ; } .
   --- fillProg writes two fragments through the pointer and data(5) to the output.
   op fillProg : -> Program .
   eq fillProg = void fill(char * buf, char & res) {
-      deref(buf) := # (data(7) data(8)) ; res := # data(5) ; } .
-  --- panicProg writes data(7) through the pointer and then panics: a null handle is a programmer
-  --- error for TEE_ReadObjectData.
+      deref(buf) := # (data(7) data(8)) ; res := # data(5) ; return unit ; } .
+  --- panicProg writes data(7) through the pointer and then panics: TEE_ResetOperation on an
+  --- operation without a key panics the TA (reset-oper-fail).
   op panicProg : -> Program .
   eq panicProg = void fill(char * buf, char & res) {
-      TEE-Result rr ; char bb ;
+      TEE-Result rr ; TEE-OperationHandle oph ;
       deref(buf) := # data(7) ;
-      rr := readObjData(# null, # dataSize(1), addr(bb)) ;
-      res := # data(5) ; } .
+      rr := allocOperation(# algAesCtr, # modeEncrypt, # 128, oph) ;
+      resetOperation(oph) ;
+      res := # data(5) ; return unit ; } .
 
   --- cliProg(F): the RA sets b to data(1) and res to noData, and calls F with the locations
   --- of b and res; r gets the return code.
@@ -42,20 +43,22 @@ mod SHM-TEST is
     r := teecInvokeCommand(# sid, # F, (addr(b), addr(res))) ; .
 
   --- client(S, P): the RA testRa runs the program S, and has a session sid with testTa, which
-  --- runs P.  The TrustedOS records the session with its client testRa.
+  --- runs P.
   op client : Program Program -> Configuration .
   eq client(S, P) =
     < testRa : RichApp | prog : S, proc : mkConf(S) >
-    < osId : TrustedOS | sess : (sid |-> session(reeClient(testRa), testTa)) >
-    < testTa : TrustedApp | proc : none, prog : P, client-service : none,
+    < osId : TrustedOS | ta-instances : empty >
+    < sid : Session | source : testRa, destination : testTa, is-smc : true, state : idle >
+    < testTa : TrustedApp | proc : none, prog : P, client-service : none, sessions : 1,
         status : (normal).AppStatus, api-call : noCall, counter : 0, storage : oid(0, testTa),
         os-kernel : osId > .
 
   --- callee(P): testTa has a session sid with otherTa, which runs P.
   op callee : Program -> Configuration .
   eq callee(P) =
-    < osId : TrustedOS | sess : (sid |-> session(taClient(testTa), otherTa)) >
-    < otherTa : TrustedApp | proc : none, prog : P, client-service : none,
+    < osId : TrustedOS | ta-instances : empty >
+    < sid : Session | source : testTa, destination : otherTa, is-smc : false, state : idle >
+    < otherTa : TrustedApp | proc : none, prog : P, client-service : none, sessions : 1,
         status : (normal).AppStatus, api-call : noCall, counter : 0, storage : oid(0, otherTa),
         os-kernel : osId > .
 endm
@@ -82,49 +85,51 @@ search [1] in SHM-TEST : client(cliProg(fill), fillProg) =>!
                     MEM:Map{Nat,Value?}) KS:KConfig) >
   C:Configuration .
 
---- A TA that panics passes back the memory as it was at the panic: the RA sees data(7), which
---- the TA wrote before the panic, in b, res is unchanged, and the return code is target-dead.
+--- A TA that panics returns no results: b and res of the RA are unchanged, although the TA wrote
+--- data(7) to its copy of b before the panic, and the return code is target-dead.
 search [1] in SHM-TEST : client(cliProg(fill), panicProg) =>!
   < testRa : RichApp | prog : P:Program,
       proc : (k(.K) env((b |-> LB:Nat) ; (res |-> LR:Nat) ; (r |-> LC:Nat) ; ENV:Map{Var,Nat})
-              store((LB:Nat |-> # data(7)) ; (LR:Nat |-> # (nil).List{Data}) ; (LC:Nat |-> # errorTargetDead) ;
+              store((LB:Nat |-> # data(1)) ; (LR:Nat |-> # (nil).List{Data}) ; (LC:Nat |-> # errorTargetDead) ;
                     MEM:Map{Nat,Value?}) KS:KConfig) >
   < testTa : TrustedApp | status : panic, AS:AttributeSet >
   C:Configuration .
 
 --- The TA has no other state of the call: once the RA has its result, the TA has no proc and no
---- client-service, and no message is left.
+--- client-service, the session is idle again, and no message is left.
 search [1] in SHM-TEST : client(cliProg(fill), fillProg) =>!
   < testRa : RichApp | prog : P:Program, proc : (k(.K) KS:KConfig) >
   < osId : TrustedOS | OSATTS:AttributeSet >
+  < sid : Session | state : idle, SSATTS:AttributeSet >
   < testTa : TrustedApp | proc : none, client-service : none, AS:AttributeSet > .
 
 ------------------------------------------------------------
 --- A TA calls another TA
 ------------------------------------------------------------
 
---- testTa sends reqInvoke for fill in its session sid with its memory, where b is location 0
---- and res location 1; otherTa serves it on that memory, and the memory comes back with the two
---- fragments at 0 and data(5) at 1.
+--- testTa calls TEE_InvokeTACommand for fill in its session sid with its objects b (location 0)
+--- and res (location 1) shared; otherTa serves it on their values, and the results come back to
+--- them: the two fragments at 0 and data(5) at 1.
 search [1] in SHM-TEST :
-  (msg reqInvoke[# sid # fill # cstore((0 |-> # data(1)) ; (1 |-> # noData), 2, empty) # (loc(0) loc(1))]
-    from testTa to osId)
+  < testTa : TrustedApp | status : (normal).AppStatus, os-kernel : osId,
+      api-call : init(TeeInvokeTACommand[# oid(1, testTa) # fill loc(0) loc(1)]),
+      proc : (k(.K) store((0 |-> # data(1)) ; (1 |-> # noData)) nextLoc(2) arrlen(empty)) >
+  < oid(1, testTa) : TaSessionHandle | session : sid >
   callee(fillProg)
   =>!
-  (msg finishReqInvoke[# cstore((0 |-> # (data(7) data(8))) ; (1 |-> # data(5)) ; MEM:Map{Nat,Value?},
-                                L:Nat, AL:Map{Nat,Nat}) # originTrustedApp # success]
-    from osId to testTa)
+  < testTa : TrustedApp | api-call : return(TeeInvokeTACommand[# success # originTrustedApp]),
+      proc : (k(.K) store((0 |-> # (data(7) data(8))) ; (1 |-> # data(5))) KS:KConfig), AS:AttributeSet >
   C:Configuration .
 
---- If otherTa panics, testTa gets target-dead from the TEE, with the memory as otherTa left it:
---- data(7) at 0, and res unchanged at 1.
+--- If otherTa panics, testTa gets target-dead from the TEE, and b and res are unchanged.
 search [1] in SHM-TEST :
-  (msg reqInvoke[# sid # fill # cstore((0 |-> # data(1)) ; (1 |-> # noData), 2, empty) # (loc(0) loc(1))]
-    from testTa to osId)
+  < testTa : TrustedApp | status : (normal).AppStatus, os-kernel : osId,
+      api-call : init(TeeInvokeTACommand[# oid(1, testTa) # fill loc(0) loc(1)]),
+      proc : (k(.K) store((0 |-> # data(1)) ; (1 |-> # noData)) nextLoc(2) arrlen(empty)) >
+  < oid(1, testTa) : TaSessionHandle | session : sid >
   callee(panicProg)
   =>!
-  (msg finishReqInvoke[# cstore((0 |-> # data(7)) ; (1 |-> # (nil).List{Data}) ; MEM:Map{Nat,Value?},
-                                L:Nat, AL:Map{Nat,Nat}) # originTee # errorTargetDead]
-    from osId to testTa)
-  < otherTa : TrustedApp | status : panic, AS:AttributeSet >
+  < testTa : TrustedApp | api-call : return(TeeInvokeTACommand[# errorTargetDead # originTee]),
+      proc : (k(.K) store((0 |-> # data(1)) ; (1 |-> # (nil).List{Data})) KS:KConfig), AS:AttributeSet >
+  < otherTa : TrustedApp | status : panic, AS2:AttributeSet >
   C:Configuration .

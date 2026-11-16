@@ -85,7 +85,9 @@ endom
 --- @feature core
 fmod HANDLE-FLAG is
   sort HandleFlag .
-  ops init keySet extract : -> HandleFlag [ctor] .
+  op init : -> HandleFlag [ctor] .
+  op keySet : -> HandleFlag [ctor] .
+  op extract : -> HandleFlag [ctor] .
 endfm
 
 view HandleFlag from TRIV to HANDLE-FLAG is
@@ -161,51 +163,43 @@ omod HANDLE-AUX is
   pr OBJECT-ENUM-HANDLE .
   pr OPERATION-HANDLE .
   pr HANDLE-ID-GEN .
-  pr DATA-POSITION .
+  pr NAT .
   pr OPERATION-CLASS .
 
   var N : Nat .
-  var TK : Oid .
-  var DATAFLAGS : Set{DataAccessFlag} .
-  var HANDLE : Oid .
+  var O : Oid .
+  var FLAGS : Set{DataAccessFlag} .
+  var HI : Oid .
   var OI : Oid .
-  var OC : OpClass .
+  var CLASS : OpClass .
   var SID : SessionId .
 
-  --- The fresh*Handle operators create a new handle object with identifier oid(N, TK) in the
+  --- The fresh*Handle operators create a new handle object with identifier oid(N, O) in the
   --- initial state of its handle class.
   op freshTransientHandle : Nat Oid Oid -> Configuration .
   op freshPersistentHandle : Nat Oid Set{DataAccessFlag} Oid -> Configuration .
   op freshEnumeratorHandle : Nat Oid Oid -> Configuration .
-  op freshOperationHandle : Nat Oid Oid OpClass -> Configuration .
   op freshSessionHandle : Nat Oid SessionId -> Configuration .
   
-  --- nullHandle(HANDLE): true only for the null handle.
+  --- nullHandle(HI): true only for the null handle.
   op nullHandle : Oid -> Bool .
   eq nullHandle(null) = true .
-  ---@dmc scope(TEE-BEHAVIOR, OVERWRITE-INV, LOST-UPDATE-INV)
-  ---@dmc owise enumerate(arg1)
-  eq nullHandle(HANDLE) = false [owise] .
+  eq nullHandle(HI) = false [owise] .
 
-  eq freshTransientHandle(N , TK , OI)
-   = < oid(N , TK) : ObjHandle | oid : OI,
+  eq freshTransientHandle(N , O , OI)
+   = < oid(N , O) : ObjHandle | oid : OI,
                                          flags : empty,
                                          pos : 0 > .
 
-  eq freshPersistentHandle(N , TK , DATAFLAGS , OI)
-   = < oid(N , TK) : ObjHandle | oid : OI,
-                                         flags : DATAFLAGS,
+  eq freshPersistentHandle(N , O , FLAGS , OI)
+   = < oid(N , O) : ObjHandle | oid : OI,
+                                         flags : FLAGS,
                                          pos : 0 > .
   
-  eq freshEnumeratorHandle(N , TK , OI)
-   = < oid(N , TK) : ObjectEnumHandle | oid : OI, is-initialized : false > .
+  eq freshEnumeratorHandle(N , O , OI)
+   = < oid(N , O) : ObjectEnumHandle | oid : OI, is-initialized : false > .
 
-  eq freshOperationHandle(N , TK , OI, OC)
-   = < oid(N , TK) : OpHandle | oid : OI, state : handleState(empty),
-                                            key-material-set : false,
-                                            opclass : OC > .
-
-  eq freshSessionHandle(N, TK, SID)
-  = < oid(N, TK) : TaSessionHandle | session : SID,
+  eq freshSessionHandle(N, O, SID)
+  = < oid(N, O) : TaSessionHandle | session : SID,
                                            is-initialized : true > .
 endom

@@ -1,0 +1,1031 @@
+------------------------------------------------------------
+--- C types of the TEE API values
+------------------------------------------------------------
+
+--- The C types of the TEE API values are the C types of the GlobalPlatform API (see
+--- TEE-C-VALUE-TYPE).  A C typedef is an alias, written with - for _: TEE-Result is int, as
+--- TEE_Result is uint32_t, and a handle type is a pointer to an opaque struct, as
+--- TEE_ObjectHandle is struct __TEE_ObjectHandle *.  The integer types of the API (uint32_t,
+--- size_t, the enumerations) are int, so object types, algorithms, modes, flags, sizes and
+--- origins are ints.  The structs of the API whose content the model does not show are opaque
+--- types: TEE-Attribute (TEE_Attribute; an attribute array is one value), TEE-Param (TEE_Param;
+--- the four parameters are one value), TEE-UUID and TEEC-Session.
+--- A buffer of the API (data, an object identifier, an attribute value) is a void * to an object
+--- of type char that holds the whole content (see char in C-BTYPE): a stub reads an input
+--- buffer with inBuf (inId for an object identifier) and writes an output buffer through deref.
+--- The content values (data, file names, attribute values) are chars, and an array of
+--- attribute identifiers is an int.
+--- @kind data
+--- @feature c
+fmod TEE-C-TYPE is
+  pr C-BTYPE .
+  pr C-STYPE .
+  ops TEE-Result TEE-ObjectHandle TEE-OperationHandle TEE-TASessionHandle TEE-ObjectEnumHandle : -> ConcBType .
+  ops TeeObjectHandle TeeOperationHandle TeeTASessionHandle TeeObjectEnumHandle : -> CType [ctor] .
+  eq TEE-Result = int .
+  eq TEE-ObjectHandle = (struct TeeObjectHandle) * .
+  eq TEE-OperationHandle = (struct TeeOperationHandle) * .
+  eq TEE-TASessionHandle = (struct TeeTASessionHandle) * .
+  eq TEE-ObjectEnumHandle = (struct TeeObjectEnumHandle) * .
+  ops TEE-Attribute TEE-Param TEE-UUID TEEC-Session : -> ConcBType [ctor] .
+endfm
+
+------------------------------------------------------------
+--- Client API C Value
+------------------------------------------------------------
+
+--- @kind interface
+--- @feature c
+fmod TEE-C-API is
+  pr QID .
+  pr TEE-API .
+  pr C-FUNC-SIG .
+
+  subsort Qid < Var .
+  --- A TEE API name is a function identifier: TeeApi < FuncId (FUNC-ID).
+endfm
+
+--- This module declares the parameters and the result of each TEE API function.  Each API
+--- group gives the equations of its functions in its own TEE-CALL module.
+
+--- @kind program
+--- @feature c
+fmod TEE-API-C-PROG-AUX is
+  pr C-PROGRAM .
+  pr TEE-C-API .
+  pr TEE-C-TYPE .
+
+  --- getFuncParams(F): the parameters of the TEE API F as PL | IN | OUT (App. D.2): its
+  --- parameter list PL (the C declaration of each parameter), its input parameters IN, whose
+  --- values the call carries ($in), and its output parameters OUT, to which the values that it
+  --- returns are assigned ($out).  An input buffer is read with inBuf (inId for an object
+  --- identifier), and an output buffer is written through deref.
+  --- The first output of every API function is ret, which assign declares (TEE-API-C-CALL): the
+  --- return code, the first value that F returns, is assigned to it, and the call returns it.  A
+  --- void function of the API returns # noReturnCode, which a program does not use.
+  --- ParamSig and _|_|_ are those of PARAM-LIST (src/lang.maude).
+  op getFuncParams : FuncId -> ParamSig .
+
+  --- The parameter names of the API functions (App. D.2: ops fileId flags handle data optHandle).
+  ops TO algo attr attrs buf chunk cmd data dataFlags dest fileId handle id info iv keyHandle
+      keySize mac mode msg newId obj objType offset opHandle optHandle orig params ret sess size
+      src storageId time value whence : -> Var [ctor] .
+endfm
+
+--- This module defines C call and return for TEE API.
+
+--- @kind interface
+--- @feature c
+mod TEE-API-C-CALL is
+  pr TEE-API .
+  pr TEE-API-CALL .
+  pr TEE-API-C-PROG-AUX .             --- ret
+  pr TEE-C-TYPE .                     --- TEE-Result
+  pr C-STMT .
+  pr C-INTERNAL .
+  pr RETURN-VALUE .
+
+  --- assign(OUT, VL) (CALL-TASK, App. D.2): the values VL that an API function returns are
+  --- assigned in order to its outputs OUT ($assign).  The first value is the return code, and
+  --- the first output tells how the code becomes the value of the call (a C call is an
+  --- expression):
+  ---   * ret, for a TEE API call of a TA (getFuncParams): the call runs in a function frame, see
+  ---     tee-api-call, so the variable ret is declared, takes the code, and is returned.
+  ---   * $result, for a client call of an RA: the code is the value of the call, after the
+  ---     other values are assigned (RICH-APP-C-BEHAVIOR).
+  --- The assignment ends with the outputs or with the values: a call that fails returns only
+  --- its code.
+  vars OUT : ExpList .
+  var VL : List{Arg} .
+  var V : Value .
+  var RC : ReturnCode .
+  op $result : -> Exp [ctor] .
+  eq assign((ret, OUT), VL)
+   = alloc(TEE-Result ret) ~> $assign(vals(VL), (ret, OUT)) ~> return ret ; .
+
+  --- vals(VL): the values VL as a list of expressions.
+  op vals : List{Arg} -> ExpList .
+  eq vals(V VL) = V , vals(VL) .
+  eq vals(nil) = nil .
+endm
+
+--- @kind program
+--- @feature c
+fmod TEE-C-STRUCT-DECL is
+  pr C-PROGRAM .
+
+--- object info
+  op objectType : -> Var [ctor] .
+  op objectSize : -> Var [ctor] .
+  op maxObjectSize : -> Var [ctor] . 
+  op objectUsage : -> Var [ctor] .
+  op dataSize : -> Var [ctor] .
+  op dataPosition : -> Var [ctor] .
+  op handleFlags : -> Var [ctor] .
+
+--- TEE_Time
+  op seconds : -> Var [ctor] .
+  op millis : -> Var [ctor] .
+
+--- TODO : change this to a list
+  op param1 : -> Var [ctor] .
+  op param2 : -> Var [ctor] .
+  op param3 : -> Var [ctor] .
+  op param4 : -> Var [ctor] .
+endfm
+
+--- This module defines C call and return for transient object functions.
+
+--- @kind interface
+--- @related TRANSIENT-OBJECT-BEHAVIOR
+--- @feature transient
+mod TRANSIENT-OBJECT-TEE-CALL is
+  pr TEE-API-C-CALL .
+  pr TEE-ATTRIBUTE-AUX .
+  pr TRANSIENT-OBJECT-FUNC .
+  pr HANDLE .
+  pr HANDLE-ID-GEN .
+  pr ID-VALUE .
+  pr RETURN-VALUE .
+  pr GENERIC-OBJECT-VALUE .
+  pr PERSISTENT-OBJECT-VALUE .
+  pr BASIC-DATA .
+  pr TEE-API-C-PROG-AUX .
+
+------------------------------------------------------------
+--- 'TEE_AllocateTransientObject' Syscall
+------------------------------------------------------------
+
+  --- allocateTransientObject: the object type and the key size are passed as type and size.  On
+  --- success the new handle is stored in the out argument; an error returns no handle.
+  eq getFuncParams(allocateTransientObject)
+   = int objType, int size, TEE-ObjectHandle & handle |
+          objType, size |
+          ret, handle .
+
+------------------------------------------------------------
+--- 'TEE_FreeTransientObject' Syscall
+------------------------------------------------------------
+
+  eq getFuncParams(freeTransientObject)
+   = TEE-ObjectHandle & handle |
+          handle |
+          ret .
+
+endm
+
+--- This module defines C call and return for persistent object functions.
+
+--- @kind interface
+--- @related PERSISTENT-OBJECT-BEHAVIOR
+--- @feature persistent
+mod PERSISTENT-OBJECT-TEE-CALL is
+  pr TEE-API-C-CALL .
+  pr HANDLE .
+  pr HANDLE-ID-GEN .
+  pr ID-VALUE .
+  pr RETURN-VALUE .
+  pr PERSISTENT-OBJECT-FUNC .
+  pr DATA-STREAM-OBJECT-FUNC .
+  pr PERSISTENT-OBJECT-VALUE .
+  pr TEE-API-C-PROG-AUX .
+
+------------------------------------------------------------
+--- 'TEE_OpenPersistentObject' Syscall
+------------------------------------------------------------
+
+  eq getFuncParams(openPersistentObject)
+   = int storageId, void * fileId, int dataFlags, TEE-ObjectHandle & handle |
+          storageId, inId(fileId), dataFlags |
+          ret, handle .
+
+------------------------------------------------------------
+--- 'TEE_CreatePersistentObject' Syscall
+------------------------------------------------------------
+
+  eq getFuncParams(createPersistent)
+   = int storageId, void * fileId, int dataFlags, TEE-ObjectHandle handle, void * data,
+           int size, TEE-ObjectHandle & optHandle |
+          inId(fileId), dataFlags, handle, inBuf(data), optHandle |
+          ret, optHandle .
+
+------------------------------------------------------------
+--- 'TEE_CloseAndDeletePersistentObject1' Syscall
+------------------------------------------------------------
+
+  
+
+  eq getFuncParams(closeAndDeletePersistentObject1)
+   = TEE-ObjectHandle & handle |
+          handle |
+          ret, handle .
+
+------------------------------------------------------------
+--- 'TEE_RenamePersistentObject' Syscall
+------------------------------------------------------------
+
+--- The parameters of the data stream functions.  They are here, so that in a build without the data stream
+--- group a program with these calls is still well typed; a call of them is then stuck at
+--- api-call init.
+--- readObjData follows TEE_ReadObjectData: the result is the return value (ret), and the data
+--- read is written to the output parameter 'buf (assign).
+
+  eq getFuncParams(readObjData)
+   = TEE-ObjectHandle obj, int size, void * buf |
+          obj, size |
+          ret, deref(buf) .
+
+  eq getFuncParams(writeObjectData)
+   = TEE-ObjectHandle obj, void * buf |
+          obj, inBuf(buf) |
+          ret .
+
+  eq getFuncParams(truncateObjectData)
+   = TEE-ObjectHandle obj, int size |
+          obj, size |
+          ret .
+
+  eq getFuncParams(seekObjectData)
+   = TEE-ObjectHandle obj, int offset, int whence |
+          obj, offset, whence |
+          ret .
+
+  eq getFuncParams(renamePersistentObject)
+   = TEE-ObjectHandle obj, void * newId |
+          obj, inId(newId) |
+          ret .
+
+endm
+
+--- This module defines C call and return for generic object functions.
+
+--- @kind interface
+--- @related GENERIC-OBJECT-BEHAVIOR
+--- @feature generic
+mod GENERIC-OBJECT-TEE-CALL is
+  pr TEE-API-C-CALL .
+  pr TEE-API-C-PROG-AUX .
+  pr HANDLE .
+  pr HANDLE-ID-GEN .
+  pr ID-VALUE .
+  pr RETURN-VALUE .
+  pr GENERIC-OBJECT-FUNC .
+  pr GENERIC-OBJECT-VALUE .
+  pr PERSISTENT-OBJECT-VALUE .
+  pr DATA-STREAM-OBJECT-VALUE .
+  pr TEE-C-STRUCT-DECL .
+
+endm
+
+--- This module defines C call and return for enumerator object functions.
+
+--- @kind interface
+--- @related ENUMERATOR-OBJECT-BEHAVIOR
+--- @feature enumerator
+mod ENUMERATOR-OBJECT-TEE-CALL is
+  pr TEE-API-C-CALL .
+  pr ENUMERATOR-OBJECT-FUNC .
+  pr HANDLE .
+  pr HANDLE-ID-GEN .
+  pr ID-VALUE .
+  pr RETURN-VALUE .
+  pr GENERIC-OBJECT-VALUE .
+  pr PERSISTENT-OBJECT-VALUE .
+  pr DATA-STREAM-OBJECT-VALUE .
+  pr TEE-C-STRUCT-DECL .
+
+endm
+
+--- This module defines C call and return for data stream access functions.
+
+--- @kind interface
+--- @related DATA-STREAM-OBJECT-BEHAVIOR
+--- @feature data-stream
+mod DATA-STREAM-OBJECT-TEE-CALL is  
+  pr TEE-API-C-CALL .
+  pr TEE-API-C-PROG-AUX .
+  pr DATA-STREAM-OBJECT-FUNC .
+  pr HANDLE .
+  pr ID-VALUE .
+  pr RETURN-VALUE .
+  pr PERSISTENT-OBJECT-VALUE .
+  pr DATA-STREAM-OBJECT-VALUE .
+
+  var HI : Oid .
+  var DATASIZE : Nat .
+  var OFST : Int .
+  var DATA : List{Data} .
+  var WHENCE : SeekType .
+  var RET : ReturnCode .
+  vars E E' : Exp .
+  var EL : ExpList .
+
+endm
+--- This module defines C call and return for internal client API functions.
+
+--- @kind interface
+--- @related SESSION-BEHAVIOR
+--- @feature client
+mod TEE-INTERNAL-CLIENT-CALL is
+  pr TEE-API-C-CALL .
+  pr TEE-INTERNAL-CLIENT-FUNC .
+  pr TEE-INTERNAL-CLIENT-VALUE .
+  pr HANDLE .
+  pr ID-VALUE .
+  pr TEE-C-STRUCT-DECL .
+  pr RETURN-VALUE .
+  pr TEE-API-C-PROG-AUX .
+
+------------------------------------------------------------
+--- 'TEE_OpenTASession' Syscall
+------------------------------------------------------------
+
+  --- TeeOpenTASession: on failure the handle is TEE_HANDLE_NULL (# null) and the origin is the TEE.
+  eq getFuncParams(TeeOpenTASession)
+   = TEE-UUID dest, int TO, TEE-TASessionHandle & handle, int & orig |
+          dest, TO |
+          ret, handle, orig .
+
+------------------------------------------------------------
+--- 'TEE_InvokeTACommand' Syscall
+------------------------------------------------------------
+
+  --- TeeInvokeTACommand: the return code goes to ret and the return origin (TEE_ORIGIN_TRUSTED_APP,
+  --- or TEE_ORIGIN_TEE when the TEE answers) to 'orig.  A parameter that is a location of the caller
+  --- is a shared object: its value goes to the destination TA, and the result comes back to it,
+  --- see invoke-ta-command-request and -finish in SESSION-BEHAVIOR, copyIn and copyOut.
+  eq getFuncParams(TeeInvokeTACommand)
+   = TEE-TASessionHandle & sess, int cmd, TEE-Param params, int & orig |
+          sess, cmd, params |
+          ret, orig .
+
+endm
+
+--- The C type of each TEE value.  Imported by TEE-API-C-PROGRAM, so every
+--- module that runs programs with the syscalls can type check them.
+
+--- @kind interface
+--- @feature c
+mod TEE-C-VALUE-TYPE is
+  pr C-TYPING .
+  pr TEE-C-TYPE .
+  pr TEE-CLIENT-VALUE .
+  pr ID-VALUE .
+  pr RETURN-VALUE .
+  pr GENERIC-OBJECT-VALUE .
+  pr PERSISTENT-OBJECT-VALUE .
+  pr DATA-STREAM-OBJECT-VALUE .
+  pr TEE-INTERNAL-CLIENT-VALUE .
+
+  var X : SessionId .
+  var H : Oid .
+  var F : FuncId .
+  var R : ReturnCode .
+  var STATUS : StorageStatus .
+  var TYPE : Type .
+  var ALG : Algorithm .
+  var MODE : Mode .
+  var ATTRS : Set{CryptoAttribute} .
+  var AID : AttrId .
+  var AI : Set{AttrId} .
+  var AC : AttrValue .
+  var USAGES : Set{Usage} .
+  var SI : StorageIdentifier .
+  var FLAGS : Set{DataAccessFlag} .
+  var DL : List{Data} .
+  var FILE : FileName .
+  var SK : SeekType .
+  var PT : TeeParamType .
+  var APP : AppId .
+  var RO : ReturnOrigin .
+  var TO : TaCancelTimeOut .
+
+  --- The constants of the API that are integers in C (return codes, object types, algorithms,
+  --- modes, attribute identifiers, usages, storage identifiers, data flags, sizes, positions,
+  --- whence, parameter types, origins, timeouts, command identifiers) are ints.  A handle value,
+  --- that is TEE_HANDLE_NULL or an object identifier the model puts in a program, is a void *,
+  --- which converts to every handle type, as the null pointer constant does in C.
+  eq tyV(# X) = ty(TEEC-Session) .
+  eq tyV(# H) = ty(void *) .
+  eq tyV(# F) = ty(int) .
+  eq tyV(# R) = ty(int) .
+  eq tyV(# STATUS) = ty(int) .
+  eq tyV(# TYPE) = ty(int) .
+  eq tyV(# ALG) = ty(int) .
+  eq tyV(# MODE) = ty(int) .
+  eq tyV(# ATTRS) = ty(TEE-Attribute) .
+  eq tyV(# AID) = ty(int) .
+  eq tyV(# AI) = ty(int) .
+  eq tyV(# AC) = ty(char) .
+  eq tyV(# USAGES) = ty(int) .
+  eq tyV(# SI) = ty(int) .
+  eq tyV(# FLAGS) = ty(int) .
+  eq tyV(# DL) = ty(char) .
+  eq tyV(# FILE) = ty(char) .
+  eq tyV(# SK) = ty(int) .
+  eq tyV(# PT) = ty(int) .
+  eq tyV(# APP) = ty(TEE-UUID) .
+  eq tyV(# RO) = ty(int) .
+  eq tyV(# TO) = ty(int) .
+endm
+
+------------------------------------------------------------
+--- Cryptographic operation syscalls (C stubs)
+------------------------------------------------------------
+
+--- @kind interface
+--- @feature crypto
+mod CRYPTO-OPERATION-SYSCALL is
+  pr TEE-API-C-PROG-AUX .
+  pr TEE-C-VALUE-TYPE .
+  pr CRYPTO-OPERATION-FUNC .
+
+  --- The parameters follow the conventions of the transient-object functions above (see
+  --- getFuncParams).  The argument lists match the API rules in cryptographic.maude.
+
+  eq getFuncParams(allocOperation)
+   = int algo, int mode, int keySize, TEE-OperationHandle & handle |
+          algo, mode, keySize |
+          ret, handle .
+
+  eq getFuncParams(freeOperation)
+   = TEE-OperationHandle & handle |
+          handle |
+          ret .
+
+  eq getFuncParams(resetOperation)
+   = TEE-OperationHandle handle |
+          handle |
+          ret .
+
+  eq getFuncParams(setOperationKey)
+   = TEE-OperationHandle opHandle, TEE-ObjectHandle keyHandle |
+          opHandle, keyHandle |
+          ret .
+
+  eq getFuncParams(cipherInit)
+   = TEE-OperationHandle handle, void * iv |
+          handle |
+          ret .
+
+  eq getFuncParams(cipherUpdate)
+   = TEE-OperationHandle handle, void * src, void * dest |
+          handle, inBuf(src) |
+          ret, deref(dest) .
+
+  eq getFuncParams(macInit)
+   = TEE-OperationHandle handle, void * iv |
+          handle, inBuf(iv) |
+          ret .
+
+  eq getFuncParams(macUpdate)
+   = TEE-OperationHandle handle, void * chunk |
+          handle, inBuf(chunk) |
+          ret .
+
+  --- macComputeFinal: the MAC of the message 'msg goes to the buffer 'mac (the sizes are not
+  --- modeled, so the call never answers TEE_ERROR_SHORT_BUFFER).
+  eq getFuncParams(macComputeFinal)
+   = TEE-OperationHandle handle, void * msg, void * mac |
+          handle, inBuf(msg) |
+          ret, deref(mac) .
+
+  eq getFuncParams(macCompareFinal)
+   = TEE-OperationHandle handle, void * msg, void * mac |
+          handle, inBuf(msg), inBuf(mac) |
+          ret .
+
+  --- generateRandom: the random data goes to the buffer 'buf.
+  eq getFuncParams(generateRandom)
+   = void * buf |
+          nil |
+          ret, deref(buf) .
+
+endm
+
+------------------------------------------------------------
+--- Transient and generic object syscalls (C stubs)
+------------------------------------------------------------
+
+--- @kind interface
+--- @feature c
+mod OBJECT-SYSCALL is
+  pr TEE-API-C-PROG-AUX .
+  pr K-CONFIG .
+  pr TEE-C-VALUE-TYPE .
+  pr TEE-C-STRUCT-DECL .
+  pr TRANSIENT-OBJECT-FUNC .
+  pr GENERIC-OBJECT-FUNC .
+
+  --- TEE_ObjectInfo (GP 5.3.2): the C struct type used by getObjectInfo1.
+  op TeeObjectInfo : -> CType [ctor] .
+
+  --- objectInfoOut(E): the struct E of type TEE_ObjectInfo as an output of a call.  A
+  --- teeObjectInfo value assigned to it ($assign, see assign in TEE-API-C-CALL) is stored member
+  --- by member.  It is a list of outputs, not an expression, so the assignment of one value to
+  --- one lvalue ([assign-list]) does not apply to it.
+  op objectInfoOut : LExp -> ExpList [ctor] .
+  var OIE : LExp .
+  vars OIEL OIEL' : ExpList .
+  var OIK : K .
+  var OITYPE : Type .
+  vars OIOBJSIZE OIMAXSIZE OIDATASIZE OIDATAPOS : Nat .
+  var OIUSAGES : Set{Usage} .
+  var OIFLAGS : Set{DataAccessFlag} .
+  eq k($assign((# teeObjectInfo(OITYPE, OIOBJSIZE, OIMAXSIZE, OIUSAGES, OIDATASIZE, OIDATAPOS, OIFLAGS), OIEL),
+               (objectInfoOut(OIE), OIEL')) ~> OIK)
+   = k($assign((# OITYPE, # OIOBJSIZE, # OIMAXSIZE, # OIUSAGES, # OIDATASIZE, # OIDATAPOS, # OIFLAGS, OIEL),
+               (OIE . objectType, OIE . objectSize, OIE . maxObjectSize, OIE . objectUsage,
+                OIE . dataSize, OIE . dataPosition, OIE . handleFlags, OIEL')) ~> OIK) .
+
+  eq getFuncParams(populateTransientObject)
+   = TEE-ObjectHandle handle, TEE-Attribute attrs |
+          handle, attrs |
+          ret .
+
+  eq getFuncParams(resetTransientObject)
+   = TEE-ObjectHandle handle |
+          handle |
+          ret .
+
+  eq getFuncParams(closeObject)
+   = TEE-ObjectHandle handle |
+          handle |
+          ret .
+
+  eq getFuncParams(initRefAttribute)
+   = int id, void * value, TEE-Attribute & attr |
+          id, inBuf(value) |
+          ret, attr .
+
+  --- getObjectInfo1 (GP v1.3.1, 5.5.1): TEE_Result TEE_GetObjectInfo1(object, [out] objectInfo).
+  --- The return code goes to ret; on success the fields of the teeObjectInfo that the call
+  --- returns go to the members of the struct 'info (objectInfoOut).  On an error only the return
+  --- code is assigned.
+  eq getFuncParams(getObjectInfo1)
+   = TEE-ObjectHandle handle, (struct TeeObjectInfo) & info |
+          handle |
+          ret, objectInfoOut(info) .
+
+endm
+
+--- @kind program
+--- @feature c
+mod TEE-API-C-PROGRAM is
+  pr TEE-API-C-PROG-AUX .
+  pr TEE-INTERNAL-CLIENT-CALL .
+  pr TEE-C-VALUE-TYPE .
+  pr CRYPTO-OPERATION-SYSCALL .
+  pr OBJECT-SYSCALL .
+
+  op Params : -> CType [ctor] .
+  op TeeObjectInfo : -> CType [ctor] .
+  op TeeTime : -> CType [ctor] .
+
+  --- getSystemTime: TEE_GetSystemTime, [Internal Core] 7.2.1; the time goes to the members of
+  --- the TEE_Time struct 'time.
+  eq getFuncParams(getSystemTime)
+   = (struct TeeTime) & time |
+          nil |
+          ret, time . seconds, time . millis .
+
+  --- syscalls: the struct types of the API that a TA program uses.  A TA program starts with
+  --- them in its sdecl cell (apiStructs, mkConf), and a type check of a program puts them before
+  --- it (wellTyped(syscalls P)).
+  op syscalls : -> Program .
+  eq syscalls =
+    struct Params {
+      int param1 ;
+      int param2 ;
+      int param3 ;
+      int param4 ;
+    } ;
+
+    struct TeeObjectInfo {
+      int objectType ;
+      int objectSize ;
+      int maxObjectSize ;
+      int objectUsage ;
+      int dataSize ;
+      int dataPosition ;
+      int handleFlags ;
+    } ;
+
+    struct TeeTime {
+      int seconds ;
+      int millis ;
+    } ;
+
+  .
+
+  var TF : TeeApi .
+  vars PL IN OUT EL : ExpList .
+  var K : K .
+
+  --- The type of a call of the TEE API TF (C-TYPING, Calls): the arguments EL are checked
+  --- against the parameters PL, and the call is an int (TEE_Result is an int; the value of a
+  --- void function of the API is not used).
+  ceq tk($te(TF(EL)) ~> K) = tk($targs(PL, EL) ~> $tres(int) ~> K)
+    if PL | IN | OUT := getFuncParams(TF) .
+
+endm
+
+------------------------------------------------------------
+--- Programs of TAs and RAs (PROGRAM-RUN, CALL-TASK)
+------------------------------------------------------------
+
+--- @kind program
+--- @feature c
+omod PROGRAM-APP-AUX is
+  pr PROGRAM-APP .
+  pr PROGRAM-RUN .
+  pr SECURE-MONITOR-CALL .
+  pr C-SEMANTICS .
+  pr TEE-API-C-PROGRAM .              --- syscalls
+
+  var X : Var .
+  var T U : CType .
+  var V : Value .
+  var P : Program .
+  var VL : List{Arg} .
+  var KS : KConfig .
+  var K : K .
+  var ENV : Map{Var,Nat} .
+  var STORE : Map{Nat,Value?} .
+  var FID : FuncId .
+  var FSIG : FuncSig .
+  var S : Stmt .
+  var SL : SList .
+  var FMAP : Map{FuncSig,K} .
+  var PARAMS : ExpList .
+  var PL : ExpList .
+  var L : Nat .
+  var EL : ExpList .
+
+  --- mkFunMap(P): the function map of P: its functions and their bodies.
+  op mkFunMap : Program -> Map{FuncSig,K} .
+  eq mkFunMap(P) = mkFunMap(getSList(P)) .
+  --- getSList is declared on Stmt; a program is a Stmt once its library constants reduce, but a
+  --- variable P : Program is not, so getSList(P) needs this declaration to have sort SList.
+  op getSList : Program -> SList .
+
+  op mkFunMap : SList -> Map{FuncSig,K} .
+  eq mkFunMap(< FSIG {S} > SL) = FSIG |-> S , mkFunMap(SL) .
+  eq mkFunMap(< S > SL) = mkFunMap(SL) [owise] .
+  eq mkFunMap(nilElem) = nil . --- should be matched with the last statement
+
+  --- getParams(FID, FMAP): the parameter list of FID in the function map FMAP, or nil when
+  --- FMAP has no entry for FID.
+  op getParams : FuncId Map{FuncSig,K} -> ExpList .
+  eq getParams(FID, (T FID(PARAMS) |-> S , FMAP)) = PARAMS .
+  eq getParams(FID, FMAP) = nil [owise] .
+
+--- funcParams(P, FID): the parameter list of the function FID declared in P.
+  op funcParams : Program FuncId -> ExpList .
+  eq funcParams(P, FID) = getParams(FID, mkFunMap(P)) .
+
+  --- callFunc(FID, VL) calls FID with the values VL (App D.3).  It runs after the program, so
+  --- the parameters of FID are in the fdecl cell.  It first declares a variable X for each output
+  --- parameter of FID, a reference parameter T & X or a pointer parameter T * X, which holds the
+  --- value given for it.  The variable is passed by reference, or its address for a pointer
+  --- parameter, so FID writes it, and getVals reads it when FID has finished.  A value parameter
+  --- takes the value.  The variables are declared after the global environment is set ($genv),
+  --- so FID sees the globals of the program, not them.
+  op callFunc : FuncId List{Arg} -> K .
+  eq k(callFunc(FID, VL) ~> K) fdecl(FMAP)
+   = k($callArgs(getParams(FID, FMAP), VL, FID, nil) ~> K) fdecl(FMAP) .
+
+  op $callArgs : ExpList List{Arg} FuncId ExpList -> K .
+  eq $callArgs(((U &) X, PL), (V VL), FID, EL)
+   = alloc(U X) ~> X := V ; ~> $callArgs(PL, VL, FID, (EL, X)) .
+  eq $callArgs(((U *) X, PL), (V VL), FID, EL)
+   = alloc(U X) ~> X := V ; ~> $callArgs(PL, VL, FID, (EL, addr(X))) .
+  ceq $callArgs((T X, PL), (V VL), FID, EL) = $callArgs(PL, VL, FID, (EL, V))
+   if not T :: RType /\ not isPtr(T) .
+  eq $callArgs(nil, nil, FID, EL) = FID(EL) ; .
+
+  op isPtr : CType -> Bool .
+  eq isPtr(U *) = true .
+  eq isPtr(T) = false [owise] .
+
+  --- apiStructs: the struct types of the API (syscalls) as the content of the sdecl cell.
+  var ST : SType .
+  op apiStructs : -> Map{SType,Stmt} .
+  op structsOf : SList -> Map{SType,Stmt} .
+  eq apiStructs = structsOf(getSList(syscalls)) .
+  eq structsOf(< ST {S} ; > SL) = insert(ST, S, structsOf(SL)) .
+  eq structsOf(nilElem) = empty .
+
+  --- getVals(OUT, KS) (PROGRAM-RUN): the values of the variables OUT in the configuration KS,
+  --- App D.3.
+  var XL : ExpList .
+  eq getVals((X, XL), env(ENV) store(STORE) KS)
+   = STORE[ENV[X]] getVals(XL, env(ENV) store(STORE) KS) .
+  eq getVals(nil, KS) = nil .
+
+  --- mkConf(P, FID, VL) (App D.3): the initial configuration that runs the program P and then
+  --- callFunc(FID, VL).  As for the program of an RA (mkConf(P), C-SEMANTICS), the declarations
+  --- of P are hoisted ($hoistK) and the global environment is set ($genv) before P runs.  The
+  --- sdecl cell starts with the struct types of the API (apiStructs), as a C header gives them.
+  --- The other cells start empty, and the labels cell holds the labels of P.
+  eq mkConf(P, FID, VL)
+    = k(hoistK(getSList(P)) ~> $genv ~> P ~> callFunc(FID, VL)) env(empty) genv(empty)
+      store(empty) fdecl(nil) sdecl(apiStructs) stack(nilStack) nextLoc(0)
+      labels(labelsOf(getSList(P))) arrlen(empty) .
+endom
+
+--- @kind behavior
+--- @feature c
+omod TRUST-APP-C-BEHAVIOR is
+  pr TRUST-APP-BEHAVIOR .
+  pr TRUST-APP-CALL-BEHAVIOR .
+  pr PROGRAM-APP-AUX .
+  pr C-AUX .
+  pr TEE-API-C-PROGRAM .
+  pr TEE-API-C-CALL .
+
+  vars TI O : Oid .
+  var K : K .
+  var VL : List{Arg} .
+  var EL : ExpList .
+  var KS : KConfig .
+  var TF : TeeApi .
+  var PL : ExpList .
+  var IN : ExpList .
+
+  --- A null input buffer (NULL, as for the initial data of TEE_CreatePersistentObject) has no
+  --- content: the stub reads no data (see inBuf in C-STRICTNESS).
+  eq k({ nullptr } ~> $inbuf ~> K) = k({ # (nil).List{Data} } ~> K) .
+  var OUT : ExpList .
+  var FID : FuncId .
+  var P : Program .
+  var X : Var .
+  vars T U : CType .
+  vars PL' : ExpList .
+
+  --- getFuncParams(P, FID): the parameters of the service FID of the program P, its input
+  --- parameters (the value parameters) and its output parameters (the reference and pointer
+  --- parameters, as callFunc declares them), as for a TEE API (App D.2).
+  eq getFuncParams(P, FID) = $sigOf(funcParams(P, FID), funcParams(P, FID), nil, nil) .
+  op $sigOf : ExpList ExpList ExpList ExpList -> ParamSig .
+  eq $sigOf(PL, ((U &) X, PL'), IN, OUT) = $sigOf(PL, PL', IN, (OUT, X)) .
+  eq $sigOf(PL, ((U *) X, PL'), IN, OUT) = $sigOf(PL, PL', IN, (OUT, X)) .
+  ceq $sigOf(PL, (T X, PL'), IN, OUT) = $sigOf(PL, PL', (IN, X), OUT)
+   if not T :: RType /\ not isPtr(T) .
+  eq $sigOf(PL, nil, IN, OUT) = PL | IN | OUT .
+
+------------------------------------------------------------
+--- C Semantics
+------------------------------------------------------------
+
+  --- tee-api-call: a call of a TEE API TF, made by a TA that is normal and has no call in
+  --- progress, runs as a function call (App. D.2): the parameters PL of TF (getFuncParams) are
+  --- zipped with the arguments EL, and the body $in(IN) ~> $wait(TF) ~> $out(OUT) is invoked.
+  --- The input parameters IN are evaluated one by one ($inH, which ends in $in).  $out(OUT)
+  --- becomes assign(OUT, VL), which also returns the return code (TEE-API-C-CALL).  The rule
+  --- applies only to a name that getFuncParams defines, that is, to a TEE API.
+  crl [tee-api-call] :
+    < O : TrustedApp | proc : (k({ TF(EL) } ~> K) KS) ,
+                        api-call : noCall , status : (normal).AppStatus >
+    =>
+    < O : TrustedApp | proc : (k(zip(nil, zipL(PL, EL)) ~>
+                                  invoke($inH(nil, IN) ~> $wait(TF) ~> $out(OUT)) ~> K) KS) >
+  if PL | IN | OUT := getFuncParams(TF) .
+
+  --- getSystemTime: the time goes to the members of the TEE_Time struct E.
+endom
+
+--- This module defines the C side of an RA: the C syntax of the client calls TEEC_OpenSession
+--- and TEEC_CloseSession and their typing.  A client call returns by assign (TEE-API-C-CALL):
+--- its first output is $result, so the return code is the value of the call.
+
+--- @kind program
+--- @feature client
+omod RICH-APP-C-BEHAVIOR is
+  pr RICH-APP-BEHAVIOR .
+  pr C-SEMANTICS .
+  pr TEE-C-VALUE-TYPE .
+  pr TEE-API-C-CALL .                 --- assign, $result
+
+  var K : K .
+  var SID : SessionId .
+  var API : TeeClientApi .
+  vars VL : List{Arg} .
+  var V : Value .
+  vars EU ES : Exp .
+  var EL : ExpList .
+
+------------------------------------------------------------
+--- C Syntax
+------------------------------------------------------------
+
+  --- teecOpenSession(EU, ES): TEEC_OpenSession ([Client API] 4.5.7) with the TA EU.  Its value
+  --- is the return code; after success the new session is written to the lvalue ES (the
+  --- session structure that the client passes, &session in C).  The context, the connection
+  --- method and data, the operation and the return origin are not modeled.
+
+  --- teecCloseSession(ES): TEEC_CloseSession ([Client API] 4.5.8) of the session ES.  TEEC_CloseSession
+  --- returns no value; in the model its value is the code of the response, success.
+  eq k({ teecCloseSession(ES) } ~> K)
+   = k($inH(nil, ES) ~> $wait(teecCloseSession) ~> $out($result) ~> K) .
+  eq tk($te(teecCloseSession(ES)) ~> K)
+   = tk($te(ES) ~> $tchk(TEEC-Session) ~> $tres(TEE-Result) ~> K) .
+
+  --- teecOpenSession(EU, ES) runs as the stub of TEEC_OpenSession: EU is evaluated and sent by
+  --- client-api-smc, and ES waits in $out for the response, see client-api-finish.  After
+  --- success the response is the code and the session, which goes to ES; a failed call assigns
+  --- nothing ([Client API] 4.5.7: the session structure is then undefined).
+  eq k({ teecOpenSession(EU, ES) } ~> K)
+   = k($inH(nil, EU) ~> $wait(teecOpenSession) ~> $out(($result, ES)) ~> K) .
+
+  --- Typing (C-TYPING): the TA is a TEE-UUID and the session a TEEC-Session lvalue.  The call
+  --- is a TEE-Result.
+  eq tk($te(teecOpenSession(EU, ES)) ~> K)
+   = tk($te(EU) ~> $tchk(TEE-UUID) ~> $tl(ES) ~> $tchk(TEEC-Session) ~> $tres(TEE-Result) ~> K) .
+
+  --- The first output of a client call is $result (TEE-API-C-CALL): the return code RC is the
+  --- value of the call, and the other values are assigned to the outputs EL.
+  var RC : ReturnCode .
+  eq assign(($result, EL), # RC VL) = $assign(vals(VL), EL) ~> { # RC } .
+endom
+
+------------------------------------------------------------
+--- Shared objects of a client TA
+------------------------------------------------------------
+
+--- This module defines the shared objects of a C client TA (SHARED-OBJECT): a shared object is
+--- a location loc(L) of the client, whose content is in its store.
+
+--- @kind program
+--- @feature client
+fmod SHARED-OBJECT-C is
+  pr SHARED-OBJECT .
+  pr C-LVALUE .
+  pr C-CONFIG .
+
+  vars VL RET : List{Arg} .
+  var V : Value .
+  var KS : KConfig .
+  var STORE : Map{Nat,Value?} .
+  var L : Nat .
+
+  eq copyIn(VL, store(STORE) KS) = $copyIn(VL, STORE) .
+  eq copyOut(VL, RET, store(STORE) KS) = store($copyOut(VL, RET, STORE)) KS .
+
+  --- $copyIn(VL, STORE): the values VL with each shared object, a location loc(L), replaced by its
+  --- value in STORE.  $copyOut(VL, RET, STORE): STORE with the results RET stored, in order, at the
+  --- locations of the shared objects of VL.
+  op $copyIn : List{Arg} Map{Nat,Value?} -> List{Arg} .
+  eq $copyIn((loc(L) VL), ((L |-> V) ; STORE)) = V $copyIn(VL, ((L |-> V) ; STORE)) .
+  eq $copyIn((V VL), STORE) = V $copyIn(VL, STORE) [owise] .
+  eq $copyIn(nil, STORE) = nil .
+  op $copyOut : List{Arg} List{Arg} Map{Nat,Value?} -> Map{Nat,Value?} .
+  eq $copyOut((loc(L) VL), (V RET), STORE) = $copyOut(VL, RET, insert(L, V, STORE)) .
+  eq $copyOut((V VL), RET, STORE) = $copyOut(VL, RET, STORE) [owise] .
+  eq $copyOut(nil, RET, STORE) = STORE .
+endfm
+
+------------------------------------------------------------
+--- Cryptographic operations
+------------------------------------------------------------
+
+--- @kind interface
+--- @related CRYPTO-OPERATION-BEHAVIOR
+--- @feature crypto
+mod CRYPTO-OPERATION-TEE-CALL is
+  pr TEE-API-C-CALL .
+  pr TEE-API-C-PROG-AUX .
+  pr CRYPTO-API-PARAM .
+  pr HANDLE .
+  pr HANDLE-ID-GEN .
+  pr ID-VALUE .
+  pr CRYPTO-OPERATION-FUNC .
+  pr CRYPTO-OPERATION-OBJECT-VALUE .
+  --- pr TRUST-APP .
+  pr RETURN-VALUE .
+  pr GENERIC-OBJECT-VALUE .
+  pr PERSISTENT-OBJECT-VALUE .
+
+  op #_ : BufferRegion -> Value [ctor] .
+
+--- Generic
+  
+  
+
+--- TODO: NEED TO UPDATE RETURN
+
+--- Message Digest
+  
+  
+
+--- Symmetric Cipher
+
+  
+
+--- MAC
+
+--- AE
+
+--- Asymmetric Cipher
+
+--- Misc
+endm
+
+--- @kind interface
+--- @feature crypto
+mod CRYPTO-C-VALUE-TYPE is
+  pr C-TYPING .
+  pr C-BTYPE .
+  pr CRYPTO-OPERATION-OBJECT-VALUE .
+  pr CRYPTO-OPERATION-TEE-CALL .
+
+  --- Algorithms, operation classes, modes and ECC curves are integers in C (uint32_t).  A
+  --- buffer region (offset and length in a buffer) is internal to the model.
+  op TEE-BufRegion : -> ConcBType [ctor] .
+
+  var AI : Algorithm .
+  var CLASS : OpClass .
+  var MODE : Mode .
+  var CE : CryptoElement .
+  var BR : BufferRegion .
+
+  eq tyV(# AI) = ty(int) .
+  eq tyV(# CLASS) = ty(int) .
+  eq tyV(# MODE) = ty(int) .
+  eq tyV(# CE) = ty(int) .
+  eq tyV(# BR) = ty(TEE-BufRegion) .
+endm
+
+------------------------------------------------------------
+--- Shared memory
+------------------------------------------------------------
+
+--- This file defines the shared memory of a client and a TA as GlobalPlatform memory references,
+--- TEEC_TempMemoryReference of [Client API] 3.2.5: the content of a shared object is copied to
+--- the TA when an operation starts, and the TA's content is copied back when it completes.
+---   1. The client passes a shared object as its address, addr(X) (&X in C).  The value of X goes
+---      with the arguments (smcReq for an RA, invkTa for a TA client), and X is an output lvalue
+---      of the call.
+---   2. The TA service gets the value in the variable of its pointer or reference parameter, see
+---      callFunc, and reads and writes it through that parameter.
+---   3. When the service has finished, the values of those variables are its results (getVals),
+---      and the client assigns them to its output lvalues (invoke-ta-finish).
+---      A TA that panics returns TEE_ERROR_TARGET_DEAD and no results: the client's objects are
+---      unchanged.
+---
+--- Deviations from the specification:
+---   * There are no directions, sizes or flags, and no paramTypes, so a parameter type mismatch,
+---     a write to an input reference and a size larger than the buffer are not modeled.
+---   * Registered memory (TEEC_RegisterSharedMemory) is not modeled.
+---   * TEE_CheckMemoryAccessRights is not modeled.
+
+--- This module defines the C syntax of the client call.
+---   teecInvokeCommand(ES, EF, EL): TEEC_InvokeCommand of the command EF in the session ES with
+---     the arguments EL, where a shared object is written addr(E) (&E in C).  Its value is the
+---     return code: success, or TEE_ERROR_TARGET_DEAD when the TA panicked.
+
+--- @kind program
+--- @feature shm
+fmod SHARED-MEMORY-SYNTAX is
+  pr C-STRICTNESS .
+
+endfm
+
+--- This module defines the client call: its evaluation and its C type.
+
+--- @kind behavior
+--- @feature shm
+mod SHARED-MEMORY-BEHAVIOR is
+  pr SHARED-MEMORY-SYNTAX .
+  pr TEE-C-VALUE-TYPE .
+  pr TEE-CLIENT-FUNC .
+  pr TEE-API-C-CALL .                 --- $result
+
+  vars ES EF E : Exp .
+  var EL : ExpList .
+  var K : K .
+
+  --- teecInvokeCommand(ES, EF, EL) runs as the stub of TEEC_InvokeCommand: the arguments are
+  --- evaluated ($inH), a shared object addr(E) to the value of E, and sent by invoke-ta-smc; the
+  --- shared objects E are the output lvalues ($out) that invoke-ta-finish assigns, after
+  --- $result, which gives the return code as the value of the call.
+  eq k({ teecInvokeCommand(ES, EF, EL) } ~> K)
+   = k($inH(nil, (ES, EF, shmIn(EL))) ~> $wait(teecInvokeCommand) ~> $out(($result, shmOut(EL))) ~> K) .
+
+  --- shmIn(EL): the arguments EL with each shared object addr(E) replaced by E.
+  op shmIn : ExpList -> ExpList .
+  eq shmIn((addr(E), EL)) = E , shmIn(EL) .
+  eq shmIn((E, EL)) = E , shmIn(EL) [owise] .
+  eq shmIn(nil) = nil .
+
+  --- shmOut(EL): the shared objects E of the arguments addr(E) in EL.
+  op shmOut : ExpList -> ExpList .
+  eq shmOut((addr(E), EL)) = E , shmOut(EL) .
+  eq shmOut((E, EL)) = shmOut(EL) [owise] .
+  eq shmOut(nil) = nil .
+
+  --- Typing (C-TYPING): the session is a TEEC-Session and the command an int; the arguments
+  --- EL are not typed (they are the parameters of the TA service).  The call is a TEE-Result.
+  eq tk($te(teecInvokeCommand(ES, EF, EL)) ~> K)
+   = tk($te(ES) ~> $tchk(TEEC-Session) ~> $te(EF) ~> $tchk(int) ~> $tres(TEE-Result) ~> K) .
+endm

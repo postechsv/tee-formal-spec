@@ -4,7 +4,7 @@
 --- @feature core
 omod PROGRAM-APP is
   pr APP-ID .
-  pr IMP-PROGRAM .
+  pr PROGRAM .
   pr K-CONFIG .
 
   class App | prog : Program, proc : KConfig .
@@ -12,88 +12,3 @@ endom
 
 --- This module defines auxiliary operators for App programs.
 
---- @kind program
---- @feature imp
-omod PROGRAM-APP-AUX is
-  pr PROGRAM-APP .
-  pr SECURE-MONITOR-CALL .
-  pr IMP-SEMANTICS .
-
-  var X : Var .
-  var T U : ImpType .
-  var V : Value .
-  var P : Program .
-  var VL : ArgList .
-  var KS : KConfig .
-  var K : K .
-  var ENV : Map{Var,Nat} .
-  var MEM : Map{Nat,Value?} .
-  var FUNC : FuncId .
-  var FSIG : FuncSig .
-  vars S S' : Stmt .
-  var SL : SList .
-  var SE : SElem .
-  var FMAP : Map{FuncSig,K} .
-  var BODY : K .
-  var PARAMS : ExpList .
-  var PL : ExpList .
-  var XL : VarList .
-  var L : Nat .
-  var AL : Map{Nat,Nat} .
-  var CS : CStore .
-
-  --- mkFunMap(P): the function map of P.  It holds the user functions (their body is a Stmt)
-  --- and the trusted library functions ($libFun, their body is internal K).
-  op mkFunMap : Program -> Map{FuncSig,K} .
-  eq mkFunMap(P) = mkFunMap(getSList(P)) .
-  --- getSList is declared on Stmt; a program is a Stmt once its library constants reduce, but a
-  --- variable P : Program is not, so getSList(P) needs this declaration to have sort SList.
-  op getSList : Program -> SList .
-
-  op mkFunMap : SList -> Map{FuncSig,K} .
-  eq mkFunMap(< FSIG {S} > SL) = FSIG |-> S , mkFunMap(SL) .
-  eq mkFunMap(< $libFun(FSIG, BODY) > SL) = FSIG |-> BODY , mkFunMap(SL) .
-  ---@dmc scope(TEE-BEHAVIOR)
-  ---@dmc owise enumerate(S)
-  eq mkFunMap(< S > SL) = mkFunMap(SL) [owise] .
-  eq mkFunMap(nilElem) = empty . --- should be matched with the last statement
-
-  --- getParams(FUNC, FMAP): the parameter list of FUNC in the function map FMAP, or nil when
-  --- FMAP has no entry for FUNC.
-  op getParams : FuncId Map{FuncSig,K} -> ExpList .
-  eq getParams(FUNC, (T FUNC(PARAMS) |-> S , FMAP)) = PARAMS .
----@dmc sort-split(Stmt < K)
----@dmc owise recurse(sep=_,_, empty=empty)
-  eq getParams(FUNC, FMAP) = nil [owise] .
-
---- getFuncParams(P, FUNC): the parameter list of the function FUNC declared in P.
-  op getFuncParams : Program FuncId -> ExpList .
-  eq getFuncParams(P, FUNC) = getParams(FUNC, mkFunMap(P)) .
-
-  --- callFunc(P, FUNC, VL): calls FUNC with the arguments VL.  An output parameter T & X is
-  --- passed by reference: its argument is the location loc(L) of an object of the caller,
-  --- in the memory that the TA runs on (see mkConf), and X names that object (bindR in
-  --- IMP-SEMANTICS).  The caller sees what FUNC writes to X when it gets the memory back.
-  op callFunc : Program FuncId ArgList -> K .
-  eq callFunc(P, FUNC, VL) = FUNC(callArgs(VL)) ; .
-
-  --- callArgs(VL): the values VL as the actual arguments of a call.
-  op callArgs : ArgList -> ExpList .
-  eq callArgs(V VL) = V , callArgs(VL) .
-  eq callArgs(argNil) = nil .
-
-  --- mkConf(P, FUNC, VL, CS): the initial configuration that runs the program P followed by
-  --- callFunc(P, FUNC, VL) in the k cell, on the memory CS of the client: the store, the
-  --- location counter and the array lengths are the client's, so the TA reads and writes the
-  --- objects of the client, and its own objects take the next locations.  The other cells
-  --- start in their initial state, with the labels cell holding the labels of P.  The
-  --- configuration is built only when P is well typed; otherwise the result is illTyped.
-  op mkConf : Program FuncId ArgList CStore -> KConfig .
-  ceq mkConf(P, FUNC, VL, cstore(MEM, L, AL))
-    = k(hoistK(getSList(P)) ~> $genv ~> P ~> callFunc(P, FUNC, VL)) env(empty) genv(empty)
-      store(MEM) fdecl(empty) sdecl(empty) stack(nilStack) nextLoc(L)
-      labels(labelsOf(getSList(P))) arrlen(AL)
-  if wellTyped(P) = true .
-  ---@dmc drop
-  ceq mkConf(P, FUNC, VL, CS) = illTyped if wellTyped(P) =/= true .
-endom

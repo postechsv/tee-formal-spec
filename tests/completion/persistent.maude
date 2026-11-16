@@ -5,7 +5,6 @@ load ../cases/aux
 mod COMPLETION-TEST is
   var ZvFileId : FileName .
   var ZvFlags : Set{DataAccessFlag} .
-  var ZvStorageId : StorageIdentifier .
   pr TEE-BEHAVIOR .
   pr TEST-AUX .
   var C : Configuration .
@@ -24,7 +23,7 @@ search [1] in COMPLETION-TEST :
 
 --- Creating a persistent object can consume an abstract top-level transient handle.
 search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(createPersistent[# ZvStorageId # testFileId # accessRead # oid(101, testTa) # (nil).List{Data} # dataSize(0) # null]), storage : oid(0, testTa), counter : 0, TA-ATTS:AttributeSet >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(createPersistent[# testFileId # accessRead # oid(101, testTa) # (nil).List{Data} # null]), storage : oid(0, testTa), counter : 0, TA-ATTS:AttributeSet >
   < oid(101, testTa) : ObjHandle | oid : oid(1, testTa), flags : empty, pos : 0 >
   < oid(1, testTa) : TransObj | initialized : true, type : typeAes, attributes : empty, usages : usageExtractable, max-size : 128 >
   < oid(0, testTa) : Storage | status : (normal).StorageStatus, files : empty, counter : 0 >
@@ -33,7 +32,7 @@ search [1] in COMPLETION-TEST :
 
 --- Transforming a transient object advances its Storage object (two identifiers per persistent object: handle and object).
 search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(createPersistent[# ZvStorageId # testFileId # accessRead # oid(101, testTa) # (nil).List{Data} # dataSize(0) # null]), storage : oid(0, testTa), counter : 0, TA-ATTS:AttributeSet >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(createPersistent[# testFileId # accessRead # oid(101, testTa) # (nil).List{Data} # null]), storage : oid(0, testTa), counter : 0, TA-ATTS:AttributeSet >
   < oid(101, testTa) : ObjHandle | oid : oid(1, testTa), flags : empty, pos : 0 >
   < oid(1, testTa) : TransObj | initialized : true, type : typeAes, attributes : empty, usages : usageExtractable, max-size : 128 >
   < oid(0, testTa) : Storage | status : (normal).StorageStatus, files : empty, counter : 0 >
@@ -53,13 +52,13 @@ search [1] in COMPLETION-TEST :
   (msg openPersistentHandle[# testFileId # (accessRead,
                         shareRead) # 2] from testTa to oid(0, testTa))
   < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId,
-      open-handles : oh(oid(1, testTa), accessRead) >
+      open-handles : handleConf(oid(1, testTa), accessRead) >
   < oid(1, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
       flags : accessRead >
 =>*
   (msg failOpenPersistentHandle[] from oid(0, testTa) to testTa)
   < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId,
-      open-handles : oh(oid(1, testTa), accessRead) >
+      open-handles : handleConf(oid(1, testTa), accessRead) >
   < oid(1, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
       flags : accessRead > .
 
@@ -69,7 +68,7 @@ search [1] in COMPLETION-TEST :
   (msg openPersistentHandle[# testFileId # (accessRead,
                         shareRead) # 2] from testTa to oid(0, testTa))
   < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId,
-      open-handles : oh(oid(1, testTa), accessRead) >
+      open-handles : handleConf(oid(1, testTa), accessRead) >
   < oid(1, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
       flags : accessRead >
 =>*
@@ -90,11 +89,11 @@ search [1] in COMPLETION-TEST :
       pos : 0 >
   < oid(0, oid(0, testTa)) : PersistObj | file-name : testFileId, open-handles : noHandles >
   < oid(0, oid(0, otherTa)) : PersistObj | file-name : testFileId,
-      open-handles : oh(oid(4, testTa), accessRead) > .
+      open-handles : handleConf(oid(4, testTa), accessRead) > .
 
 --- Overwrite removes only the old object in the TA's Storage namespace.
 search [1] in COMPLETION-TEST :
-  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(createPersistent[# ZvStorageId # testFileId # (accessRead , overwrite) # null # (nil).List{Data} # dataSize(0) # null]), storage : oid(0, testTa), counter : 0, TA-ATTS:AttributeSet >
+  < testTa : TAKernel | status : (normal).AppStatus, api-call : init(createPersistent[# testFileId # (accessRead , overwrite) # null # (nil).List{Data} # null]), storage : oid(0, testTa), counter : 0, TA-ATTS:AttributeSet >
   < oid(0, testTa) : Storage | status : (normal).StorageStatus, files : testFileId, counter : 0 >
   < oid(0, oid(0, testTa)) : PersistObj | file-name : testFileId, data-stream : nil, REST1:AttributeSet >
   < oid(0, oid(0, otherTa)) : PersistObj | file-name : testFileId, data-stream : nil, REST3:AttributeSet >
@@ -107,7 +106,7 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   (msg deletePersistent[# oid(0, testTa)] from testTa to oid(101, testTa))
   < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId,
-      open-handles : oh(oid(101, testTa), accessWriteMeta) >
+      open-handles : handleConf(oid(101, testTa), accessWriteMeta) >
   < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)),
       flags : accessWriteMeta >
 =>*
@@ -119,7 +118,7 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   (msg openPersistentHandle[# testFileId # accessRead # 2] from testTa to oid(0, testTa))
   < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId,
-      open-handles : oh(oid(101, testTa), accessWriteMeta) >
+      open-handles : handleConf(oid(101, testTa), accessWriteMeta) >
 =>*
   (msg finishOpenPersistentHandle[# H:Oid] from oid(0, testTa) to testTa)
   C .
@@ -187,7 +186,7 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   < testTa : TAKernel | status : (normal).AppStatus, api-call : init(closeAndDeletePersistentObject1[# oid(101, testTa)]), storage : oid(0, testTa), counter : 0 >
   < oid(0, testTa) : Storage | status : (normal).StorageStatus, files : testFileId, counter : 2 >
-  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId, open-handles : oh(oid(101, testTa), accessRead) >
+  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId, open-handles : handleConf(oid(101, testTa), accessRead) >
   < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)), flags : accessRead, pos : 0 >
 =>!
   < testTa : TAKernel | status : (normal).AppStatus, TA-ATTS:AttributeSet > C .
@@ -197,7 +196,7 @@ search [1] in COMPLETION-TEST :
 search [1] in COMPLETION-TEST :
   < testTa : TAKernel | status : (normal).AppStatus, api-call : init(renamePersistentObject[# oid(101, testTa) # newTestFileId]), storage : oid(0, testTa), counter : 0 >
   < oid(0, testTa) : Storage | status : (normal).StorageStatus, files : testFileId, counter : 2 >
-  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId, open-handles : oh(oid(101, testTa), accessRead) >
+  < oid(1, oid(0, testTa)) : PersistObj | file-name : testFileId, open-handles : handleConf(oid(101, testTa), accessRead) >
   < oid(101, testTa) : ObjHandle | oid : oid(1, oid(0, testTa)), flags : accessRead, pos : 0 >
 =>!
   < testTa : TAKernel | status : (normal).AppStatus, TA-ATTS:AttributeSet > C .

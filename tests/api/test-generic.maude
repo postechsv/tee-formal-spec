@@ -26,21 +26,21 @@ search [1] in TEST-AUX :
                            attributes : attr(secretValue, randomAttrVal),
                            usages : usageEncrypt >
 =>*
-  < ta : TAKernel | api-call : return(getObjectInfo1[# success # teeObjectInfo(typeAes, keySize(attr(secretValue, randomAttrVal)), 128, usageEncrypt, dataSize(0), pos(0), empty)]) > .
+  < ta : TAKernel | api-call : return(getObjectInfo1[# success # teeObjectInfo(typeAes, keySize(attr(secretValue, randomAttrVal)), 128, usageEncrypt, 0, 0, empty)]) > .
 
 --- [BB-G-OI-2] get-object-info persistent success
 search [1] in TEST-AUX :
   (msg retStatus[# (normal).StorageStatus] from oid(0, ta) to ta)
-  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(getObjectInfo1[ZsGetObjectInfo10 # teeObjectInfo(typeAes, keySize(attr(secretValue, randomAttrVal)), 128, usageEncrypt, dataSize(5), pos(0), accessRead)] , 1), counter : 0 >
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(getObjectInfo1[HANDLEARG # teeObjectInfo(typeAes, keySize(attr(secretValue, randomAttrVal)), 128, usageEncrypt, 5, 0, accessRead)] , 1), counter : 0 >
 =>*
-  < ta : TAKernel | api-call : return(getObjectInfo1[# success # teeObjectInfo(typeAes, keySize(attr(secretValue, randomAttrVal)), 128, usageEncrypt, dataSize(5), pos(0), accessRead)]) > .
+  < ta : TAKernel | api-call : return(getObjectInfo1[# success # teeObjectInfo(typeAes, keySize(attr(secretValue, randomAttrVal)), 128, usageEncrypt, 5, 0, accessRead)]) > .
 
 --- [BB-G-OI-3] get-object-info storage error
 search [1] in TEST-AUX :
   (msg retStatus[# (corrupted).StorageStatus] from oid(0, ta) to ta)
-  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(getObjectInfo1[ZsGetObjectInfo10] , 1), counter : 0 >
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(getObjectInfo1[HANDLEARG] , 1), counter : 0 >
 =>*
-  < ta : TAKernel | api-call : return(getObjectInfo1[# errorCorruptObject]) > .
+  < ta : TAKernel | api-call : return(getObjectInfo1[# corrupted]) > .
 
 --- ============================================================
 --- restrictObjectUsage1
@@ -64,9 +64,9 @@ search [1] in TEST-AUX :
 --- [BB-G-RU-2] restrict-usage storage error
 search [1] in TEST-AUX :
   (msg retStatus[# (notAvailable).StorageStatus] from oid(0, ta) to ta)
-  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(restrictObjectUsage1[ZsRestrictObjectUsage10 ZsRestrictObjectUsage11] , 1), counter : 0 >
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(restrictObjectUsage1[HANDLEARG USAGESARG] , 1), counter : 0 >
 =>*
-  < ta : TAKernel | api-call : return(restrictObjectUsage1[# errorStorageNotAvailable]) > .
+  < ta : TAKernel | api-call : return(restrictObjectUsage1[# notAvailable]) > .
 
 --- ============================================================
 --- getObjectBufferAttribute
@@ -96,9 +96,9 @@ search [1] in TEST-AUX :
 --- [BB-G-GB-3] get-buffer-attribute storage error
 search [1] in TEST-AUX :
   (msg retStatus[# (corrupted).StorageStatus] from oid(0, ta) to ta)
-  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(getObjectBufferAttribute[ZsGetObjectBufferAttribute0 ZsGetObjectBufferAttribute1] , 1), counter : 0 >
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(getObjectBufferAttribute[HANDLEARG ATTRIDARG] , 1), counter : 0 >
 =>*
-  < ta : TAKernel | api-call : return(getObjectBufferAttribute[# errorCorruptObject]) > .
+  < ta : TAKernel | api-call : return(getObjectBufferAttribute[# corrupted]) > .
 
 --- ============================================================
 --- getObjectValueAttribute
@@ -129,9 +129,9 @@ search [1] in TEST-AUX :
 --- [BB-G-GV-3] get-value-attribute storage not available
 search [1] in TEST-AUX :
   (msg retStatus[# (notAvailable).StorageStatus] from oid(0, ta) to ta)
-  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(getObjectValueAttribute[ZsGetObjectValueAttribute0 ZsGetObjectValueAttribute1] , 1), counter : 0 >
+  < ta : TAKernel | status : (normal).AppStatus, api-call : exec(getObjectValueAttribute[HANDLEARG ATTRIDARG] , 1), counter : 0 >
 =>*
-  < ta : TAKernel | api-call : return(getObjectValueAttribute[# errorStorageNotAvailable]) > .
+  < ta : TAKernel | api-call : return(getObjectValueAttribute[# notAvailable]) > .
 
 --- ============================================================
 --- closeObject
@@ -162,7 +162,7 @@ search [1] in TEST-AUX :
                            attributes : empty,
                            usages : empty,
                            file-name : testFileId,
-                           open-handles : oh(oid(8, ta), accessRead) >
+                           open-handles : handleConf(oid(8, ta), accessRead) >
 =>*
   < ta : TAKernel | api-call : return(closeObject[# noReturnCode]) > .
 

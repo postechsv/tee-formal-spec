@@ -9,25 +9,23 @@ load ./cases/test-cryptographic
 
 mod TEST-DRIVER is
   pr TEE-BEHAVIOR .
-  pr TEE-IMP-BEHAVIOR .
+  pr TEE-C-BEHAVIOR .
   pr TEST-AUX .
 
   var P : Program .
 
   op initTrustedOSwithNoKey : -> Configuration .
   eq initTrustedOSwithNoKey
-  = < osId : TrustedOS | sess : (sessionId(0) |-> session(reeClient(testRa), testTa)) , session-counter : 1 ,
+  = < osId : TrustedOS | session-counter : 1 ,
                            service-request-ta-inst : noOid ,
-                           service-in : nil , service-out : nil ,
-                           temporary-objects : empty >
+                           service-in : nil , service-out : nil >
     < oid(0, testTa) : Storage | status : (normal).StorageStatus , files : empty , counter : 0 > .
 
   op initTrustedOS : -> Configuration .
   eq initTrustedOS
-  = < osId : TrustedOS | sess : (sessionId(0) |-> session(reeClient(testRa), testTa)) , session-counter : 1 ,
+  = < osId : TrustedOS | session-counter : 1 ,
                            service-request-ta-inst : noOid ,
-                           service-in : nil , service-out : nil ,
-                           temporary-objects : empty >
+                           service-in : nil , service-out : nil >
     < oid(0, testTa) : Storage | status : (normal).StorageStatus , files : testFileId , counter : 0 > .
 
 
@@ -36,7 +34,7 @@ mod TEST-DRIVER is
     < persistentObjId : PersistObj | type : pureData , max-size : 0  ,
                                            file-name : testFileId ,
                                            attributes : empty , usages : empty , data-stream-id : dataStreamId >
-    < dataStreamId : DataStreamObject | data-size : dataSize(1) , content : newContent(attrContentData(randomAttrVal)) >
+    < dataStreamId : DataStreamObject | data-size : 1 , content : newContent(attrContentData(randomAttrVal)) >
   .
 
   --- op initRa : Program -> Configuration .
@@ -68,25 +66,25 @@ mod TEST-SCENARIO is
 
   op scenarioWithoutKey : Program -> Configuration .
   eq scenarioWithoutKey(P)
-    = initTestTa(P) initTrustedOSwithNoKey (msg invkTa[sessionId(0), main, argNil, emptyStore] from osId to testTa) .
+    = initTestTa(P) initTrustedOSwithNoKey (msg invkTa[main nil] from testRa to testTa) .
 
   op scenarioWithKey : Program -> Configuration .
   eq scenarioWithKey(P)
-    = initTestTa(P) initTrustedOS testKey (msg invkTa[sessionId(0), main, argNil, emptyStore] from osId to testTa) .
+    = initTestTa(P) initTrustedOS testKey (msg invkTa[main nil] from testRa to testTa) .
 endm
 
 --- Integration scenario: the TA service addService adds its inputs into the by-reference
---- output parameter res, the object of the client at location 0. The scenario starts from the
---- invkTa message of the session sessionId(0) (no pre-set task), and the TA answers its TrustedOS
---- with invkTaRet carrying the memory of the client, where the object at location 0 holds 22.
+--- output parameter res, whose value the client gives as 0. The scenario starts from the invkTa
+--- message of the client testRa (no pre-set task), and the TA answers testRa with invkTaRet
+--- carrying the value of res, 22.
 --- testEnumerator (tests/cases/test-enumerator.maude) is not used: its TEE_*Enumerator
---- calls have no IMP syscall definitions yet. IMP calls of TEE APIs do not return yet:
+--- calls have no C syscall definitions yet. C calls of TEE APIs do not return yet:
 --- the return statement of allocateTransientObject leaves the declaration of 'ret in the k cell.
 mod INTEGRATION-PROGRAM is
   pr TEST-SCENARIO .
   pr TEST-AUX .
   pr TEE-BEHAVIOR .
-  pr TEE-IMP-BEHAVIOR .
+  pr TEE-C-BEHAVIOR .
 
   op addService : -> FuncId [ctor] .
   op integrationProg : -> Program .
@@ -94,13 +92,14 @@ mod INTEGRATION-PROGRAM is
     void addService (int srcKey, int destKey, int & res)
     {
       res := srcKey + destKey ;
+      return unit ;
     }
   .
 
   op integrationScenario : -> Configuration .
   eq integrationScenario =
     initTestTa(integrationProg) initTrustedOS testKey
-    (msg invkTa[sessionId(0), addService, (# 10 # 12 loc(0)), cstore((0 |-> # 0), 1, empty)] from osId to testTa) .
+    (msg invkTa[addService (# 10 # 12 # 0)] from testRa to testTa) .
 endm
 
 --- rew scenarioWithoutKey(testTransient) .

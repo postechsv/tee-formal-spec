@@ -10,49 +10,6 @@ view Data from TRIV to DATA is
   sort Elt to Data .
 endv
 
---- This module defines data position sort.
-
---- @kind data
---- @feature core
-fmod DATA-POSITION is
-  pr NAT .
-
-  sort DataPosition .
-
-  var POS : DataPosition .
-  var P : Nat .
-
-  op pos : Nat -> DataPosition [ctor] .
-  op dataMaxPosition : -> DataPosition [ctor] .
-
-  --- _<=_: every data position is below dataMaxPosition.
-  op _<=_ : DataPosition DataPosition -> Bool .
-  eq POS <= dataMaxPosition = true .
-
-  --- withinMaxPosition(P): P is at most TEE_DATA_MAX_POSITION, which is 0xFFFFFFFF in
-  --- G.P. v1.3.1, Table 5-2.
-  op withinMaxPosition : DataPosition -> Bool .
-  eq withinMaxPosition(pos(P)) = P <= 4294967295 .
-endfm
-
-view DataPosition from TRIV to DATA-POSITION is
-  sort Elt to DataPosition .
-endv
-
---- This module defines the abstracted data size.
-
---- @kind data
---- @feature core
-fmod DATA-SIZE is
-  pr NAT .
-
-  sorts DataSize DataSize? .
-  subsort DataSize < DataSize? .
-
-  op dataSize : Nat -> DataSize [ctor] .
-  op noDataSize : -> DataSize? [ctor] .
-endfm
-
 --- This module defines types that can be stored.
 
 --- @kind data
@@ -77,8 +34,7 @@ endfm
 --- @feature data-stream
 fmod DATA-STREAM-OPERATOR is
   pr BASIC-DATA .
-  pr DATA-SIZE .
-  pr DATA-POSITION .
+  pr NAT .
   pr LIST{Data} .
   pr DATA-STREAM-SEEK-TYPE .
   pr INT .
@@ -93,12 +49,8 @@ fmod DATA-STREAM-OPERATOR is
   eq noData = nil .
 
   --- sizeOfData(DL): the size of the data stream DL is the number of its fragments.
-  op sizeOfData : List{Data} -> DataSize .
-  eq sizeOfData(DL) = dataSize(size(DL)) .
-
-  --- _+_: adds two data sizes.
-  op _+_ : DataSize DataSize -> DataSize .
-  eq dataSize(N) + dataSize(M) = dataSize(N + M) .
+  op sizeOfData : List{Data} -> Nat .
+  eq sizeOfData(DL) = size(DL) .
 
 --- This operator tries to read input size amount of data from the data stream starting from the current data position.
   op readAt : Nat List{Data} -> List{Data} .
@@ -108,11 +60,10 @@ fmod DATA-STREAM-OPERATOR is
 
   op readAux : Nat Nat List{Data} -> List{Data} .
   eq readAux(N , 0 , DL) = nil .
-  ---@dmc owise drop
   eq readAux(N , s(M) , DL) = readAt(N , DL) readAux(N + 1 , M , DL) [owise] .
 
-  op read : Nat DataSize List{Data} -> List{Data} .
-  eq read(N , dataSize(M) , DL) = readAux(N , M , DL) .
+  op read : Nat Nat List{Data} -> List{Data} .
+  eq read(N , M , DL) = readAux(N , M , DL) .
 
   --- putAt: stores the fragment D at position N of the stream.  Data positions beyond the end of a
   --- stream are filled with zero fragments.
@@ -139,13 +90,13 @@ fmod DATA-STREAM-OPERATOR is
   eq resizeStream(s(N) , D DL) = D resizeStream(N , DL) .
 
 --- This operator updates data position indicator by input data size.
-  op updatePos : Nat DataSize DataSize -> Nat .
-  ceq updatePos(P , dataSize(N) , dataSize(M)) = M if P + N > M .
-   eq updatePos(P , dataSize(N) , dataSize(M)) = P + N [owise] .
+  op updatePos : Nat Nat Nat -> Nat .
+  ceq updatePos(P , N , M) = M if P + N > M .
+   eq updatePos(P , N , M) = P + N [owise] .
 
-  --- advancePos(P, dataSize(N)): P advanced by the number of fragments of a successful write.
-  op advancePos : Nat DataSize -> Nat .
-  eq advancePos(P , dataSize(N)) = P + N .
+  --- advancePos(P, N): P advanced by the number of fragments of a successful write.
+  op advancePos : Nat Nat -> Nat .
+  eq advancePos(P , N) = P + N .
 
   --- withinMaxPos(P): P is within TEE_DATA_MAX_POSITION (G.P. v1.3.1, Table 5-2), which is
   --- 0xFFFFFFFF.
@@ -154,12 +105,12 @@ fmod DATA-STREAM-OPERATOR is
 
   --- seekPos: the data position after a seek by offset I, clamped to 0 when the seek would move
   --- before the start of the stream.
-  op seekPos : SeekType Nat Int DataSize -> Nat .
-  ceq seekPos(seekSet , P , I , dataSize(M)) = 0 if I < 0 .
-  ceq seekPos(seekCur , P , I , dataSize(M)) = 0 if P + I < 0 .
-  ceq seekPos(seekEnd , P , I , dataSize(M)) = 0 if M + I < 0 .
-  eq seekPos(seekSet , P , I , dataSize(M)) = abs(I) [owise] .
-  eq seekPos(seekCur , P , I , dataSize(M)) = abs(P + I) [owise] .
-  eq seekPos(seekEnd , P , I , dataSize(M)) = abs(M + I) [owise] .
+  op seekPos : SeekType Nat Int Nat -> Nat .
+  ceq seekPos(seekSet , P , I , M) = 0 if I < 0 .
+  ceq seekPos(seekCur , P , I , M) = 0 if P + I < 0 .
+  ceq seekPos(seekEnd , P , I , M) = 0 if M + I < 0 .
+  eq seekPos(seekSet , P , I , M) = abs(I) [owise] .
+  eq seekPos(seekCur , P , I , M) = abs(P + I) [owise] .
+  eq seekPos(seekEnd , P , I , M) = abs(M + I) [owise] .
 
 endfm

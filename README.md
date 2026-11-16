@@ -4,11 +4,14 @@ An executable [Maude](https://maude.cs.illinois.edu/) specification of the Globa
 
 This repository holds the specification, its build (feature selection), its test suites and its documentation site. Transforming it (DM-Check, maude2lean, ghost composition) and analyzing applications on top of it is done in [tee-formal-analysis](https://github.com/postechsv/tee-formal-analysis), which fetches a revision of this repository and builds it with `make`.
 
-## Paper
+## Publications
 
-Geunyeol Yu, Seunghyun Chae, Kyungmin Bae, Sungkun Moon.
-[Formal Specification of Trusted Execution Environment APIs](https://doi.org/10.1007/978-3-031-57259-3_5).
-FASE 2024, LNCS, Springer.
+- Geunyeol Yu, Seunghyun Chae, Kyungmin Bae, Sungkun Moon, Siheung Kim.
+  [Formal Specification of Trusted Execution Environment APIs and Model Checking of Trusted Applications](https://doi.org/10.1145/3837076).
+  Formal Aspects of Computing, ACM, 2026.
+- Geunyeol Yu, Seunghyun Chae, Kyungmin Bae, Sungkun Moon.
+  [Formal Specification of Trusted Execution Environment APIs](https://doi.org/10.1007/978-3-031-57259-3_5).
+  FASE 2024, LNCS, Springer.
 
 ## Features
 

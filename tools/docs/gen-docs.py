@@ -74,8 +74,9 @@ CATEGORIES = [
     ('Trusted OS and applications', ['os', 'os-service', 'app', 'ree-app', 'tee-app']),
     ('API behavior models', ['transient', 'persistent', 'generic', 'data-stream', 'enumerator',
                              'cryptographic']),
-    ('Panics', ['tee-panic', 'persistent-panic', 'data-stream-panic', 'crypto-panic']),
-    ('Program execution', ['k-prelude', 'imp', 'tee-imp']),
+    ('Panics', ['tee-panic']),
+    ('Program execution', ['k-prelude', 'lang', 'lang-c-semantics', 'lang-c-typing',
+                           'lang-c-tee-support']),
 ]
 CATEGORY_OF = {stem: name for name, stems in CATEGORIES for stem in stems}
 
@@ -98,9 +99,9 @@ KIND_TEXT['view'] = 'A view maps a theory onto a module. Views have no kind.'
 DATA_KINDS = {'constants', 'data', 'state', 'messages'}
 RULE_KINDS = {'behavior', 'panic'}
 # @feature groups, in the order of features.mk, then the groups without a feature flag
-FEATURES = ['crypto', 'transient', 'persistent', 'generic', 'data-stream', 'enumerator',
-            'ta-session', 'client', 'os', 'imp', 'core']
-FLAG_FEATURES = {'crypto', 'transient', 'persistent', 'generic', 'data-stream', 'enumerator'}
+FEATURES = ['crypto', 'transient', 'persistent', 'generic', 'data-stream', 'enumerator', 'shm',
+            'ta-session', 'client', 'os', 'c', 'rust', 'core']
+FLAG_FEATURES = {'crypto', 'transient', 'persistent', 'generic', 'data-stream', 'enumerator', 'shm'}
 FEATURE_RANK = {f: i for i, f in enumerate(FEATURES)}
 ANNOT_RE = re.compile(r'\s*(?:---|\*\*\*)\s*@(kind|feature|related)\b(.*)$')
 RELATED_CAP = 8     # related modules shown per group before the "+N more" expander
@@ -1407,8 +1408,22 @@ def _stmt_line(d):
     return d.line
 
 
+def file_stem(path):
+    """The docs name of a spec file: its base name for src/x.maude, the path from lang joined
+    with '-' for a language file (lang/c/semantics.maude: lang-c-semantics)."""
+    parts = os.path.splitext(os.path.normpath(path or ''))[0].replace(os.sep, '/').split('/')
+    if 'lang' in parts[:-1]:
+        return '-'.join(parts[len(parts) - 1 - parts[::-1].index('lang'):])
+    return parts[-1]
+
+
+def file_title(f):
+    """The file name shown on a file page: src files by base name, language files by path."""
+    return f.stem.replace('-', '/', 2) + '.maude' if f.stem.startswith('lang-') else f.stem + '.maude'
+
+
 def _stem(path):
-    return os.path.splitext(os.path.basename(path or ''))[0]
+    return file_stem(path)
 
 
 def _match_rule(site, label, e):
@@ -1678,14 +1693,14 @@ def render_file(site, f):
             sidebar.append('<li><a href="#%s">%s</a></li>' % (esc(aid), heading))
         sidebar.append('</ul>\n')
     sidebar.append(side_lists(site, '', '../', f.stem))
-    head = '<h1>%s.maude</h1>\n' % esc(f.stem)
+    head = '<h1>%s</h1>\n' % esc(file_title(f))
     if f.summary:
         head += '<p class="lead">%s</p>\n' % esc(f.summary)
     if n_examples:
         head += ('<div class="exctl"><button type="button" class="exbtn">Show all examples</button>'
                  '</div>\n')
     body = head + '<div class="code">\n' + ''.join(out) + '</div>\n'
-    return page(site, cur_dir, '%s.maude' % f.stem, body, ''.join(sidebar))
+    return page(site, cur_dir, file_title(f), body, ''.join(sidebar))
 
 
 INDEX_LINKS = [('index.html', 'Overview'), ('modules.html', 'Modules and views'),
@@ -1846,9 +1861,9 @@ def modules_page(site):
 
     def mod_row(d):
         imps = ', '.join(module_name_link(site, root, x) for x in dict.fromkeys(site.imports.get(d.name, [])))
-        imp_by = ', '.join(module_name_link(site, root, m) for m in sorted(site.importers.get(d.name, ())))
+        c_by = ', '.join(module_name_link(site, root, m) for m in sorted(site.importers.get(d.name, ())))
         return (d.anchor, [def_link(site, root, d), file_link(root, d.stem),
-                           esc(first_sentence(d.doc)), imps, imp_by])
+                           esc(first_sentence(d.doc)), imps, c_by])
 
     head = ''.join('<th>%s</th>' % kind_badge(k, '#kind-' + k) for k in KIND_NAMES)
     matrix_rows = []
@@ -2387,11 +2402,21 @@ def write(path, text):
 
 def build(src, out, overview, examples=None):
     site = Site()
+    # main.maude gives the load order.
     main_path = os.path.join(src, 'main.maude')
     main_text = open(main_path, encoding='utf-8').read() if os.path.isfile(main_path) else ''
-    load_order = re.findall(r'^\s*load\s+(\S+)', main_text, re.M)
     paths = {os.path.splitext(os.path.basename(p))[0]: p
              for p in glob.glob(os.path.join(src, '*.maude'))}
+    # main.maude loads the language files from outside src (load ../lang/c/semantics); they
+    # are read too, under a flat stem (lang-c-semantics) so pages stay in one directory.
+    load_order = []
+    for name in re.findall(r'^\s*load\s+(\S+)', main_text, re.M):
+        if '/' in name:
+            p = os.path.normpath(os.path.join(src, name + '.maude'))
+            if os.path.isfile(p):
+                name = file_stem(p)
+                paths[name] = p
+        load_order.append(name)
     stems = [s for s in load_order if s in paths]
     stems += sorted(s for s in paths if s not in stems)
     site.stems = set(paths)

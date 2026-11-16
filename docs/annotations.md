@@ -56,10 +56,12 @@ data, constants.
 | `data-stream` | `DATA_STREAM` |
 | `enumerator` | `ENUMERATOR` |
 | `crypto` | `CRYPTO` |
+| `shm` | `SHM` |
 | `ta-session` | TA sessions and the TA kernel (no feature flag) |
 | `client` | REE/TEE client API (no feature flag) |
 | `os` | Secure monitor, TEE OS and execution environments (no feature flag) |
-| `imp` | Model programs and their translation into TEE calls (no feature flag) |
+| `c` | Model programs and their translation into TEE calls (no feature flag) |
+| `rust` | Rust (Stable MIR) programs and their translation into TEE calls (no feature flag) |
 | `core` | Shared modules used by several groups (no feature flag) |
 
 ## How gen-docs uses the annotations

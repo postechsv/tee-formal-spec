@@ -1,0 +1,134 @@
+--- Stable MIR execution inside a TrustedApp, including the TEE API boundary.
+load ../../src/main
+
+mod RUST-TA-TEST is
+  pr TEE-BEHAVIOR .
+  pr TEE-RUST-BEHAVIOR .
+
+  ops rustTa rustClient rustOs : -> Oid [ctor] .
+  op p : Nat -> Place .
+  op c32 : Nat -> Operand .
+  op fn : Nat -> Operand .
+  op asg : Place Rvalue -> Statement .
+  op term : TerminatorKind -> Terminator .
+  op decl : Nat -> LocalDecl .
+  op apiCall : Nat Operands Nat Nat -> Terminator .
+  op rustProgram : -> Pgm .
+  op rustProgram : Nat -> Pgm .
+  op outProgram : TypeInfo -> Pgm .
+  op nullProgram : -> Pgm .
+  op ta : Pgm -> Configuration .
+  op req : -> Msg .
+  vars N M D B : Nat .
+  var PL : Place .
+  var RV : Rvalue .
+  var TK : TerminatorKind .
+  var OPS : Operands .
+  var P : Pgm .
+  var AS : AttributeSet .
+  var TI : TypeInfo .
+
+  eq p(N) = place(local(N), .ProjectionElems) .
+  eq c32(N) = operandConstant(constOperand(span(0), noUserTypeAnnotationIndex,
+    mirConst(constantKindAllocated(allocation(
+      bytes(byte(N rem 256) byte((N quo 256) rem 256) byte((N quo 65536) rem 256) byte((N quo 16777216) rem 256)),
+      provenanceMap(.ProvenanceMapEntries), align(4), mutabilityNot)), ty(1), mirConstId(0)))) .
+  eq fn(N) = operandConstant(constOperand(span(0), noUserTypeAnnotationIndex,
+    mirConst(constantKindZeroSized, ty(N), mirConstId(0)))) .
+  eq asg(PL, RV) = statement(statementKindAssign(PL, RV), span(0)) .
+  eq term(TK) = terminator(TK, span(0)) .
+  eq decl(N) = localDecl(ty(N), span(0), mutabilityMut) .
+  eq apiCall(N, OPS, D, B) = term(terminatorKindCall(fn(N), OPS, p(D),
+    someBasicBlockIdx(basicBlockIdx(B)), unwindActionContinue)) .
+
+  --- fn run(result: &mut u32) {
+  ---   let mut handle = 0; let rc = TEE_AllocateTransientObject(TEE_TYPE_AES, 128, &mut handle);
+  ---   TEE_ResetTransientObject(handle); TEE_FreeTransientObject(handle); *result = rc;
+  --- }
+  eq rustProgram = rustProgram(128) .
+  eq rustProgram(N) = pgm(symbol("rust-tee-test"), .GlobalAllocs,
+    functionName(ty(10), functionNormalSym(symbol("run")))
+    functionName(ty(11), functionNormalSym(symbol("TEE_AllocateTransientObject")))
+    functionName(ty(12), functionNormalSym(symbol("TEE_ResetTransientObject")))
+    functionName(ty(13), functionNormalSym(symbol("TEE_FreeTransientObject"))),
+    monoItem(symbol("run"), monoItemFn(symbol("run"), defId(1), someBody(body(
+      basicBlock(asg(p(2), rvalueUse(c32(0)))
+        asg(p(3), rvalueRef(region(opaque("")), borrowKindMut(mutBorrowKindDefault), p(2))),
+        apiCall(11, (c32(2684354576), c32(N), operandCopy(p(3))), 4, 4))
+      | basicBlock(.Statements, apiCall(12, operandCopy(p(2)), 5, 2))
+      | basicBlock(.Statements, apiCall(13, operandCopy(p(2)), 5, 3))
+      | basicBlock(asg(place(local(1), projectionElemDeref), rvalueUse(operandCopy(p(4)))),
+          term(terminatorKindReturn))
+      | basicBlock(.Statements, term(terminatorKindSwitchInt(operandCopy(p(4)),
+          switchTargets(branch(0, basicBlockIdx(1)), basicBlockIdx(3))))),
+      decl(0) decl(3) decl(2) decl(4) decl(1) decl(0),
+      1, opaque(""), noLocal, span(0))))),
+    TypeMapping(ty(0), typeInfoTupleType(.Tys, noLayoutShape))
+    TypeMapping(ty(1), typeInfoPrimitiveType(primTypeUint(uintTyU32)))
+    TypeMapping(ty(2), typeInfoPrimitiveType(primTypeUint(uintTyUsize)))
+    TypeMapping(ty(3), typeInfoRefType(ty(1)))
+    TypeMapping(ty(4), typeInfoRefType(ty(2)))
+    TypeMapping(ty(10), typeInfoFunType("run")), machineInfo(opaque(""))) .
+
+  eq ta(P) = < rustTa : TrustedApp | proc : none, prog : P, client-service : none,
+    status : (normal).AppStatus, storage : oid(0, rustTa), os-kernel : rustOs,
+    counter : 1, api-call : noCall > .
+  eq req = msg invkTa[(rustFn("run")) (# 99)] from rustClient to rustTa .
+
+  --- The API writes directly into the frame that invoked the service (offset 1).
+  --- Both Rust references and raw pointers use this path.
+  eq outProgram(TI) = pgm(symbol("rust-output-test"), .GlobalAllocs,
+    functionName(ty(10), functionNormalSym(symbol("run")))
+    functionName(ty(11), functionNormalSym(symbol("TEE_AllocateTransientObject"))),
+    monoItem(symbol("run"), monoItemFn(symbol("run"), defId(1), someBody(body(
+      basicBlock(.Statements, apiCall(11, (c32(2684354576), c32(128), operandCopy(p(1))), 2, 1))
+      | basicBlock(.Statements, term(terminatorKindReturn)),
+      decl(0) decl(4) decl(1), 1, opaque(""), noLocal, span(0))))),
+    TypeMapping(ty(0), typeInfoTupleType(.Tys, noLayoutShape))
+    TypeMapping(ty(1), typeInfoPrimitiveType(primTypeUint(uintTyU32)))
+    TypeMapping(ty(2), typeInfoPrimitiveType(primTypeUint(uintTyUsize)))
+    TypeMapping(ty(4), TI)
+    TypeMapping(ty(10), typeInfoFunType("run")), machineInfo(opaque(""))) .
+
+  eq nullProgram = pgm(symbol("rust-null-test"), .GlobalAllocs,
+    functionName(ty(10), functionNormalSym(symbol("run")))
+    functionName(ty(13), functionNormalSym(symbol("TEE_FreeTransientObject"))),
+    monoItem(symbol("run"), monoItemFn(symbol("run"), defId(1), someBody(body(
+      basicBlock(.Statements, apiCall(13, c32(0), 0, 1))
+      | basicBlock(.Statements, term(terminatorKindReturn)),
+      decl(0), 0, opaque(""), noLocal, span(0))))),
+    TypeMapping(ty(0), typeInfoTupleType(.Tys, noLayoutShape))
+    TypeMapping(ty(1), typeInfoPrimitiveType(primTypeUint(uintTyU32)))
+    TypeMapping(ty(10), typeInfoFunType("run")), machineInfo(opaque(""))) .
+endm
+
+search [1] in RUST-TA-TEST : req ta(rustProgram) =>*
+  (msg invkTaRet[# 0] from rustTa to rustClient)
+  < rustTa : TrustedApp | proc : none, client-service : none,
+    status : (normal).AppStatus, api-call : noCall, counter : 3, AS:AttributeSet > .
+
+--- An unsupported AES size returns the GP error code and does not allocate an object.
+search [1] in RUST-TA-TEST : req ta(rustProgram(127)) =>*
+  (msg invkTaRet[# 4294901770] from rustTa to rustClient)
+  < rustTa : TrustedApp | proc : none, client-service : none,
+    status : (normal).AppStatus, api-call : noCall, counter : 1, AS:AttributeSet > .
+
+red in RUST-TA-TEST : convIn(pkHandle, Integer(0, 64, false)) == # null .
+red in RUST-TA-TEST : convOut(pkHandle, # null) == Integer(0, 64, false) .
+
+search [1] in RUST-TA-TEST : req ta(outProgram(typeInfoRefType(ty(2)))) =>*
+  (msg invkTaRet[# oid(2, rustTa)] from rustTa to rustClient)
+  < rustTa : TrustedApp | proc : none, client-service : none, AS:AttributeSet >
+  < oid(1, rustTa) : TransObj | type : typeAes, max-size : 128, initialized : false, OA:AttributeSet >
+  < oid(2, rustTa) : ObjHandle | oid : oid(1, rustTa), HA:AttributeSet > .
+
+search [1] in RUST-TA-TEST : req ta(outProgram(typeInfoPtrType(ty(2)))) =>*
+  (msg invkTaRet[# oid(2, rustTa)] from rustTa to rustClient)
+  < rustTa : TrustedApp | proc : none, client-service : none, AS:AttributeSet >
+  < oid(1, rustTa) : TransObj | type : typeAes, max-size : 128, initialized : false, OA:AttributeSet >
+  < oid(2, rustTa) : ObjHandle | oid : oid(1, rustTa), HA:AttributeSet > .
+
+search [1] in RUST-TA-TEST :
+  (msg invkTa[rustFn("run") nil] from rustClient to rustTa) ta(nullProgram) =>*
+  (msg invkTaRet[nil] from rustTa to rustClient)
+  < rustTa : TrustedApp | proc : none, client-service : none, counter : 1, AS:AttributeSet > .

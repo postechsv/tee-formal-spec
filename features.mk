@@ -49,7 +49,7 @@ TRANSIENT ?= 1
 TRANSIENT_LOADS := transient
 TRANSIENT_MODULES := TRANSIENT-OBJECT-BEHAVIOR TRANSIENT-OBJECT-TEE-CALL
 TRANSIENT_REQUIRES :=
-TRANSIENT_TESTS := api/test-transient.maude completion/transient.maude gp-conformance/transient.maude
+TRANSIENT_TESTS := api/test-transient.maude completion/transient.maude gp-conformance/transient.maude completion/rust.maude
 
 PERSISTENT ?= 1
 PERSISTENT_LOADS := persistent

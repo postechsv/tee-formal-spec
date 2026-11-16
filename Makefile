@@ -83,7 +83,7 @@ V ?= $(or $(VERBOSE),0)
 Q = $(if $(filter 1,$(V)),,@)
 VFLAG = $(if $(filter 1,$(V)),-v)
 
-.PHONY: all src test test-api test-checks docs help config clean distclean FORCE
+.PHONY: all src test test-api test-checks test-rust docs help config clean distclean FORCE
 
 all: src
 
@@ -164,6 +164,10 @@ test-api: src
 test-checks: src
 	@if [ -z '$(CHECK_TESTS)' ]; then echo '[checks] no check files selected'; else python3 $(OUT)/tests/run-checks.py $(VFLAG) $(CHECK_ARGS); fi
 
+# Optional compiler-to-Maude pipeline tests (requires rustc in addition to Maude).
+test-rust:
+	python3 -m unittest discover -s tests/rust -v
+
 # Static documentation site from src/ (tools/docs/gen-docs.py). Independent of NAME and the features.
 # tools/docs/input/overview.html is the hand-written body of index.html. tools/docs/input/examples.json
 # (tools/docs/gen-examples.py) gives the verified examples shown, collapsed, under rules and ops.
@@ -184,6 +188,7 @@ help config:
 	@echo "  make test      test-api and test-checks (V=1: stream each file's Maude output)"
 	@echo "  make test-api  API-level tests (run-api-suite.py)"
 	@echo "  make test-checks  search/red checks (run-checks.py)"
+	@echo "  make test-rust  Rust source -> MIR -> Maude integration tests (requires rustc)"
 	@echo "  make docs      build the documentation site in build/docs (open build/docs/index.html)"
 	@echo "  make clean     remove $(OUT)"
 	@echo "  make distclean remove build/"

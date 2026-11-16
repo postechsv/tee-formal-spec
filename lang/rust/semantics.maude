@@ -1,0 +1,2165 @@
+
+--- This file defines the syntax and the semantics of Rust programs, given as their Stable MIR.
+--- It is a translation into Maude of KMIR, the K semantics of Stable MIR, at
+--- github.com/runtimeverification/mir-semantics, commit b8dede6, directory
+--- kmir/src/kmir/kdist/mir-semantics.  The translation is as mechanical as Maude allows:
+---   * a K syntax declaration is an operator with the same name and arguments;
+---   * a K rule on the k cell is a rewrite rule (rl/crl), and a K function rule is an equation;
+---     the heating and cooling of a strict argument are equations, as in lang/c;
+---   * a K cell is an item of the flat configuration of K-CONFIG (src/k-prelude.maude), and a
+---     rule names only the cells it uses, as in lang/c;
+---   * the K List is KList, a list of ListItem(X) items, with the K operations size, L[I],
+---     L[I <- X], range, makeList and updateList; a cast {L[I]}:>S is a sort test L[I] :: S;
+---   * K Bytes is Bytes, a list of byte values, with lengthBytes, substrBytes and Bytes2Int.
+--- Only the concrete execution is translated: the static maps are Maude maps (the someMap of
+--- KMIR), and the symbolic parts (.symbolic blocks, #Ceil and simplification rules, thunk,
+--- lemmas/) are left out.  The parts of KMIR that a TA does not need are left out too: floats,
+--- strings, unions of non-trivial layout, transmutes between different layouts, most casts of
+--- pointers, the intrinsics other than black_box and cold_path, and the cheatcodes.  Each
+--- module names the KMIR file that it translates.
+
+------------------------------------------------------------
+--- Primitive data (K Bytes, MIRInt, MIRBool, MIRString)
+------------------------------------------------------------
+
+--- K Bytes as a list of bytes byte(N), 0 <= N < 256.  A byte is not an Int, so that a list of
+--- bytes does not share the kind of Int.  Bytes2Int is little-endian (LE) only.
+
+--- @kind program
+--- @feature rust
+fmod RUST-BYTES is
+  pr INT .
+
+  sorts Byte ByteList Bytes .
+  subsort Byte < ByteList .
+  op byte : Nat -> Byte [ctor] .
+  op .ByteList : -> ByteList [ctor] .
+  op __ : ByteList ByteList -> ByteList [ctor assoc id: .ByteList] .
+  op bytes : ByteList -> Bytes [ctor] .
+  op .Bytes : -> Bytes .
+  eq .Bytes = bytes(.ByteList) .
+
+  sort Signedness .
+  ops Signed Unsigned : -> Signedness [ctor] .
+  sort Endianness .
+  op LE : -> Endianness [ctor] .
+
+  var L : ByteList .
+  var N : Nat .
+  vars S E : Int .
+
+  op $len : ByteList -> Nat .
+  eq $len(.ByteList) = 0 .
+  eq $len(byte(N) L) = s $len(L) .
+  op lengthBytes : Bytes -> Nat .
+  eq lengthBytes(bytes(L)) = $len(L) .
+
+  op Bytes2Int : Bytes Endianness Signedness -> Int .
+  op $le : ByteList -> Nat .
+  eq $le(.ByteList) = 0 .
+  eq $le(byte(N) L) = N + 256 * $le(L) .
+  eq Bytes2Int(bytes(L), LE, Unsigned) = $le(L) .
+  ceq Bytes2Int(bytes(L), LE, Signed) = $le(L)
+    if $len(L) == 0 or $le(L) < 2 ^ ((8 * $len(L)) - 1) .
+  ceq Bytes2Int(bytes(L), LE, Signed) = $le(L) - (2 ^ (8 * $len(L)))
+    if $len(L) > 0 /\ $le(L) >= 2 ^ ((8 * $len(L)) - 1) .
+
+  --- substrBytes(B, S, E): the bytes from index S up to (not including) E.
+  op substrBytes : Bytes Int Int -> Bytes .
+  op $drop : ByteList Int -> ByteList .
+  op $take : ByteList Int -> ByteList .
+  eq $drop(L, 0) = L .
+  ceq $drop(byte(N) L, S) = $drop(L, S - 1) if S > 0 .
+  eq $take(L, 0) = .ByteList .
+  ceq $take(byte(N) L, S) = byte(N) $take(L, S - 1) if S > 0 .
+  ceq substrBytes(bytes(L), S, E) = bytes($take($drop(L, S), E - S))
+    if 0 <= S /\ S <= E /\ E <= $len(L) .
+endfm
+
+--- MIRInt, MIRBool and MIRString (ty.md): an Int, a Bool or a String, or one wrapped in mirInt,
+--- mirBool or mirString, which is the same value.
+
+--- @kind program
+--- @feature rust
+fmod RUST-MIR-PRIM is
+  pr INT .
+  pr STRING .
+
+  sorts MIRInt MIRBool MIRString .
+  subsort Int < MIRInt .
+  subsort Bool < MIRBool .
+  subsort String < MIRString .
+  op mirInt : Int -> Int .
+  op mirBool : Bool -> Bool .
+  op mirString : String -> String .
+  var I : Int .
+  var B : Bool .
+  var S : String .
+  eq mirInt(I) = I .
+  eq mirBool(B) = B .
+  eq mirString(S) = S .
+endfm
+
+------------------------------------------------------------
+--- MIR syntax: types (ty.md, alloc.md, lib.md)
+------------------------------------------------------------
+
+--- @kind program
+--- @feature rust
+fmod RUST-TY is
+  pr RUST-MIR-PRIM .
+  pr RUST-BYTES .
+
+  --- lib.md
+  sort Symbol .
+  op symbol : String -> Symbol [ctor] .
+  sort Opaque .
+  op opaque : String -> Opaque [ctor] .
+
+  --- ty.md
+  sorts Ty Tys Tyss .
+  op ty : Int -> Ty [ctor] .
+  subsort Ty < Tys .
+  op .Tys : -> Tys [ctor] .
+  op __ : Tys Tys -> Tys [ctor assoc id: .Tys] .
+  subsort Tys < Tyss .
+  op .Tyss : -> Tyss [ctor] .
+  op _:_ : Tyss Tyss -> Tyss [ctor assoc id: .Tyss] .
+
+  sort Span .
+  op span : Int -> Span [ctor] .
+
+  sorts AdtDef ClosureDef CoroutineDef VariantIdx .
+  op adtDef : Int -> AdtDef [ctor] .
+  op closureDef : Int -> ClosureDef [ctor] .
+  op coroutineDef : Int -> CoroutineDef [ctor] .
+  op variantIdx : Int -> VariantIdx [ctor] .
+  --- err(S): the variant index of a cast to an enum without that discriminant (KMIR, data.md).
+  op err : String -> VariantIdx [ctor] .
+
+  --- Generic arguments and regions are carried, not interpreted.
+  sorts GenericArg GenericArgs Region .
+  subsort GenericArg < GenericArgs .
+  op .GenericArgs : -> GenericArgs [ctor] .
+  op __ : GenericArgs GenericArgs -> GenericArgs [ctor assoc id: .GenericArgs] .
+  op genericArgKindType : Ty -> GenericArg [ctor] .
+  op genericArgKindLifetime : Region -> GenericArg [ctor] .
+  op genericArgKindOther : Opaque -> GenericArg [ctor] .
+  op region : Opaque -> Region [ctor] .
+
+  sorts IntTy UintTy FloatTy .
+  ops intTyIsize intTyI8 intTyI16 intTyI32 intTyI64 intTyI128 : -> IntTy [ctor] .
+  ops uintTyUsize uintTyU8 uintTyU16 uintTyU32 uintTyU64 uintTyU128 : -> UintTy [ctor] .
+  ops floatTyF16 floatTyF32 floatTyF64 floatTyF128 : -> FloatTy [ctor] .
+
+  sort PrimitiveType .
+  ops primTypeBool primTypeChar primTypeStr : -> PrimitiveType [ctor] .
+  op primTypeInt : IntTy -> PrimitiveType [ctor] .
+  op primTypeUint : UintTy -> PrimitiveType [ctor] .
+  op primTypeFloat : FloatTy -> PrimitiveType [ctor] .
+
+  --- Constants (ty.md, alloc.md).
+  sort AllocId .
+  op allocId : Int -> AllocId [ctor] .
+  sorts Align ProvenanceMapEntry ProvenanceMapEntries ProvenanceMap Allocation .
+  op align : Int -> Align [ctor] .
+  op provenanceMapEntry : MIRInt AllocId -> ProvenanceMapEntry [ctor] .
+  subsort ProvenanceMapEntry < ProvenanceMapEntries .
+  op .ProvenanceMapEntries : -> ProvenanceMapEntries [ctor] .
+  op __ : ProvenanceMapEntries ProvenanceMapEntries -> ProvenanceMapEntries [ctor assoc id: .ProvenanceMapEntries] .
+  op provenanceMap : ProvenanceMapEntries -> ProvenanceMap [ctor] .
+  sort Mutability .
+  ops mutabilityNot mutabilityMut : -> Mutability [ctor] .
+  op allocation : Bytes ProvenanceMap Align Mutability -> Allocation [ctor] .
+
+  sorts TyConst TyConstId TyConstKind MaybeTyConst MirConst MirConstId ConstantKind .
+  op tyConst : TyConstKind TyConstId -> TyConst [ctor] .
+  op tyConstId : Int -> TyConstId [ctor] .
+  op someTyConst : TyConst -> MaybeTyConst [ctor] .
+  op noTyConst : -> MaybeTyConst [ctor] .
+  op tyConstKindValue : Ty Allocation -> TyConstKind [ctor] .
+  op tyConstKindZSTValue : Ty -> TyConstKind [ctor] .
+  op tyConstKindOther : Opaque -> TyConstKind [ctor] .
+  op mirConst : ConstantKind Ty MirConstId -> MirConst [ctor] .
+  op mirConstId : Int -> MirConstId [ctor] .
+  op constantKindTy : TyConst -> ConstantKind [ctor] .
+  op constantKindAllocated : Allocation -> ConstantKind [ctor] .
+  op constantKindZeroSized : -> ConstantKind [ctor] .
+  op constantKindOther : Opaque -> ConstantKind [ctor] .
+
+  --- Layouts (ty.md).  Only the field offsets and the size are interpreted.
+  sorts MachineSize MachineSizes .
+  op machineSize : MIRInt -> MachineSize [ctor] .
+  subsort MachineSize < MachineSizes .
+  op .MachineSizes : -> MachineSizes [ctor] .
+  op __ : MachineSizes MachineSizes -> MachineSizes [ctor assoc id: .MachineSizes] .
+  sorts FieldsShape FieldsShapeArbitrary VariantsShape ValueAbi LayoutShape MaybeLayoutShape .
+  op fieldsShapePrimitive : -> FieldsShape [ctor] .
+  op fieldsShapeUnion : MIRInt -> FieldsShape [ctor] .
+  op fieldsShapeArray : -> FieldsShape [ctor] .
+  op fieldsShapeArbitrary : FieldsShapeArbitrary -> FieldsShape [ctor] .
+  op mk : MachineSizes -> FieldsShapeArbitrary [ctor] .
+  op variantsShape : Opaque -> VariantsShape [ctor] .
+  op valueAbi : Opaque -> ValueAbi [ctor] .
+  op layoutShape : FieldsShape VariantsShape ValueAbi Align MachineSize -> LayoutShape [ctor] .
+  op someLayoutShape : LayoutShape -> MaybeLayoutShape [ctor] .
+  op noLayoutShape : -> MaybeLayoutShape [ctor] .
+
+  --- Type information (ty.md).
+  sorts Discriminant Discriminants TypeInfo .
+  op discriminant : MIRInt -> Discriminant [ctor] .
+  subsort Discriminant < Discriminants .
+  op .Discriminants : -> Discriminants [ctor] .
+  op __ : Discriminants Discriminants -> Discriminants [ctor assoc id: .Discriminants] .
+  op typeInfoPrimitiveType : PrimitiveType -> TypeInfo [ctor] .
+  op typeInfoEnumType : MIRString AdtDef Discriminants Tyss MaybeLayoutShape -> TypeInfo [ctor] .
+  op typeInfoStructType : MIRString AdtDef Tys MaybeLayoutShape -> TypeInfo [ctor] .
+  op typeInfoUnionType : MIRString AdtDef Tys MaybeLayoutShape -> TypeInfo [ctor] .
+  op typeInfoArrayType : Ty MaybeTyConst -> TypeInfo [ctor] .
+  op typeInfoPtrType : Ty -> TypeInfo [ctor] .
+  op typeInfoRefType : Ty -> TypeInfo [ctor] .
+  op typeInfoTupleType : Tys MaybeLayoutShape -> TypeInfo [ctor] .
+  op TypeInfoDynType : MIRString MaybeLayoutShape -> TypeInfo [ctor] .
+  op typeInfoFunType : MIRString -> TypeInfo [ctor] .
+  op typeInfoVoidType : -> TypeInfo [ctor] .
+endfm
+
+------------------------------------------------------------
+--- MIR syntax: function bodies (body.md)
+------------------------------------------------------------
+
+--- @kind program
+--- @feature rust
+fmod RUST-BODY is
+  pr RUST-TY .
+
+  sorts DefId Safety .
+  op defId : Int -> DefId [ctor] .
+  ops safetyUnsafe safetyNormal : -> Safety [ctor] .
+
+  sorts BasicBlockIdx MaybeBasicBlockIdx .
+  op basicBlockIdx : Int -> BasicBlockIdx [ctor] .
+  op someBasicBlockIdx : BasicBlockIdx -> MaybeBasicBlockIdx [ctor] .
+  op noBasicBlockIdx : -> MaybeBasicBlockIdx [ctor] .
+
+  sorts Local MaybeLocal FieldIdx MaybeFieldIdx .
+  op local : Int -> Local [ctor] .
+  op someLocal : Local -> MaybeLocal [ctor] .
+  op noLocal : -> MaybeLocal [ctor] .
+  op fieldIdx : Int -> FieldIdx [ctor] .
+  op someFieldIdx : FieldIdx -> MaybeFieldIdx [ctor] .
+  op noFieldIdx : -> MaybeFieldIdx [ctor] .
+
+  sorts ProjectionElem ProjectionElems Place .
+  op projectionElemDeref : -> ProjectionElem [ctor] .
+  op projectionElemField : FieldIdx Ty -> ProjectionElem [ctor] .
+  op projectionElemIndex : Local -> ProjectionElem [ctor] .
+  op projectionElemConstantIndex : MIRInt MIRInt MIRBool -> ProjectionElem [ctor] .
+  op projectionElemSubslice : MIRInt MIRInt MIRBool -> ProjectionElem [ctor] .
+  op projectionElemDowncast : VariantIdx -> ProjectionElem [ctor] .
+  op projectionElemOpaqueCast : Ty -> ProjectionElem [ctor] .
+  op projectionElemSubtype : Ty -> ProjectionElem [ctor] .
+  subsort ProjectionElem < ProjectionElems .
+  op .ProjectionElems : -> ProjectionElems [ctor] .
+  op __ : ProjectionElems ProjectionElems -> ProjectionElems [ctor assoc id: .ProjectionElems] .
+  op place : Local ProjectionElems -> Place [ctor] .
+
+  sorts UserTypeAnnotationIndex MaybeUserTypeAnnotationIndex ConstOperand .
+  op userTypeAnnotationIndex : Int -> UserTypeAnnotationIndex [ctor] .
+  op someUserTypeAnnotationIndex : UserTypeAnnotationIndex -> MaybeUserTypeAnnotationIndex [ctor] .
+  op noUserTypeAnnotationIndex : -> MaybeUserTypeAnnotationIndex [ctor] .
+  op constOperand : Span MaybeUserTypeAnnotationIndex MirConst -> ConstOperand [ctor] .
+
+  sorts Operand Operands .
+  op operandCopy : Place -> Operand [ctor] .
+  op operandMove : Place -> Operand [ctor] .
+  op operandConstant : ConstOperand -> Operand [ctor] .
+  subsort Operand < Operands .
+  op .Operands : -> Operands [ctor] .
+  op _,_ : Operands Operands -> Operands [ctor assoc id: .Operands] .
+
+  sorts Branch Branches SwitchTargets .
+  op branch : MIRInt BasicBlockIdx -> Branch [ctor] .
+  subsort Branch < Branches .
+  op .Branches : -> Branches [ctor] .
+  op __ : Branches Branches -> Branches [ctor assoc id: .Branches] .
+  op switchTargets : Branches BasicBlockIdx -> SwitchTargets [ctor] .
+
+  sort BinOp .
+  ops binOpAdd binOpAddUnchecked binOpSub binOpSubUnchecked binOpMul binOpMulUnchecked
+      binOpDiv binOpRem binOpBitXor binOpBitAnd binOpBitOr binOpShl binOpShlUnchecked
+      binOpShr binOpShrUnchecked binOpEq binOpLt binOpLe binOpNe binOpGe binOpGt binOpCmp
+      binOpOffset : -> BinOp [ctor] .
+  sort UnOp .
+  ops unOpNot unOpNeg unOpPtrMetadata : -> UnOp [ctor] .
+  sort NullOp .
+  ops nullOpSizeOf nullOpAlignOf nullOpUbChecks : -> NullOp [ctor] .
+  op nullOpOffsetOf : Opaque -> NullOp [ctor] .
+
+  sorts UnwindAction .
+  ops unwindActionContinue unwindActionUnreachable unwindActionTerminate : -> UnwindAction [ctor] .
+  op unwindActionCleanup : BasicBlockIdx -> UnwindAction [ctor] .
+
+  sorts PointerCoercion CastKind .
+  ops pointerCoercionReifyFnPointer pointerCoercionUnsafeFnPointer
+      pointerCoercionMutToConstPointer pointerCoercionArrayToPointer pointerCoercionUnsize
+      : -> PointerCoercion [ctor] .
+  op pointerCoercionClosureFnPointer : Safety -> PointerCoercion [ctor] .
+  ops castKindPointerExposeAddress castKindPointerWithExposedProvenance castKindDynStar
+      castKindIntToInt castKindFloatToInt castKindFloatToFloat castKindIntToFloat
+      castKindPtrToPtr castKindFnPtrToPtr castKindTransmute : -> CastKind [ctor] .
+  op castKindPointerCoercion : PointerCoercion -> CastKind [ctor] .
+
+  sorts BorrowKind MutBorrowKind FakeBorrowKind .
+  op borrowKindShared : -> BorrowKind [ctor] .
+  op borrowKindFake : FakeBorrowKind -> BorrowKind [ctor] .
+  op borrowKindMut : MutBorrowKind -> BorrowKind [ctor] .
+  ops mutBorrowKindDefault mutBorrowKindTwoPhaseBorrow mutBorrowKindClosureCapture : -> MutBorrowKind [ctor] .
+  ops fakeBorrowKindDeep fakeBorrowKindShallow : -> FakeBorrowKind [ctor] .
+
+  sorts AggregateKind Movability .
+  ops movabilityStatic movabilityMovable : -> Movability [ctor] .
+  op aggregateKindArray : Ty -> AggregateKind [ctor] .
+  op aggregateKindTuple : -> AggregateKind [ctor] .
+  op aggregateKindAdt : AdtDef VariantIdx GenericArgs MaybeUserTypeAnnotationIndex MaybeFieldIdx -> AggregateKind [ctor] .
+  op aggregateKindClosure : ClosureDef GenericArgs -> AggregateKind [ctor] .
+  op aggregateKindCoroutine : CoroutineDef GenericArgs Movability -> AggregateKind [ctor] .
+  op aggregateKindRawPtr : Ty Mutability -> AggregateKind [ctor] .
+
+  sort Rvalue .
+  op rvalueAddressOf : Mutability Place -> Rvalue [ctor] .
+  op rvalueAggregate : AggregateKind Operands -> Rvalue [ctor] .
+  op rvalueBinaryOp : BinOp Operand Operand -> Rvalue [ctor] .
+  op rvalueCast : CastKind Operand Ty -> Rvalue [ctor] .
+  op rvalueCheckedBinaryOp : BinOp Operand Operand -> Rvalue [ctor] .
+  op rvalueCopyForDeref : Place -> Rvalue [ctor] .
+  op rvalueDiscriminant : Place -> Rvalue [ctor] .
+  op rvalueLen : Place -> Rvalue [ctor] .
+  op rvalueRef : Region BorrowKind Place -> Rvalue [ctor] .
+  op rvalueRepeat : Operand TyConst -> Rvalue [ctor] .
+  op rvalueShallowInitBox : Operand Ty -> Rvalue [ctor] .
+  op rvalueNullaryOp : NullOp Ty -> Rvalue [ctor] .
+  op rvalueUnaryOp : UnOp Operand -> Rvalue [ctor] .
+  op rvalueUse : Operand -> Rvalue [ctor] .
+
+  --- Statement kinds that KMIR skips carry their arguments as an Opaque.
+  sorts StatementKind Statement Statements NonDivergingIntrinsic .
+  op statementKindAssign : Place Rvalue -> StatementKind [ctor] .
+  op statementKindFakeRead : Opaque Place -> StatementKind [ctor] .
+  op statementKindSetDiscriminant : Place VariantIdx -> StatementKind [ctor] .
+  op statementKindDeinit : Place -> StatementKind [ctor] .
+  op statementKindStorageLive : Local -> StatementKind [ctor] .
+  op statementKindStorageDead : Local -> StatementKind [ctor] .
+  op statementKindRetag : Opaque Place -> StatementKind [ctor] .
+  op statementKindPlaceMention : Place -> StatementKind [ctor] .
+  op statementKindAscribeUserType : Place Opaque Opaque -> StatementKind [ctor] .
+  op statementKindCoverage : Opaque -> StatementKind [ctor] .
+  op statementKindIntrinsic : NonDivergingIntrinsic -> StatementKind [ctor] .
+  op statementKindConstEvalCounter : -> StatementKind [ctor] .
+  op statementKindNop : -> StatementKind [ctor] .
+  op nonDivergingIntrinsicAssume : Operand -> NonDivergingIntrinsic [ctor] .
+  op statement : StatementKind Span -> Statement [ctor] .
+  subsort Statement < Statements .
+  op .Statements : -> Statements [ctor] .
+  op __ : Statements Statements -> Statements [ctor assoc id: .Statements] .
+
+  sort AssertMessage .
+  op assertMessageBoundsCheck : Operand Operand -> AssertMessage [ctor] .
+  op assertMessageOverflow : BinOp Operand Operand -> AssertMessage [ctor] .
+  op assertMessageOverflowNeg : Operand -> AssertMessage [ctor] .
+  op assertMessageDivisionByZero : Operand -> AssertMessage [ctor] .
+  op assertMessageRemainderByZero : Operand -> AssertMessage [ctor] .
+  op assertMessageOther : Opaque -> AssertMessage [ctor] .
+
+  sorts TerminatorKind Terminator .
+  op terminatorKindGoto : BasicBlockIdx -> TerminatorKind [ctor] .
+  op terminatorKindSwitchInt : Operand SwitchTargets -> TerminatorKind [ctor] .
+  ops terminatorKindResume terminatorKindAbort terminatorKindReturn terminatorKindUnreachable : -> TerminatorKind [ctor] .
+  op terminatorKindDrop : Place BasicBlockIdx UnwindAction -> TerminatorKind [ctor] .
+  op terminatorKindCall : Operand Operands Place MaybeBasicBlockIdx UnwindAction -> TerminatorKind [ctor] .
+  op assert : Operand MIRBool AssertMessage BasicBlockIdx UnwindAction -> TerminatorKind [ctor] .
+  op terminator : TerminatorKind Span -> Terminator [ctor] .
+
+  sorts BasicBlock BasicBlocks LocalDecl LocalDecls Body MaybeBody .
+  op basicBlock : Statements Terminator -> BasicBlock [ctor] .
+  subsort BasicBlock < BasicBlocks .
+  op .BasicBlocks : -> BasicBlocks [ctor] .
+  op _|_ : BasicBlocks BasicBlocks -> BasicBlocks [ctor assoc id: .BasicBlocks] .
+  op localDecl : Ty Span Mutability -> LocalDecl [ctor] .
+  subsort LocalDecl < LocalDecls .
+  op .LocalDecls : -> LocalDecls [ctor] .
+  op __ : LocalDecls LocalDecls -> LocalDecls [ctor assoc id: .LocalDecls] .
+  --- body(blocks, locals, argCount, varDebugInfo, spreadArg, span).  The debug information is
+  --- carried as an Opaque.
+  op body : BasicBlocks LocalDecls MIRInt Opaque MaybeLocal Span -> Body [ctor] .
+  op someBody : Body -> MaybeBody [ctor] .
+  op noBody : -> MaybeBody [ctor] .
+endfm
+
+------------------------------------------------------------
+--- MIR syntax: programs (mono.md, alloc.md, kmir-ast.md)
+------------------------------------------------------------
+
+--- @kind program
+--- @feature rust
+fmod RUST-PGM is
+  pr RUST-BODY .
+
+  sort MonoItemKind .
+  op monoItemFn : Symbol DefId MaybeBody -> MonoItemKind [ctor] .
+  op monoItemStatic : Symbol DefId Opaque -> MonoItemKind [ctor] .
+  op monoItemGlobalAsm : Opaque -> MonoItemKind [ctor] .
+  op IntrinsicFunction : Symbol -> MonoItemKind [ctor] .
+  sorts MonoItem MonoItems .
+  op monoItem : Symbol MonoItemKind -> MonoItem [ctor] .
+  subsort MonoItem < MonoItems .
+  op .MonoItems : -> MonoItems [ctor] .
+  op __ : MonoItems MonoItems -> MonoItems [ctor assoc id: .MonoItems] .
+
+  --- alloc.md.  A global allocation is Memory(Allocation); the other kinds are carried as an
+  --- Opaque.
+  sorts GlobalAllocKind GlobalAlloc GlobalAllocs .
+  op Memory : Allocation -> GlobalAllocKind [ctor] .
+  op globalAllocOther : Opaque -> GlobalAllocKind [ctor] .
+  op globalAllocEntry : AllocId Ty GlobalAllocKind -> GlobalAlloc [ctor] .
+  subsort GlobalAlloc < GlobalAllocs .
+  op .GlobalAllocs : -> GlobalAllocs [ctor] .
+  op __ : GlobalAllocs GlobalAllocs -> GlobalAllocs [ctor assoc id: .GlobalAllocs] .
+
+  --- kmir-ast.md
+  sorts FunctionKind FunctionName FunctionNames TypeMapping TypeMappings MachineInfo Pgm .
+  op functionNormalSym : Symbol -> FunctionKind [ctor] .
+  op functionIntrinsic : Symbol -> FunctionKind [ctor] .
+  op functionNoop : Symbol -> FunctionKind [ctor] .
+  op functionName : Ty FunctionKind -> FunctionName [ctor] .
+  subsort FunctionName < FunctionNames .
+  op .FunctionNames : -> FunctionNames [ctor] .
+  op __ : FunctionNames FunctionNames -> FunctionNames [ctor assoc id: .FunctionNames] .
+  op TypeMapping : Ty TypeInfo -> TypeMapping [ctor] .
+  subsort TypeMapping < TypeMappings .
+  op .TypeMappings : -> TypeMappings [ctor] .
+  op __ : TypeMappings TypeMappings -> TypeMappings [ctor assoc id: .TypeMappings] .
+  op machineInfo : Opaque -> MachineInfo [ctor] .
+  op pgm : Symbol GlobalAllocs FunctionNames MonoItems TypeMappings MachineInfo -> Pgm [ctor] .
+endfm
+
+------------------------------------------------------------
+--- K lists
+------------------------------------------------------------
+
+--- The K List: ListItem(X) items of the sort LItem, joined by _;_.  K joins them by
+--- juxtaposition, but Maude cannot: values are arguments too (Value < Arg, src/lang.maude), so
+--- a list of values has the kind of List{Arg}, whose juxtaposition has another identity.  For
+--- the same reason the lists of operands and basic blocks are joined by _,_ and _|_.  The sorts whose
+--- values a KMIR list holds (values, locals, stack frames, basic blocks) are below LItem.
+
+--- @kind program
+--- @feature rust
+fmod RUST-KLIST is
+  pr INT .
+  inc K-COMPUTATION .
+
+  sorts LItem KList .
+  op ListItem : LItem -> KList [ctor] .
+  op .List : -> KList [ctor] .
+  op _;_ : KList KList -> KList [ctor assoc id: .List] .
+  --- A list is a K item (KMIR puts the list of operand values on the k cell).
+  subsort KList < K .
+
+  vars L L' : KList .
+  vars X Y : LItem .
+  vars I J N : Int .
+
+  op size : KList -> Nat .
+  eq size(.List) = 0 .
+  eq size(ListItem(X) ; L) = s size(L) .
+
+  --- L[I]: the item at index I (0-based).
+  op _[_] : KList Int -> LItem [prec 22] .
+  eq (ListItem(X) ; L)[0] = X .
+  ceq (ListItem(X) ; L)[I] = L[I - 1] if I > 0 .
+
+  --- L[I <- Y]: L with the item at index I replaced by Y.
+  op _[_<-_] : KList Int LItem -> KList [prec 22] .
+  eq (ListItem(X) ; L)[0 <- Y] = ListItem(Y) ; L .
+  ceq (ListItem(X) ; L)[I <- Y] = ListItem(X) ; (L[I - 1 <- Y]) if I > 0 .
+
+  --- range(L, I, J): L without its first I and its last J items.
+  op range : KList Int Int -> KList .
+  op $dropL : KList Int -> KList .
+  op $takeL : KList Int -> KList .
+  eq $dropL(L, 0) = L .
+  ceq $dropL(ListItem(X) ; L, I) = $dropL(L, I - 1) if I > 0 .
+  eq $takeL(L, 0) = .List .
+  ceq $takeL(ListItem(X) ; L, I) = ListItem(X) ; $takeL(L, I - 1) if I > 0 .
+  ceq range(L, I, J) = $takeL($dropL(L, I), size(L) - I - J)
+    if 0 <= I /\ 0 <= J /\ I + J <= size(L) .
+
+  --- makeList(N, X): N copies of X.
+  op makeList : Int LItem -> KList .
+  eq makeList(0, X) = .List .
+  ceq makeList(N, X) = ListItem(X) ; makeList(N - 1, X) if N > 0 .
+
+  --- updateList(L, I, L'): L with the items from index I replaced by those of L'.
+  op updateList : KList Int KList -> KList .
+  eq updateList(L, I, .List) = L .
+  eq updateList(L, I, ListItem(X) ; L') = updateList(L[I <- X], I + 1, L') .
+endfm
+
+------------------------------------------------------------
+--- Runtime values (rt/value.md)
+------------------------------------------------------------
+
+--- The values of a Rust program extend the values of the TEE model (TEE-VALUE, src/lang.maude):
+--- a TEE value # X is a value of the program too, which it only passes back to the API.
+
+--- @kind program
+--- @feature rust
+fmod RUST-VALUE is
+  pr TEE-VALUE .
+  pr RUST-PGM .
+  pr RUST-KLIST .
+
+  --- Metadata of a pointer (size, pointer offset, origin size).
+  sorts Metadata MetadataSize .
+  op metadata : MetadataSize Int MetadataSize -> Metadata [ctor] .
+  op noMetadataSize : -> MetadataSize [ctor] .
+  op staticSize : Int -> MetadataSize [ctor] .
+  op dynamicSize : Int -> MetadataSize [ctor] .
+
+  --- Evaluation: what the k cell evaluates; a Value is its result (the KResult).
+  sort Evaluation .
+  subsort Value < Evaluation < K .
+
+  op Integer : Int Int Bool -> Value [ctor] .          --- value, bit width, signedness
+  op BoolVal : Bool -> Value [ctor] .
+  op Aggregate : VariantIdx KList -> Value [ctor] .
+  op Union : FieldIdx Value -> Value [ctor] .
+  op Reference : Int Place Mutability Metadata -> Value [ctor] .
+  op Range : KList -> Value [ctor] .
+  op PtrLocal : Int Place Mutability Metadata -> Value [ctor] .
+  op FunPtr : Ty -> Value [ctor] .
+  op AllocRef : AllocId ProjectionElems Metadata -> Value [ctor] .
+  op Moved : -> Value [ctor] .
+  subsort Value < LItem .
+  --- Every evaluation is a list item too, so that a value has one least upper bound with a
+  --- typed value (Evaluation) for the polymorphic operators such as if_then_else_fi.
+  subsort Evaluation < LItem .
+
+  --- Locals of a stack frame.
+  sorts TypedLocal TypedValue NewLocal .
+  subsorts TypedValue NewLocal < TypedLocal < LItem .
+  op typedValue : Value Ty Mutability -> TypedValue [ctor] .
+  op newLocal : Ty Mutability -> NewLocal [ctor] .
+  subsort TypedValue < Evaluation .
+
+  var V : Value .
+  var TY : Ty .
+  var MUT : Mutability .
+
+  op tyOfLocal : TypedLocal -> Ty .
+  eq tyOfLocal(typedValue(V, TY, MUT)) = TY .
+  eq tyOfLocal(newLocal(TY, MUT)) = TY .
+  op mutabilityOf : TypedLocal -> Mutability .
+  eq mutabilityOf(typedValue(V, TY, MUT)) = MUT .
+  eq mutabilityOf(newLocal(TY, MUT)) = MUT .
+  op valueOf : TypedValue -> Value .
+  eq valueOf(typedValue(V, TY, MUT)) = V .
+
+  --- The errors of a program.
+  sort MIRError .
+  subsort MIRError < K .
+endfm
+
+view Ty from TRIV to RUST-TY is
+  sort Elt to Ty .
+endv
+
+view TypeInfo from TRIV to RUST-TY is
+  sort Elt to TypeInfo .
+endv
+
+view AllocId from TRIV to RUST-TY is
+  sort Elt to AllocId .
+endv
+
+view MonoItemKind from TRIV to RUST-PGM is
+  sort Elt to MonoItemKind .
+endv
+
+view RustValue from TRIV to RUST-VALUE is
+  sort Elt to Value .
+endv
+
+--- The static lookup tables (rt/value.md).  KMIR keeps them as MaybeMap, noMap in symbolic
+--- execution; only the concrete someMap is translated, as a Maude map.
+
+--- @kind program
+--- @feature rust
+fmod RUST-LOOKUP is
+  pr RUST-VALUE .
+  pr MAP{Ty,MonoItemKind} .
+  pr MAP{Ty,TypeInfo} .
+  pr MAP{AllocId,RustValue} .
+
+  op InvalidAlloc : AllocId -> Evaluation [ctor] .
+
+  var FM : Map{Ty,MonoItemKind} .
+  var TM : Map{Ty,TypeInfo} .
+  var AM : Map{AllocId,RustValue} .
+  var TY : Ty .
+  var I : Int .
+  var MK : MonoItemKind .
+  var TI : TypeInfo .
+  var AID : AllocId .
+  var V : Value .
+
+  op lookupFunction : Map{Ty,MonoItemKind} Ty -> MonoItemKind .
+  eq lookupFunction((TY |-> MK, FM), TY) = MK .
+  eq lookupFunction(FM, ty(I)) = monoItemFn(symbol("** UNKNOWN FUNCTION **"), defId(I), noBody) [owise] .
+
+  op lookupTy : Map{Ty,TypeInfo} Ty -> TypeInfo .
+  eq lookupTy((TY |-> TI, TM), TY) = TI .
+  eq lookupTy(TM, TY) = typeInfoVoidType [owise] .
+
+  op lookupAlloc : Map{AllocId,RustValue} AllocId -> Evaluation .
+  eq lookupAlloc((AID |-> V, AM), AID) = V .
+  eq lookupAlloc(AM, AID) = InvalidAlloc(AID) [owise] .
+endfm
+
+------------------------------------------------------------
+--- Configuration (rt/configuration.md)
+------------------------------------------------------------
+
+--- The cells of KMIR as items of a flat configuration (K-CONFIG).  The cells of <currentFrame>
+--- are top-level cells.
+
+--- @kind program
+--- @feature rust
+fmod RUST-CONFIG is
+  pr RUST-LOOKUP .
+  inc K-CONFIG .
+
+  sort RetVal .
+  op return : Value -> RetVal [ctor] .
+  op noReturn : -> RetVal [ctor] .
+
+  sort StackFrame .
+  subsort StackFrame < LItem .
+  --- StackFrame(caller, dest, target, unwind, locals, span)
+  op StackFrame : Ty Place MaybeBasicBlockIdx UnwindAction KList Span -> StackFrame [ctor] .
+
+  op retVal : RetVal -> KConfigItem [ctor] .
+  op currentFunc : Ty -> KConfigItem [ctor] .
+  op currentBody : KList -> KConfigItem [ctor] .
+  op caller : Ty -> KConfigItem [ctor] .
+  op dest : Place -> KConfigItem [ctor] .
+  op target : MaybeBasicBlockIdx -> KConfigItem [ctor] .
+  op unwind : UnwindAction -> KConfigItem [ctor] .
+  op locals : KList -> KConfigItem [ctor] .
+  op currentSpan : Span -> KConfigItem [ctor] .
+  op stack : KList -> KConfigItem [ctor] .
+  op functions : Map{Ty,MonoItemKind} -> KConfigItem [ctor] .
+  op types : Map{Ty,TypeInfo} -> KConfigItem [ctor] .
+  op memory : Map{AllocId,RustValue} -> KConfigItem [ctor] .
+endfm
+
+------------------------------------------------------------
+--- Numbers (rt/numbers.md)
+------------------------------------------------------------
+
+--- @kind program
+--- @feature rust
+fmod RUST-NUMBERS is
+  pr RUST-VALUE .
+
+  sorts NumTy InTy .
+  subsorts IntTy UintTy < InTy < NumTy .
+  subsort FloatTy < NumTy .
+
+  var INTTY : IntTy .
+  var UINTTY : UintTy .
+  var FLOATTY : FloatTy .
+  vars VAL WIDTH : Int .
+  var NT : NumTy .
+  var TI : TypeInfo .
+  var B : Bytes .
+
+  op #numTypeOf : TypeInfo -> NumTy .
+  eq #numTypeOf(typeInfoPrimitiveType(primTypeInt(INTTY))) = INTTY .
+  eq #numTypeOf(typeInfoPrimitiveType(primTypeUint(UINTTY))) = UINTTY .
+  eq #numTypeOf(typeInfoPrimitiveType(primTypeFloat(FLOATTY))) = FLOATTY .
+
+  op #intTypeOf : TypeInfo -> InTy .
+  eq #intTypeOf(typeInfoPrimitiveType(primTypeInt(INTTY))) = INTTY .
+  eq #intTypeOf(typeInfoPrimitiveType(primTypeUint(UINTTY))) = UINTTY .
+
+  op #isIntType : TypeInfo -> Bool .
+  eq #isIntType(typeInfoPrimitiveType(primTypeInt(INTTY))) = true .
+  eq #isIntType(typeInfoPrimitiveType(primTypeUint(UINTTY))) = true .
+  eq #isIntType(TI) = false [owise] .
+
+  op isIntTy : NumTy -> Bool .
+  eq isIntTy(INTTY) = true .
+  eq isIntTy(NT) = false [owise] .
+  op isUintTy : NumTy -> Bool .
+  eq isUintTy(UINTTY) = true .
+  eq isUintTy(NT) = false [owise] .
+
+  op #bitWidth : NumTy -> Int .
+  eq #bitWidth(intTyIsize) = 64 .   --- on 64-bit systems
+  eq #bitWidth(intTyI8) = 8 .
+  eq #bitWidth(intTyI16) = 16 .
+  eq #bitWidth(intTyI32) = 32 .
+  eq #bitWidth(intTyI64) = 64 .
+  eq #bitWidth(intTyI128) = 128 .
+  eq #bitWidth(uintTyUsize) = 64 .  --- on 64-bit systems
+  eq #bitWidth(uintTyU8) = 8 .
+  eq #bitWidth(uintTyU16) = 16 .
+  eq #bitWidth(uintTyU32) = 32 .
+  eq #bitWidth(uintTyU64) = 64 .
+  eq #bitWidth(uintTyU128) = 128 .
+  eq #bitWidth(floatTyF16) = 16 .
+  eq #bitWidth(floatTyF32) = 32 .
+  eq #bitWidth(floatTyF64) = 64 .
+  eq #bitWidth(floatTyF128) = 128 .
+
+  --- truncate(VAL, WIDTH, SIGNEDNESS): VAL in WIDTH bits.
+  op truncate : Int Int Signedness -> Int .
+  ceq truncate(VAL, WIDTH, Unsigned) = 0 if WIDTH <= 0 .
+  ceq truncate(VAL, WIDTH, Signed) = 0 if WIDTH <= 0 .
+  ceq truncate(VAL, WIDTH, Unsigned) = VAL & ((1 << WIDTH) - 1) if 0 < WIDTH .
+  ceq truncate(VAL, WIDTH, Signed) = VAL & ((1 << WIDTH) - 1)
+    if 0 < WIDTH /\ (VAL & ((1 << WIDTH) - 1)) < (1 << (WIDTH - 1)) .
+  ceq truncate(VAL, WIDTH, Signed) = (VAL & ((1 << WIDTH) - 1)) - (1 << WIDTH)
+    if 0 < WIDTH /\ (VAL & ((1 << WIDTH) - 1)) >= (1 << (WIDTH - 1)) .
+
+  op #decodeInteger : Bytes InTy -> Value .
+  ceq #decodeInteger(B, INTTY) = Integer(Bytes2Int(B, LE, Signed), #bitWidth(INTTY), true)
+    if lengthBytes(B) == #bitWidth(INTTY) quo 8 .
+  ceq #decodeInteger(B, UINTTY) = Integer(Bytes2Int(B, LE, Unsigned), #bitWidth(UINTTY), false)
+    if lengthBytes(B) == #bitWidth(UINTTY) quo 8 .
+
+  op #intAsType : Int Int NumTy -> Value .
+  --- converting to signed int types: narrowing or unsigned to signed truncates
+  ceq #intAsType(VAL, WIDTH, INTTY) = Integer(truncate(VAL, #bitWidth(INTTY), Signed), #bitWidth(INTTY), true)
+    if #bitWidth(INTTY) <= WIDTH .
+  --- widening: nothing to do
+  ceq #intAsType(VAL, WIDTH, INTTY) = Integer(VAL, #bitWidth(INTTY), true)
+    if WIDTH < #bitWidth(INTTY) .
+  --- converting to unsigned int types (simple bitmask)
+  eq #intAsType(VAL, WIDTH, UINTTY) = Integer(truncate(VAL, #bitWidth(UINTTY), Unsigned), #bitWidth(UINTTY), false) .
+endfm
+
+--- Type queries and layout calculations need the syntax, values and numeric helpers above.
+load typing.maude
+
+------------------------------------------------------------
+--- Decoding of constants (rt/decoding.md)
+------------------------------------------------------------
+
+--- The bool, integer, array, struct and tuple constants.  Floats and slices are not decoded.
+
+--- @kind program
+--- @feature rust
+fmod RUST-DECODING is
+  pr RUST-TYPES .
+
+  op UnableToDecode : Bytes TypeInfo -> Evaluation [ctor] .
+
+  var TM : Map{Ty,TypeInfo} .
+  var BS : Bytes .
+  var TI : TypeInfo .
+  vars TY ELEMTY : Ty .
+  var LEN : TyConstKind .
+  var ID : TyConstId .
+  var NAME : MIRString .
+  var ADT : AdtDef .
+  var TYS : Tys .
+  var LAYOUT : MaybeLayoutShape .
+  var OFFSET : MachineSize .
+  var OFFSETS : MachineSizes .
+  vars N I : Int .
+  var MTC : MaybeTyConst .
+  var FS : FieldsShape .
+  var VS : VariantsShape .
+  var VA : ValueAbi .
+  var AL : Align .
+  var MS : MachineSize .
+
+  op #decodeValue : Map{Ty,TypeInfo} Bytes TypeInfo -> Evaluation .
+  ceq #decodeValue(TM, BS, typeInfoPrimitiveType(primTypeBool)) = BoolVal(false)
+    if 0 == Bytes2Int(BS, LE, Unsigned) /\ lengthBytes(BS) == 1 .
+  ceq #decodeValue(TM, BS, typeInfoPrimitiveType(primTypeBool)) = BoolVal(true)
+    if 1 == Bytes2Int(BS, LE, Unsigned) /\ lengthBytes(BS) == 1 .
+  ceq #decodeValue(TM, BS, TI) = #decodeInteger(BS, #intTypeOf(TI))
+    if #isIntType(TI) /\ lengthBytes(BS) == #elemSize(TM, TI) .
+  eq #decodeValue(TM, BS, typeInfoArrayType(ELEMTY, someTyConst(tyConst(LEN, ID))))
+   = #decodeArrayAllocation(TM, BS, lookupTy(TM, ELEMTY), readTyConstInt(TM, LEN)) .
+  ceq #decodeValue(TM, BS, typeInfoStructType(NAME, ADT, TYS, LAYOUT))
+   = Aggregate(variantIdx(0), #decodeFieldsWithOffsets(TM, BS, TYS, #layoutOffsets(LAYOUT)))
+    if #layoutOffsets(LAYOUT) =/= .MachineSizes
+    /\ 0 <= #neededBytesForOffsets(TM, TYS, #layoutOffsets(LAYOUT))
+    /\ lengthBytes(BS) >= #neededBytesForOffsets(TM, TYS, #layoutOffsets(LAYOUT)) .
+  ceq #decodeValue(TM, BS, typeInfoTupleType(.Tys, LAYOUT)) = Aggregate(variantIdx(0), .List)
+    if lengthBytes(BS) == 0 .
+  ceq #decodeValue(TM, BS, typeInfoTupleType(TYS, LAYOUT))
+   = Aggregate(variantIdx(0), #decodeFieldsWithOffsets(TM, BS, TYS, #layoutOffsets(LAYOUT)))
+    if #layoutOffsets(LAYOUT) =/= .MachineSizes
+    /\ 0 <= #neededBytesForOffsets(TM, TYS, #layoutOffsets(LAYOUT))
+    /\ lengthBytes(BS) >= #neededBytesForOffsets(TM, TYS, #layoutOffsets(LAYOUT)) .
+  eq #decodeValue(TM, BS, TI) = UnableToDecode(BS, TI) [owise] .
+
+  op #neededBytesForOffsets : Map{Ty,TypeInfo} Tys MachineSizes -> Int .
+  eq #neededBytesForOffsets(TM, TY TYS, OFFSET OFFSETS)
+   = max(#msBytes(OFFSET) + #elemSize(TM, lookupTy(TM, TY)), #neededBytesForOffsets(TM, TYS, OFFSETS)) .
+  eq #neededBytesForOffsets(TM, .Tys, .MachineSizes) = 0 .
+  eq #neededBytesForOffsets(TM, TYS, OFFSETS) = -1 [owise] .
+
+  op #decodeFieldsWithOffsets : Map{Ty,TypeInfo} Bytes Tys MachineSizes -> KList .
+  ceq #decodeFieldsWithOffsets(TM, BS, TY TYS, OFFSET OFFSETS)
+   = ListItem(#decodeValue(TM, substrBytes(BS, #msBytes(OFFSET), #msBytes(OFFSET) + #elemSize(TM, lookupTy(TM, TY))), lookupTy(TM, TY))) ;
+     #decodeFieldsWithOffsets(TM, BS, TYS, OFFSETS)
+    if lengthBytes(BS) >= #msBytes(OFFSET) + #elemSize(TM, lookupTy(TM, TY)) .
+  eq #decodeFieldsWithOffsets(TM, BS, .Tys, OFFSETS) = .List .
+  eq #decodeFieldsWithOffsets(TM, BS, TYS, OFFSETS) = .List [owise] .
+
+  --- #decodeArrayAllocation(TM, BS, ELEM, N): the N elements of the type ELEM in BS.
+  op #decodeArrayAllocation : Map{Ty,TypeInfo} Bytes TypeInfo Int -> Value .
+  op #decodeElems : Map{Ty,TypeInfo} Bytes TypeInfo Int Int -> KList .
+  ceq #decodeArrayAllocation(TM, BS, TI, N) = Range(#decodeElems(TM, BS, TI, 0, N))
+    if lengthBytes(BS) == #elemSize(TM, TI) * N .
+  eq #decodeElems(TM, BS, TI, I, 0) = .List .
+  ceq #decodeElems(TM, BS, TI, I, N)
+   = ListItem(#decodeValue(TM, substrBytes(BS, I, I + #elemSize(TM, TI)), TI)) ;
+     #decodeElems(TM, BS, TI, I + #elemSize(TM, TI), N - 1)
+    if N > 0 .
+
+  op #elemSize : Map{Ty,TypeInfo} TypeInfo -> Int .
+  eq #elemSize(TM, typeInfoPrimitiveType(primTypeBool)) = 1 .
+  eq #elemSize(TM, typeInfoPrimitiveType(primTypeChar)) = 4 .
+  ceq #elemSize(TM, TI) = #bitWidth(#intTypeOf(TI)) quo 8 if #isIntType(TI) .
+  eq #elemSize(TM, typeInfoPrimitiveType(primTypeFloat(floatTyF16))) = 2 .
+  eq #elemSize(TM, typeInfoPrimitiveType(primTypeFloat(floatTyF32))) = 4 .
+  eq #elemSize(TM, typeInfoPrimitiveType(primTypeFloat(floatTyF64))) = 8 .
+  eq #elemSize(TM, typeInfoPrimitiveType(primTypeFloat(floatTyF128))) = 16 .
+  eq #elemSize(TM, typeInfoPrimitiveType(primTypeStr)) = 0 .
+  eq #elemSize(TM, typeInfoArrayType(ELEMTY, noTyConst)) = 0 .
+  eq #elemSize(TM, typeInfoArrayType(ELEMTY, someTyConst(tyConst(LEN, ID))))
+   = #elemSize(TM, lookupTy(TM, ELEMTY)) * readTyConstInt(TM, LEN) .
+  ceq #elemSize(TM, typeInfoRefType(TY)) = #elemSize(TM, typeInfoPrimitiveType(primTypeUint(uintTyUsize)))
+    if dynamicSize(1) == #metadataSize(TM, TY) .
+  ceq #elemSize(TM, typeInfoRefType(TY)) = 2 * #elemSize(TM, typeInfoPrimitiveType(primTypeUint(uintTyUsize)))
+    if dynamicSize(1) =/= #metadataSize(TM, TY) .
+  ceq #elemSize(TM, typeInfoPtrType(TY)) = #elemSize(TM, typeInfoPrimitiveType(primTypeUint(uintTyUsize)))
+    if dynamicSize(1) == #metadataSize(TM, TY) .
+  ceq #elemSize(TM, typeInfoPtrType(TY)) = 2 * #elemSize(TM, typeInfoPrimitiveType(primTypeUint(uintTyUsize)))
+    if dynamicSize(1) =/= #metadataSize(TM, TY) .
+  eq #elemSize(TM, typeInfoTupleType(TYS, someLayoutShape(layoutShape(FS, VS, VA, AL, MS)))) = #msBytes(MS) .
+  eq #elemSize(TM, typeInfoTupleType(.Tys, noLayoutShape)) = 0 .
+  eq #elemSize(TM, typeInfoTupleType(TY TYS, noLayoutShape))
+   = #elemSize(TM, lookupTy(TM, TY)) + #elemSize(TM, typeInfoTupleType(TYS, noLayoutShape)) .
+  eq #elemSize(TM, typeInfoStructType(NAME, ADT, TYS, someLayoutShape(layoutShape(FS, VS, VA, AL, MS)))) = #msBytes(MS) .
+  eq #elemSize(TM, TI) = 0 [owise] .
+endfm
+
+------------------------------------------------------------
+--- Data: operands, places and rvalues (rt/data.md)
+------------------------------------------------------------
+
+--- The syntax of the evaluation: the items of the k cell that read and write places and
+--- evaluate rvalues, and the frozen contexts of their strict arguments.
+
+--- @kind program
+--- @feature rust
+fmod RUST-DATA-SYNTAX is
+  pr RUST-DECODING .
+  pr RUST-CONFIG .
+
+  --- Operands and rvalues are evaluated on the k cell (syntax Evaluation ::= Operand | Rvalue).
+  subsorts Operand Rvalue < Evaluation .
+
+  --- Places to write to: a local of the current frame, a local of the frame FRAME below the
+  --- top of the stack, or a static allocation.
+  sort WriteTo .
+  op toLocal : Int -> WriteTo [ctor] .
+  op toStack : Int Local -> WriteTo [ctor] .
+  op toAlloc : AllocId -> WriteTo [ctor] .
+
+  --- Contexts of a projection: how to rebuild the value after a write.
+  sorts Context Contexts .
+  subsort Context < Contexts .
+  op .Contexts : -> Contexts [ctor] .
+  op __ : Contexts Contexts -> Contexts [ctor assoc id: .Contexts] .
+  op CtxField : VariantIdx KList Int Ty -> Context [ctor] .
+  op CtxFieldUnion : FieldIdx Value Ty -> Context [ctor] .
+  op CtxIndex : KList Int -> Context [ctor] .
+  op CtxSubslice : KList Int Int -> Context [ctor] .
+  op CtxPointerOffset : KList Int Int -> Context [ctor] .
+  op CtxWrapStruct : -> Context [ctor] .
+
+  --- Projections that KMIR adds (rt/data.md, rt/types.md).
+  op PointerOffset : Int Int -> ProjectionElem [ctor] .
+  ops projectionElemSingletonArray projectionElemWrapStruct projectionElemToZST
+      projectionElemFromZST : -> ProjectionElem [ctor] .
+
+  --- Items of the k cell.
+  op #setLocalValue : Place Evaluation -> KLabel [ctor] .
+  op #traverseProjection : WriteTo Value ProjectionElems Contexts -> KLabel [ctor] .
+  op #readProjection : Bool -> KLabel [ctor] .
+  op #writeProjection : Value -> KLabel [ctor] .
+  op #writeMoved : -> KLabel [ctor] .
+  op #derefTruncate : MetadataSize ProjectionElems -> KLabel [ctor] .
+  op #forRef : Mutability Metadata -> KLabel [ctor] .
+  op #forPtr : Mutability Metadata -> KLabel [ctor] .
+  op #readOperands : Operands -> KLabel [ctor] .
+  op #readOperandsAux : KList Operands -> KLabel [ctor] .
+  op #readOn : KList Operands -> KLabel [ctor] .
+  op #mkAggregate : AggregateKind -> KLabel [ctor] .
+  op #mkUnion : FieldIdx -> KLabel [ctor] .
+  op #evalUnion : Rvalue -> Rvalue [ctor] .
+  op #mkRef : WriteTo ProjectionElems Mutability Metadata -> Evaluation [ctor] .
+  op #mkPtr : WriteTo ProjectionElems Mutability Metadata -> Evaluation [ctor] .
+  op #mkArray : Evaluation Int -> Evaluation [ctor] .
+  op #lengthU64 : Evaluation -> Evaluation [ctor] .
+  op #discriminant : Evaluation MaybeTy -> Evaluation [ctor] .
+  op #cast : Evaluation CastKind MaybeTy Ty -> Evaluation [ctor] .
+  op #decodeConstant : ConstantKind Ty TypeInfo -> Evaluation [ctor] .
+  op #applyBinOp : BinOp Evaluation Evaluation Bool -> Evaluation [ctor] .
+  op #applyUnOp : UnOp Evaluation -> Evaluation [ctor] .
+
+  --- The frozen contexts of the strict arguments (K strict and seqstrict): the argument in the
+  --- hole is evaluated on top of the k cell.
+  op #setLocalValueHole : Place -> KLabel [ctor] .
+  op #mkArrayHole : Int -> KLabel [ctor] .
+  op #lengthU64Hole : -> KLabel [ctor] .
+  op #discriminantHole : MaybeTy -> KLabel [ctor] .
+  op #castHole : CastKind MaybeTy Ty -> KLabel [ctor] .
+  op #applyBinOpHole1 : BinOp Evaluation Bool -> KLabel [ctor] .
+  op #applyBinOpHole2 : BinOp Value Bool -> KLabel [ctor] .
+  op #applyUnOpHole : UnOp -> KLabel [ctor] .
+endfm
+
+--- Functions on values, lists and projections (rt/data.md).
+
+--- @kind program
+--- @feature rust
+fmod RUST-DATA-AUX is
+  pr RUST-DATA-SYNTAX .
+
+  vars LOCALS VALUES ARGS ELEMS INNER REST : KList .
+  vars IDX I START END FRAME OFFSET HEIGHT SIZE : Int .
+  vars VAL V : Value .
+  var TL : LItem .
+  var VIDX : VariantIdx .
+  var FI : FieldIdx .
+  vars TY CALLER : Ty .
+  var CTXS : Contexts .
+  var DEST : Place .
+  var TARGET : MaybeBasicBlockIdx .
+  var UNWIND : UnwindAction .
+  var SPAN : Span .
+  vars PROJ P : ProjectionElem .
+  vars PS TAIL PROJS : ProjectionElems .
+  var PLACE : Place .
+  var REFMUT : Mutability .
+  var META : Metadata .
+  var L : Local .
+  var MS : MetadataSize .
+  var MIB : MIRInt .
+
+  --- getLocal(LOCALS, IDX), getValue(LOCALS, IDX): the local, or the value of the local, at IDX.
+  --- getValue also reads a list of values (VALUES[IDX]).
+  op getLocal : KList Int -> TypedLocal .
+  ceq getLocal(LOCALS, IDX) = LOCALS[IDX]
+    if 0 <= IDX /\ IDX < size(LOCALS) /\ LOCALS[IDX] :: TypedLocal .
+  op getValue : KList Int -> Value .
+  ceq getValue(LOCALS, IDX) = valueOf(LOCALS[IDX])
+    if 0 <= IDX /\ IDX < size(LOCALS) /\ LOCALS[IDX] :: TypedValue .
+  ceq getValue(VALUES, IDX) = VALUES[IDX]
+    if 0 <= IDX /\ IDX < size(VALUES) /\ VALUES[IDX] :: Value .
+
+  --- #buildUpdate(VAL, CTXS): the value rebuilt with VAL in the hole of the contexts CTXS.
+  op #buildUpdate : Value Contexts -> Value .
+  eq #buildUpdate(VAL, .Contexts) = VAL .
+  eq #buildUpdate(VAL, CtxField(VIDX, ARGS, I, TY) CTXS) = #buildUpdate(Aggregate(VIDX, ARGS[I <- VAL]), CTXS) .
+  eq #buildUpdate(VAL, CtxFieldUnion(FI, V, TY) CTXS) = #buildUpdate(Union(FI, VAL), CTXS) .
+  eq #buildUpdate(VAL, CtxIndex(ELEMS, I) CTXS) = #buildUpdate(Range(ELEMS[I <- VAL]), CTXS) .
+  ceq #buildUpdate(Range(INNER), CtxSubslice(ELEMS, START, END) CTXS)
+    = #buildUpdate(Range(updateList(ELEMS, START, INNER)), CTXS)
+    if size(INNER) == END - START .
+  ceq #buildUpdate(Range(INNER), CtxPointerOffset(ELEMS, START, END) CTXS)
+    = #buildUpdate(Range(updateList(ELEMS, START, INNER)), CTXS)
+    if size(INNER) == END - START .
+  eq #buildUpdate(Aggregate(variantIdx(0), ListItem(V)), CtxWrapStruct CTXS) = #buildUpdate(V, CTXS) .
+
+  op #updateStackLocal : StackFrame Int Value -> StackFrame .
+  ceq #updateStackLocal(StackFrame(CALLER, DEST, TARGET, UNWIND, LOCALS, SPAN), I, VAL)
+    = StackFrame(CALLER, DEST, TARGET, UNWIND,
+                 LOCALS[I <- typedValue(VAL, tyOfLocal(getLocal(LOCALS, I)), mutabilityMut)], SPAN)
+    if 0 <= I /\ I < size(LOCALS) /\ LOCALS[I] :: TypedLocal .
+
+  op appendP : ProjectionElems ProjectionElems -> ProjectionElems .
+  op consP : ProjectionElem ProjectionElems -> ProjectionElems .
+  eq appendP(.ProjectionElems, TAIL) = TAIL .
+  eq appendP(P PS, TAIL) = consP(P, appendP(PS, TAIL)) .
+  --- K priority(40): the cancellations come before the general case (owise).
+  eq consP(projectionElemSingletonArray, projectionElemConstantIndex(0, 0, false) PS) = PS .
+  eq consP(projectionElemConstantIndex(0, 0, false), projectionElemSingletonArray PS) = PS .
+  eq consP(projectionElemWrapStruct, projectionElemField(fieldIdx(0), TY) PS) = PS .
+  eq consP(projectionElemConstantIndex(I, 0, false), PointerOffset(OFFSET, SIZE) PS)
+   = projectionElemConstantIndex(I + OFFSET, 0, false) PS .
+  eq consP(projectionElemToZST, projectionElemFromZST PS) = PS .
+  eq consP(projectionElemFromZST, projectionElemToZST PS) = PS .
+  eq consP(PROJ, PS) = PROJ PS [owise] .
+
+  op #localFromFrame : StackFrame Local Int -> Value .
+  ceq #localFromFrame(StackFrame(CALLER, DEST, TARGET, UNWIND, LOCALS, SPAN), local(I), OFFSET)
+    = #adjustRef(getValue(LOCALS, I), OFFSET)
+    if 0 <= I /\ I < size(LOCALS) /\ LOCALS[I] :: TypedValue .
+
+  op #adjustRef : Value Int -> Value .
+  eq #adjustRef(Reference(HEIGHT, PLACE, REFMUT, META), OFFSET) = Reference(HEIGHT + OFFSET, PLACE, REFMUT, META) .
+  eq #adjustRef(PtrLocal(HEIGHT, PLACE, REFMUT, META), OFFSET) = PtrLocal(HEIGHT + OFFSET, PLACE, REFMUT, META) .
+  eq #adjustRef(Aggregate(VIDX, ARGS), OFFSET) = Aggregate(VIDX, #mapOffset(ARGS, OFFSET)) .
+  eq #adjustRef(Range(ELEMS), OFFSET) = Range(#mapOffset(ELEMS, OFFSET)) .
+  eq #adjustRef(VAL, OFFSET) = VAL [owise] .
+
+  op #mapOffset : KList Int -> KList .
+  eq #mapOffset(.List, OFFSET) = .List .
+  eq #mapOffset(ListItem(V) ; REST, OFFSET) = ListItem(#adjustRef(V, OFFSET)) ; #mapOffset(REST, OFFSET) .
+  eq #mapOffset(REST, OFFSET) = REST [owise] .
+
+  op #incrementRef : Value -> Value .
+  op #decrementRef : Value -> Value .
+  eq #incrementRef(VAL) = #adjustRef(VAL, 1) .
+  eq #decrementRef(VAL) = #adjustRef(VAL, -1) .
+
+  op originSize : MetadataSize -> Int .
+  eq originSize(noMetadataSize) = 0 .
+  eq originSize(staticSize(SIZE)) = SIZE .
+  eq originSize(dynamicSize(SIZE)) = SIZE .
+
+  op isRange : Value -> Bool .
+  eq isRange(Range(ELEMS)) = true .
+  eq isRange(VAL) = false [owise] .
+
+  op #expectUsize : Value -> Int .
+  eq #expectUsize(Integer(I, 64, false)) = I .
+
+  op hasIndexTail : ProjectionElems -> Bool .
+  eq hasIndexTail(.ProjectionElems) = false .
+  eq hasIndexTail(projectionElemConstantIndex(0, MIB, false)) = true .
+  eq hasIndexTail(PROJ) = false [owise] .
+  eq hasIndexTail(PROJ P PS) = hasIndexTail(P PS) .
+  op removeIndexTail : ProjectionElems -> ProjectionElems .
+  eq removeIndexTail(.ProjectionElems) = .ProjectionElems .
+  eq removeIndexTail(projectionElemConstantIndex(0, MIB, false)) = .ProjectionElems .
+  eq removeIndexTail(PROJ) = PROJ [owise] .
+  eq removeIndexTail(PROJ P PS) = PROJ removeIndexTail(P PS) .
+
+  op #projectionsFor : Contexts -> ProjectionElems .
+  op #projectionsFor : Contexts ProjectionElems -> ProjectionElems .
+  eq #projectionsFor(CTXS) = #projectionsFor(CTXS, .ProjectionElems) .
+  eq #projectionsFor(.Contexts, PROJS) = PROJS .
+  eq #projectionsFor(CtxField(VIDX, ARGS, I, TY) CTXS, PROJS) = #projectionsFor(CTXS, projectionElemField(fieldIdx(I), TY) PROJS) .
+  eq #projectionsFor(CtxIndex(ELEMS, I) CTXS, PROJS) = #projectionsFor(CTXS, projectionElemConstantIndex(I, 0, false) PROJS) .
+  eq #projectionsFor(CtxSubslice(ELEMS, I, END) CTXS, PROJS) = #projectionsFor(CTXS, projectionElemSubslice(I, END, false) PROJS) .
+  eq #projectionsFor(CtxPointerOffset(ELEMS, OFFSET, SIZE) CTXS, PROJS) = #projectionsFor(CTXS, PointerOffset(OFFSET, SIZE) PROJS) .
+  eq #projectionsFor(CtxFieldUnion(FI, V, TY) CTXS, PROJS) = #projectionsFor(CTXS, projectionElemField(FI, TY) PROJS) .
+  eq #projectionsFor(CtxWrapStruct CTXS, PROJS) = #projectionsFor(CTXS, projectionElemWrapStruct PROJS) .
+
+  op #maybeDynamicSize : MetadataSize Value -> MetadataSize .
+  eq #maybeDynamicSize(dynamicSize(SIZE), Range(ELEMS)) = dynamicSize(size(ELEMS)) .
+  ceq #maybeDynamicSize(dynamicSize(SIZE), VAL) = noMetadataSize if not isRange(VAL) .
+  eq #maybeDynamicSize(MS, VAL) = MS [owise] .
+
+  op #mutabilityOf : BorrowKind -> Mutability .
+  var FBK : FakeBorrowKind .
+  var MBK : MutBorrowKind .
+  eq #mutabilityOf(borrowKindShared) = mutabilityNot .
+  eq #mutabilityOf(borrowKindFake(FBK)) = mutabilityNot .
+  eq #mutabilityOf(borrowKindMut(MBK)) = mutabilityMut .
+
+  op isRef : Value -> Bool .
+  eq isRef(Reference(HEIGHT, PLACE, REFMUT, META)) = true .
+  eq isRef(VAL) = false [owise] .
+  op refToPtrLocal : Value Mutability -> Value .
+  var MUT : Mutability .
+  eq refToPtrLocal(Reference(OFFSET, PLACE, REFMUT, META), MUT) = PtrLocal(OFFSET, PLACE, MUT, META) .
+
+  --- Discriminants.
+  op asInt : VariantIdx -> Int .
+  var STR : String .
+  eq asInt(variantIdx(I)) = I .
+  eq asInt(err(STR)) = -1 .
+  op size : Discriminants -> Nat .
+  var D : MIRInt .
+  var DS : Discriminants .
+  eq size(.Discriminants) = 0 .
+  eq size(discriminant(D) DS) = s size(DS) .
+  op discriminantsOf : TypeInfo -> Discriminants .
+  vars NAME : MIRString .
+  var ADT : AdtDef .
+  var FIELDSS : Tyss .
+  var LAYOUT : MaybeLayoutShape .
+  var TI : TypeInfo .
+  eq discriminantsOf(typeInfoEnumType(NAME, ADT, DS, FIELDSS, LAYOUT)) = DS .
+  eq discriminantsOf(TI) = .Discriminants [owise] .
+  op #lookupDiscrAux : Discriminants VariantIdx -> Int .
+  ceq #lookupDiscrAux(discriminant(D) DS, variantIdx(I)) = D if I == 0 .
+  ceq #lookupDiscrAux(discriminant(D) DS, variantIdx(I)) = #lookupDiscrAux(DS, variantIdx(I - 1)) if 0 < I .
+
+  --- Integer and Boolean operations (rt/data.md, #applyBinOp and #applyUnOp).
+  op isArithmetic : BinOp -> Bool .
+  var BOP : BinOp .
+  eq isArithmetic(binOpAdd) = true .
+  eq isArithmetic(binOpAddUnchecked) = true .
+  eq isArithmetic(binOpSub) = true .
+  eq isArithmetic(binOpSubUnchecked) = true .
+  eq isArithmetic(binOpMul) = true .
+  eq isArithmetic(binOpMulUnchecked) = true .
+  eq isArithmetic(binOpDiv) = true .
+  eq isArithmetic(binOpRem) = true .
+  eq isArithmetic(BOP) = false [owise] .
+
+  --- K /Int and %Int truncate towards zero: Maude quo and rem.
+  op onInt : BinOp Int Int -> Int .
+  vars X Y WIDTH : Int .
+  eq onInt(binOpAdd, X, Y) = X + Y .
+  eq onInt(binOpAddUnchecked, X, Y) = X + Y .
+  eq onInt(binOpSub, X, Y) = X - Y .
+  eq onInt(binOpSubUnchecked, X, Y) = X - Y .
+  eq onInt(binOpMul, X, Y) = X * Y .
+  eq onInt(binOpMulUnchecked, X, Y) = X * Y .
+  ceq onInt(binOpDiv, X, Y) = X quo Y if Y =/= 0 .
+  ceq onInt(binOpRem, X, Y) = X rem Y if Y =/= 0 .
+  eq onInt(binOpBitXor, X, Y) = X xor Y .
+  eq onInt(binOpBitAnd, X, Y) = X & Y .
+  eq onInt(binOpBitOr, X, Y) = X | Y .
+
+  op isComparison : BinOp -> Bool .
+  eq isComparison(binOpEq) = true .
+  eq isComparison(binOpLt) = true .
+  eq isComparison(binOpLe) = true .
+  eq isComparison(binOpNe) = true .
+  eq isComparison(binOpGe) = true .
+  eq isComparison(binOpGt) = true .
+  eq isComparison(BOP) = false [owise] .
+
+  op cmpOpInt : BinOp Int Int -> Bool .
+  eq cmpOpInt(binOpEq, X, Y) = X == Y .
+  eq cmpOpInt(binOpLt, X, Y) = X < Y .
+  eq cmpOpInt(binOpLe, X, Y) = X <= Y .
+  eq cmpOpInt(binOpNe, X, Y) = X =/= Y .
+  eq cmpOpInt(binOpGe, X, Y) = X >= Y .
+  eq cmpOpInt(binOpGt, X, Y) = X > Y .
+  op cmpOpBool : BinOp Bool Bool -> Bool .
+  vars BX BY : Bool .
+  eq cmpOpBool(binOpEq, BX, BY) = BX == BY .
+  eq cmpOpBool(binOpLt, BX, BY) = not BX and BY .
+  eq cmpOpBool(binOpLe, BX, BY) = not BX or (BX and BY) .
+  eq cmpOpBool(binOpNe, BX, BY) = BX =/= BY .
+  eq cmpOpBool(binOpGe, BX, BY) = cmpOpBool(binOpLe, BY, BX) .
+  eq cmpOpBool(binOpGt, BX, BY) = cmpOpBool(binOpLt, BY, BX) .
+
+  op cmpInt : Int Int -> Int .
+  ceq cmpInt(X, Y) = -1 if X < Y .
+  ceq cmpInt(X, Y) = 0 if X == Y .
+  ceq cmpInt(X, Y) = 1 if X > Y .
+  op cmpBool : Bool Bool -> Int .
+  ceq cmpBool(BX, BY) = -1 if not BX and BY .
+  ceq cmpBool(BX, BY) = 0 if BX == BY .
+  ceq cmpBool(BX, BY) = 1 if BX and not BY .
+
+  op isBitwise : BinOp -> Bool .
+  eq isBitwise(binOpBitXor) = true .
+  eq isBitwise(binOpBitAnd) = true .
+  eq isBitwise(binOpBitOr) = true .
+  eq isBitwise(BOP) = false [owise] .
+  op onBool : BinOp Bool Bool -> Bool .
+  eq onBool(binOpBitXor, BX, BY) = BX xor BY .
+  eq onBool(binOpBitAnd, BX, BY) = BX and BY .
+  eq onBool(binOpBitOr, BX, BY) = BX or BY .
+
+  op isShift : BinOp -> Bool .
+  eq isShift(binOpShl) = true .
+  eq isShift(binOpShlUnchecked) = true .
+  eq isShift(binOpShr) = true .
+  eq isShift(binOpShrUnchecked) = true .
+  eq isShift(BOP) = false [owise] .
+  op isUncheckedShift : BinOp -> Bool .
+  eq isUncheckedShift(binOpShlUnchecked) = true .
+  eq isUncheckedShift(binOpShrUnchecked) = true .
+  eq isUncheckedShift(BOP) = false [owise] .
+  --- K modInt with a positive divisor is the non-negative remainder.
+  op modInt : Int Int -> Int .
+  eq modInt(X, Y) = ((X rem Y) + Y) rem Y .
+  op onShift : BinOp Int Int Int -> Int .
+  eq onShift(binOpShl, X, Y, WIDTH) = modInt(X << Y, 1 << WIDTH) .
+  eq onShift(binOpShr, X, Y, WIDTH) = modInt(X >> Y, 1 << WIDTH) .
+  eq onShift(binOpShlUnchecked, X, Y, WIDTH) = modInt(X << Y, 1 << WIDTH) .
+  eq onShift(binOpShrUnchecked, X, Y, WIDTH) = modInt(X >> Y, 1 << WIDTH) .
+
+  op #ptrLocalEq : Value Value -> Bool .
+  vars OFFSET1 OFFSET2 : Int .
+  vars PLACE1 PLACE2 : Place .
+  vars MUT1 MUT2 : Mutability .
+  vars PTRMETA1 PTRMETA2 : Metadata .
+  eq #ptrLocalEq(PtrLocal(OFFSET1, PLACE1, MUT1, PTRMETA1), PtrLocal(OFFSET2, PLACE2, MUT2, PTRMETA2))
+   = OFFSET1 == OFFSET2 and PLACE1 == PLACE2 and PTRMETA1 == PTRMETA2 .
+  eq #ptrLocalEq(VAL, V) = false [owise] .
+endfm
+
+--- The rules of rt/data.md on the k cell.
+
+--- @kind program
+--- @feature rust
+mod RUST-DATA is
+  pr RUST-DATA-AUX .
+
+  var K : K .
+  vars EV EV1 EV2 : Evaluation .
+  vars VAL V V1 V2 NEW ORIGINAL VALUE : Value .
+  vars LOCALS STACK ARGS ELEMENTS ELEMS ACC REST L : KList .
+  vars I IDX FRAME OFFSET START END N SIZE PTR_OFFSET LOCALIDX : Int .
+  var MIB MINLEN : MIRInt .
+  var TM : Map{Ty,TypeInfo} .
+  var FM : Map{Ty,MonoItemKind} .
+  var AM : Map{AllocId,RustValue} .
+  vars TY TY' CONST_TY TY_SOURCE TY_TARGET : Ty .
+  var MTY : MaybeTy .
+  var PLACE : Place .
+  var PROJS PLACEPROJ ALLOC_PROJS : ProjectionElems .
+  var DEST : WriteTo .
+  var CTXTS : Contexts .
+  var LOCAL : Local .
+  vars IDXV VARIDX : VariantIdx .
+  var FIELD : FieldIdx .
+  var MUT : Mutability .
+  var META : Metadata .
+  vars MSIZE ORIGIN_SIZE METADATA_SIZE : MetadataSize .
+  var SP : Span .
+  var UTA : MaybeUserTypeAnnotationIndex .
+  var KIND : ConstantKind .
+  var MCID : MirConstId .
+  var ID : Int .
+  var ALLOC_ID : AllocId .
+  var OP : Operand .
+  var OPS : Operands .
+  var CASTKIND : CastKind .
+  var RV : Rvalue .
+  var TC : TyConst .
+  var TCK : TyConstKind .
+  var TCID : TyConstId .
+  var ADT : AdtDef .
+  var GA : GenericArgs .
+  var MUTA : MaybeUserTypeAnnotationIndex .
+  var MFI : MaybeFieldIdx .
+  var CD : ClosureDef .
+  var REGION : Region .
+  var BKIND : BorrowKind .
+  var BOP : BinOp .
+  var UOP : UnOp .
+  var CHK : Bool .
+  vars VAL1 VAL2 ARG1 ARG2 WIDTH : Int .
+  vars SIGN B1 B2 B : Bool .
+  var BS : Bytes .
+  var PM : ProvenanceMap .
+  var AL : Align .
+  var NAME : MIRString .
+  var FIELDS : Tys .
+  var LAYOUT : MaybeLayoutShape .
+  var MTC : MaybeTyConst .
+  var STR : MIRString .
+
+  --- Heating and cooling of the strict arguments (K strict and seqstrict).  An argument that is
+  --- not a Value (the KResult) is evaluated first.
+  ceq k(#setLocalValue(PLACE, EV) ~> K) = k(EV ~> #setLocalValueHole(PLACE) ~> K) if not EV :: Value .
+  eq k(VAL ~> #setLocalValueHole(PLACE) ~> K) = k(#setLocalValue(PLACE, VAL) ~> K) .
+  ceq k(#mkArray(EV, N) ~> K) = k(EV ~> #mkArrayHole(N) ~> K) if not EV :: Value .
+  eq k(VAL ~> #mkArrayHole(N) ~> K) = k(#mkArray(VAL, N) ~> K) .
+  ceq k(#lengthU64(EV) ~> K) = k(EV ~> #lengthU64Hole ~> K) if not EV :: Value .
+  eq k(VAL ~> #lengthU64Hole ~> K) = k(#lengthU64(VAL) ~> K) .
+  ceq k(#discriminant(EV, MTY) ~> K) = k(EV ~> #discriminantHole(MTY) ~> K) if not EV :: Value .
+  eq k(VAL ~> #discriminantHole(MTY) ~> K) = k(#discriminant(VAL, MTY) ~> K) .
+  ceq k(#cast(EV, CASTKIND, MTY, TY) ~> K) = k(EV ~> #castHole(CASTKIND, MTY, TY) ~> K) if not EV :: Value .
+  eq k(VAL ~> #castHole(CASTKIND, MTY, TY) ~> K) = k(#cast(VAL, CASTKIND, MTY, TY) ~> K) .
+  ceq k(#applyBinOp(BOP, EV1, EV2, CHK) ~> K) = k(EV1 ~> #applyBinOpHole1(BOP, EV2, CHK) ~> K) if not EV1 :: Value .
+  eq k(V1 ~> #applyBinOpHole1(BOP, EV2, CHK) ~> K) = k(#applyBinOp(BOP, V1, EV2, CHK) ~> K) .
+  ceq k(#applyBinOp(BOP, V1, EV2, CHK) ~> K) = k(EV2 ~> #applyBinOpHole2(BOP, V1, CHK) ~> K) if not EV2 :: Value .
+  eq k(V2 ~> #applyBinOpHole2(BOP, V1, CHK) ~> K) = k(#applyBinOp(BOP, V1, V2, CHK) ~> K) .
+  ceq k(#applyUnOp(UOP, EV) ~> K) = k(EV ~> #applyUnOpHole(UOP) ~> K) if not EV :: Value .
+  eq k(VAL ~> #applyUnOpHole(UOP) ~> K) = k(#applyUnOp(UOP, VAL) ~> K) .
+
+  --- A typed value evaluates to its value.
+  rl k(typedValue(VAL, TY, MUT) ~> K) => k(VAL ~> K) .
+
+  --- Constant operands.
+  crl k(operandConstant(constOperand(SP, UTA, mirConst(KIND, TY, MCID))) ~> K) types(TM)
+   => k(#decodeConstant(KIND, TY, lookupTy(TM, TY)) ~> K) types(TM)
+    if typeInfoVoidType =/= lookupTy(TM, TY) .
+  --- A zero-sized constant of a function type: a function pointer.
+  crl k(operandConstant(constOperand(SP, UTA, mirConst(constantKindZeroSized, ty(ID), MCID))) ~> K) types(TM) functions(FM)
+   => k(FunPtr(ty(ID)) ~> K) types(TM) functions(FM)
+    if typeInfoVoidType == lookupTy(TM, ty(ID))
+    /\ lookupFunction(FM, ty(ID)) =/= monoItemFn(symbol("** UNKNOWN FUNCTION **"), defId(ID), noBody) .
+
+  --- operandCopy and operandMove read the place; a move leaves Moved behind.
+  crl k(operandCopy(place(local(I), PROJS)) ~> K) locals(LOCALS)
+   => k(#traverseProjection(toLocal(I), getValue(LOCALS, I), PROJS, .Contexts) ~> #readProjection(false) ~> K) locals(LOCALS)
+    if 0 <= I /\ I < size(LOCALS) /\ LOCALS[I] :: TypedValue .
+  crl k(operandMove(place(local(I), PROJS)) ~> K) locals(LOCALS)
+   => k(#traverseProjection(toLocal(I), getValue(LOCALS, I), PROJS, .Contexts) ~> #readProjection(true) ~> K) locals(LOCALS)
+    if 0 <= I /\ I < size(LOCALS) /\ LOCALS[I] :: TypedValue .
+
+  --- #setLocalValue(PLACE, VAL): writes VAL to PLACE.
+  crl k(#setLocalValue(place(local(I), .ProjectionElems), VAL) ~> K) locals(LOCALS)
+   => k(K) locals(LOCALS[I <- typedValue(VAL, tyOfLocal(getLocal(LOCALS, I)), mutabilityOf(getLocal(LOCALS, I)))])
+    if 0 <= I /\ I < size(LOCALS) /\ LOCALS[I] :: TypedValue .
+  crl k(#setLocalValue(place(local(I), .ProjectionElems), VAL) ~> K) locals(LOCALS)
+   => k(K) locals(LOCALS[I <- typedValue(VAL, tyOfLocal(getLocal(LOCALS, I)), mutabilityOf(getLocal(LOCALS, I)))])
+    if 0 <= I /\ I < size(LOCALS) /\ LOCALS[I] :: NewLocal .
+  crl k(#setLocalValue(place(local(I), PROJS), VAL) ~> K) locals(LOCALS)
+   => k(#traverseProjection(toLocal(I), getValue(LOCALS, I), PROJS, .Contexts) ~> #writeProjection(VAL) ~> K) locals(LOCALS)
+    if 0 <= I /\ I < size(LOCALS) /\ PROJS =/= .ProjectionElems /\ LOCALS[I] :: TypedValue .
+
+  --- The end of a projection: a read gives the value, a write rebuilds the local.
+  rl k(#traverseProjection(DEST, VAL, .ProjectionElems, CTXTS) ~> #readProjection(false) ~> K) => k(VAL ~> K) .
+  rl k(#traverseProjection(DEST, VAL, .ProjectionElems, CTXTS) ~> #readProjection(true) ~> K)
+   => k(#traverseProjection(DEST, VAL, .ProjectionElems, CTXTS) ~> #writeMoved ~> VAL ~> K) .
+  rl k(#traverseProjection(toLocal(I), ORIGINAL, .ProjectionElems, CTXTS) ~> #writeProjection(NEW) ~> K)
+   => k(#setLocalValue(place(local(I), .ProjectionElems), #buildUpdate(NEW, CTXTS)) ~> K) .
+  rl k(#traverseProjection(toLocal(I), ORIGINAL, .ProjectionElems, CTXTS) ~> #writeMoved ~> K)
+   => k(#setLocalValue(place(local(I), .ProjectionElems), #buildUpdate(Moved, CTXTS)) ~> K) .
+  crl k(#traverseProjection(toStack(FRAME, local(I)), ORIGINAL, .ProjectionElems, CTXTS) ~> #writeProjection(NEW) ~> K) stack(STACK)
+   => k(K) stack(STACK[(FRAME - 1) <- #updateStackLocal(STACK[FRAME - 1], I, #adjustRef(#buildUpdate(NEW, CTXTS), 0 - FRAME))])
+    if 0 < FRAME /\ FRAME <= size(STACK) /\ STACK[FRAME - 1] :: StackFrame .
+  crl k(#traverseProjection(toStack(FRAME, local(I)), ORIGINAL, .ProjectionElems, CTXTS) ~> #writeMoved ~> K) stack(STACK)
+   => k(K) stack(STACK[(FRAME - 1) <- #updateStackLocal(STACK[FRAME - 1], I, #adjustRef(#buildUpdate(Moved, CTXTS), 0 - FRAME))])
+    if 0 < FRAME /\ FRAME <= size(STACK) /\ STACK[FRAME - 1] :: StackFrame .
+
+  --- Projections: fields, downcasts, wrapped structs and unions.
+  crl k(#traverseProjection(DEST, Aggregate(IDXV, ARGS), projectionElemField(fieldIdx(I), TY) PROJS, CTXTS) ~> K)
+   => k(#traverseProjection(DEST, getValue(ARGS, I), PROJS, CtxField(IDXV, ARGS, I, TY) CTXTS) ~> K)
+    if 0 <= I /\ I < size(ARGS) /\ ARGS[I] :: Value .
+  rl k(#traverseProjection(DEST, Aggregate(IDXV, ARGS), projectionElemDowncast(VARIDX) PROJS, CTXTS) ~> K)
+   => k(#traverseProjection(DEST, Aggregate(VARIDX, ARGS), PROJS, CTXTS) ~> K) .
+  rl k(#traverseProjection(DEST, VALUE, projectionElemWrapStruct PROJS, CTXTS) ~> K)
+   => k(#traverseProjection(DEST, Aggregate(variantIdx(0), ListItem(VALUE)), PROJS, CtxWrapStruct CTXTS) ~> K) .
+  rl k(#traverseProjection(DEST, Range(ListItem(Aggregate(IDXV, ARGS)) ; REST), projectionElemField(FIELD, TY) PROJS, CTXTS) ~> K)
+   => k(#traverseProjection(DEST, Aggregate(IDXV, ARGS), projectionElemField(FIELD, TY) PROJS, CTXTS) ~> K) .
+  rl k(#traverseProjection(DEST, Union(FIELD, V), projectionElemField(FIELD, TY) PROJS, CTXTS) ~> K)
+   => k(#traverseProjection(DEST, V, PROJS, CtxFieldUnion(FIELD, V, TY) CTXTS) ~> K) .
+
+  --- Projections: array indexing and subslices.
+  crl k(#traverseProjection(DEST, Range(ELEMENTS), projectionElemIndex(local(LOCALIDX)) PROJS, CTXTS) ~> K) locals(LOCALS)
+   => k(#traverseProjection(DEST, getValue(ELEMENTS, #expectUsize(getValue(LOCALS, LOCALIDX))), PROJS,
+                            CtxIndex(ELEMENTS, #expectUsize(getValue(LOCALS, LOCALIDX))) CTXTS) ~> K) locals(LOCALS)
+    if 0 <= LOCALIDX /\ LOCALIDX < size(LOCALS) /\ LOCALS[LOCALIDX] :: TypedValue
+    /\ #expectUsize(getValue(LOCALS, LOCALIDX)) :: Int
+    /\ 0 <= #expectUsize(getValue(LOCALS, LOCALIDX)) /\ #expectUsize(getValue(LOCALS, LOCALIDX)) < size(ELEMENTS)
+    /\ ELEMENTS[#expectUsize(getValue(LOCALS, LOCALIDX))] :: Value .
+  crl k(#traverseProjection(DEST, Range(ELEMENTS), projectionElemConstantIndex(OFFSET, MINLEN, false) PROJS, CTXTS) ~> K)
+   => k(#traverseProjection(DEST, getValue(ELEMENTS, OFFSET), PROJS, CtxIndex(ELEMENTS, OFFSET) CTXTS) ~> K)
+    if 0 <= OFFSET /\ OFFSET < size(ELEMENTS) /\ ELEMENTS[OFFSET] :: Value .
+  crl k(#traverseProjection(DEST, Range(ELEMENTS), projectionElemConstantIndex(OFFSET, MINLEN, true) PROJS, CTXTS) ~> K)
+   => k(#traverseProjection(DEST, getValue(ELEMENTS, OFFSET), PROJS, CtxIndex(ELEMENTS, MINLEN - OFFSET) CTXTS) ~> K)
+    if 0 < OFFSET /\ OFFSET <= MINLEN /\ MINLEN == size(ELEMENTS) /\ ELEMENTS[MINLEN - OFFSET] :: Value .
+  crl k(#traverseProjection(DEST, Range(ELEMENTS), projectionElemSubslice(START, END, false) PROJS, CTXTS) ~> K)
+   => k(#traverseProjection(DEST, Range(range(ELEMENTS, START, size(ELEMENTS) - END)), PROJS,
+                            CtxSubslice(ELEMENTS, START, END) CTXTS) ~> K)
+    if 0 <= START /\ START <= size(ELEMENTS) /\ 0 < END /\ END <= size(ELEMENTS) /\ START < END .
+  crl k(#traverseProjection(DEST, Range(ELEMENTS), projectionElemSubslice(START, END, true) PROJS, CTXTS) ~> K)
+   => k(#traverseProjection(DEST, Range(range(ELEMENTS, START, END)), PROJS,
+                            CtxSubslice(ELEMENTS, START, size(ELEMENTS) - END) CTXTS) ~> K)
+    if 0 <= START /\ START <= size(ELEMENTS) /\ 0 <= END /\ END < size(ELEMENTS) /\ START <= size(ELEMENTS) - END .
+  crl k(#traverseProjection(DEST, Range(ELEMENTS), PointerOffset(OFFSET, N) PROJS, CTXTS) ~> K)
+   => k(#traverseProjection(DEST, Range(range(ELEMENTS, OFFSET, 0)), PROJS,
+                            CtxPointerOffset(ELEMENTS, OFFSET, size(ELEMENTS)) CTXTS) ~> K)
+    if 0 <= OFFSET /\ OFFSET <= size(ELEMENTS) .
+
+  --- Dereferencing: after the place of the pointer is reached, its value is truncated to the size
+  --- of the metadata, and the remaining projections are applied.
+  crl k(#traverseProjection(DEST, VAL, .ProjectionElems, CTXTS) ~> #derefTruncate(noMetadataSize, PROJS) ~> K)
+   => k(#traverseProjection(DEST, VAL, PROJS, CTXTS) ~> K)
+    if not isRange(VAL) .
+  crl k(#traverseProjection(DEST, Range(ELEMS), .ProjectionElems, CTXTS) ~> #derefTruncate(staticSize(SIZE), PROJS) ~> K)
+   => k(#traverseProjection(DEST, Range(range(ELEMS, 0, size(ELEMS) - SIZE)), PROJS, CTXTS) ~> K)
+    if 0 <= SIZE /\ SIZE <= size(ELEMS) .
+  crl k(#traverseProjection(DEST, Range(ELEMS), .ProjectionElems, CTXTS) ~> #derefTruncate(dynamicSize(SIZE), PROJS) ~> K)
+   => k(#traverseProjection(DEST, Range(range(ELEMS, 0, size(ELEMS) - SIZE)), PROJS, CTXTS) ~> K)
+    if 0 <= SIZE /\ SIZE <= size(ELEMS) .
+  rl k(#traverseProjection(DEST, Range(ListItem(VAL) ; L), .ProjectionElems, CTXTS) ~> #derefTruncate(noMetadataSize, PROJS) ~> K)
+   => k(#traverseProjection(DEST, VAL, PROJS, CTXTS) ~> K) .
+
+  --- Dereferencing a reference or a pointer to a local of a frame below (OFFSET > 0) or of the
+  --- current frame (OFFSET = 0), with or without a pointer offset.
+  crl k(#traverseProjection(DEST, Reference(OFFSET, place(LOCAL, PLACEPROJ), MUT, metadata(MSIZE, PTR_OFFSET, ORIGIN_SIZE)), projectionElemDeref PROJS, CTXTS) ~> K) stack(STACK)
+   => k(#traverseProjection(toStack(OFFSET, LOCAL), #localFromFrame(STACK[OFFSET - 1], LOCAL, OFFSET),
+                            appendP(PLACEPROJ, PointerOffset(PTR_OFFSET, originSize(ORIGIN_SIZE))), .Contexts)
+        ~> #derefTruncate(MSIZE, PROJS) ~> K) stack(STACK)
+    if 0 < OFFSET /\ OFFSET <= size(STACK) /\ STACK[OFFSET - 1] :: StackFrame /\ 0 < PTR_OFFSET .
+  crl k(#traverseProjection(DEST, Reference(OFFSET, place(LOCAL, PLACEPROJ), MUT, metadata(MSIZE, PTR_OFFSET, ORIGIN_SIZE)), projectionElemDeref PROJS, CTXTS) ~> K) stack(STACK)
+   => k(#traverseProjection(toStack(OFFSET, LOCAL), #localFromFrame(STACK[OFFSET - 1], LOCAL, OFFSET), PLACEPROJ, .Contexts)
+        ~> #derefTruncate(MSIZE, PROJS) ~> K) stack(STACK)
+    if 0 < OFFSET /\ OFFSET <= size(STACK) /\ STACK[OFFSET - 1] :: StackFrame /\ PTR_OFFSET == 0 .
+  crl k(#traverseProjection(DEST, Reference(OFFSET, place(local(I), PLACEPROJ), MUT, metadata(MSIZE, PTR_OFFSET, ORIGIN_SIZE)), projectionElemDeref PROJS, CTXTS) ~> K) locals(LOCALS)
+   => k(#traverseProjection(toLocal(I), getValue(LOCALS, I),
+                            appendP(PLACEPROJ, PointerOffset(PTR_OFFSET, originSize(ORIGIN_SIZE))), .Contexts)
+        ~> #derefTruncate(MSIZE, PROJS) ~> K) locals(LOCALS)
+    if OFFSET == 0 /\ 0 <= I /\ I < size(LOCALS) /\ LOCALS[I] :: TypedValue /\ 0 < PTR_OFFSET .
+  crl k(#traverseProjection(DEST, Reference(OFFSET, place(local(I), PLACEPROJ), MUT, metadata(MSIZE, PTR_OFFSET, ORIGIN_SIZE)), projectionElemDeref PROJS, CTXTS) ~> K) locals(LOCALS)
+   => k(#traverseProjection(toLocal(I), getValue(LOCALS, I), PLACEPROJ, .Contexts)
+        ~> #derefTruncate(MSIZE, PROJS) ~> K) locals(LOCALS)
+    if OFFSET == 0 /\ 0 <= I /\ I < size(LOCALS) /\ LOCALS[I] :: TypedValue /\ PTR_OFFSET == 0 .
+  crl k(#traverseProjection(DEST, PtrLocal(OFFSET, place(LOCAL, PLACEPROJ), MUT, metadata(MSIZE, PTR_OFFSET, ORIGIN_SIZE)), projectionElemDeref PROJS, CTXTS) ~> K) stack(STACK)
+   => k(#traverseProjection(toStack(OFFSET, LOCAL), #localFromFrame(STACK[OFFSET - 1], LOCAL, OFFSET),
+                            appendP(PLACEPROJ, PointerOffset(PTR_OFFSET, originSize(ORIGIN_SIZE))), .Contexts)
+        ~> #derefTruncate(MSIZE, PROJS) ~> K) stack(STACK)
+    if 0 < OFFSET /\ OFFSET <= size(STACK) /\ STACK[OFFSET - 1] :: StackFrame /\ 0 < PTR_OFFSET .
+  crl k(#traverseProjection(DEST, PtrLocal(OFFSET, place(LOCAL, PLACEPROJ), MUT, metadata(MSIZE, PTR_OFFSET, ORIGIN_SIZE)), projectionElemDeref PROJS, CTXTS) ~> K) stack(STACK)
+   => k(#traverseProjection(toStack(OFFSET, LOCAL), #localFromFrame(STACK[OFFSET - 1], LOCAL, OFFSET), PLACEPROJ, .Contexts)
+        ~> #derefTruncate(MSIZE, PROJS) ~> K) stack(STACK)
+    if 0 < OFFSET /\ OFFSET <= size(STACK) /\ STACK[OFFSET - 1] :: StackFrame /\ PTR_OFFSET == 0 .
+  crl k(#traverseProjection(DEST, PtrLocal(OFFSET, place(local(I), PLACEPROJ), MUT, metadata(MSIZE, PTR_OFFSET, ORIGIN_SIZE)), projectionElemDeref PROJS, CTXTS) ~> K) locals(LOCALS)
+   => k(#traverseProjection(toLocal(I), getValue(LOCALS, I),
+                            appendP(PLACEPROJ, PointerOffset(PTR_OFFSET, originSize(ORIGIN_SIZE))), .Contexts)
+        ~> #derefTruncate(MSIZE, PROJS) ~> K) locals(LOCALS)
+    if OFFSET == 0 /\ 0 <= I /\ I < size(LOCALS) /\ LOCALS[I] :: TypedValue /\ 0 < PTR_OFFSET .
+  crl k(#traverseProjection(DEST, PtrLocal(OFFSET, place(local(I), PLACEPROJ), MUT, metadata(MSIZE, PTR_OFFSET, ORIGIN_SIZE)), projectionElemDeref PROJS, CTXTS) ~> K) locals(LOCALS)
+   => k(#traverseProjection(toLocal(I), getValue(LOCALS, I), PLACEPROJ, .Contexts)
+        ~> #derefTruncate(MSIZE, PROJS) ~> K) locals(LOCALS)
+    if OFFSET == 0 /\ 0 <= I /\ I < size(LOCALS) /\ LOCALS[I] :: TypedValue /\ PTR_OFFSET == 0 .
+  --- Dereferencing a reference to a static allocation.
+  crl k(#traverseProjection(DEST, AllocRef(ALLOC_ID, ALLOC_PROJS, metadata(METADATA_SIZE, PTR_OFFSET, ORIGIN_SIZE)), projectionElemDeref PROJS, CTXTS) ~> K) memory(AM)
+   => k(#traverseProjection(toAlloc(ALLOC_ID), lookupAlloc(AM, ALLOC_ID), ALLOC_PROJS, .Contexts)
+        ~> #derefTruncate(METADATA_SIZE, PROJS) ~> K) memory(AM)
+    if lookupAlloc(AM, ALLOC_ID) :: Value .
+
+  --- Rvalues.
+  rl k(rvalueUse(OP) ~> K) => k(OP ~> K) .
+  crl k(rvalueCast(CASTKIND, operandCopy(place(local(I), PROJS)), TY) ~> K) locals(LOCALS) types(TM)
+   => k(#cast(operandCopy(place(local(I), PROJS)), CASTKIND, getTyOf(TM, tyOfLocal(LOCALS[I]), PROJS), TY) ~> K) locals(LOCALS) types(TM)
+    if 0 <= I /\ I < size(LOCALS) /\ LOCALS[I] :: TypedLocal .
+  crl k(rvalueCast(CASTKIND, operandMove(place(local(I), PROJS)), TY) ~> K) locals(LOCALS) types(TM)
+   => k(#cast(operandMove(place(local(I), PROJS)), CASTKIND, getTyOf(TM, tyOfLocal(LOCALS[I]), PROJS), TY) ~> K) locals(LOCALS) types(TM)
+    if 0 <= I /\ I < size(LOCALS) /\ LOCALS[I] :: TypedLocal .
+  rl k(rvalueCast(CASTKIND, operandConstant(constOperand(SP, UTA, mirConst(KIND, CONST_TY, MCID))), TY) ~> K)
+   => k(#cast(operandConstant(constOperand(SP, UTA, mirConst(KIND, CONST_TY, MCID))), CASTKIND, CONST_TY, TY) ~> K) .
+  rl k(rvalueCopyForDeref(PLACE) ~> K) => k(rvalueUse(operandCopy(PLACE)) ~> K) .
+
+  crl k(rvalueRepeat(OP, tyConst(TCK, TCID)) ~> K) types(TM)
+   => k(#mkArray(OP, readTyConstInt(TM, TCK)) ~> K) types(TM)
+    if readTyConstInt(TM, TCK) :: Int .
+  crl k(#mkArray(VAL, N) ~> K) => k(Range(makeList(N, VAL)) ~> K) if 0 <= N .
+  rl k(rvalueLen(PLACE) ~> K) => k(#lengthU64(operandCopy(PLACE)) ~> K) .
+  rl k(#lengthU64(Range(L)) ~> K) => k(Integer(size(L), 64, false) ~> K) .
+
+  --- Aggregates: the operands are read into a list, then the value is built.
+  rl k(rvalueAggregate(AK, OPS) ~> K) => k(#readOperands(OPS) ~> #mkAggregate(AK) ~> K) .
+  var AK : AggregateKind .
+  rl k(ARGS ~> #mkAggregate(aggregateKindAdt(ADT, VARIDX, GA, MUTA, MFI)) ~> K) => k(Aggregate(VARIDX, ARGS) ~> K) .
+  rl k(ARGS ~> #mkAggregate(aggregateKindArray(TY)) ~> K) => k(Range(ARGS) ~> K) .
+  rl k(ARGS ~> #mkAggregate(aggregateKindTuple) ~> K) => k(Aggregate(variantIdx(0), ARGS) ~> K) .
+  rl k(ARGS ~> #mkAggregate(aggregateKindClosure(CD, GA)) ~> K) => k(Aggregate(variantIdx(0), ARGS) ~> K) .
+  rl k(#readOperands(OPS) ~> K) => k(#readOperandsAux(.List, OPS) ~> K) .
+  rl k(#readOperandsAux(ACC, .Operands) ~> K) => k(ACC ~> K) .
+  rl k(#readOperandsAux(ACC, (OP, OPS)) ~> K) => k(OP ~> #readOn(ACC, OPS) ~> K) .
+  rl k(VAL ~> #readOn(ACC, OPS) ~> K) => k(#readOperandsAux(ACC ; ListItem(VAL), OPS) ~> K) .
+  --- Unions.
+  rl k(#evalUnion(rvalueAggregate(aggregateKindAdt(ADT, VARIDX, GA, MUTA, someFieldIdx(FIELD)), OPS)) ~> K)
+   => k(#readOperands(OPS) ~> #mkUnion(FIELD) ~> K) .
+  rl k(#evalUnion(rvalueCast(CASTKIND, OP, TY)) ~> K) => k(rvalueCast(CASTKIND, OP, TY) ~> K) .
+  rl k(ListItem(VAL) ~> #mkUnion(FIELD) ~> K) => k(Union(FIELD, VAL) ~> K) .
+  --- Raw pointers built from a pointer and its metadata.
+  rl k(ListItem(PtrLocal(OFFSET, place(LOCAL, PROJS), MUT, metadata(MSIZE, PTR_OFFSET, ORIGIN_SIZE))) ; ListItem(Integer(N, 64, false))
+       ~> #mkAggregate(aggregateKindRawPtr(TY, MUT')) ~> K)
+   => k(PtrLocal(OFFSET, place(LOCAL, removeIndexTail(PROJS)), MUT', metadata(dynamicSize(N), PTR_OFFSET, ORIGIN_SIZE)) ~> K) .
+  var MUT' : Mutability .
+  rl k(ListItem(PtrLocal(OFFSET, PLACE, MUT, metadata(MSIZE, PTR_OFFSET, ORIGIN_SIZE))) ; ListItem(Aggregate(VARIDX, .List))
+       ~> #mkAggregate(aggregateKindRawPtr(TY, MUT')) ~> K)
+   => k(PtrLocal(OFFSET, PLACE, MUT', metadata(noMetadataSize, PTR_OFFSET, ORIGIN_SIZE)) ~> K) .
+
+  --- Discriminants.
+  crl k(rvalueDiscriminant(place(local(I), PROJS)) ~> K) locals(LOCALS) types(TM)
+   => k(#discriminant(operandCopy(place(local(I), PROJS)), getTyOf(TM, tyOfLocal(LOCALS[I]), PROJS)) ~> K) locals(LOCALS) types(TM)
+    if 0 <= I /\ I < size(LOCALS) /\ LOCALS[I] :: TypedLocal .
+  --- The bit width 0 means a flexible width (KMIR).
+  crl k(#discriminant(Aggregate(IDXV, ARGS), TY) ~> K) types(TM)
+   => k(Integer(#lookupDiscrAux(discriminantsOf(lookupTy(TM, TY)), IDXV), 0, false) ~> K) types(TM)
+    if asInt(IDXV) < size(discriminantsOf(lookupTy(TM, TY))) /\ 0 <= asInt(IDXV)
+    /\ 0 < size(discriminantsOf(lookupTy(TM, TY))) .
+
+  --- References and raw pointers.  A zero-sized local that has no value yet gets one first.
+  crl k(rvalueRef(REGION, BKIND, place(local(I), PROJS)) ~> K) locals(LOCALS) types(TM)
+   => k(#setLocalValue(place(local(I), .ProjectionElems),
+                       #decodeConstant(constantKindZeroSized, tyOfLocal(getLocal(LOCALS, I)), lookupTy(TM, tyOfLocal(getLocal(LOCALS, I)))))
+        ~> rvalueRef(REGION, BKIND, place(local(I), PROJS)) ~> K) locals(LOCALS) types(TM)
+    if 0 <= I /\ I < size(LOCALS) /\ LOCALS[I] :: NewLocal
+    /\ #zeroSizedType(lookupTy(TM, tyOfLocal(getLocal(LOCALS, I)))) .
+  crl k(rvalueRef(REGION, BKIND, place(local(I), PROJS)) ~> K) locals(LOCALS) types(TM)
+   => k(#traverseProjection(toLocal(I), getValue(LOCALS, I), PROJS, .Contexts)
+        ~> #forRef(#mutabilityOf(BKIND), metadata(#metadataSize(TM, tyOfLocal(LOCALS[I]), PROJS), 0, noMetadataSize)) ~> K)
+      locals(LOCALS) types(TM)
+    if 0 <= I /\ I < size(LOCALS) /\ LOCALS[I] :: TypedValue .
+  rl k(#traverseProjection(DEST, VAL, .ProjectionElems, CTXTS) ~> #forRef(MUT, metadata(MSIZE, OFFSET, ORIGIN_SIZE)) ~> K)
+   => k(#mkRef(DEST, #projectionsFor(CTXTS), MUT, metadata(#maybeDynamicSize(MSIZE, VAL), OFFSET, ORIGIN_SIZE)) ~> K) .
+  rl k(#mkRef(toLocal(I), PROJS, MUT, META) ~> K) => k(Reference(0, place(local(I), PROJS), MUT, META) ~> K) .
+  rl k(#mkRef(toStack(OFFSET, LOCAL), PROJS, MUT, META) ~> K) => k(Reference(OFFSET, place(LOCAL, PROJS), MUT, META) ~> K) .
+  rl k(#mkRef(toAlloc(ALLOC_ID), PROJS, MUT, META) ~> K) => k(AllocRef(ALLOC_ID, PROJS, META) ~> K) .
+
+  --- K priority(40): the address of *r for a reference r is r as a pointer.  The general rule
+  --- below excludes that case.
+  crl k(rvalueAddressOf(MUT, place(local(I), projectionElemDeref)) ~> K) locals(LOCALS)
+   => k(refToPtrLocal(getValue(LOCALS, I), MUT) ~> K) locals(LOCALS)
+    if 0 <= I /\ I < size(LOCALS) /\ LOCALS[I] :: TypedValue /\ isRef(getValue(LOCALS, I)) .
+  crl k(rvalueAddressOf(MUT, place(local(I), PROJS)) ~> K) locals(LOCALS) types(TM)
+   => k(#traverseProjection(toLocal(I), getValue(LOCALS, I), PROJS, .Contexts)
+        ~> #forPtr(MUT, metadata(#metadataSize(TM, tyOfLocal(LOCALS[I]), PROJS), 0, noMetadataSize)) ~> K)
+      locals(LOCALS) types(TM)
+    if 0 <= I /\ I < size(LOCALS) /\ LOCALS[I] :: TypedValue
+    /\ not (PROJS == projectionElemDeref and isRef(getValue(LOCALS, I))) .
+  rl k(#traverseProjection(DEST, VAL, .ProjectionElems, CTXTS) ~> #forPtr(MUT, metadata(MSIZE, OFFSET, ORIGIN_SIZE)) ~> K)
+   => k(#mkPtr(DEST, #projectionsFor(CTXTS), MUT, metadata(#maybeDynamicSize(MSIZE, VAL), OFFSET, ORIGIN_SIZE)) ~> K) .
+  rl k(#mkPtr(toLocal(I), PROJS, MUT, META) ~> K) => k(PtrLocal(0, place(local(I), PROJS), MUT, META) ~> K) .
+  rl k(#mkPtr(toStack(OFFSET, LOCAL), PROJS, MUT, META) ~> K) => k(PtrLocal(OFFSET, place(LOCAL, PROJS), MUT, META) ~> K) .
+
+  --- Casts.  Only the casts between integers, between pointers to the same type, the unsizing
+  --- of a pointer to an array, and the transmutes of a pointer to the same type are translated.
+  crl k(#cast(Integer(VAL1, WIDTH, SIGN), castKindIntToInt, MTY, TY) ~> K) types(TM)
+   => k(#intAsType(VAL1, WIDTH, #numTypeOf(lookupTy(TM, TY))) ~> K) types(TM)
+    if #isIntType(lookupTy(TM, TY)) .
+  crl k(#cast(BoolVal(true), castKindIntToInt, MTY, TY) ~> K) types(TM)
+   => k(#intAsType(1, 8, #numTypeOf(lookupTy(TM, TY))) ~> K) types(TM)
+    if #isIntType(lookupTy(TM, TY)) .
+  crl k(#cast(BoolVal(false), castKindIntToInt, MTY, TY) ~> K) types(TM)
+   => k(#intAsType(0, 8, #numTypeOf(lookupTy(TM, TY))) ~> K) types(TM)
+    if #isIntType(lookupTy(TM, TY)) .
+  crl k(#cast(PtrLocal(OFFSET, PLACE, MUT, META), castKindPtrToPtr, TY_SOURCE, TY_TARGET) ~> K) types(TM)
+   => k(PtrLocal(OFFSET, PLACE, MUT, META) ~> K) types(TM)
+    if pointeeTy(lookupTy(TM, TY_SOURCE)) == pointeeTy(lookupTy(TM, TY_TARGET)) .
+  rl k(#cast(PtrLocal(OFFSET, PLACE, MUT, metadata(staticSize(SIZE), PTR_OFFSET, ORIGIN_SIZE)), castKindPointerCoercion(pointerCoercionUnsize), MTY, TY) ~> K)
+   => k(PtrLocal(OFFSET, PLACE, MUT, metadata(dynamicSize(SIZE), PTR_OFFSET, ORIGIN_SIZE)) ~> K) .
+  rl k(#cast(Reference(OFFSET, PLACE, MUT, metadata(staticSize(SIZE), PTR_OFFSET, ORIGIN_SIZE)), castKindPointerCoercion(pointerCoercionUnsize), MTY, TY) ~> K)
+   => k(Reference(OFFSET, PLACE, MUT, metadata(dynamicSize(SIZE), PTR_OFFSET, ORIGIN_SIZE)) ~> K) .
+  rl k(#cast(AllocRef(ALLOC_ID, PROJS, metadata(staticSize(SIZE), PTR_OFFSET, ORIGIN_SIZE)), castKindPointerCoercion(pointerCoercionUnsize), MTY, TY) ~> K)
+   => k(AllocRef(ALLOC_ID, PROJS, metadata(dynamicSize(SIZE), PTR_OFFSET, ORIGIN_SIZE)) ~> K) .
+  crl k(#cast(Reference(OFFSET, PLACE, MUT, META), castKindTransmute, TY_SOURCE, TY_TARGET) ~> K) types(TM)
+   => k(Reference(OFFSET, PLACE, MUT, META) ~> K) types(TM)
+    if lookupTy(TM, TY_SOURCE) == lookupTy(TM, TY_TARGET) .
+  crl k(#cast(AllocRef(ALLOC_ID, PROJS, META), castKindTransmute, TY_SOURCE, TY_TARGET) ~> K) types(TM)
+   => k(AllocRef(ALLOC_ID, PROJS, META) ~> K) types(TM)
+    if lookupTy(TM, TY_SOURCE) == lookupTy(TM, TY_TARGET) .
+  crl k(#cast(PtrLocal(OFFSET, PLACE, MUT, META), castKindTransmute, TY_SOURCE, TY_TARGET) ~> K) types(TM)
+   => k(PtrLocal(OFFSET, PLACE, MUT, META) ~> K) types(TM)
+    if lookupTy(TM, TY_SOURCE) == lookupTy(TM, TY_TARGET) .
+
+  --- Constants.
+  rl k(#decodeConstant(constantKindAllocated(allocation(BS, provenanceMap(.ProvenanceMapEntries), AL, MUT)), TY, TI) ~> K) types(TM)
+   => k(#decodeValue(TM, BS, TI) ~> K) types(TM) .
+  var TI : TypeInfo .
+  rl k(#decodeConstant(constantKindZeroSized, TY, typeInfoStructType(NAME, ADT, FIELDS, LAYOUT)) ~> K) => k(Aggregate(variantIdx(0), .List) ~> K) .
+  rl k(#decodeConstant(constantKindZeroSized, TY, typeInfoTupleType(FIELDS, LAYOUT)) ~> K) => k(Aggregate(variantIdx(0), .List) ~> K) .
+  rl k(#decodeConstant(constantKindZeroSized, TY, typeInfoArrayType(TY', MTC)) ~> K) => k(Range(.List) ~> K) .
+  rl k(#decodeConstant(constantKindZeroSized, TY, typeInfoFunType(STR)) ~> K) => k(Aggregate(variantIdx(0), .List) ~> K) .
+  var POINTEE_TY : Ty .
+  crl k(#decodeConstant(constantKindAllocated(allocation(BS, provenanceMap(provenanceMapEntry(0, ALLOC_ID)), AL, MUT)), TY, typeInfoRefType(POINTEE_TY)) ~> K)
+      memory(AM) types(TM)
+   => k(AllocRef(ALLOC_ID, .ProjectionElems, metadata(#metadataSize(TM, POINTEE_TY), 0, #metadataSize(TM, POINTEE_TY))) ~> K)
+      memory(AM) types(TM)
+    if lookupAlloc(AM, ALLOC_ID) :: Value /\ lengthBytes(BS) == 8 .
+  crl k(#decodeConstant(constantKindAllocated(allocation(BS, provenanceMap(provenanceMapEntry(0, ALLOC_ID)), AL, MUT)), TY, typeInfoRefType(POINTEE_TY)) ~> K)
+      memory(AM)
+   => k(AllocRef(ALLOC_ID, .ProjectionElems,
+                 metadata(dynamicSize(Bytes2Int(substrBytes(BS, 8, 16), LE, Unsigned)), 0,
+                          dynamicSize(Bytes2Int(substrBytes(BS, 8, 16), LE, Unsigned)))) ~> K)
+      memory(AM)
+    if lookupAlloc(AM, ALLOC_ID) :: Value /\ lengthBytes(BS) == 16 .
+
+  --- Binary and unary operations.
+  rl k(rvalueBinaryOp(BOP, OP, OP') ~> K) => k(#applyBinOp(BOP, OP, OP', false) ~> K) .
+  rl k(rvalueCheckedBinaryOp(BOP, OP, OP') ~> K) => k(#applyBinOp(BOP, OP, OP', true) ~> K) .
+  var OP' : Operand .
+  rl k(rvalueUnaryOp(UOP, OP) ~> K) => k(#applyUnOp(UOP, OP) ~> K) .
+
+  --- Checked arithmetic gives the result and an overflow flag.
+  crl k(#applyBinOp(BOP, Integer(ARG1, WIDTH, true), Integer(ARG2, WIDTH, true), true) ~> K)
+   => k(Aggregate(variantIdx(0),
+          ListItem(Integer(truncate(onInt(BOP, ARG1, ARG2), WIDTH, Signed), WIDTH, true)) ;
+          ListItem(BoolVal(truncate(onInt(BOP, ARG1, ARG2), WIDTH, Signed) =/= onInt(BOP, ARG1, ARG2)))) ~> K)
+    if isArithmetic(BOP) .
+  crl k(#applyBinOp(BOP, Integer(ARG1, WIDTH, false), Integer(ARG2, WIDTH, false), true) ~> K)
+   => k(Aggregate(variantIdx(0),
+          ListItem(Integer(truncate(onInt(BOP, ARG1, ARG2), WIDTH, Unsigned), WIDTH, false)) ;
+          ListItem(BoolVal(truncate(onInt(BOP, ARG1, ARG2), WIDTH, Unsigned) =/= onInt(BOP, ARG1, ARG2)))) ~> K)
+    if isArithmetic(BOP) .
+  --- Unchecked arithmetic is defined only when it does not overflow.
+  crl k(#applyBinOp(BOP, Integer(ARG1, WIDTH, true), Integer(ARG2, WIDTH, true), false) ~> K)
+   => k(Integer(truncate(onInt(BOP, ARG1, ARG2), WIDTH, Signed), WIDTH, true) ~> K)
+    if isArithmetic(BOP) /\ truncate(onInt(BOP, ARG1, ARG2), WIDTH, Signed) == onInt(BOP, ARG1, ARG2) .
+  crl k(#applyBinOp(BOP, Integer(ARG1, WIDTH, false), Integer(ARG2, WIDTH, false), false) ~> K)
+   => k(Integer(truncate(onInt(BOP, ARG1, ARG2), WIDTH, Unsigned), WIDTH, false) ~> K)
+    if isArithmetic(BOP) /\ truncate(onInt(BOP, ARG1, ARG2), WIDTH, Unsigned) == onInt(BOP, ARG1, ARG2) .
+
+  --- Comparisons.  K priority(55) and priority(60): the rules do not overlap here, as the
+  --- conditions on the widths and the sorts of the operands are disjoint.
+  var W' : Int .
+  vars SIGN' : Bool .
+  crl k(#applyBinOp(BOP, Integer(VAL1, WIDTH, SIGN), Integer(VAL2, WIDTH, SIGN), CHK) ~> K)
+   => k(BoolVal(cmpOpInt(BOP, VAL1, VAL2)) ~> K)
+    if isComparison(BOP) /\ WIDTH =/= 0 .
+  crl k(#applyBinOp(BOP, Integer(VAL1, 0, false), Integer(VAL2, WIDTH, SIGN), CHK) ~> K)
+   => k(BoolVal(cmpOpInt(BOP, VAL1, VAL2)) ~> K)
+    if isComparison(BOP) .
+  crl k(#applyBinOp(BOP, Integer(VAL1, WIDTH, SIGN), Integer(VAL2, 0, false), CHK) ~> K)
+   => k(BoolVal(cmpOpInt(BOP, VAL1, VAL2)) ~> K)
+    if isComparison(BOP) /\ WIDTH =/= 0 .
+  crl k(#applyBinOp(BOP, BoolVal(B1), BoolVal(B2), CHK) ~> K)
+   => k(BoolVal(cmpOpBool(BOP, B1, B2)) ~> K)
+    if isComparison(BOP) .
+  rl k(#applyBinOp(binOpCmp, Integer(VAL1, WIDTH, SIGN), Integer(VAL2, WIDTH, SIGN), CHK) ~> K)
+   => k(Integer(cmpInt(VAL1, VAL2), 8, true) ~> K) .
+  rl k(#applyBinOp(binOpCmp, BoolVal(B1), BoolVal(B2), CHK) ~> K)
+   => k(Integer(cmpBool(B1, B2), 8, true) ~> K) .
+
+  --- Unary operations.
+  rl k(#applyUnOp(unOpNeg, Integer(VAL1, WIDTH, true)) ~> K) => k(Integer(truncate(0 - VAL1, WIDTH, Signed), WIDTH, true) ~> K) .
+  rl k(#applyUnOp(unOpNot, BoolVal(B)) ~> K) => k(BoolVal(not B) ~> K) .
+  rl k(#applyUnOp(unOpNot, Integer(VAL1, WIDTH, true)) ~> K) => k(Integer(truncate(~ VAL1, WIDTH, Signed), WIDTH, true) ~> K) .
+  rl k(#applyUnOp(unOpNot, Integer(VAL1, WIDTH, false)) ~> K) => k(Integer(truncate(~ VAL1, WIDTH, Unsigned), WIDTH, false) ~> K) .
+
+  --- Bitwise operations and shifts.
+  crl k(#applyBinOp(BOP, Integer(ARG1, WIDTH, SIGN), Integer(ARG2, WIDTH, SIGN), false) ~> K)
+   => k(Integer(onInt(BOP, ARG1, ARG2), WIDTH, SIGN) ~> K)
+    if isBitwise(BOP) .
+  crl k(#applyBinOp(BOP, BoolVal(B1), BoolVal(B2), false) ~> K)
+   => k(BoolVal(onBool(BOP, B1, B2)) ~> K)
+    if isBitwise(BOP) .
+  crl k(#applyBinOp(BOP, Integer(ARG1, WIDTH, false), Integer(ARG2, W', SIGN'), false) ~> K)
+   => k(Integer(truncate(onShift(BOP, ARG1, ARG2, WIDTH), WIDTH, Unsigned), WIDTH, false) ~> K)
+    if isShift(BOP) /\ ((not isUncheckedShift(BOP)) or ARG2 < WIDTH) .
+  crl k(#applyBinOp(BOP, Integer(ARG1, WIDTH, true), Integer(ARG2, W', SIGN'), false) ~> K)
+   => k(Integer(truncate(onShift(BOP, ARG1, ARG2, WIDTH), WIDTH, Signed), WIDTH, true) ~> K)
+    if isShift(BOP) /\ ((not isUncheckedShift(BOP)) or ARG2 < WIDTH) .
+
+  --- Nullary operations.
+  rl k(rvalueNullaryOp(nullOpUbChecks, TY) ~> K) => k(BoolVal(false) ~> K) .
+  crl k(rvalueNullaryOp(nullOpSizeOf, TY) ~> K) types(TM)
+   => k(Integer(#sizeOf(TM, lookupTy(TM, TY)), 64, false) ~> K) types(TM)
+    if lookupTy(TM, TY) =/= typeInfoVoidType .
+  crl k(rvalueNullaryOp(nullOpAlignOf, TY) ~> K) types(TM)
+   => k(Integer(#alignOf(TM, lookupTy(TM, TY)), 64, false) ~> K) types(TM)
+    if lookupTy(TM, TY) =/= typeInfoVoidType .
+
+  --- Pointer metadata, pointer equality and pointer offsets.
+  var PLACE' : Place .
+  var MUT2 : Mutability .
+  var META' : Metadata .
+  var OFFSET' : Int .
+  rl k(#applyUnOp(unOpPtrMetadata, Reference(OFFSET, PLACE, MUT, metadata(dynamicSize(SIZE), PTR_OFFSET, ORIGIN_SIZE))) ~> K) => k(Integer(SIZE, 64, false) ~> K) .
+  rl k(#applyUnOp(unOpPtrMetadata, PtrLocal(OFFSET, PLACE, MUT, metadata(dynamicSize(SIZE), PTR_OFFSET, ORIGIN_SIZE))) ~> K) => k(Integer(SIZE, 64, false) ~> K) .
+  rl k(#applyUnOp(unOpPtrMetadata, AllocRef(ALLOC_ID, PROJS, metadata(dynamicSize(SIZE), PTR_OFFSET, ORIGIN_SIZE))) ~> K) => k(Integer(SIZE, 64, false) ~> K) .
+  rl k(#applyBinOp(binOpEq, PtrLocal(OFFSET, PLACE, MUT, META), PtrLocal(OFFSET', PLACE', MUT2, META'), CHK) ~> K)
+   => k(BoolVal(#ptrLocalEq(PtrLocal(OFFSET, PLACE, MUT, META), PtrLocal(OFFSET', PLACE', MUT2, META'))) ~> K) .
+  rl k(#applyBinOp(binOpNe, PtrLocal(OFFSET, PLACE, MUT, META), PtrLocal(OFFSET', PLACE', MUT2, META'), CHK) ~> K)
+   => k(BoolVal(not #ptrLocalEq(PtrLocal(OFFSET, PLACE, MUT, META), PtrLocal(OFFSET', PLACE', MUT2, META'))) ~> K) .
+  --- K priority(40): an offset of 0 changes nothing; the other rules require an offset > 0.
+  crl k(#applyBinOp(binOpOffset, PtrLocal(OFFSET, PLACE, MUT, META), Integer(VAL1, WIDTH, SIGN), CHK) ~> K)
+   => k(PtrLocal(OFFSET, PLACE, MUT, META) ~> K)
+    if VAL1 == 0 .
+  var CURRENT_SIZE : MetadataSize .
+  var CURRENT_OFFSET : Int .
+  crl k(#applyBinOp(binOpOffset, PtrLocal(OFFSET, PLACE, MUT, metadata(CURRENT_SIZE, CURRENT_OFFSET, dynamicSize(N))), Integer(VAL1, WIDTH, SIGN), CHK) ~> K)
+   => k(PtrLocal(OFFSET, PLACE, MUT, metadata(CURRENT_SIZE, CURRENT_OFFSET + VAL1, dynamicSize(N))) ~> K)
+    if VAL1 > 0 /\ CURRENT_OFFSET + VAL1 <= N .
+  crl k(#applyBinOp(binOpOffset, PtrLocal(OFFSET, PLACE, MUT, metadata(CURRENT_SIZE, CURRENT_OFFSET, staticSize(N))), Integer(VAL1, WIDTH, SIGN), CHK) ~> K)
+   => k(PtrLocal(OFFSET, PLACE, MUT, metadata(CURRENT_SIZE, CURRENT_OFFSET + VAL1, staticSize(N))) ~> K)
+    if VAL1 > 0 /\ CURRENT_OFFSET + VAL1 <= N .
+endm
+
+------------------------------------------------------------
+--- Control flow (kmir.md)
+------------------------------------------------------------
+
+--- @kind program
+--- @feature rust
+fmod RUST-CONTROL-FLOW-SYNTAX is
+  pr RUST-DATA-AUX .
+
+  subsort BasicBlock < LItem .
+
+  op #execBlockIdx : BasicBlockIdx -> KLabel [ctor] .
+  op #execBlock : BasicBlock -> KLabel [ctor] .
+  op #execStmts : Statements -> KLabel [ctor] .
+  op #execStmt : Statement -> KLabel [ctor] .
+  op #execTerminator : Terminator -> KLabel [ctor] .
+  op #selectBlock : SwitchTargets Evaluation -> KLabel [ctor] .
+  op #selectBlockHole : SwitchTargets -> KLabel [ctor] .
+  op #EndProgram : -> KLabel [ctor] .
+  --- #execTerminatorCall(fty, func, args, destination, target, unwind, span)
+  op #execTerminatorCall : Ty MonoItemKind Operands Place MaybeBasicBlockIdx UnwindAction Span -> KLabel [ctor] .
+  op #continueAt : MaybeBasicBlockIdx -> KLabel [ctor] .
+  op #setUpCalleeData : MonoItemKind Operands Span -> KLabel [ctor] .
+  op #setArgsFromStack : Int Operands -> KLabel [ctor] .
+  op #setArgFromStack : Int Operand -> KLabel [ctor] .
+  op #execIntrinsic : MonoItemKind Operands Place Span -> KLabel [ctor] .
+  op #setTupleArgs : Int Value -> KLabel [ctor] .
+  op #setTupleArgs : Int KList -> KLabel [ctor] .
+  op #expect : Evaluation Bool AssertMessage -> KLabel [ctor] .
+  op #expectHole : Bool AssertMessage -> KLabel [ctor] .
+  op AssertError : AssertMessage -> MIRError [ctor] .
+  op ReachedUnreachable : -> MIRError [ctor] .
+  op #ProgramError : MIRError -> KLabel [ctor] .
+
+  vars I CLOSURE TUPLE : Int .
+  var MI : MIRInt .
+  var B : Bool .
+  vars I2 WIDTH : Int .
+  var SIGN : Bool .
+  var V : Value .
+  var FM : Map{Ty,MonoItemKind} .
+  var TM : Map{Ty,TypeInfo} .
+  var TY : Ty .
+  var SYM : Symbol .
+  var DID : DefId .
+  var MB : MaybeBody .
+  var OP : Opaque .
+  var BLOCKS : BasicBlocks .
+  var BLK : BasicBlock .
+  var LDS : LocalDecls .
+  var LTY : Ty .
+  var LSP : Span .
+  var MUT : Mutability .
+  var TI : TypeInfo .
+  var LOCALS : KList .
+  var TYS : Tys .
+  var LAYOUT : MaybeLayoutShape .
+  var STR : MIRString .
+  var OPS : Operands .
+  var MK : MonoItemKind .
+
+  op #switchMatch : MIRInt Value -> Bool .
+  eq #switchMatch(0, BoolVal(B)) = not B .
+  eq #switchMatch(1, BoolVal(B)) = B .
+  ceq #switchMatch(I, Integer(I2, WIDTH, SIGN)) = I == truncate(I2, WIDTH, Unsigned) if 0 < WIDTH .
+  eq #switchMatch(I, Integer(I2, 0, SIGN)) = I == I2 .
+  op #switchCanUse : Value -> Bool .
+  eq #switchCanUse(Integer(I, WIDTH, SIGN)) = true .
+  eq #switchCanUse(BoolVal(B)) = true .
+  eq #switchCanUse(V) = false [owise] .
+
+  op #getBlocks : Map{Ty,MonoItemKind} Ty -> KList .
+  eq #getBlocks(FM, TY) = #getBlocksAux(lookupFunction(FM, TY)) .
+  op #getBlocksAux : MonoItemKind -> KList .
+  eq #getBlocksAux(monoItemFn(SYM, DID, noBody)) = .List .
+  eq #getBlocksAux(monoItemFn(SYM, DID, someBody(body(BLOCKS, LDS, MI, OP, MLOC, LSP)))) = toKList(BLOCKS) .
+  var MLOC : MaybeLocal .
+  eq #getBlocksAux(monoItemStatic(SYM, DID, OP)) = .List .
+  eq #getBlocksAux(monoItemGlobalAsm(OP)) = .List .
+  eq #getBlocksAux(IntrinsicFunction(SYM)) = .List .
+  op toKList : BasicBlocks -> KList .
+  eq toKList(.BasicBlocks) = .List .
+  eq toKList(BLK | BLOCKS) = ListItem(BLK) ; toKList(BLOCKS) .
+
+  op #reserveFor : LocalDecls -> KList .
+  eq #reserveFor(.LocalDecls) = .List .
+  eq #reserveFor(localDecl(LTY, LSP, MUT) LDS) = ListItem(newLocal(LTY, MUT)) ; #reserveFor(LDS) .
+
+  op isIntrinsicFunction : MonoItemKind -> Bool .
+  eq isIntrinsicFunction(IntrinsicFunction(SYM)) = true .
+  eq isIntrinsicFunction(MK) = false [owise] .
+  --- hasBody(FUNC): FUNC is a function with a body.  KMIR enters any function that is not an
+  --- intrinsic and gets stuck in #setUpCalleeData on one without a body; here the call is not
+  --- entered, so that a function without a body (a foreign function, such as a TEE API
+  --- function) can be given a meaning elsewhere (lang/rust/tee-support.maude).
+  op hasBody : MonoItemKind -> Bool .
+  var BD : Body .
+  eq hasBody(monoItemFn(SYM, DID, someBody(BD))) = true .
+  eq hasBody(MK) = false [owise] .
+
+  op isTupleType : TypeInfo -> Bool .
+  eq isTupleType(typeInfoTupleType(TYS, LAYOUT)) = true .
+  eq isTupleType(TI) = false [owise] .
+  op isRefType : TypeInfo -> Bool .
+  eq isRefType(typeInfoRefType(TY)) = true .
+  eq isRefType(TI) = false [owise] .
+  op isFunType : TypeInfo -> Bool .
+  eq isFunType(typeInfoFunType(STR)) = true .
+  eq isFunType(TI) = false [owise] .
+
+  --- The conditions of the closure calls of #setUpCalleeData (setupCalleeClosure, K priority
+  --- 40, and setupCalleeClosure2, K priority 45).  The general rule (priority 50) applies when
+  --- neither holds.  The two conditions are disjoint (a function or unknown type, or a
+  --- reference).
+  op $closure1 : KList Map{Ty,TypeInfo} Int Int -> Bool .
+  op $closure2 : KList Map{Ty,TypeInfo} Int Int -> Bool .
+  eq $closure1(LOCALS, TM, CLOSURE, TUPLE)
+   = 0 <= CLOSURE and CLOSURE < size(LOCALS) and 0 <= TUPLE and TUPLE < size(LOCALS)
+     and LOCALS[TUPLE] :: TypedValue and LOCALS[CLOSURE] :: TypedLocal
+     and (if LOCALS[TUPLE] :: TypedValue and LOCALS[CLOSURE] :: TypedLocal
+          then isTupleType(lookupTy(TM, tyOfLocal(LOCALS[TUPLE])))
+               and (typeInfoVoidType == lookupTy(TM, tyOfLocal(LOCALS[CLOSURE]))
+                    or isFunType(lookupTy(TM, tyOfLocal(LOCALS[CLOSURE]))))
+          else false fi) .
+  eq $closure2(LOCALS, TM, CLOSURE, TUPLE)
+   = 0 <= CLOSURE and CLOSURE < size(LOCALS) and 0 <= TUPLE and TUPLE < size(LOCALS)
+     and (if LOCALS[TUPLE] :: TypedValue and LOCALS[CLOSURE] :: TypedLocal
+          then isTupleType(lookupTy(TM, tyOfLocal(LOCALS[TUPLE])))
+               and isRefType(lookupTy(TM, tyOfLocal(LOCALS[CLOSURE])))
+               and (if pointeeTy(lookupTy(TM, tyOfLocal(LOCALS[CLOSURE]))) :: Ty
+                    then lookupTy(TM, pointeeTy(lookupTy(TM, tyOfLocal(LOCALS[CLOSURE])))) == typeInfoVoidType
+                         or isFunType(lookupTy(TM, pointeeTy(lookupTy(TM, tyOfLocal(LOCALS[CLOSURE])))))
+                    else false fi)
+          else false fi) .
+  op $isClosureCall : Operands KList Map{Ty,TypeInfo} -> Bool .
+  eq $isClosureCall((operandMove(place(local(CLOSURE), .ProjectionElems)), operandMove(place(local(TUPLE), .ProjectionElems))), LOCALS, TM)
+   = $closure1(LOCALS, TM, CLOSURE, TUPLE) or $closure2(LOCALS, TM, CLOSURE, TUPLE) .
+  eq $isClosureCall(OPS, LOCALS, TM) = false [owise] .
+endfm
+
+--- @kind program
+--- @feature rust
+mod RUST-CONTROL-FLOW is
+  pr RUST-DATA .
+  pr RUST-CONTROL-FLOW-SYNTAX .
+
+  var K : K .
+  vars I IDX CLOSURE TUPLE : Int .
+  var BLOCKS : KList .
+  vars LOCALS NEWLOCALS CALLERLOCALS STACK ARGS REST : KList .
+  var STMTS : Statements .
+  var STMT : Statement .
+  var SK : StatementKind .
+  var TERM : Terminator .
+  vars SPAN SP NEWSPAN : Span .
+  var PLACE DEST NEWDEST OLDDEST : Place .
+  var PROJ PROJS : ProjectionElems .
+  var RVAL : Rvalue .
+  var TM : Map{Ty,TypeInfo} .
+  var FM : Map{Ty,MonoItemKind} .
+  var VIDX : VariantIdx .
+  var NDI : NonDivergingIntrinsic .
+  var LOC : Local .
+  var OPQ : Opaque .
+  var BBI BBIDX : BasicBlockIdx .
+  var DISCR : Operand .
+  var TARGETS : SwitchTargets .
+  var EV : Evaluation .
+  vars V VAL : Value .
+  var MI : MIRInt .
+  var BRS : Branches .
+  vars CALLER NEWCALLER OLDCALLER FTY TY : Ty .
+  vars TARGET NEWTARGET OLDTARGET : MaybeBasicBlockIdx .
+  vars UNWIND OLDUNWIND UW : UnwindAction .
+  var MUT : Mutability .
+  var NL : NewLocal .
+  var R : RetVal .
+  var UTA : MaybeUserTypeAnnotationIndex .
+  var MCID : MirConstId .
+  var FUNC : MonoItemKind .
+  var OPS : Operands .
+  var OP : Operand .
+  var CS : Span .
+  var FIRST : BasicBlock .
+  var BBS : BasicBlocks .
+  var LDS : LocalDecls .
+  var ARGC : MIRInt .
+  var MLOC : MaybeLocal .
+  var SYM : Symbol .
+  var DID : DefId .
+  var CONSTOP : ConstOperand .
+  var COND : Operand .
+  vars EXPECTED BC : Bool .
+  var MSG : AssertMessage .
+  var ERR : MIRError .
+  var CALLERFRAME : StackFrame .
+  vars PCALLER : Ty .
+  var PDEST : Place .
+  var PTARGET : MaybeBasicBlockIdx .
+  var PUNWIND : UnwindAction .
+  var PSPAN : Span .
+  var BODYSPAN : Span .
+  var OP' : Opaque .
+  var C : Int .
+
+  --- Executing a function body: the block of the index, its statements, then its terminator.
+  crl k(#execBlockIdx(basicBlockIdx(I)) ~> K) currentBody(BLOCKS)
+   => k(#execBlock(BLOCKS[I]) ~> K) currentBody(BLOCKS)
+    if 0 <= I /\ I < size(BLOCKS) /\ BLOCKS[I] :: BasicBlock .
+  rl k(#execBlock(basicBlock(STMTS, TERM)) ~> K) => k(#execStmts(STMTS) ~> #execTerminator(TERM) ~> K) .
+  rl k(#execStmts(.Statements) ~> K) => k(K) .
+  rl k(#execStmts(statement(SK, SPAN) STMTS) ~> K) currentSpan(SP)
+   => k(#execStmt(statement(SK, SPAN)) ~> #execStmts(STMTS) ~> K) currentSpan(SPAN) .
+
+  --- Statements.
+  crl [execStmt] : k(#execStmt(statement(statementKindAssign(place(local(I), PROJ), RVAL), SPAN)) ~> K) locals(LOCALS) types(TM)
+   => k(#setLocalValue(place(local(I), PROJ), RVAL) ~> K) locals(LOCALS) types(TM)
+    if 0 <= I /\ I < size(LOCALS) /\ not #isUnionType(lookupTy(TM, tyOfLocal(getLocal(LOCALS, I)))) .
+  crl [execStmt.union] : k(#execStmt(statement(statementKindAssign(place(local(I), PROJ), RVAL), SPAN)) ~> K) locals(LOCALS) types(TM)
+   => k(#setLocalValue(place(local(I), PROJ), #evalUnion(RVAL)) ~> K) locals(LOCALS) types(TM)
+    if 0 <= I /\ I < size(LOCALS) /\ #isUnionType(lookupTy(TM, tyOfLocal(getLocal(LOCALS, I)))) .
+  rl k(#execStmt(statement(statementKindSetDiscriminant(PLACE, VIDX), SPAN)) ~> K) => k(K) .
+  rl k(#execStmt(statement(statementKindIntrinsic(NDI), SPAN)) ~> K) => k(K) .
+  rl k(#execStmt(statement(statementKindDeinit(PLACE), SPAN)) ~> K) => k(K) .
+  rl k(#execStmt(statement(statementKindStorageLive(LOC), SPAN)) ~> K) => k(K) .
+  rl k(#execStmt(statement(statementKindStorageDead(LOC), SPAN)) ~> K) => k(K) .
+  rl k(#execStmt(statement(statementKindRetag(OPQ, PLACE), SPAN)) ~> K) => k(K) .
+  rl k(#execStmt(statement(statementKindPlaceMention(PLACE), SPAN)) ~> K) => k(K) .
+  rl k(#execStmt(statement(statementKindFakeRead(OPQ, PLACE), SPAN)) ~> K) => k(K) .
+  rl k(#execStmt(statement(statementKindAscribeUserType(PLACE, OPQ, OP'), SPAN)) ~> K) => k(K) .
+  rl k(#execStmt(statement(statementKindCoverage(OPQ), SPAN)) ~> K) => k(K) .
+  rl k(#execStmt(statement(statementKindConstEvalCounter, SPAN)) ~> K) => k(K) .
+  rl k(#execStmt(statement(statementKindNop, SPAN)) ~> K) => k(K) .
+
+  --- Goto and switchInt: the continuation is dropped, the target block runs.
+  rl [termGoto] : k(#execTerminator(terminator(terminatorKindGoto(BBI), SPAN)) ~> K) currentSpan(SP)
+   => k(#execBlockIdx(BBI)) currentSpan(SPAN) .
+  rl [termSwitchInt] : k(#execTerminator(terminator(terminatorKindSwitchInt(DISCR, TARGETS), SPAN)) ~> K) currentSpan(SP)
+   => k(#selectBlock(TARGETS, DISCR)) currentSpan(SPAN) .
+  ceq k(#selectBlock(TARGETS, EV) ~> K) = k(EV ~> #selectBlockHole(TARGETS) ~> K) if not EV :: Value .
+  eq k(V ~> #selectBlockHole(TARGETS) ~> K) = k(#selectBlock(TARGETS, V) ~> K) .
+  rl k(#selectBlock(switchTargets(.Branches, BBIDX), V) ~> K) => k(#execBlockIdx(BBIDX) ~> K) .
+  crl k(#selectBlock(switchTargets(branch(MI, BBIDX) BRS, BBI), V) ~> K) => k(#execBlockIdx(BBIDX) ~> K)
+    if #switchMatch(MI, V) /\ #switchCanUse(V) .
+  crl k(#selectBlock(switchTargets(branch(MI, BBIDX) BRS, BBI), V) ~> K) => k(#selectBlock(switchTargets(BRS, BBI), V) ~> K)
+    if not #switchMatch(MI, V) /\ #switchCanUse(V) .
+
+  --- Return: the value of _0 goes to the destination of the caller, whose frame is popped.
+  rl [termReturnSome] : k(#execTerminator(terminator(terminatorKindReturn, SP)) ~> K)
+      currentFunc(FTY) currentBody(BLOCKS) caller(CALLER) dest(DEST) target(someBasicBlockIdx(BBIDX)) unwind(UW)
+      locals(ListItem(typedValue(VAL, TY, MUT)) ; LOCALS) currentSpan(CS)
+      stack(ListItem(StackFrame(NEWCALLER, NEWDEST, NEWTARGET, UNWIND, NEWLOCALS, NEWSPAN)) ; STACK) functions(FM)
+   => k(#setLocalValue(DEST, #decrementRef(VAL)) ~> #execBlockIdx(BBIDX))
+      currentFunc(CALLER) currentBody(#getBlocks(FM, CALLER)) caller(NEWCALLER) dest(NEWDEST) target(NEWTARGET) unwind(UNWIND)
+      locals(NEWLOCALS) currentSpan(NEWSPAN)
+      stack(STACK) functions(FM) .
+  rl [termReturnNone] : k(#execTerminator(terminator(terminatorKindReturn, SP)) ~> K)
+      currentFunc(FTY) currentBody(BLOCKS) caller(CALLER) dest(DEST) target(someBasicBlockIdx(BBIDX)) unwind(UW)
+      locals(ListItem(NL) ; LOCALS) currentSpan(CS)
+      stack(ListItem(StackFrame(NEWCALLER, NEWDEST, NEWTARGET, UNWIND, NEWLOCALS, NEWSPAN)) ; STACK) functions(FM)
+   => k(#execBlockIdx(BBIDX))
+      currentFunc(CALLER) currentBody(#getBlocks(FM, CALLER)) caller(NEWCALLER) dest(NEWDEST) target(NEWTARGET) unwind(UNWIND)
+      locals(NEWLOCALS) currentSpan(NEWSPAN)
+      stack(STACK) functions(FM) .
+
+  --- The end of the program: a return without a target.  The call stack is left as it is.
+  rl [endprogram-return] : k(#execTerminator(terminator(terminatorKindReturn, SP)) ~> K) retVal(R)
+      target(noBasicBlockIdx) locals(ListItem(typedValue(VAL, TY, MUT)) ; LOCALS)
+   => k(#EndProgram) retVal(return(VAL)) target(noBasicBlockIdx) locals(ListItem(typedValue(VAL, TY, MUT)) ; LOCALS) .
+  rl [endprogram-no-return] : k(#execTerminator(terminator(terminatorKindReturn, SP)) ~> K)
+      target(noBasicBlockIdx) locals(ListItem(newLocal(TY, MUT)) ; LOCALS)
+   => k(#EndProgram) target(noBasicBlockIdx) locals(ListItem(newLocal(TY, MUT)) ; LOCALS) .
+
+  --- Call: the function is looked up by the type of the constant or of the moved local.
+  rl k(#execTerminator(terminator(terminatorKindCall(operandConstant(constOperand(SP, UTA, mirConst(constantKindZeroSized, TY, MCID))), OPS, DEST, TARGET, UNWIND), SPAN)) ~> K)
+      currentSpan(CS) functions(FM)
+   => k(#execTerminatorCall(TY, lookupFunction(FM, TY), OPS, DEST, TARGET, UNWIND, SPAN) ~> K)
+      currentSpan(SPAN) functions(FM) .
+  crl k(#execTerminator(terminator(terminatorKindCall(operandMove(place(local(I), PROJS)), OPS, DEST, TARGET, UNWIND), SPAN)) ~> K)
+      locals(LOCALS) currentSpan(CS) functions(FM) types(TM)
+   => k(#execTerminatorCall(#projectedCallTy(TM, I, PROJS, LOCALS), lookupFunction(FM, #projectedCallTy(TM, I, PROJS, LOCALS)),
+                            OPS, DEST, TARGET, UNWIND, SPAN) ~> K)
+      locals(LOCALS) currentSpan(SPAN) functions(FM) types(TM)
+    if #projectedCallTy(TM, I, PROJS, LOCALS) :: Ty .
+
+  --- An intrinsic runs in place; a function gets a new frame, and the frame of the caller is
+  --- pushed.  (KMIR first checks the function against its break-on-functions filter, a debugging
+  --- aid, which is not translated.)
+  crl [termCallIntrinsic] : k(#execTerminatorCall(FTY, FUNC, OPS, DEST, TARGET, UNWIND, SPAN) ~> K)
+   => k(#execIntrinsic(FUNC, OPS, DEST, SPAN) ~> #continueAt(TARGET))
+    if isIntrinsicFunction(FUNC) .
+  crl [termCallFunction] : k(#execTerminatorCall(FTY, FUNC, OPS, DEST, TARGET, UNWIND, SPAN) ~> K)
+      currentFunc(CALLER) caller(OLDCALLER) dest(OLDDEST) target(OLDTARGET) unwind(OLDUNWIND) locals(LOCALS)
+      stack(STACK)
+   => k(#setUpCalleeData(FUNC, OPS, SPAN))
+      currentFunc(FTY) caller(CALLER) dest(DEST) target(TARGET) unwind(UNWIND) locals(LOCALS)
+      stack(ListItem(StackFrame(OLDCALLER, OLDDEST, OLDTARGET, OLDUNWIND, LOCALS, SPAN)) ; STACK)
+    if not isIntrinsicFunction(FUNC) /\ hasBody(FUNC) .
+
+  rl k(#continueAt(someBasicBlockIdx(BBIDX)) ~> K) => k(#execBlockIdx(BBIDX) ~> K) .
+  rl k(#continueAt(noBasicBlockIdx) ~> K) => k(K) .
+
+  --- Setting up the callee: its blocks, its locals (reserved), and its arguments, read from the
+  --- frame of the caller (now on top of the stack).
+  crl [setupCalleeData] : k(#setUpCalleeData(monoItemFn(SYM, DID, someBody(body(FIRST | BBS, LDS, ARGC, OPQ, MLOC, BODYSPAN))), OPS, SPAN) ~> K)
+      currentBody(BLOCKS) locals(LOCALS) stack(STACK) types(TM)
+   => k(#setArgsFromStack(1, OPS) ~> #execBlock(FIRST) ~> K)
+      currentBody(toKList(FIRST | BBS)) locals(#reserveFor(LDS)) stack(STACK) types(TM)
+    if not $isClosureCall(OPS, LOCALS, TM) .
+
+  rl k(#setArgsFromStack(IDX, .Operands) ~> K) => k(K) .
+  rl k(#setArgsFromStack(IDX, (OP, OPS)) ~> K) => k(#setArgFromStack(IDX, OP) ~> #setArgsFromStack(IDX + 1, OPS) ~> K) .
+  rl k(#setArgFromStack(IDX, operandConstant(CONSTOP)) ~> K)
+   => k(#setLocalValue(place(local(IDX), .ProjectionElems), operandConstant(CONSTOP)) ~> K) .
+  crl k(#setArgFromStack(IDX, operandCopy(place(local(I), .ProjectionElems))) ~> K)
+      stack(ListItem(StackFrame(PCALLER, PDEST, PTARGET, PUNWIND, CALLERLOCALS, PSPAN)) ; STACK)
+   => k(#setLocalValue(place(local(IDX), .ProjectionElems), #incrementRef(getValue(CALLERLOCALS, I))) ~> K)
+      stack(ListItem(StackFrame(PCALLER, PDEST, PTARGET, PUNWIND, CALLERLOCALS, PSPAN)) ; STACK)
+    if 0 <= I /\ I < size(CALLERLOCALS) /\ CALLERLOCALS[I] :: TypedValue .
+  crl k(#setArgFromStack(IDX, operandMove(place(local(I), PROJS))) ~> K)
+      stack(ListItem(StackFrame(PCALLER, PDEST, PTARGET, PUNWIND, CALLERLOCALS, PSPAN)) ; STACK)
+   => k(#setLocalValue(place(local(IDX), .ProjectionElems), #incrementRef(getValue(CALLERLOCALS, I))) ~> K)
+      stack(ListItem(#updateStackLocal(StackFrame(PCALLER, PDEST, PTARGET, PUNWIND, CALLERLOCALS, PSPAN), I, Moved)) ; STACK)
+    if 0 <= I /\ I < size(CALLERLOCALS) /\ CALLERLOCALS[I] :: TypedValue .
+
+  --- Closures called through a function trait: the arguments come as a tuple.
+  crl [setupCalleeClosure] : k(#setUpCalleeData(monoItemFn(SYM, DID, someBody(body(FIRST | BBS, LDS, ARGC, OPQ, MLOC, BODYSPAN))),
+                         (operandMove(place(local(CLOSURE), .ProjectionElems)), operandMove(place(local(TUPLE), .ProjectionElems))), SPAN) ~> K)
+      currentBody(BLOCKS) locals(LOCALS) stack(ListItem(CALLERFRAME) ; STACK) types(TM)
+   => k(#setTupleArgs(2, getValue(LOCALS, TUPLE)) ~> #execBlock(FIRST) ~> K)
+      currentBody(toKList(FIRST | BBS)) locals(#reserveFor(LDS))
+      stack(ListItem(#updateStackLocal(#updateStackLocal(CALLERFRAME, TUPLE, Moved), CLOSURE, Moved)) ; STACK) types(TM)
+    if $closure1(LOCALS, TM, CLOSURE, TUPLE) .
+  crl [setupCalleeClosure2] : k(#setUpCalleeData(monoItemFn(SYM, DID, someBody(body(FIRST | BBS, LDS, ARGC, OPQ, MLOC, BODYSPAN))),
+                         (operandMove(place(local(CLOSURE), .ProjectionElems)), operandMove(place(local(TUPLE), .ProjectionElems))), SPAN) ~> K)
+      currentBody(BLOCKS) locals(LOCALS) stack(ListItem(CALLERFRAME) ; STACK) types(TM)
+   => k(#setLocalValue(place(local(1), .ProjectionElems), #incrementRef(getValue(LOCALS, CLOSURE)))
+        ~> #setTupleArgs(2, getValue(LOCALS, TUPLE)) ~> #execBlock(FIRST) ~> K)
+      currentBody(toKList(FIRST | BBS)) locals(#reserveFor(LDS))
+      stack(ListItem(#updateStackLocal(#updateStackLocal(CALLERFRAME, TUPLE, Moved), CLOSURE, Moved)) ; STACK) types(TM)
+    if $closure2(LOCALS, TM, CLOSURE, TUPLE) .
+
+  rl k(#setTupleArgs(IDX, Aggregate(variantIdx(0), ARGS)) ~> K) => k(#setTupleArgs(IDX, ARGS) ~> K) .
+  crl k(#setTupleArgs(IDX, VAL) ~> K) => k(#setTupleArgs(IDX, ListItem(VAL)) ~> K)
+    if not $isTuple(VAL) .
+  op $isTuple : Value -> Bool .
+  eq $isTuple(Aggregate(variantIdx(0), ARGS)) = true .
+  eq $isTuple(VAL) = false [owise] .
+  rl k(#setTupleArgs(IDX, .List) ~> K) => k(K) .
+  rl k(#setTupleArgs(IDX, ListItem(VAL) ; REST) ~> K)
+   => k(#setLocalValue(place(local(IDX), .ProjectionElems), #incrementRef(VAL)) ~> #setTupleArgs(IDX + 1, REST) ~> K) .
+
+  --- Assert: the condition must have the expected value, or the program stops with an error.
+  rl [termAssert] : k(#execTerminator(terminator(assert(COND, EXPECTED, MSG, BBIDX, UNWIND), SPAN)) ~> K) currentSpan(CS)
+   => k(#expect(COND, EXPECTED, MSG) ~> #execBlockIdx(BBIDX)) currentSpan(SPAN) .
+  ceq k(#expect(EV, EXPECTED, MSG) ~> K) = k(EV ~> #expectHole(EXPECTED, MSG) ~> K) if not EV :: Value .
+  eq k(V ~> #expectHole(EXPECTED, MSG) ~> K) = k(#expect(V, EXPECTED, MSG) ~> K) .
+  crl k(#expect(BoolVal(BC), EXPECTED, MSG) ~> K) => k(K) if BC == EXPECTED .
+  crl k(#expect(BoolVal(BC), EXPECTED, MSG) ~> K) => k(AssertError(MSG) ~> K) if BC =/= EXPECTED .
+
+  --- Drop does nothing; unreachable is an error.
+  rl [termDrop] : k(#execTerminator(terminator(terminatorKindDrop(PLACE, BBIDX, UNWIND), SPAN)) ~> K) currentSpan(CS)
+   => k(#execBlockIdx(BBIDX) ~> K) currentSpan(SPAN) .
+  rl [termUnreachable] : k(#execTerminator(terminator(terminatorKindUnreachable, SPAN)) ~> K) currentSpan(CS)
+   => k(ReachedUnreachable ~> K) currentSpan(SPAN) .
+
+  rl [program-error] : k(ERR ~> K) => k(#ProgramError(ERR) ~> K) .
+
+  --- #projectedCallTy (concrete): the type of the moved local through its projections.
+  op #projectedCallTy : Map{Ty,TypeInfo} Int ProjectionElems KList -> MaybeTy .
+  ceq #projectedCallTy(TM, I, PROJS, LOCALS) = getTyOf(TM, tyOfLocal(LOCALS[I]), PROJS)
+    if 0 <= I /\ I < size(LOCALS) /\ LOCALS[I] :: TypedLocal .
+  eq #projectedCallTy(TM, I, PROJS, LOCALS) = TyUnknown [owise] .
+endm
+
+------------------------------------------------------------
+--- Intrinsics (intrinsics.md): black_box and cold_path
+------------------------------------------------------------
+
+--- @kind program
+--- @feature rust
+mod RUST-INTRINSICS is
+  pr RUST-CONTROL-FLOW .
+
+  var K : K .
+  var ARG : Operand .
+  var DEST : Place .
+  var SPAN : Span .
+
+  rl k(#execIntrinsic(IntrinsicFunction(symbol("black_box")), ARG, DEST, SPAN) ~> K)
+   => k(#setLocalValue(DEST, ARG) ~> K) .
+  rl k(#execIntrinsic(IntrinsicFunction(symbol("cold_path")), .Operands, DEST, SPAN) ~> K) => k(K) .
+endm
+
+------------------------------------------------------------
+--- Loading a program (the KMIR client: kmir/smir.py, kmir/kast.py)
+------------------------------------------------------------
+
+--- KMIR sets up the static maps and the first call in its Python client.  Here:
+---   * #functionsMap: a function symbol, NormalSym, is mapped to its mono item, an intrinsic
+---     symbol, IntrinsicSym, to IntrinsicFunction; a NoOpSym is skipped, as in KMIR;
+---   * #typesMap: the type mappings;
+---   * #memoryMap: each global allocation of memory without pointers, decoded by its type;
+---   * #callConfig(PGM, TY, LOCALS): the configuration that calls the function TY with the locals
+---     LOCALS of the caller, local 1 to N being its N arguments (mk_call_terminator).  The call
+---     has no target, so the program ends when the function returns (#EndProgram).
+
+--- @kind program
+--- @feature rust
+mod RUST-SEMANTICS is
+  pr RUST-INTRINSICS .
+
+  var NAME : Symbol .
+  var ALLOCS : GlobalAllocs .
+  vars FNS : FunctionNames .
+  vars ITEMS ITEMS' : MonoItems .
+  var TYPES : TypeMappings .
+  var MACH : MachineInfo .
+  var TY : Ty .
+  vars SYM SYM' : Symbol .
+  var KIND : MonoItemKind .
+  var TI : TypeInfo .
+  var TM : Map{Ty,TypeInfo} .
+  var AID : AllocId .
+  var GAK : GlobalAllocKind .
+  var BS : Bytes .
+  var AL : Align .
+  var MUT : Mutability .
+  var PM : ProvenanceMap .
+  var PGM : Pgm .
+  var LOCALS : KList .
+  var N : Int .
+  var FK : FunctionKind .
+
+  op #functionsMap : FunctionNames MonoItems -> Map{Ty,MonoItemKind} .
+  eq #functionsMap(.FunctionNames, ITEMS) = empty .
+  eq #functionsMap(functionName(TY, functionNormalSym(SYM)) FNS, ITEMS monoItem(SYM, KIND) ITEMS')
+   = insert(TY, KIND, #functionsMap(FNS, ITEMS monoItem(SYM, KIND) ITEMS')) .
+  --- A NormalSym without a mono item is a foreign function: KMIR leaves it out of the map, here
+  --- it keeps its symbol and has no body, so that a foreign call can be recognised by its name:
+  --- see hasBody in RUST-CONTROL-FLOW-SYNTAX and lang/rust/tee-support.maude.
+  ceq #functionsMap(functionName(TY, functionNormalSym(SYM)) FNS, ITEMS)
+   = insert(TY, monoItemFn(SYM, defId(-1), noBody), #functionsMap(FNS, ITEMS))
+    if not $hasItem(SYM, ITEMS) .
+  op $hasItem : Symbol MonoItems -> Bool .
+  eq $hasItem(SYM, ITEMS monoItem(SYM, KIND) ITEMS') = true .
+  eq $hasItem(SYM, ITEMS) = false [owise] .
+  eq #functionsMap(functionName(TY, functionIntrinsic(SYM)) FNS, ITEMS)
+   = insert(TY, IntrinsicFunction(SYM), #functionsMap(FNS, ITEMS)) .
+  eq #functionsMap(functionName(TY, FK) FNS, ITEMS) = #functionsMap(FNS, ITEMS) [owise] .
+
+  op #typesMap : TypeMappings -> Map{Ty,TypeInfo} .
+  eq #typesMap(.TypeMappings) = empty .
+  eq #typesMap(TypeMapping(TY, TI) TYPES) = insert(TY, TI, #typesMap(TYPES)) .
+
+  op #memoryMap : Map{Ty,TypeInfo} GlobalAllocs -> Map{AllocId,RustValue} .
+  eq #memoryMap(TM, .GlobalAllocs) = empty .
+  ceq #memoryMap(TM, globalAllocEntry(AID, TY, Memory(allocation(BS, provenanceMap(.ProvenanceMapEntries), AL, MUT))) ALLOCS)
+   = insert(AID, #decodeValue(TM, BS, lookupTy(TM, TY)), #memoryMap(TM, ALLOCS))
+    if #decodeValue(TM, BS, lookupTy(TM, TY)) :: Value .
+  eq #memoryMap(TM, globalAllocEntry(AID, TY, GAK) ALLOCS) = #memoryMap(TM, ALLOCS) [owise] .
+
+  op #callArgs : Int Int -> Operands .
+  eq #callArgs(N, 0) = .Operands .
+  ceq #callArgs(N, s M) = operandCopy(place(local(N), .ProjectionElems)), #callArgs(N + 1, M) if N > 0 .
+  var M : Nat .
+
+  --- #callConfigOps(PGM, TY, LOCALS, OPS): the same with the arguments OPS of the call.
+  op #callConfig : Pgm Ty KList -> KConfig .
+  op #callConfigOps : Pgm Ty KList Operands -> KConfig .
+  var OPS : Operands .
+  eq #callConfig(PGM, TY, LOCALS) = #callConfigOps(PGM, TY, LOCALS, #callArgs(1, size(LOCALS) - 1)) .
+  eq #callConfigOps(pgm(NAME, ALLOCS, FNS, ITEMS, TYPES, MACH), TY, LOCALS, OPS)
+   = k(#execTerminator(terminator(
+         terminatorKindCall(operandConstant(constOperand(span(0), noUserTypeAnnotationIndex,
+                                                         mirConst(constantKindZeroSized, TY, mirConstId(0)))),
+                            OPS,
+                            place(local(0), .ProjectionElems), noBasicBlockIdx, unwindActionContinue),
+         span(0))))
+     retVal(noReturn) currentFunc(ty(-1)) currentBody(.List) caller(ty(-1))
+     dest(place(local(-1), .ProjectionElems)) target(noBasicBlockIdx) unwind(unwindActionUnreachable)
+     locals(LOCALS) currentSpan(span(-1)) stack(.List)
+     functions(#functionsMap(FNS, ITEMS)) types(#typesMap(TYPES))
+     memory(#memoryMap(#typesMap(TYPES), ALLOCS)) .
+endm

@@ -18,6 +18,8 @@ FASE 2024, LNCS, Springer.
 - Cryptographic operations
 - Programmer errors and invalid handles, modeled as panics
 - Model programs (`lang/c/semantics.maude`) whose calls are translated into TEE API calls (`lang/c/tee-support.maude`)
+- Concrete Rust Stable MIR execution and a TEE adapter covering the C model's
+  29 callable TEE stubs and three REE client calls
 
 ## Using the specification
 
@@ -85,6 +87,7 @@ tee-formal-spec/
 ├── docs/annotations.md   # the machine-readable module annotations of src/
 ├── tools/
 │   ├── strip-modules.py  # main.maude and the spec files of a feature configuration
+│   ├── rust2maude.py     # Rust source -> Stable MIR -> Maude, and its evaluation
 │   ├── test/             # the test runners (run-api-suite.py, run-checks.py)
 │   └── docs/             # the documentation site: gen-docs.py, gen-examples.py and their inputs
 ├── .github/workflows/docs.yml   # builds the site and deploys it to GitHub Pages
@@ -136,6 +139,8 @@ after every file of `src/`.
 | `../lang/c/semantics.maude` | Syntax and semantics of model programs (a C subset) |
 | `../lang/c/typing.maude` | Static type checking of model programs (`wellTyped`) |
 | `../lang/c/tee-support.maude` | The C side of the model: TEE API calls of programs (`getFuncParams` of each API function), client calls, running a TA service, shared memory |
+| `../lang/rust/semantics.maude` | Concrete Stable MIR execution translated from KMIR |
+| `../lang/rust/tee-support.maude` | Rust TA services and transient-object API calls (`TEE-RUST-BEHAVIOR`) |
 
 ## Core modeling principles
 

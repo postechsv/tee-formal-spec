@@ -19,7 +19,7 @@
 #   FOO_REQUIRES := CRYPTO
 #   FOO_TESTS := api/test-foo.maude foo-checks.maude
 
-FEATURES := CRYPTO TRANSIENT PERSISTENT GENERIC DATA_STREAM ENUMERATOR SHM INVISIBLE
+FEATURES := CRYPTO TRANSIENT PERSISTENT GENERIC DATA_STREAM ENUMERATOR SHM
 
 # Cryptographic operations. The file is dropped with its panic module.
 CRYPTO ?= 1
@@ -80,12 +80,3 @@ SHM_LOADS := shared-memory
 SHM_MODULES := SHARED-MEMORY-BEHAVIOR
 SHM_REQUIRES :=
 SHM_TESTS := completion/shared-memory.maude completion/client-session.maude
-
-# Invisible-transition reduction of Section 8 of the paper (src/invisible-reduction.maude): AP-invisible
-# rules restated as equations. Off by default. Its modules take effect only when a model imports
-# INVISIBLE-REDUCTION, IMP-INVISIBLE-REDUCTION or TEE-API-CALL-INVISIBLE-REDUCTION.
-INVISIBLE ?= 0
-INVISIBLE_LOADS := invisible-reduction
-INVISIBLE_MODULES :=
-INVISIBLE_REQUIRES := CRYPTO TRANSIENT PERSISTENT GENERIC DATA_STREAM
-INVISIBLE_TESTS := completion/invisible.maude

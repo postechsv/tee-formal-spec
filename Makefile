@@ -110,7 +110,6 @@ $(FINAL_STAMP): $(FINAL_INPUTS) | $(OUT)
 	$(Q)mkdir -p $(STAGE)/src $(STAGE)/tests
 	$(Q)awk -v skip_loads='$(DROP_LOADS)' -v skip_mods='$(DROP_MODULES)' -v without='$(WITHOUT)' \
 		-f tools/build/select-main.awk $(MAIN_SRC) > $(STAGE)/src/main.maude
-	$(Q)$(if $(filter 1,$(INVISIBLE)),echo 'load invisible-reduction' >> $(STAGE)/src/main.maude)
 	$(Q)$(if $(SRC_FILES),cp $(SRC_FILES) $(STAGE)/src/)
 	$(Q)cp -R tests/. $(STAGE)/tests/
 	$(Q)cp $(RUNNERS) $(STAGE)/tests/

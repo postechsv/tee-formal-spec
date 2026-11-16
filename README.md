@@ -18,7 +18,6 @@ FASE 2024, LNCS, Springer.
 - Cryptographic operations
 - Programmer errors and invalid handles, modeled as panics
 - Model programs (`src/imp.maude`) whose calls are translated into TEE API calls (`src/tee-imp.maude`)
-- The invisible-transition reduction of the paper (`src/invisible-reduction.maude`)
 
 ## Using the specification
 

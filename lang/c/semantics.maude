@@ -706,6 +706,48 @@ fmod C-CONFIG is
   op arrlen : Map{Nat,Nat} -> KConfigItem [ctor] .
   op labels : Map{Label,Stmt} -> KConfigItem [ctor] .
 
+  --- The memory of a program, as one value: its store, its next location and its array lengths.
+  --- A client that shares its memory with a TA passes it as the last argument of the call, and
+  --- the TA runs on it and passes it back (TEE-API-C-PROGRAM, SHARED-MEMORY-BEHAVIOR,
+  --- SHARED-OBJECT-C).  shared(B) says whether the configuration of a TA service runs on the
+  --- memory of its client.
+  sort CStore .
+  op cstore : Map{Nat,Value?} Nat Map{Nat,Nat} -> CStore [ctor] .
+  sort MemVal .
+  subsort MemVal < Value .
+  op #_ : CStore -> MemVal [ctor] .
+  op shared : Bool -> KConfigItem [ctor] .
+  --- $memLast(VL): the last argument of VL is a memory.
+  op $memLast : List{Arg} -> Bool .
+  var MVL : List{Arg} .
+  var MA : Arg .
+  var MSTORE : Map{Nat,Value?} .
+  var MN : Nat .
+  var MAL : Map{Nat,Nat} .
+  eq $memLast(nil) = false .
+  eq $memLast(MVL # cstore(MSTORE, MN, MAL)) = true .
+  ceq $memLast(MVL MA) = false if not MA :: MemVal .
+  --- $mem: the memory, as an output of a TA service (getVals) and as the expression whose value
+  --- a client sends; $resultMem: the output of a client call that gets the return code and the
+  --- memory back.
+  ops $mem $resultMem : -> Exp [ctor] .
+  --- $bindLoc(X, L): X names the object at L (a parameter bound to an object of the client);
+  --- $setMem(STORE, L, AL): the client gets back its objects in the memory STORE that the TA
+  --- leaves: the locations below its next location, $below.  The objects of the TA, at the
+  --- locations that follow, are not the client's and are dropped.
+  op $bindLoc : Var Nat -> K .
+  op $setMem : Map{Nat,Value?} Nat Map{Nat,Nat} -> K .
+  op $below : Map{Nat,Value?} Nat -> Map{Nat,Value?} .
+  op $below : Map{Nat,Nat} Nat -> Map{Nat,Nat} .
+  var MV : Value? .
+  var MK : Nat .
+  eq $below((empty).Map{Nat,Value?}, MN) = empty .
+  eq $below((MK |-> MV) ; MSTORE, MN)
+   = if MK < MN then (MK |-> MV) ; $below(MSTORE, MN) else $below(MSTORE, MN) fi .
+  eq $below((empty).Map{Nat,Nat}, MN) = empty .
+  eq $below((MK |-> MN') ; MAL, MN)
+   = if MK < MN then (MK |-> MN') ; $below(MAL, MN) else $below(MAL, MN) fi .
+  var MN' : Nat .
 endfm
 
 --- @kind program
@@ -935,6 +977,17 @@ mod C-SEMANTICS is
   --- since alloc always runs before an assignment.
   crl [assign]: k(loc(L) := V ; ~> K) store((L |-> V') ; STORE)
    => k(K) store((L |-> V) ; STORE) if not V :: SObj .
+--- The memory shared with a TA: $mem evaluates to the memory of the program, $bindLoc binds a
+--- variable to an object of it, and $setMem replaces it with the memory the TA passes back.
+  vars STORE' : Map{Nat,Value?} .
+  vars AL' : Map{Nat,Nat} .
+  var LN' : Nat .
+  eq k({ $mem } ~> K) store(STORE) nextLoc(LN) arrlen(AL)
+   = k({ # cstore(STORE, LN, AL) } ~> K) store(STORE) nextLoc(LN) arrlen(AL) .
+  eq k($bindLoc(X, N) ~> K) env(ENV) = k(K) env(insert(X, N, ENV)) .
+  eq k($setMem(STORE, LN, AL) ~> K) store(STORE') nextLoc(LN') arrlen(AL')
+   = k(K) store($below(STORE, LN')) nextLoc(LN') arrlen($below(AL, LN')) .
+
 --- Struct assignment copies the members: the target keeps its own locations.
   eq k(loc(L) := sobj(SO2) ; ~> K) store((L |-> sobj(SO1)) ; STORE)
    = k(K) store((L |-> sobj(SO1)) ; copyMembers(SO1, SO2, STORE)) .

@@ -1,5 +1,5 @@
---- Shared memory of a client and a TA (src/shared-memory.maude): the values of the shared objects
---- go to the TA, and its results come back to them.  An RA invokes a TA service through the
+--- Shared memory of a client and a TA (src/shared-memory.maude): the memory of the client goes to
+--- the TA, which runs on it, and comes back with the objects the TA wrote.  An RA invokes a TA service through the
 --- TrustedOS, and a TA invokes another TA through a session, with its objects b and res shared.
 load ../../src/main
 load ../cases/aux
@@ -12,6 +12,9 @@ mod SHM-TEST is
   op sid : -> SessionId [ctor] .
   ops buf b res r rr oph : -> Var [ctor] .
   ops check fill : -> FuncId [ctor] .
+  ops pa pb pd ps pq pv pc : -> Var [ctor] .
+  op pPt : -> CType [ctor] .
+  ops sfill vfill pfill : -> FuncId [ctor] .
   var P : Program .
   var S : Program .
   var F : FuncId .
@@ -41,6 +44,26 @@ mod SHM-TEST is
     char b ; char res ; TEE-Result r ;
     b := # data(1) ; res := # noData ;
     r := teecInvokeCommand(# sid, # F, (addr(b), addr(res))) ; .
+
+  --- A struct shared object: the RA shares ps, a struct pPt with pa = 3, pb = 0 and pd, a pointer
+  --- to its char pc (data(1)).  The TA runs on the memory of the RA: sfill takes a pointer to the
+  --- struct and copies pa to pb, vfill takes a void * buffer that it reads as the struct, and
+  --- pfill writes data(9) through the pointer member pd, to the object pc of the RA.
+  op sfillProg : -> Program .
+  eq sfillProg = struct pPt { int pa ; int pb ; char * pd ; } ;
+    void sfill((struct pPt) * pq) { deref(pq) . pb := deref(pq) . pa ; return unit ; } .
+  op vfillProg : -> Program .
+  eq vfillProg = struct pPt { int pa ; int pb ; char * pd ; } ;
+    void vfill(void * pv) { (struct pPt) * pq ; pq := pv ; deref(pq) . pb := deref(pq) . pa ;
+      return unit ; } .
+  op pfillProg : -> Program .
+  eq pfillProg = struct pPt { int pa ; int pb ; char * pd ; } ;
+    void pfill((struct pPt) * pq) { deref(deref(pq) . pd) := # data(9) ; return unit ; } .
+  op cliStruct : FuncId -> Program .
+  eq cliStruct(F) =
+    struct pPt { int pa ; int pb ; char * pd ; } ; struct pPt ps ; char pc ; TEE-Result r ;
+    pc := # data(1) ; ps . pa := # 3 ; ps . pb := # 0 ; ps . pd := addr(pc) ;
+    r := teecInvokeCommand(# sid, # F, (addr(ps))) ; .
 
   --- client(S, P): the RA testRa runs the program S, and has a session sid with testTa, which
   --- runs P.
@@ -133,3 +156,37 @@ search [1] in SHM-TEST :
       proc : (k(.K) store((0 |-> # data(1)) ; (1 |-> # (nil).List{Data})) KS:KConfig), AS:AttributeSet >
   < otherTa : TrustedApp | status : panic, AS2:AttributeSet >
   C:Configuration .
+
+------------------------------------------------------------
+--- Structs and pointers in the shared memory
+------------------------------------------------------------
+
+--- The TA writes the member pb of the struct ps of the RA, through a pointer to the struct (sfill)
+--- or a void * buffer read as the struct (vfill): the RA sees pb = 3.
+search [1] in SHM-TEST : client(cliStruct(sfill), sfillProg) =>!
+  < testRa : RichApp | prog : P:Program,
+      proc : (k(.K) env((ps |-> LS:Nat) ; (r |-> LC:Nat) ; ENV:Map{Var,Nat})
+              store((LS:Nat |-> sobj((pb |-> LB:Nat) ; SO:Map{Var,Nat})) ; (LB:Nat |-> # 3) ;
+                    (LC:Nat |-> # success) ; MEM:Map{Nat,Value?}) KS:KConfig) >
+  C:Configuration .
+
+search [1] in SHM-TEST : client(cliStruct(vfill), vfillProg) =>!
+  < testRa : RichApp | prog : P:Program,
+      proc : (k(.K) env((ps |-> LS:Nat) ; (r |-> LC:Nat) ; ENV:Map{Var,Nat})
+              store((LS:Nat |-> sobj((pb |-> LB:Nat) ; SO:Map{Var,Nat})) ; (LB:Nat |-> # 3) ;
+                    (LC:Nat |-> # success) ; MEM:Map{Nat,Value?}) KS:KConfig) >
+  C:Configuration .
+
+--- The TA writes through the pointer member pd of the struct: the object pc of the RA it points
+--- to gets data(9).
+search [1] in SHM-TEST : client(cliStruct(pfill), pfillProg) =>!
+  < testRa : RichApp | prog : P:Program,
+      proc : (k(.K) env((pc |-> LP:Nat) ; (r |-> LC:Nat) ; ENV:Map{Var,Nat})
+              store((LP:Nat |-> # data(9)) ; (LC:Nat |-> # success) ; MEM:Map{Nat,Value?}) KS:KConfig) >
+  C:Configuration .
+
+--- The TA's own objects are not given back: after sfill, the next location of the RA is the one
+--- it had before the call.
+search [1] in SHM-TEST : client(cliStruct(sfill), sfillProg) =>!
+  < testRa : RichApp | prog : P:Program, proc : (k(.K) nextLoc(N:Nat) store(MEM:Map{Nat,Value?}) KS:KConfig) >
+  C:Configuration such that N:Nat == 6 .

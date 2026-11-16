@@ -14,7 +14,7 @@ path is shown, not only its first state. Candidates are checked again with
 "search [1] in MOD : before =>1 after ." and "show path labels 1 .", which must
 name the same label. Terms are printed by Maude and used as they are printed.
 If that re-parse does not confirm a step (for example because the printed
-IMP program does not parse back to the same term), the step is kept when the
+C program does not parse back to the same term), the step is kept when the
 original search, run again, gives "show path labels N ." with exactly the label
 sequence of its path; then the example is taken from that real path and
 check_module is the module of that search.
@@ -95,6 +95,7 @@ import sys
 REPO = Path(__file__).resolve().parents[2]
 ROOT = REPO
 SRC = ROOT / "src"
+LANG = ROOT / "lang"
 TEST_GLOBS = ("tests/api/test-*.maude", "tests/completion/*.maude",
               "tests/gp-conformance/*.maude")
 SEEDS_DIR = REPO / "tools" / "docs" / "input" / "seeds"
@@ -255,7 +256,7 @@ class OpIndex:
         return best
 
 
-def rel(path: Path) -> Path:
+def rel_path(path: Path) -> Path:
     """A spec file relative to the spec root, a seed file relative to this repository."""
     try:
         return path.relative_to(ROOT)
@@ -263,12 +264,17 @@ def rel(path: Path) -> Path:
         return path.relative_to(REPO)
 
 
-def scan_src(src_dir: Path):
-    """Return (rules, equation-defined op keys, operator index, variable names)."""
+def spec_files():
+    """The spec files: src/*.maude and the language files lang/<language>/*.maude."""
+    return sorted(SRC.glob("*.maude")) + sorted(LANG.glob("*/*.maude"))
+
+
+def scan_src():
+    """Return (rules, equation-defined op keys, operator index, variable names) of spec_files()."""
     variables: set[str] = set()
     raw = []  # (file, line, module, keyword, text)
-    for path in sorted(src_dir.glob("*.maude")):
-        rel = rel(path).as_posix()
+    for path in spec_files():
+        rel = rel_path(path).as_posix()
         module = None
         current = None
         for number, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
@@ -591,7 +597,7 @@ def run_test_file(maude: str, path: Path, cache: Path | None, digest: str, timeo
     search_text = "".join(t + "\n" for t in texts)
 
     def run_cached(mode: str, program: str) -> str:
-        name = "{}-{}-{}.txt".format(rel(path).as_posix().replace("/", "_"),
+        name = "{}-{}-{}.txt".format(rel_path(path).as_posix().replace("/", "_"),
                                      mode, digest)
         cached = cache / name if cache else None
         if cached is not None and cached.is_file():
@@ -605,7 +611,7 @@ def run_test_file(maude: str, path: Path, cache: Path | None, digest: str, timeo
     outputs = {"search": run_cached("search", prelude + search_text)}
     for line in outputs["search"].splitlines():
         if line.startswith(("Warning:", "Error:")):
-            print("warning: {}: {}".format(rel(path).as_posix(), line),
+            print("warning: {}: {}".format(rel_path(path).as_posix(), line),
                   file=sys.stderr)
             break
     states = solution_states(outputs["search"])
@@ -630,9 +636,9 @@ def source_of(rel: str, command: dict) -> str:
 def inputs_digest(maude: str, seeds: Path | None) -> str:
     digest = hashlib.sha256(maude.encode())
     seed_files = sorted(seeds.glob("*.maude")) if seeds and seeds.is_dir() else []
-    for path in sorted(list(SRC.glob("*.maude")) + list((ROOT / "tests").rglob("*.maude"))
+    for path in sorted(spec_files() + list((ROOT / "tests").rglob("*.maude"))
                        + seed_files):
-        digest.update(rel(path).as_posix().encode())
+        digest.update(rel_path(path).as_posix().encode())
         digest.update(path.read_bytes())
     return digest.hexdigest()[:16]
 
@@ -665,7 +671,7 @@ def main() -> int:
     digest = inputs_digest(maude, seeds)
     version = maude_version(maude)
 
-    rules, eq_ops, ops, variables = scan_src(SRC)
+    rules, eq_ops, ops, variables = scan_src()
     op_entries = {entry["key"]: entry for entry in ops.entries}
 
     # Test files in tests/api and all seed files are API-level: their searches are completed
@@ -685,7 +691,7 @@ def main() -> int:
     op_candidates: dict[str, list[dict]] = {}
 
     for run in runs:
-        rel = rel(run["path"]).as_posix()
+        rel = rel_path(run["path"]).as_posix()
         prelude = run["prelude"]
         searches = run["searches"]
         path_bodies = split_results(run["outputs"]["path"])

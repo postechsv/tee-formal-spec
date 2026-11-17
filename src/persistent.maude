@@ -407,6 +407,16 @@ omod PERSISTENT-OBJECT-BEHAVIOR is
     < O : TAKernel | api-call : return(createPersistent[# errorOutOfMemory # null]) >
   .
 
+  --- create-persist-mem-err-init: returns errorOutOfMemory at once, before the storage is asked
+  --- to create the object, when the memory of the TA is already exhausted as the call starts.  The
+  --- status of a TA stays outOfMemory after a memory error, and create-persistent-determine-case
+  --- starts the call from a normal status only, so without this rule the call would stop there.
+  rl [create-persist-mem-err-init] :
+    < O : TAKernel | api-call : init(createPersistent[ARGS]) , status : outOfMemory >
+    =>
+    < O : TAKernel | api-call : return(createPersistent[# errorOutOfMemory # null]) >
+  .
+
 ------------------------------------------------------------
 --- 'TEE_CloseAndDeletePersistentObject1'
 ------------------------------------------------------------

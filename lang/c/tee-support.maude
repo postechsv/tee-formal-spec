@@ -398,7 +398,7 @@ mod TEE-C-VALUE-TYPE is
   var PT : TeeParamType .
   var APP : AppId .
   var RO : ReturnOrigin .
-  var TO : TaCancelTimeOut .
+  var TOUT : TaCancelTimeOut .
 
   --- The constants of the API that are integers in C (return codes, object types, algorithms,
   --- modes, attribute identifiers, usages, storage identifiers, data flags, sizes, positions,
@@ -426,7 +426,7 @@ mod TEE-C-VALUE-TYPE is
   eq tyV(# PT) = ty(int) .
   eq tyV(# APP) = ty(TEE-UUID) .
   eq tyV(# RO) = ty(int) .
-  eq tyV(# TO) = ty(int) .
+  eq tyV(# TOUT) = ty(int) .
 endm
 
 ------------------------------------------------------------
@@ -704,6 +704,27 @@ omod PROGRAM-APP-AUX is
    if not T :: RType /\ not isPtr(T) .
   eq $callArgs(nil, nil, FID, EL) = FID(EL) ; .
 
+  --- callFuncM(FID, VL) calls FID on the memory of the client: a reference or pointer parameter
+  --- that gets an object loc(L) of the client is bound to it ($bindLoc), so FID reads and writes
+  --- the object itself, and getVals reads it.  Any other value is taken as callFunc takes it.
+  op callFuncM : FuncId List{Arg} -> K .
+  eq k(callFuncM(FID, VL) ~> K) fdecl(FMAP)
+   = k($callArgsM(getParams(FID, FMAP), VL, FID, nil) ~> K) fdecl(FMAP) .
+  op $callArgsM : ExpList List{Arg} FuncId ExpList -> K .
+  eq $callArgsM(((U &) X, PL), (loc(L) VL), FID, EL)
+   = $bindLoc(X, L) ~> $callArgsM(PL, VL, FID, (EL, X)) .
+  eq $callArgsM(((U *) X, PL), (loc(L) VL), FID, EL)
+   = $bindLoc(X, L) ~> $callArgsM(PL, VL, FID, (EL, addr(X))) .
+  ceq $callArgsM(((U &) X, PL), (V VL), FID, EL)
+   = alloc(U X) ~> X := V ; ~> $callArgsM(PL, VL, FID, (EL, X)) if not V :: Ptr .
+  ceq $callArgsM(((U *) X, PL), (V VL), FID, EL)
+   = alloc(U X) ~> X := V ; ~> $callArgsM(PL, VL, FID, (EL, addr(X))) if not V :: Ptr .
+  eq $callArgsM(((U *) X, PL), (nullptr VL), FID, EL)
+   = alloc(U X) ~> $callArgsM(PL, VL, FID, (EL, nullptr)) .
+  ceq $callArgsM((T X, PL), (V VL), FID, EL) = $callArgsM(PL, VL, FID, (EL, V))
+   if not T :: RType /\ not isPtr(T) .
+  eq $callArgsM(nil, nil, FID, EL) = FID(EL) ; .
+
   op isPtr : CType -> Bool .
   eq isPtr(U *) = true .
   eq isPtr(T) = false [owise] .
@@ -722,16 +743,36 @@ omod PROGRAM-APP-AUX is
   eq getVals((X, XL), env(ENV) store(STORE) KS)
    = STORE[ENV[X]] getVals(XL, env(ENV) store(STORE) KS) .
   eq getVals(nil, KS) = nil .
+  --- $mem, the last output of a TA service (getFuncParams): the memory of the client that the
+  --- service ran on, when it ran on one (shared(true)); nothing otherwise.
+  var LM : Nat .
+  var ALM : Map{Nat,Nat} .
+  eq getVals(($mem, XL), shared(true) store(STORE) nextLoc(LM) arrlen(ALM) KS)
+   = # cstore(STORE, LM, ALM) getVals(XL, shared(true) store(STORE) nextLoc(LM) arrlen(ALM) KS) .
+  eq getVals(($mem, XL), shared(false) KS) = getVals(XL, shared(false) KS) .
 
   --- mkConf(P, FID, VL) (App D.3): the initial configuration that runs the program P and then
   --- callFunc(FID, VL).  As for the program of an RA (mkConf(P), C-SEMANTICS), the declarations
   --- of P are hoisted ($hoistK) and the global environment is set ($genv) before P runs.  The
   --- sdecl cell starts with the struct types of the API (apiStructs), as a C header gives them.
   --- The other cells start empty, and the labels cell holds the labels of P.
-  eq mkConf(P, FID, VL)
+  --- When the last value is the memory of the client, cstore(STORE, L, AL), the service runs on
+  --- that memory (the shared memory of the client, SHARED-MEMORY-BEHAVIOR and SHARED-OBJECT-C):
+  --- the store, the next location and the array lengths are the client's, so the TA reads and
+  --- writes the objects of the client, and its own objects take the next locations.  callFuncM
+  --- binds the parameters to the objects of the client, and getVals gives the memory back ($mem).
+  var LM' : Nat .
+  var ALM' : Map{Nat,Nat} .
+  var STORE' : Map{Nat,Value?} .
+  eq mkConf(P, FID, (VL # cstore(STORE', LM', ALM')))
+    = k(hoistK(getSList(P)) ~> $genv ~> P ~> callFuncM(FID, VL)) env(empty) genv(empty)
+      store(STORE') fdecl(nil) sdecl(apiStructs) stack(nilStack) nextLoc(LM')
+      labels(labelsOf(getSList(P))) arrlen(ALM') shared(true) .
+  ceq mkConf(P, FID, VL)
     = k(hoistK(getSList(P)) ~> $genv ~> P ~> callFunc(FID, VL)) env(empty) genv(empty)
       store(empty) fdecl(nil) sdecl(apiStructs) stack(nilStack) nextLoc(0)
-      labels(labelsOf(getSList(P))) arrlen(empty) .
+      labels(labelsOf(getSList(P))) arrlen(empty) shared(false)
+    if not $memLast(VL) .
 endom
 
 --- @kind behavior
@@ -765,14 +806,15 @@ omod TRUST-APP-C-BEHAVIOR is
 
   --- getFuncParams(P, FID): the parameters of the service FID of the program P, its input
   --- parameters (the value parameters) and its output parameters (the reference and pointer
-  --- parameters, as callFunc declares them), as for a TEE API (App D.2).
+  --- parameters, as callFunc declares them), as for a TEE API (App D.2), and last $mem, the
+  --- memory of the client when the service runs on it (getVals).
   eq getFuncParams(P, FID) = $sigOf(funcParams(P, FID), funcParams(P, FID), nil, nil) .
   op $sigOf : ExpList ExpList ExpList ExpList -> ParamSig .
   eq $sigOf(PL, ((U &) X, PL'), IN, OUT) = $sigOf(PL, PL', IN, (OUT, X)) .
   eq $sigOf(PL, ((U *) X, PL'), IN, OUT) = $sigOf(PL, PL', IN, (OUT, X)) .
   ceq $sigOf(PL, (T X, PL'), IN, OUT) = $sigOf(PL, PL', (IN, X), OUT)
    if not T :: RType /\ not isPtr(T) .
-  eq $sigOf(PL, nil, IN, OUT) = PL | IN | OUT .
+  eq $sigOf(PL, nil, IN, OUT) = PL | IN | (OUT, $mem) .
 
 ------------------------------------------------------------
 --- C Semantics
@@ -847,6 +889,15 @@ omod RICH-APP-C-BEHAVIOR is
   --- value of the call, and the other values are assigned to the outputs EL.
   var RC : ReturnCode .
   eq assign(($result, EL), # RC VL) = $assign(vals(VL), EL) ~> { # RC } .
+  --- $resultMem: the client call TEEC_InvokeCommand with the shared memory of the client,
+  --- see SHARED-MEMORY-BEHAVIOR.  The return code RC is the value of the call, and the client gets
+  --- back its objects in the memory that the TA leaves ($setMem); the outputs are in it.  A TA
+  --- that panicked returns no memory, so the memory of the client is unchanged.
+  var MSTO : Map{Nat,Value?} .
+  var MLOC : Nat .
+  var MARL : Map{Nat,Nat} .
+  eq assign($resultMem, # RC VL # cstore(MSTO, MLOC, MARL)) = $setMem(MSTO, MLOC, MARL) ~> { # RC } .
+  ceq assign($resultMem, # RC VL) = { # RC } if not $memLast(VL) .
 endom
 
 ------------------------------------------------------------
@@ -869,20 +920,19 @@ fmod SHARED-OBJECT-C is
   var STORE : Map{Nat,Value?} .
   var L : Nat .
 
-  eq copyIn(VL, store(STORE) KS) = $copyIn(VL, STORE) .
-  eq copyOut(VL, RET, store(STORE) KS) = store($copyOut(VL, RET, STORE)) KS .
-
-  --- $copyIn(VL, STORE): the values VL with each shared object, a location loc(L), replaced by its
-  --- value in STORE.  $copyOut(VL, RET, STORE): STORE with the results RET stored, in order, at the
-  --- locations of the shared objects of VL.
-  op $copyIn : List{Arg} Map{Nat,Value?} -> List{Arg} .
-  eq $copyIn((loc(L) VL), ((L |-> V) ; STORE)) = V $copyIn(VL, ((L |-> V) ; STORE)) .
-  eq $copyIn((V VL), STORE) = V $copyIn(VL, STORE) [owise] .
-  eq $copyIn(nil, STORE) = nil .
-  op $copyOut : List{Arg} List{Arg} Map{Nat,Value?} -> Map{Nat,Value?} .
-  eq $copyOut((loc(L) VL), (V RET), STORE) = $copyOut(VL, RET, insert(L, V, STORE)) .
-  eq $copyOut((V VL), RET, STORE) = $copyOut(VL, RET, STORE) [owise] .
-  eq $copyOut(nil, RET, STORE) = STORE .
+  --- The client TA shares its memory: copyIn(VL, KS) is VL followed by the memory of KS, and the
+  --- service of the destination runs on it (mkConf); copyOut(VL, RET, KS) is KS with the memory
+  --- that the service leaves, the last of its results RET (getVals, $mem): the objects of the
+  --- client, below its next location ($below, as $setMem).
+  var LC : Nat .
+  var ALC : Map{Nat,Nat} .
+  var STORE' : Map{Nat,Value?} .
+  var LC' : Nat .
+  var ALC' : Map{Nat,Nat} .
+  eq copyIn(VL, store(STORE) nextLoc(LC) arrlen(ALC) KS)
+   = VL # cstore(STORE, LC, ALC) .
+  eq copyOut(VL, (RET # cstore(STORE, LC, ALC)), store(STORE') nextLoc(LC') arrlen(ALC') KS)
+   = store($below(STORE, LC')) nextLoc(LC') arrlen($below(ALC, LC')) KS .
 endfm
 
 ------------------------------------------------------------
@@ -961,16 +1011,19 @@ endm
 ------------------------------------------------------------
 
 --- This file defines the shared memory of a client and a TA as GlobalPlatform memory references,
---- TEEC_TempMemoryReference of [Client API] 3.2.5: the content of a shared object is copied to
---- the TA when an operation starts, and the TA's content is copied back when it completes.
----   1. The client passes a shared object as its address, addr(X) (&X in C).  The value of X goes
----      with the arguments (smcReq for an RA, invkTa for a TA client), and X is an output lvalue
----      of the call.
----   2. The TA service gets the value in the variable of its pointer or reference parameter, see
----      callFunc, and reads and writes it through that parameter.
----   3. When the service has finished, the values of those variables are its results (getVals),
----      and the client assigns them to its output lvalues (invoke-ta-finish).
----      A TA that panics returns TEE_ERROR_TARGET_DEAD and no results: the client's objects are
+--- TEEC_TempMemoryReference of [Client API] 3.2.5: the memory of the client is copied to the TA
+--- when an operation starts, the TA runs on it, and the memory is copied back when it completes.
+---   1. The client passes a shared object as its address, addr(X) (&X in C), the location of X.
+---      Its memory, cstore(STORE, L, AL), goes with the arguments as the last value (smcReq for an
+---      RA, invkTa for a TA client: SHARED-OBJECT-C).
+---   2. The TA service runs on that memory (mkConf): a pointer or reference parameter that gets
+---      a location is bound to the object there (callFuncM), so the service reads and writes the
+---      objects of the client, structs and the objects their pointers point to included, and its
+---      own objects take the next locations.
+---   3. When the service has finished, it returns the memory ($mem, getVals), and the client gets
+---      its objects back from it, the locations below its next location ($setMem, copyOut); the
+---      objects of the TA are dropped.
+---      A TA that panics returns TEE_ERROR_TARGET_DEAD and no memory: the client's objects are
 ---      unchanged.
 ---
 --- Deviations from the specification:
@@ -997,6 +1050,7 @@ endfm
 --- @feature shm
 mod SHARED-MEMORY-BEHAVIOR is
   pr SHARED-MEMORY-SYNTAX .
+  pr C-CONFIG .                       --- $mem, $resultMem
   pr TEE-C-VALUE-TYPE .
   pr TEE-CLIENT-FUNC .
   pr TEE-API-C-CALL .                 --- $result
@@ -1006,23 +1060,12 @@ mod SHARED-MEMORY-BEHAVIOR is
   var K : K .
 
   --- teecInvokeCommand(ES, EF, EL) runs as the stub of TEEC_InvokeCommand: the arguments are
-  --- evaluated ($inH), a shared object addr(E) to the value of E, and sent by invoke-ta-smc; the
-  --- shared objects E are the output lvalues ($out) that invoke-ta-finish assigns, after
-  --- $result, which gives the return code as the value of the call.
+  --- evaluated ($inH; a shared object addr(E) to the location of E), followed by the memory of
+  --- the client ($mem), and sent by invoke-ta-smc.  The TA runs on that memory (mkConf), so it
+  --- reads and writes the shared objects themselves; invoke-ta-finish gives the client the
+  --- memory the TA leaves and the return code, the value of the call ($resultMem).
   eq k({ teecInvokeCommand(ES, EF, EL) } ~> K)
-   = k($inH(nil, (ES, EF, shmIn(EL))) ~> $wait(teecInvokeCommand) ~> $out(($result, shmOut(EL))) ~> K) .
-
-  --- shmIn(EL): the arguments EL with each shared object addr(E) replaced by E.
-  op shmIn : ExpList -> ExpList .
-  eq shmIn((addr(E), EL)) = E , shmIn(EL) .
-  eq shmIn((E, EL)) = E , shmIn(EL) [owise] .
-  eq shmIn(nil) = nil .
-
-  --- shmOut(EL): the shared objects E of the arguments addr(E) in EL.
-  op shmOut : ExpList -> ExpList .
-  eq shmOut((addr(E), EL)) = E , shmOut(EL) .
-  eq shmOut((E, EL)) = shmOut(EL) [owise] .
-  eq shmOut(nil) = nil .
+   = k($inH(nil, (ES, EF, EL, $mem)) ~> $wait(teecInvokeCommand) ~> $out($resultMem) ~> K) .
 
   --- Typing (C-TYPING): the session is a TEEC-Session and the command an int; the arguments
   --- EL are not typed (they are the parameters of the TA service).  The call is a TEE-Result.
